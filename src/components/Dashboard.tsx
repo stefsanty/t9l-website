@@ -39,7 +39,7 @@ export default function Dashboard({
   const [activeTab, setActiveTab] = useState<Tab>('NEXT_GAME');
 
   return (
-    <div className="flex flex-col min-h-screen pb-20 max-w-lg mx-auto bg-midnight selection:bg-vibrant-pink selection:text-white">
+    <div className="flex flex-col min-h-dvh pb-[88px] max-w-lg mx-auto bg-midnight selection:bg-vibrant-pink selection:text-white">
       <header className="mb-8 px-6 pt-16 pb-8 relative overflow-hidden">
         <div className="absolute inset-0 bg-diagonal-pattern opacity-10 pointer-events-none" />
         <div className="absolute -top-32 -right-32 w-80 h-80 bg-electric-violet rounded-full blur-[120px] opacity-[0.08]" />
@@ -122,63 +122,63 @@ export default function Dashboard({
         )}
       </main>
 
-      <footer className="mt-8 mb-6 text-center px-4 pb-12">
+      <footer className="mt-8 mb-6 text-center px-4 pb-24">
         <p className="text-[10px] font-black uppercase tracking-[0.3em] text-white/10">
           © 2026 Tennozu 9-Aside League • Tokyo
         </p>
       </footer>
 
       {/* Bottom Navigation */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-midnight/95 backdrop-blur-3xl border-t border-white/10 z-50 shadow-[0_-10px_40px_rgba(0,0,0,0.8)]">
-        <div className="max-w-lg mx-auto flex justify-around items-center h-22 px-6">
+      <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-lg bg-midnight/98 border-t border-white/10 z-[100] shadow-[0_-10px_40px_rgba(0,0,0,0.9)] pb-[env(safe-area-inset-bottom)]">
+        <div className="flex justify-around items-center h-[72px] px-6">
           <button
             onClick={() => setActiveTab('NEXT_GAME')}
-            className={`flex flex-col items-center justify-center flex-1 h-full gap-2 transition-all duration-500 relative ${
+            className={`flex flex-col items-center justify-center flex-1 h-full gap-1.5 transition-all duration-300 relative ${
               activeTab === 'NEXT_GAME' ? 'text-vibrant-pink' : 'text-white/40 hover:text-white/60'
             }`}
           >
-            <div className={`p-2 rounded-xl transition-all duration-500 ${activeTab === 'NEXT_GAME' ? 'bg-vibrant-pink/10' : ''}`}>
+            <div className={`p-1.5 rounded-xl transition-all duration-300 ${activeTab === 'NEXT_GAME' ? 'bg-vibrant-pink/10' : ''}`}>
               <svg className="w-6 h-6" fill={activeTab === 'NEXT_GAME' ? "currentColor" : "none"} viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
               </svg>
             </div>
-            <span className={`text-[10px] font-black uppercase tracking-[0.2em] transition-opacity duration-500 ${activeTab === 'NEXT_GAME' ? 'opacity-100' : 'opacity-70'}`}>Home</span>
+            <span className={`text-[10px] font-black uppercase tracking-[0.15em] transition-opacity duration-300 ${activeTab === 'NEXT_GAME' ? 'opacity-100' : 'opacity-70'}`}>Home</span>
             {activeTab === 'NEXT_GAME' && (
-              <div className="absolute -top-[1px] left-1/2 -translate-x-1/2 w-16 h-[3px] bg-vibrant-pink rounded-b-full" />
+              <div className="absolute -top-[1px] left-1/2 -translate-x-1/2 w-12 h-[3px] bg-vibrant-pink rounded-b-full shadow-[0_2px_10px_rgba(233,0,82,0.4)]" />
             )}
           </button>
 
           <button
             onClick={() => setActiveTab('STATS')}
-            className={`flex flex-col items-center justify-center flex-1 h-full gap-2 transition-all duration-500 relative ${
+            className={`flex flex-col items-center justify-center flex-1 h-full gap-1.5 transition-all duration-300 relative ${
               activeTab === 'STATS' ? 'text-vibrant-pink' : 'text-white/40 hover:text-white/60'
             }`}
           >
-            <div className={`p-2 rounded-xl transition-all duration-500 ${activeTab === 'STATS' ? 'bg-vibrant-pink/10' : ''}`}>
+            <div className={`p-1.5 rounded-xl transition-all duration-300 ${activeTab === 'STATS' ? 'bg-vibrant-pink/10' : ''}`}>
               <svg className="w-6 h-6" fill={activeTab === 'STATS' ? "currentColor" : "none"} viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
               </svg>
             </div>
-            <span className={`text-[10px] font-black uppercase tracking-[0.2em] transition-opacity duration-500 ${activeTab === 'STATS' ? 'opacity-100' : 'opacity-70'}`}>Stats</span>
+            <span className={`text-[10px] font-black uppercase tracking-[0.15em] transition-opacity duration-300 ${activeTab === 'STATS' ? 'opacity-100' : 'opacity-70'}`}>Stats</span>
             {activeTab === 'STATS' && (
-              <div className="absolute -top-[1px] left-1/2 -translate-x-1/2 w-16 h-[3px] bg-vibrant-pink rounded-b-full" />
+              <div className="absolute -top-[1px] left-1/2 -translate-x-1/2 w-12 h-[3px] bg-vibrant-pink rounded-b-full shadow-[0_2px_10px_rgba(233,0,82,0.4)]" />
             )}
           </button>
 
           <button
             onClick={() => setActiveTab('SQUADS')}
-            className={`flex flex-col items-center justify-center flex-1 h-full gap-2 transition-all duration-500 relative ${
+            className={`flex flex-col items-center justify-center flex-1 h-full gap-1.5 transition-all duration-300 relative ${
               activeTab === 'SQUADS' ? 'text-vibrant-pink' : 'text-white/40 hover:text-white/60'
             }`}
           >
-            <div className={`p-2 rounded-xl transition-all duration-500 ${activeTab === 'SQUADS' ? 'bg-vibrant-pink/10' : ''}`}>
+            <div className={`p-1.5 rounded-xl transition-all duration-300 ${activeTab === 'SQUADS' ? 'bg-vibrant-pink/10' : ''}`}>
               <svg className="w-6 h-6" fill={activeTab === 'SQUADS' ? "currentColor" : "none"} viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
               </svg>
             </div>
-            <span className={`text-[10px] font-black uppercase tracking-[0.2em] transition-opacity duration-500 ${activeTab === 'SQUADS' ? 'opacity-100' : 'opacity-70'}`}>Teams</span>
+            <span className={`text-[10px] font-black uppercase tracking-[0.15em] transition-opacity duration-300 ${activeTab === 'SQUADS' ? 'opacity-100' : 'opacity-70'}`}>Teams</span>
             {activeTab === 'SQUADS' && (
-              <div className="absolute -top-[1px] left-1/2 -translate-x-1/2 w-16 h-[3px] bg-vibrant-pink rounded-b-full" />
+              <div className="absolute -top-[1px] left-1/2 -translate-x-1/2 w-12 h-[3px] bg-vibrant-pink rounded-b-full shadow-[0_2px_10px_rgba(233,0,82,0.4)]" />
             )}
           </button>
         </div>
