@@ -129,12 +129,12 @@ export default function Dashboard({
       </footer>
 
       {/* Bottom Navigation */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-midnight/90 backdrop-blur-3xl border-t border-white/[0.03] z-50">
+      <nav className="fixed bottom-0 left-0 right-0 bg-midnight/95 backdrop-blur-3xl border-t border-white/10 z-50 shadow-[0_-10px_40px_rgba(0,0,0,0.8)]">
         <div className="max-w-lg mx-auto flex justify-around items-center h-22 px-6">
           <button
             onClick={() => setActiveTab('NEXT_GAME')}
             className={`flex flex-col items-center justify-center flex-1 h-full gap-2 transition-all duration-500 relative ${
-              activeTab === 'NEXT_GAME' ? 'text-vibrant-pink' : 'text-white/20 hover:text-white/40'
+              activeTab === 'NEXT_GAME' ? 'text-vibrant-pink' : 'text-white/40 hover:text-white/60'
             }`}
           >
             <div className={`p-2 rounded-xl transition-all duration-500 ${activeTab === 'NEXT_GAME' ? 'bg-vibrant-pink/10' : ''}`}>
@@ -142,7 +142,7 @@ export default function Dashboard({
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
               </svg>
             </div>
-            <span className={`text-[10px] font-black uppercase tracking-[0.2em] transition-opacity duration-500 ${activeTab === 'NEXT_GAME' ? 'opacity-100' : 'opacity-40'}`}>Home</span>
+            <span className={`text-[10px] font-black uppercase tracking-[0.2em] transition-opacity duration-500 ${activeTab === 'NEXT_GAME' ? 'opacity-100' : 'opacity-70'}`}>Home</span>
             {activeTab === 'NEXT_GAME' && (
               <div className="absolute -top-[1px] left-1/2 -translate-x-1/2 w-16 h-[3px] bg-vibrant-pink rounded-b-full" />
             )}
@@ -151,7 +151,7 @@ export default function Dashboard({
           <button
             onClick={() => setActiveTab('STATS')}
             className={`flex flex-col items-center justify-center flex-1 h-full gap-2 transition-all duration-500 relative ${
-              activeTab === 'STATS' ? 'text-vibrant-pink' : 'text-white/20 hover:text-white/40'
+              activeTab === 'STATS' ? 'text-vibrant-pink' : 'text-white/40 hover:text-white/60'
             }`}
           >
             <div className={`p-2 rounded-xl transition-all duration-500 ${activeTab === 'STATS' ? 'bg-vibrant-pink/10' : ''}`}>
@@ -159,7 +159,7 @@ export default function Dashboard({
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
               </svg>
             </div>
-            <span className={`text-[10px] font-black uppercase tracking-[0.2em] transition-opacity duration-500 ${activeTab === 'STATS' ? 'opacity-100' : 'opacity-40'}`}>Stats</span>
+            <span className={`text-[10px] font-black uppercase tracking-[0.2em] transition-opacity duration-500 ${activeTab === 'STATS' ? 'opacity-100' : 'opacity-70'}`}>Stats</span>
             {activeTab === 'STATS' && (
               <div className="absolute -top-[1px] left-1/2 -translate-x-1/2 w-16 h-[3px] bg-vibrant-pink rounded-b-full" />
             )}
@@ -168,7 +168,7 @@ export default function Dashboard({
           <button
             onClick={() => setActiveTab('SQUADS')}
             className={`flex flex-col items-center justify-center flex-1 h-full gap-2 transition-all duration-500 relative ${
-              activeTab === 'SQUADS' ? 'text-vibrant-pink' : 'text-white/20 hover:text-white/40'
+              activeTab === 'SQUADS' ? 'text-vibrant-pink' : 'text-white/40 hover:text-white/60'
             }`}
           >
             <div className={`p-2 rounded-xl transition-all duration-500 ${activeTab === 'SQUADS' ? 'bg-vibrant-pink/10' : ''}`}>
@@ -176,7 +176,7 @@ export default function Dashboard({
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
               </svg>
             </div>
-            <span className={`text-[10px] font-black uppercase tracking-[0.2em] transition-opacity duration-500 ${activeTab === 'SQUADS' ? 'opacity-100' : 'opacity-40'}`}>Teams</span>
+            <span className={`text-[10px] font-black uppercase tracking-[0.2em] transition-opacity duration-500 ${activeTab === 'SQUADS' ? 'opacity-100' : 'opacity-70'}`}>Teams</span>
             {activeTab === 'SQUADS' && (
               <div className="absolute -top-[1px] left-1/2 -translate-x-1/2 w-16 h-[3px] bg-vibrant-pink rounded-b-full" />
             )}
