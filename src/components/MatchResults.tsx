@@ -31,20 +31,18 @@ export default function MatchResults({
   if (playedMatchdays.length === 0) return null;
 
   return (
-    <section className="mb-8">
-      <h2 className="font-display text-2xl font-bold uppercase tracking-wide mb-4">
-        Results
-      </h2>
-      <div className="space-y-4">
+    <div className="space-y-6">
         {playedMatchdays.map((md) => (
-          <div key={md.id} className="bg-card border border-border rounded-xl overflow-hidden shadow-sm">
-            <div className="bg-white/[0.02] px-4 py-2 border-b border-border flex justify-between items-center">
-              <span className="font-display text-xs font-bold uppercase tracking-widest text-muted">
+          <div key={md.id} className="pl-card pl-card-magenta rounded-2xl overflow-hidden relative">
+            <div className="absolute inset-0 bg-diagonal-pattern opacity-5 pointer-events-none" />
+            <div className="bg-white/[0.03] px-5 py-3 border-b border-white/10 flex justify-between items-center relative">
+              <span className="font-display text-[10px] font-black uppercase tracking-[0.2em] text-white/40">
                 {md.label} — {md.date || "TBD"}
               </span>
+              <div className="h-1.5 w-1.5 rounded-full bg-vibrant-pink" />
             </div>
             
-            <div className="divide-y divide-border/30">
+            <div className="divide-y divide-white/5 relative">
               {md.matches.map((match) => {
                 const home = getTeam(match.homeTeamId);
                 const away = getTeam(match.awayTeamId);
@@ -52,59 +50,71 @@ export default function MatchResults({
                 const matchGoals = goals.filter((g) => g.matchId === match.id);
 
                 return (
-                  <div key={match.id}>
+                  <div key={match.id} className="group">
                     <button
                       onClick={() => setExpandedMatchId(isExpanded ? null : match.id)}
-                      className="w-full px-4 py-3 text-left hover:bg-white/[0.01] transition-colors"
+                      className={`w-full px-5 py-4 text-left transition-all ${
+                        isExpanded ? 'bg-white/[0.04]' : 'hover:bg-white/[0.02]'
+                      }`}
                     >
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex-1 flex items-center gap-2">
-                          <span className="font-display text-sm font-bold uppercase">
-                            {home?.shortName}
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex-1 flex items-center gap-3 min-w-0">
+                          <span className="font-display text-sm font-black uppercase tracking-tight text-white group-hover:text-vibrant-pink transition-colors truncate">
+                            {home?.name}
                           </span>
-                          {home?.logo && (
-                            <Image src={home.logo} alt={home.name} width={16} height={16} className="object-contain" />
-                          )}
+                          <div className="relative w-6 h-6 shrink-0 bg-white/5 rounded-md p-1 border border-white/5">
+                            {home?.logo && (
+                              <Image src={home.logo} alt={home.name} fill className="object-contain p-0.5" />
+                            )}
+                          </div>
                         </div>
                         
-                        <div className="flex items-center gap-2 bg-white/[0.05] px-3 py-1 rounded-md border border-white/5 min-w-[70px] justify-center">
-                          <span className="font-display text-lg font-black">{match.homeGoals}</span>
-                          <span className="text-muted/30 font-bold">—</span>
-                          <span className="font-display text-lg font-black">{match.awayGoals}</span>
+                        <div className="flex items-center gap-3 bg-white/[0.05] px-4 py-1.5 rounded-xl border border-white/10 min-w-[90px] justify-center group-hover:border-vibrant-pink/30 transition-all shrink-0">
+                          <span className="font-display text-2xl font-black text-white">{match.homeGoals}</span>
+                          <div className="w-4 h-[1px] bg-white/10" />
+                          <span className="font-display text-2xl font-black text-white">{match.awayGoals}</span>
                         </div>
                         
-                        <div className="flex-1 flex items-center justify-end gap-2 text-right">
-                          {away?.logo && (
-                            <Image src={away.logo} alt={away.name} width={16} height={16} className="object-contain" />
-                          )}
-                          <span className="font-display text-sm font-bold uppercase">
-                            {away?.shortName}
+                        <div className="flex-1 flex items-center justify-end gap-3 text-right min-w-0">
+                          <div className="relative w-6 h-6 shrink-0 bg-white/5 rounded-md p-1 border border-white/5">
+                            {away?.logo && (
+                              <Image src={away.logo} alt={away.name} fill className="object-contain p-0.5" />
+                            )}
+                          </div>
+                          <span className="font-display text-sm font-black uppercase tracking-tight text-white group-hover:text-vibrant-pink transition-colors truncate">
+                            {away?.name}
                           </span>
                         </div>
                       </div>
                     </button>
 
                     {isExpanded && (
-                      <div className="px-4 pb-4 pt-1 bg-white/[0.01]">
+                      <div className="px-5 pb-5 pt-1 animate-in">
                         {matchGoals.length > 0 ? (
-                          <div className="space-y-1">
+                          <div className="space-y-2 pt-2">
                             {matchGoals.map((goal, idx) => (
-                              <div key={idx} className={`flex items-center gap-2 text-[10px] ${goal.scoringTeamId === match.homeTeamId ? '' : 'flex-row-reverse'}`}>
-                                <div className="flex items-center gap-1.5 font-bold uppercase tracking-tight text-white/90">
-                                  <div className="w-1.5 h-1.5 rounded-full bg-white/40" />
-                                  <span>{goal.scorer === "Guest" ? "Guest (non-rostered)" : goal.scorer}</span>
-                                  {goal.assister && (
-                                    <span className="text-muted/60 lowercase italic font-medium">
-                                      (asst: {goal.assister})
+                              <div key={idx} className={`flex items-center gap-3 ${goal.scoringTeamId === match.homeTeamId ? '' : 'flex-row-reverse'}`}>
+                                <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border bg-white/[0.02] ${
+                                  goal.scoringTeamId === match.homeTeamId ? 'border-l-2 border-l-vibrant-pink border-white/5' : 'border-r-2 border-r-vibrant-pink border-white/5'
+                                }`}>
+                                  <div className="w-1.5 h-1.5 rounded-full bg-electric-green animate-pulse" />
+                                  <div className="flex flex-col">
+                                    <span className="text-[11px] font-black uppercase tracking-tight text-white">
+                                      {goal.scorer === "Guest" ? "Guest (non-rostered)" : goal.scorer}
                                     </span>
-                                  )}
+                                    {goal.assister && (
+                                      <span className="text-[9px] font-bold text-white/30 uppercase tracking-widest leading-none">
+                                        asst: {goal.assister}
+                                      </span>
+                                    )}
+                                  </div>
                                 </div>
                               </div>
                             ))}
                           </div>
                         ) : (
-                          <div className="text-[10px] text-muted/40 italic text-center">
-                            No goal details available
+                          <div className="text-[10px] text-white/20 font-bold uppercase tracking-widest text-center py-4 bg-white/[0.01] rounded-xl border border-dashed border-white/5">
+                            No goal details recorded
                           </div>
                         )}
                       </div>
@@ -116,6 +126,5 @@ export default function MatchResults({
           </div>
         ))}
       </div>
-    </section>
   );
 }

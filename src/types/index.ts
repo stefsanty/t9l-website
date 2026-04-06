@@ -103,6 +103,10 @@ export interface PlayerStats {
   playerId: string;
   playerName: string;
   teamId: string;
+  teamName: string;
+  teamShortName: string;
+  teamLogo: string | null;
+  teamColor: string;
   matchesPlayed: number;
   goals: number;
   assists: number;

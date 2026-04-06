@@ -164,6 +164,7 @@ export function computeTopRated(
 }
 
 export function computePlayerStats(
+  teams: Team[],
   players: Player[],
   goals: Goal[],
   ratings: PlayerRating[],
@@ -171,14 +172,20 @@ export function computePlayerStats(
 ): PlayerStats[] {
   const statsMap = new Map<string, PlayerStats>();
   const playerByName = new Map<string, string>();
+  const teamById = new Map(teams.map((t) => [t.id, t]));
 
   // Initialize for all players
   for (const player of players) {
     playerByName.set(player.name, player.id);
+    const team = teamById.get(player.teamId);
     statsMap.set(player.id, {
       playerId: player.id,
       playerName: player.name,
       teamId: player.teamId,
+      teamName: team?.name || "",
+      teamShortName: team?.shortName || "",
+      teamLogo: team?.logo || null,
+      teamColor: team?.color || "#ffffff",
       matchesPlayed: 0,
       goals: 0,
       assists: 0,

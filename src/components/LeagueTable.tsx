@@ -7,82 +7,87 @@ interface LeagueTableProps {
 
 export default function LeagueTable({ rows }: LeagueTableProps) {
   return (
-    <section>
-      <h2 className="font-display text-2xl font-bold uppercase tracking-wide mb-3">
-        Standings
-      </h2>
-      <div className="overflow-x-auto rounded-lg border border-border">
+    <div className="pl-card pl-card-magenta rounded-2xl overflow-hidden mb-10 relative">
+      <div className="absolute inset-0 bg-diagonal-pattern opacity-5 pointer-events-none" />
+      <div className="overflow-x-auto relative">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-border text-muted text-xs uppercase tracking-wider">
-              <th className="py-2 pl-3 pr-1 text-left w-6">#</th>
-              <th className="py-2 px-2 text-left">Team</th>
-              <th className="py-2 px-1 text-center">MP</th>
-              <th className="py-2 px-1 text-center">W</th>
-              <th className="py-2 px-1 text-center">D</th>
-              <th className="py-2 px-1 text-center">L</th>
-              <th className="py-2 px-1 text-center hidden sm:table-cell">GF</th>
-              <th className="py-2 px-1 text-center hidden sm:table-cell">GA</th>
-              <th className="py-2 px-1 text-center">GD</th>
-              <th className="py-2 pr-3 pl-1 text-center font-bold">Pts</th>
+            <tr className="border-b border-white/10 bg-white/[0.03] text-white/40 text-[10px] font-black uppercase tracking-[0.2em]">
+              <th className="py-4 pl-4 pr-1 text-left w-8">POS</th>
+              <th className="py-4 px-3 text-left">CLUB</th>
+              <th className="py-4 px-2 text-center">MP</th>
+              <th className="py-4 px-2 text-center">W</th>
+              <th className="py-4 px-2 text-center">D</th>
+              <th className="py-4 px-2 text-center">L</th>
+              <th className="py-4 px-2 text-center hidden sm:table-cell">GF</th>
+              <th className="py-4 px-2 text-center hidden sm:table-cell">GA</th>
+              <th className="py-4 px-2 text-center">GD</th>
+              <th className="py-4 pr-4 pl-2 text-center font-black text-white">PTS</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody className="divide-y divide-white/5">
             {rows.map((row, i) => (
               <tr
                 key={row.team.id}
-                className={`border-b border-border/50 last:border-0 ${
-                  i === 0 ? "bg-white/[0.04]" : ""
+                className={`transition-colors hover:bg-white/[0.03] group ${
+                  i === 0 ? "bg-vibrant-pink/5" : ""
                 }`}
               >
-                <td className="py-2.5 pl-3 pr-1 text-muted">{i + 1}</td>
-                <td className="py-2.5 px-2">
-                  <div className="flex items-center gap-2">
-                    {row.team.logo ? (
-                      <Image
-                        src={row.team.logo}
-                        alt={row.team.name}
-                        width={24}
-                        height={24}
-                        className="shrink-0 object-contain"
-                      />
-                    ) : (
-                      <span
-                        className="inline-block h-3 w-3 rounded-full shrink-0"
-                        style={{ backgroundColor: row.team.color }}
-                      />
-                    )}
-                    <span className="font-medium">
+                <td className="py-4 pl-4 pr-1">
+                  <span className={`font-display text-base font-black ${i === 0 ? "text-vibrant-pink" : "text-white/40"}`}>
+                    {i + 1}
+                  </span>
+                </td>
+                <td className="py-4 px-3">
+                  <div className="flex items-center gap-3">
+                    <div className="relative w-7 h-7 shrink-0 bg-white/5 rounded-md p-1 border border-white/5">
+                      {row.team.logo ? (
+                        <Image
+                          src={row.team.logo}
+                          alt={row.team.name}
+                          fill
+                          className="object-contain p-0.5"
+                        />
+                      ) : (
+                        <span
+                          className="inline-block h-full w-full rounded-sm"
+                          style={{ backgroundColor: row.team.color }}
+                        />
+                      )}
+                    </div>
+                    <span className="font-bold uppercase tracking-tight text-white group-hover:text-vibrant-pink transition-colors">
                       <span className="sm:hidden">{row.team.shortName}</span>
                       <span className="hidden sm:inline">{row.team.name}</span>
                     </span>
                   </div>
                 </td>
-                <td className="py-2.5 px-1 text-center text-muted">
+                <td className="py-4 px-2 text-center font-bold text-white/60 tabular-nums">
                   {row.played}
                 </td>
-                <td className="py-2.5 px-1 text-center">{row.won}</td>
-                <td className="py-2.5 px-1 text-center">{row.drawn}</td>
-                <td className="py-2.5 px-1 text-center">{row.lost}</td>
-                <td className="py-2.5 px-1 text-center hidden sm:table-cell">
+                <td className="py-4 px-2 text-center font-bold text-white/80 tabular-nums">{row.won}</td>
+                <td className="py-4 px-2 text-center font-bold text-white/80 tabular-nums">{row.drawn}</td>
+                <td className="py-4 px-2 text-center font-bold text-white/80 tabular-nums">{row.lost}</td>
+                <td className="py-4 px-2 text-center hidden sm:table-cell font-bold text-white/40 tabular-nums">
                   {row.goalsFor}
                 </td>
-                <td className="py-2.5 px-1 text-center hidden sm:table-cell">
+                <td className="py-4 px-2 text-center hidden sm:table-cell font-bold text-white/40 tabular-nums">
                   {row.goalsAgainst}
                 </td>
-                <td className="py-2.5 px-1 text-center">
+                <td className="py-4 px-2 text-center font-bold text-white/60 tabular-nums">
                   {row.goalDifference > 0
                     ? `+${row.goalDifference}`
                     : row.goalDifference}
                 </td>
-                <td className="py-2.5 pr-3 pl-1 text-center font-display text-lg font-bold">
-                  {row.points}
+                <td className="py-4 pr-4 pl-2 text-center">
+                  <span className={`font-display text-xl font-black tabular-nums ${i === 0 ? "text-vibrant-pink" : "text-white"}`}>
+                    {row.points}
+                  </span>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
-    </section>
+    </div>
   );
 }
