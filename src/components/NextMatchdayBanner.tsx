@@ -51,28 +51,6 @@ function distributeToSlots<T>(items: T[], slots: number): T[][] {
 
 // ── TeamFormation sub-component ───────────────────────────────────────────────
 
-// ── Player token on the pitch ─────────────────────────────────────────────────
-
-function PlayerToken({ name, color }: { name: string; color: string }) {
-  return (
-    <div className="flex flex-col items-center gap-[3px]">
-      <div
-        className="w-5 h-5 rounded-full"
-        style={{
-          background: color,
-          boxShadow: `0 0 0 2px rgba(255,255,255,0.85), 0 2px 6px rgba(0,0,0,0.5)`,
-        }}
-      />
-      <div
-        className="text-[8px] font-black text-white text-center px-1.5 py-[2px] rounded whitespace-nowrap max-w-[56px] truncate leading-tight"
-        style={{ backgroundColor: 'rgba(0,0,0,0.62)', backdropFilter: 'blur(2px)' }}
-      >
-        {name.split(' ')[0]}
-      </div>
-    </div>
-  );
-}
-
 // ── Pitch formation display ───────────────────────────────────────────────────
 
 function TeamFormation({
@@ -84,6 +62,38 @@ function TeamFormation({
   players: Player[];
   teamColor: string;
 }) {
+  const getPlayer = (id: string) => players.find((p) => p.id === id);
+
+  // Categorize players (must run before useState so auto-formation can seed state)
+  const gks: Player[] = [];
+  const pureDefs: Player[] = [];
+  const defMidHybrids: Player[] = [];
+  const pureMids: Player[] = [];
+  const midFwdHybrids: Player[] = [];
+  const pureFwds: Player[] = [];
+
+  for (const pid of confirmedIds) {
+    const p = getPlayer(pid);
+    if (!p) continue;
+    switch (p.position) {
+      case 'GK':     gks.push(p);            break;
+      case 'DF':     pureDefs.push(p);       break;
+      case 'DF/MF':  defMidHybrids.push(p);  break;
+      case 'MF':     pureMids.push(p);       break;
+      case 'MF/FWD': midFwdHybrids.push(p);  break;
+      case 'FWD':    pureFwds.push(p);       break;
+      default:       pureMids.push(p);       break; // null → mid
+    }
+  }
+
+  const autoFormation = pickFormation(
+    pureDefs.length + defMidHybrids.length,
+    pureMids.length + midFwdHybrids.length,
+    pureFwds.length,
+  );
+
+  const [formation, setFormation] = useState<Formation>(autoFormation);
+
   if (confirmedIds.length === 0) {
     return (
       <span className="text-[11px] text-white/20 italic py-2 px-1 block">
@@ -92,24 +102,20 @@ function TeamFormation({
     );
   }
 
-  const getPlayer = (id: string) => players.find((p) => p.id === id);
+  // Assign DF/MF hybrids: fill remaining def slots first, overflow → mid
+  const defSlotsLeft = Math.max(0, formation.def - pureDefs.length);
+  const defMidToDef  = defMidHybrids.slice(0, defSlotsLeft);
+  const defMidToMid  = defMidHybrids.slice(defSlotsLeft);
 
-  const gks: Player[] = [];
-  const defs: Player[] = [];
-  const mids: Player[] = [];
-  const fwds: Player[] = [];
+  // Assign MF/FWD hybrids: fill remaining mid slots (after overflow arrives), overflow → fwd
+  const midSlotsLeft = Math.max(0, formation.mid - pureMids.length - defMidToMid.length);
+  const midFwdToMid  = midFwdHybrids.slice(0, midSlotsLeft);
+  const midFwdToFwd  = midFwdHybrids.slice(midSlotsLeft);
 
-  for (const pid of confirmedIds) {
-    const p = getPlayer(pid);
-    if (!p) continue;
-    const cat = categorizePosition(p.position);
-    if (cat === 'gk') gks.push(p);
-    else if (cat === 'def') defs.push(p);
-    else if (cat === 'fwd') fwds.push(p);
-    else mids.push(p);
-  }
+  const defs = [...pureDefs, ...defMidToDef];
+  const mids = [...pureMids, ...defMidToMid, ...midFwdToMid];
+  const fwds = [...pureFwds, ...midFwdToFwd];
 
-  const formation = pickFormation(defs.length, mids.length, fwds.length);
   const fwdSlots = distributeToSlots(fwds, formation.fwd);
   const midSlots = distributeToSlots(mids, formation.mid);
   const defSlots = distributeToSlots(defs, formation.def);
@@ -124,12 +130,28 @@ function TeamFormation({
 
   return (
     <div className="mt-3">
-      {/* Formation badge */}
+      {/* Formation selector */}
       <div className="flex justify-between items-center mb-2">
         <span className="text-[9px] font-black uppercase tracking-widest text-white/25">LINEUP</span>
-        <span className="text-[8px] font-black uppercase tracking-[0.2em] text-white/30 bg-white/[0.06] px-2 py-0.5 rounded">
-          {formation.label}
-        </span>
+        <div className="flex gap-1">
+          {FORMATIONS.map((f) => {
+            const isActive = formation.label === f.label;
+            return (
+              <button
+                key={f.label}
+                onClick={() => setFormation(f)}
+                className="text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded transition-all"
+                style={
+                  isActive
+                    ? { backgroundColor: teamColor + '55', color: '#fff' }
+                    : { backgroundColor: 'rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.3)' }
+                }
+              >
+                {f.label}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {/* Pitch */}
@@ -168,11 +190,26 @@ function TeamFormation({
           {rows.map(({ label, slots }) => (
             <div key={label} className="flex justify-around items-start">
               {slots.map((slotPlayers, i) => (
-                <div key={i} className="flex flex-col gap-1.5 items-center">
+                <div key={i} className="flex flex-col items-center gap-[3px]">
                   {slotPlayers.length > 0 ? (
-                    slotPlayers.map((p) => (
-                      <PlayerToken key={p.id} name={p.name} color={teamColor} />
-                    ))
+                    <>
+                      <div
+                        className="w-5 h-5 rounded-full shrink-0"
+                        style={{
+                          background: teamColor,
+                          boxShadow: '0 0 0 2px rgba(255,255,255,0.85), 0 2px 6px rgba(0,0,0,0.5)',
+                        }}
+                      />
+                      {slotPlayers.map((p) => (
+                        <div
+                          key={p.id}
+                          className="text-[8px] font-black text-white text-center px-1.5 py-[2px] rounded whitespace-nowrap leading-tight"
+                          style={{ backgroundColor: 'rgba(0,0,0,0.62)' }}
+                        >
+                          {p.name}
+                        </div>
+                      ))}
+                    </>
                   ) : (
                     <div className="w-5 h-5 rounded-full border-2 border-dashed border-white/40" />
                   )}
