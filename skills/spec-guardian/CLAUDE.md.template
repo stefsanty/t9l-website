@@ -1,0 +1,107 @@
+# Project: <PROJECT_NAME>
+# Last updated: <DATE>
+# Maintained by: spec-guardian (/spec-guardian to refresh)
+
+---
+
+## Stack
+- Language/runtime: 
+- Framework: 
+- Database: 
+- Auth mechanism: 
+- Key dependencies (locked — do not add without explicit approval in session):
+
+---
+
+## Architecture Constraints
+
+- <e.g., Use the repository pattern for all data access — never query DB from controllers>
+- <e.g., All business logic lives in service layer, not routes or UI components>
+- <e.g., Components are stateless — state flows down via props or a single store>
+
+---
+
+## Security Rules
+
+- **Secrets**: Store in `.env` (local) and secret manager (prod). Never hardcode.
+- **Tokens**: Store in httpOnly cookies or platform Keychain. Never localStorage.
+- **Input validation**: Validate and sanitize at the boundary (entry point), not deep in business logic.
+- **Logging**: Log metadata only. Redact passwords, tokens, emails, and PII fields.
+- **TLS**: Enforce HTTPS for all external calls. Never disable SSL verification.
+
+---
+
+## Error Handling Strategy
+
+- Network errors → show user a retry button. Never show raw error or stack trace.
+- Validation errors → return structured error with field-level messages.
+- Fatal/unexpected errors → log with context, fail gracefully with a user-friendly message.
+- Never silently swallow exceptions (`except: pass` / empty catch blocks are banned).
+
+---
+
+## Data Flow
+
+- State ownership: <which layer owns state, e.g., Zustand store / Redux / server state only>
+- Caching: <location and invalidation strategy>
+- API base URL: always from environment variable `API_BASE_URL`, never hardcoded.
+- Response envelope: `{ data, error, meta }` — unwrap in the API client layer.
+
+---
+
+## Never / Always
+
+### Never
+- [ ] Hardcode API keys, tokens, passwords, or secrets in source files
+- [ ] Store sensitive data in `localStorage`, `sessionStorage`, or `UserDefaults`
+- [ ] Call the database directly from controllers, routes, or UI components
+- [ ] Add a new dependency (npm/pip/gem/etc.) without explicit approval in the current session
+- [ ] Disable SSL/TLS certificate verification, even in test environments
+- [ ] Log request or response bodies that may contain user PII
+- [ ] Catch and silently swallow errors — always log or surface them
+- [ ] Leave `// TODO` or `// FIXME` comments in committed code without a linked ticket
+
+### Always
+- [ ] Hash passwords using bcrypt with cost factor ≥ 12
+- [ ] Validate and sanitize all external input at the system boundary
+- [ ] Write error messages the user can act on — not raw exception text
+- [ ] Add a retry/refresh affordance for all network-dependent UI states
+- [ ] Follow the existing naming conventions (see `/src` for reference)
+- [ ] Run `<LINT_COMMAND>` before considering a task complete
+
+---
+
+## Canonical Code Patterns
+
+<!-- Add 10–20 line examples of the correct pattern for:
+     - Creating an API endpoint
+     - Querying the database (repository pattern)
+     - Auth guard / middleware
+     - Error handler / wrapper
+     These examples are the most effective way to align AI output with your patterns. -->
+
+```typescript
+// EXAMPLE — API route (replace with your actual pattern)
+// router.get('/users/:id', authGuard, asyncHandler(async (req, res) => {
+//   const user = await userRepository.findById(req.params.id);
+//   if (!user) throw new NotFoundError('User not found');
+//   res.json({ data: user });
+// }));
+```
+
+---
+
+## Dependency Lockdown
+
+Do not install new packages without explicit user approval in the current session.
+If a library would genuinely solve the problem better, propose it and wait for a yes before running any install command.
+
+---
+
+## Out of Scope for AI (do not attempt autonomously)
+
+- Running database migrations against any environment other than local dev
+- Modifying `.env` files
+- Touching CI/CD pipeline configuration
+- Any file under `/billing`, `/payments`, or `/admin`
+- Committing or pushing to `main` / `master`

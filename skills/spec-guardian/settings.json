@@ -1,0 +1,25 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -f CLAUDE.md ] || echo 'WARNING: No CLAUDE.md found in this project. Run /spec-guardian --new to bootstrap your spec doc.' >&2"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/spec_lint.py \"$CLAUDE_TOOL_INPUT_FILE_PATH\" 2>&1 || true"
+          }
+        ]
+      }
+    ]
+  }
+}
