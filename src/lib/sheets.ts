@@ -4,10 +4,20 @@ import { getMockData } from "./mock-data";
 const SHEET_ID = process.env.GOOGLE_SHEET_ID;
 
 function getAuth() {
+  let privateKey = process.env.GOOGLE_PRIVATE_KEY || "";
+  
+  // Handle case where key might be wrapped in quotes
+  if (privateKey.startsWith('"') && privateKey.endsWith('"')) {
+    privateKey = privateKey.substring(1, privateKey.length - 1);
+  }
+  
+  // Convert literal \n strings to actual newlines
+  privateKey = privateKey.replace(/\\n/g, "\n");
+
   return new google.auth.GoogleAuth({
     credentials: {
       client_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL!,
-      private_key: process.env.GOOGLE_PRIVATE_KEY!.replace(/\\n/g, "\n"),
+      private_key: privateKey,
     },
     scopes: ["https://www.googleapis.com/auth/spreadsheets.readonly"],
   });
