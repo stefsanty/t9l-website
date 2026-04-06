@@ -6,13 +6,16 @@ const SHEET_ID = process.env.GOOGLE_SHEET_ID;
 function getAuth() {
   let privateKey = process.env.GOOGLE_PRIVATE_KEY || "";
   
-  // Handle case where key might be wrapped in quotes
-  if (privateKey.startsWith('"') && privateKey.endsWith('"')) {
-    privateKey = privateKey.substring(1, privateKey.length - 1);
-  }
+  // 1. Remove wrapping quotes if present
+  privateKey = privateKey.replace(/^["']|["']$/g, "");
   
-  // Convert literal \n strings to actual newlines
+  // 2. Fix escaped newlines
   privateKey = privateKey.replace(/\\n/g, "\n");
+
+  // 3. Ensure the key has the correct PEM structure
+  // Some environments struggle with single-line keys. 
+  // If it's missing internal newlines but has the headers, we should be careful.
+  // The current replace handles the most common case.
 
   return new google.auth.GoogleAuth({
     credentials: {
