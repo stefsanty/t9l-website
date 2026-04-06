@@ -40,24 +40,20 @@ export default function Dashboard({
 
   return (
     <div className="flex flex-col min-h-dvh pb-[88px] max-w-lg mx-auto bg-midnight selection:bg-vibrant-pink selection:text-white">
-      <header className="mb-8 px-6 pt-16 pb-8 relative overflow-hidden">
-        <div className="absolute inset-0 bg-diagonal-pattern opacity-10 pointer-events-none" />
-        <div className="absolute -top-32 -right-32 w-80 h-80 bg-electric-violet rounded-full blur-[120px] opacity-[0.08]" />
-        <div className="absolute -bottom-32 -left-32 w-80 h-80 bg-vibrant-pink rounded-full blur-[120px] opacity-[0.08]" />
-        
-        <h1 className="font-display text-7xl font-black uppercase tracking-tighter leading-[0.8] relative">
-          <span className="block text-white/95">T9L '26</span>
-          <span className="block text-vibrant-pink">SPRING</span>
-        </h1>
-        <div className="flex items-center gap-3 mt-5 relative">
-          <div className="h-[2px] w-12 bg-electric-green" />
-          <p className="text-[11px] font-black text-white/40 uppercase tracking-[0.4em]">
+      <header className="fixed top-0 left-1/2 -translate-x-1/2 w-full max-w-lg z-50 bg-midnight/95 backdrop-blur-md border-b border-white/[0.06] shadow-[0_4px_20px_rgba(0,0,0,0.6)]">
+        <div className="flex items-center gap-3 px-5 h-12">
+          <h1 className="font-display font-black uppercase tracking-tight leading-none flex items-baseline gap-2">
+            <span className="text-xl text-white/95">T9L '26</span>
+            <span className="text-xl text-vibrant-pink">SPRING</span>
+          </h1>
+          <div className="h-[1px] w-6 bg-electric-green/60" />
+          <p className="text-[9px] font-black text-white/30 uppercase tracking-[0.35em]">
             Tennozu 9-Aside League
           </p>
         </div>
       </header>
 
-      <main className="flex-1 px-4 relative z-10">
+      <main className="flex-1 px-4 relative z-10 pt-16">
         {activeTab === 'NEXT_GAME' && (
           <div className="animate-in">
             {nextMd ? (
