@@ -81,3 +81,29 @@ export async function POST(req: Request) {
 
   return NextResponse.json({ ok: true, playerId, playerName, teamId });
 }
+
+export async function DELETE() {
+  const session = await getServerSession(authOptions);
+
+  if (!session?.lineId) {
+    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+  }
+
+  try {
+    const redis = await getRedis();
+    
+    // Get current assignment to know which picture to potentially delete (if we wanted to delete from blob, but for now we just remove from redis mapping)
+    const currentMapping = await redis.hget<{ playerId: string }>("line-player-map", session.lineId);
+    
+    if (currentMapping?.playerId) {
+      await redis.del(`player-pic:${currentMapping.playerId}`);
+    }
+    
+    await redis.hdel("line-player-map", session.lineId);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Storage error";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+
+  return NextResponse.json({ ok: true });
+}

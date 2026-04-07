@@ -16,10 +16,13 @@ export default function AssignPlayerClient({ playersByTeam }: Props) {
     session?.playerId ?? null,
   );
   const [submitting, setSubmitting] = useState(false);
+  const [unassigning, setUnassigning] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const isAlreadyAssigned = session?.playerId === selectedPlayerId && !!selectedPlayerId;
+
   async function handleConfirm() {
-    if (!selectedPlayerId) return;
+    if (!selectedPlayerId || isAlreadyAssigned) return;
     setSubmitting(true);
     setError(null);
 
@@ -35,12 +38,36 @@ export default function AssignPlayerClient({ playersByTeam }: Props) {
         throw new Error((body as { error?: string }).error ?? 'Assignment failed');
       }
 
-      // Refresh the NextAuth JWT so the session picks up the new player
       await update();
       router.push('/');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong');
       setSubmitting(false);
+    }
+  }
+
+  async function handleUnassign() {
+    if (!session?.playerId) return;
+    setUnassigning(true);
+    setError(null);
+
+    try {
+      const res = await fetch('/api/assign-player', {
+        method: 'DELETE',
+      });
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error((body as { error?: string }).error ?? 'Unassignment failed');
+      }
+
+      await update();
+      setSelectedPlayerId(null);
+      setUnassigning(false);
+      router.push('/');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Something went wrong');
+      setUnassigning(false);
     }
   }
 
@@ -108,13 +135,36 @@ export default function AssignPlayerClient({ playersByTeam }: Props) {
         {error && (
           <p className="text-vibrant-pink text-sm text-center mb-4">{error}</p>
         )}
-        <button
-          onClick={handleConfirm}
-          disabled={!selectedPlayerId || submitting}
-          className="w-full py-4 rounded-2xl font-display text-lg font-black uppercase tracking-wider transition-all disabled:opacity-30 disabled:cursor-not-allowed bg-electric-green text-black hover:bg-electric-green/90 active:scale-[0.98]"
-        >
-          {submitting ? 'Saving\u2026' : selectedPlayerId ? "Confirm \u2014 I\u2019m this player" : 'Select a player above'}
-        </button>
+
+        <div className="flex flex-col gap-3">
+          <button
+            onClick={handleConfirm}
+            disabled={!selectedPlayerId || submitting || unassigning || isAlreadyAssigned}
+            className={`w-full py-4 rounded-2xl font-display text-lg font-black uppercase tracking-wider transition-all disabled:opacity-30 disabled:cursor-not-allowed ${
+              isAlreadyAssigned
+                ? 'bg-white/10 text-white/40'
+                : 'bg-electric-green text-black hover:bg-electric-green/90 active:scale-[0.98]'
+            }`}
+          >
+            {submitting
+              ? 'Saving\u2026'
+              : isAlreadyAssigned
+              ? 'This is you'
+              : selectedPlayerId
+              ? "Confirm \u2014 I\u2019m this player"
+              : 'Select a player above'}
+          </button>
+
+          {session?.playerId && (
+            <button
+              onClick={handleUnassign}
+              disabled={submitting || unassigning}
+              className="w-full py-3 rounded-xl font-display text-sm font-black uppercase tracking-wider text-vibrant-pink/60 hover:text-vibrant-pink hover:bg-vibrant-pink/5 transition-all disabled:opacity-30"
+            >
+              {unassigning ? 'Removing\u2026' : 'Unassign from current player'}
+            </button>
+          )}
+        </div>
 
         <p className="text-[10px] text-white/20 text-center mt-4 uppercase tracking-widest">
           Your LINE profile photo will be used as your avatar

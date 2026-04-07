@@ -44,14 +44,18 @@ export const authOptions: AuthOptions = {
         token.teamId = null;
       }
 
-      // Re-check KV whenever player is not yet assigned
-      // This allows the session to pick up the mapping after self-assignment
-      if (token.lineId && !token.playerId) {
+      // Always check KV to sync with the database, allowing for unassignment
+      if (token.lineId) {
         const mapping = await getPlayerMapping(token.lineId as string);
         if (mapping) {
           token.playerId = mapping.playerId;
           token.playerName = mapping.playerName;
           token.teamId = mapping.teamId;
+        } else {
+          // If no mapping exists in KV, clear it from the token
+          token.playerId = null;
+          token.playerName = null;
+          token.teamId = null;
         }
       }
 
