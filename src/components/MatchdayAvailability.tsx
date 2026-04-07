@@ -85,7 +85,7 @@ function TeamFormation({
 
   if (confirmedIds.length === 0) {
     return (
-      <span className="text-[11px] text-white/65 italic py-2 px-1 block">
+      <span className="text-[11px] text-fg-mid italic py-2 px-1 block">
         {"No confirmations yet"}
       </span>
     );
@@ -118,7 +118,7 @@ function TeamFormation({
   return (
     <div className="mt-3">
       <div className="flex justify-between items-center mb-2">
-        <span className="text-[9px] font-black uppercase tracking-widest text-white/50">{"LINEUP"}</span>
+        <span className="text-[9px] font-black uppercase tracking-widest text-fg-low">{"LINEUP"}</span>
         <div className="flex gap-1">
           {FORMATIONS.map((f) => {
             const isActive = formation.label === f.label;
@@ -126,12 +126,8 @@ function TeamFormation({
               <button
                 key={f.label}
                 onClick={() => setFormation(f)}
-                className="text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded transition-all"
-                style={
-                  isActive
-                    ? { backgroundColor: teamColor + '55', color: '#fff' }
-                    : { backgroundColor: 'rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.3)' }
-                }
+                className={`text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded transition-all ${isActive ? 'text-white' : 'text-fg-low bg-surface'}`}
+                style={isActive ? { backgroundColor: teamColor + '55' } : undefined}
               >
                 {f.label}
               </button>
@@ -246,10 +242,10 @@ export default function MatchdayAvailability({
     return (
       <section className="mt-4 mb-12 animate-in">
         <div className="flex items-center gap-3 mb-3">
-          <h3 className="text-[11px] font-black uppercase tracking-[0.2em] text-white/80">
+          <h3 className="text-[11px] font-black uppercase tracking-[0.2em] text-fg-mid">
             {"Who Played"}
           </h3>
-          <div className="h-[1px] flex-1 bg-white/10" />
+          <div className="h-[1px] flex-1 bg-surface-md" />
         </div>
 
         <div className="grid gap-3">
@@ -261,7 +257,7 @@ export default function MatchdayAvailability({
               <div
                 key={team.id}
                 className={`rounded-xl overflow-hidden transition-all duration-300 border ${
-                  isExpanded ? 'bg-white/10 border-white/15' : 'bg-white/[0.05] border-white/10 hover:border-white/15'
+                  isExpanded ? 'bg-surface-md border-border-default' : 'bg-surface border-border-subtle hover:border-border-default'
                 }`}
               >
                 <button
@@ -274,12 +270,12 @@ export default function MatchdayAvailability({
                   </div>
                   <div className="flex items-center gap-3">
                     <span className={`text-[11px] font-black px-2 py-0.5 rounded ${
-                      playedIds.length > 0 ? 'bg-electric-violet/10 text-electric-violet' : 'bg-white/10 text-white/80'
+                      playedIds.length > 0 ? 'bg-electric-violet/10 text-electric-violet' : 'bg-surface-md text-fg-mid'
                     }`}>
                       {playedIds.length} {"played"}
                     </span>
                     <svg
-                      className={`w-4 h-4 text-white/65 transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`}
+                      className={`w-4 h-4 text-fg-mid transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`}
                       fill="none" viewBox="0 0 24 24" stroke="currentColor"
                     >
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M19 9l-7 7-7-7" />
@@ -287,7 +283,7 @@ export default function MatchdayAvailability({
                   </div>
                 </button>
                 {isExpanded && (
-                  <div className="px-4 pb-4 pt-0 border-t border-white/10 animate-in">
+                  <div className="px-4 pb-4 pt-0 border-t border-border-subtle animate-in">
                     <TeamFormation confirmedIds={playedIds} players={players} teamColor={team.color} />
                   </div>
                 )}
@@ -304,7 +300,7 @@ export default function MatchdayAvailability({
     <section className="mt-4 mb-12 animate-in">
       {/* Player availability */}
       <div className="flex items-center gap-3 mb-3">
-        <h3 className="text-[11px] font-black uppercase tracking-[0.2em] text-white/80">
+        <h3 className="text-[11px] font-black uppercase tracking-[0.2em] text-fg-mid">
           {"Player Availability"}
         </h3>
         <div className="h-[1px] flex-1 bg-white/10" />
@@ -330,7 +326,7 @@ export default function MatchdayAvailability({
             <div
               key={team.id}
               className={`rounded-xl overflow-hidden transition-all duration-300 border ${
-                isExpanded ? 'bg-white/10 border-white/15' : 'bg-white/[0.05] border-white/10 hover:border-white/15'
+                isExpanded ? 'bg-surface-md border-border-default' : 'bg-surface border-border-subtle hover:border-border-default'
               }`}
             >
               <button
@@ -358,7 +354,7 @@ export default function MatchdayAvailability({
                     </span>
                   )}
                   {goingIds.length === 0 && undecidedIds.length === 0 && (
-                    <span className="text-[11px] font-black px-2 py-0.5 rounded bg-white/10 text-white/80">
+                    <span className="text-[11px] font-black px-2 py-0.5 rounded bg-surface-md text-fg-mid">
                       0 {"going"}
                     </span>
                   )}
@@ -381,7 +377,7 @@ export default function MatchdayAvailability({
               </button>
 
               {isExpanded && (
-                <div className="px-4 pb-4 pt-0 border-t border-white/10 animate-in">
+                <div className="px-4 pb-4 pt-0 border-t border-border-subtle animate-in">
                   <TeamFormation
                     confirmedIds={goingIds}
                     players={players}

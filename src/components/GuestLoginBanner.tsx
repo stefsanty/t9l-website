@@ -20,10 +20,10 @@ export default function GuestLoginBanner() {
       <div className="absolute inset-0 bg-diagonal-pattern opacity-[0.03] pointer-events-none" />
       <div className="px-5 py-4 relative flex items-center justify-between gap-4">
         <div className="min-w-0">
-          <h3 className="font-display text-lg font-black uppercase tracking-tight text-white leading-none mb-1">
+          <h3 className="font-display text-lg font-black uppercase tracking-tight text-fg-high leading-none mb-1">
             RSVP to your matchdays
           </h3>
-          <p className="text-[11px] font-bold text-white/80 leading-tight">
+          <p className="text-[11px] font-bold text-fg-mid leading-tight">
             Login with LINE to confirm attendance.
           </p>
         </div>

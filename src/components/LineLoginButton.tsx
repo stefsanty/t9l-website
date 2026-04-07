@@ -26,7 +26,7 @@ function AssignModal({ onDismiss }: { onDismiss: () => void }) {
       />
 
       {/* Card */}
-      <div className="relative w-full max-w-sm mx-auto bg-deep-purple border border-white/15 rounded-3xl overflow-hidden shadow-2xl animate-in">
+      <div className="relative w-full max-w-sm mx-auto bg-card border border-border-default rounded-3xl overflow-hidden shadow-2xl animate-in">
 
         <div className="px-7 pt-5 pb-8">
           {/* Icon */}
@@ -34,10 +34,10 @@ function AssignModal({ onDismiss }: { onDismiss: () => void }) {
             <LineIcon className="w-7 h-7 text-[#06C755]" />
           </div>
 
-          <h2 className="font-display text-3xl font-black uppercase tracking-tight text-white leading-tight">
+          <h2 className="font-display text-3xl font-black uppercase tracking-tight text-fg-high leading-tight">
             {"You're logged in!"}
           </h2>
-          <p className="text-sm text-white/80 mt-2 leading-relaxed">
+          <p className="text-sm text-fg-mid mt-2 leading-relaxed">
             {"Link your LINE account to your player profile to RSVP to matchdays and show your photo in the squad list."}
           </p>
 
@@ -55,7 +55,7 @@ function AssignModal({ onDismiss }: { onDismiss: () => void }) {
           {/* Guest link */}
           <button
             onClick={onDismiss}
-            className="w-full mt-4 text-[13px] text-white/80 hover:text-white/95 transition-colors py-2"
+            className="w-full mt-4 text-[13px] text-fg-mid hover:text-fg-high transition-colors py-2"
           >
             {"Continue as guest"}
           </button>
@@ -98,7 +98,7 @@ export default function LineLoginButton() {
   }
 
   if (status === 'loading') {
-    return <div className="w-8 h-8 rounded-full bg-white/10 animate-pulse" />;
+    return <div className="w-8 h-8 rounded-full bg-surface-md animate-pulse" />;
   }
 
   if (!session) {
@@ -123,17 +123,17 @@ export default function LineLoginButton() {
         </button>
 
         {open && process.env.NODE_ENV === 'development' && (
-          <div className="absolute right-0 top-full mt-2 w-52 bg-deep-purple border border-white/15 rounded-2xl overflow-hidden z-50 shadow-2xl">
+          <div className="absolute right-0 top-full mt-2 w-52 bg-card border border-border-default rounded-2xl overflow-hidden z-50 shadow-2xl">
             <button
               onClick={() => signIn('line')}
-              className="w-full flex items-center gap-2 px-4 py-3 text-[12px] font-bold text-white/95 hover:text-white/80 hover:bg-white/5 transition-colors border-b border-white/10"
+              className="w-full flex items-center gap-2 px-4 py-3 text-[12px] font-bold text-fg-high hover:text-fg-mid hover:bg-surface transition-colors border-b border-border-subtle"
             >
               <LineIcon className="w-4 h-4 text-[#06C755]" />
               {"Login via LINE"}
             </button>
 
-            <div className="px-3 py-3 bg-white/[0.02]">
-              <p className="text-[9px] font-black uppercase tracking-[0.2em] text-white/65 mb-2 px-1">{"Dev Shortcuts"}</p>
+            <div className="px-3 py-3 bg-surface">
+              <p className="text-[9px] font-black uppercase tracking-[0.2em] text-fg-mid mb-2 px-1">{"Dev Shortcuts"}</p>
               <div className="grid grid-cols-1 gap-1">
                 {[
                   { id: 'ian-noseda', name: 'Ian Noseda', teamId: 'mariners-fc' },
@@ -149,7 +149,7 @@ export default function LineLoginButton() {
                       teamId: p.teamId,
                       callbackUrl: '/'
                     })}
-                    className="text-left px-2 py-1.5 rounded-lg text-[10px] font-bold text-white/80 hover:text-electric-green hover:bg-electric-green/5 transition-all truncate"
+                    className="text-left px-2 py-1.5 rounded-lg text-[10px] font-bold text-fg-mid hover:text-electric-green hover:bg-electric-green/5 transition-all truncate"
                   >
                     {"Impersonate:"} {p.name}
                   </button>
@@ -161,7 +161,7 @@ export default function LineLoginButton() {
                     teamId: '',
                     callbackUrl: '/assign-player'
                   })}
-                  className="text-left px-2 py-1.5 rounded-lg text-[10px] font-bold text-white/80 hover:text-vibrant-pink hover:bg-vibrant-pink/5 transition-all truncate"
+                  className="text-left px-2 py-1.5 rounded-lg text-[10px] font-bold text-fg-mid hover:text-primary hover:bg-primary/5 transition-all truncate"
                 >
                   {"Login as Guest (No Player)"}
                 </button>
@@ -203,21 +203,21 @@ export default function LineLoginButton() {
             </div>
           )}
           {needsSetup && (
-            <span className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-vibrant-pink rounded-full border-2 border-midnight" />
+            <span className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-primary rounded-full border-2 border-background" />
           )}
         </button>
 
         {open && (
-          <div className="absolute right-0 top-full mt-2 w-52 bg-deep-purple border border-white/15 rounded-2xl overflow-hidden z-50 shadow-2xl">
+          <div className="absolute right-0 top-full mt-2 w-52 bg-card border border-border-default rounded-2xl overflow-hidden z-50 shadow-2xl">
             {needsSetup ? (
-              <div className="px-4 py-3 border-b border-white/10">
-                <p className="text-[10px] font-black uppercase tracking-widest text-white/80">{"Signed in as guest"}</p>
-                <p className="text-xs text-white/95 mt-0.5">{"No player assigned yet"}</p>
+              <div className="px-4 py-3 border-b border-border-subtle">
+                <p className="text-[10px] font-black uppercase tracking-widest text-fg-mid">{"Signed in as guest"}</p>
+                <p className="text-xs text-fg-high mt-0.5">{"No player assigned yet"}</p>
               </div>
             ) : (
-              <div className="px-4 py-3 border-b border-white/10">
-                <p className="text-[10px] font-black uppercase tracking-widest text-white/80">{"Playing as"}</p>
-                <p className="text-sm font-black text-white mt-0.5 truncate">{session.playerName}</p>
+              <div className="px-4 py-3 border-b border-border-subtle">
+                <p className="text-[10px] font-black uppercase tracking-widest text-fg-mid">{"Playing as"}</p>
+                <p className="text-sm font-black text-fg-high mt-0.5 truncate">{session.playerName}</p>
               </div>
             )}
 
@@ -236,7 +236,7 @@ export default function LineLoginButton() {
               <Link
                 href="/assign-player"
                 onClick={() => setOpen(false)}
-                className="flex items-center gap-2 px-4 py-3 text-[12px] font-bold text-white/95 hover:text-white/80 hover:bg-white/5 transition-colors"
+                className="flex items-center gap-2 px-4 py-3 text-[12px] font-bold text-fg-high hover:text-fg-mid hover:bg-surface transition-colors"
               >
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
@@ -247,7 +247,7 @@ export default function LineLoginButton() {
 
             <button
               onClick={() => { setOpen(false); signOut(); }}
-              className="w-full flex items-center gap-2 px-4 py-3 text-[12px] font-bold text-white/95 hover:text-white/70 hover:bg-white/10 transition-colors"
+              className="w-full flex items-center gap-2 px-4 py-3 text-[12px] font-bold text-fg-high hover:text-fg-mid hover:bg-surface-md transition-colors"
             >
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
@@ -257,8 +257,8 @@ export default function LineLoginButton() {
 
             {/* Dev Mode Switching (Local only) */}
             {process.env.NODE_ENV === 'development' && (
-              <div className="border-t border-white/10 px-3 py-3 bg-white/[0.02]">
-                <p className="text-[9px] font-black uppercase tracking-[0.2em] text-white/65 mb-2 px-1">{"Dev Shortcuts"}</p>
+              <div className="border-t border-border-subtle px-3 py-3 bg-surface">
+                <p className="text-[9px] font-black uppercase tracking-[0.2em] text-fg-mid mb-2 px-1">{"Dev Shortcuts"}</p>
                 <div className="grid grid-cols-1 gap-1">
                   {[
                     { id: 'ian-noseda', name: 'Ian Noseda', teamId: 'mariners-fc' },
@@ -274,7 +274,7 @@ export default function LineLoginButton() {
                         teamId: p.teamId,
                         callbackUrl: '/'
                       })}
-                      className="text-left px-2 py-1.5 rounded-lg text-[10px] font-bold text-white/80 hover:text-electric-green hover:bg-electric-green/5 transition-all truncate"
+                      className="text-left px-2 py-1.5 rounded-lg text-[10px] font-bold text-fg-mid hover:text-electric-green hover:bg-electric-green/5 transition-all truncate"
                     >
                       {"Impersonate:"} {p.name}
                     </button>
@@ -286,7 +286,7 @@ export default function LineLoginButton() {
                       teamId: '',
                       callbackUrl: '/assign-player'
                     })}
-                    className="text-left px-2 py-1.5 rounded-lg text-[10px] font-bold text-white/80 hover:text-vibrant-pink hover:bg-vibrant-pink/5 transition-all truncate"
+                    className="text-left px-2 py-1.5 rounded-lg text-[10px] font-bold text-fg-mid hover:text-primary hover:bg-primary/5 transition-all truncate"
                   >
                     {"Login as Guest (No Player)"}
                   </button>
