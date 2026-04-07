@@ -142,7 +142,7 @@ export default function Dashboard({
               <button
                 onClick={() => setLang('EN')}
                 className={`px-2 py-1 rounded-full text-[9px] font-black transition-all ${
-                  lang === 'EN' ? 'bg-white/10 text-white' : 'text-white/20 hover:text-white/40'
+                  lang === 'EN' ? 'bg-vibrant-pink text-white shadow-[0_0_8px_rgba(233,0,82,0.4)]' : 'text-white/20 hover:text-white/40'
                 }`}
               >
                 EN
@@ -150,7 +150,7 @@ export default function Dashboard({
               <button
                 onClick={() => setLang('JP')}
                 className={`px-2 py-1 rounded-full text-[9px] font-black transition-all ${
-                  lang === 'JP' ? 'bg-white/10 text-white' : 'text-white/20 hover:text-white/40'
+                  lang === 'JP' ? 'bg-vibrant-pink text-white shadow-[0_0_8px_rgba(233,0,82,0.4)]' : 'text-white/20 hover:text-white/40'
                 }`}
               >
                 JP
