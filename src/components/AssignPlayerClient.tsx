@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import type { Team, Player } from '@/types';
@@ -18,6 +18,13 @@ export default function AssignPlayerClient({ playersByTeam }: Props) {
   const [submitting, setSubmitting] = useState(false);
   const [unassigning, setUnassigning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Sync selected player with session when it loads
+  useEffect(() => {
+    if (session?.playerId && !selectedPlayerId) {
+      setSelectedPlayerId(session.playerId);
+    }
+  }, [session?.playerId, selectedPlayerId]);
 
   const isAlreadyAssigned = session?.playerId === selectedPlayerId && !!selectedPlayerId;
 
