@@ -9,6 +9,7 @@ import type {
 import type { MatchdayVibes } from '@/lib/stats';
 import NextMatchdayBanner from './NextMatchdayBanner';
 import MyMatchdayCard from './MyMatchdayCard';
+import GuestLoginBanner from './GuestLoginBanner';
 import MatchdayAvailability from './MatchdayAvailability';
 import LeagueTable from './LeagueTable';
 import TopPerformers from './TopPerformers';
@@ -143,6 +144,7 @@ export default function Dashboard({
           <div className="animate-in pt-4">
             {nextMd ? (
               <>
+                <GuestLoginBanner />
                 <MyMatchdayCard
                   matchdays={matchdays}
                   availabilityStatuses={availabilityStatuses}
