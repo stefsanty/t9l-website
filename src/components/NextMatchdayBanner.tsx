@@ -224,12 +224,14 @@ export default function NextMatchdayBanner({
               const home = getTeam(match.homeTeamId);
               const away = getTeam(match.awayTeamId);
               const isPlayed = match.homeGoals !== null;
+              const isUserHome = session?.teamId === match.homeTeamId;
+              const isUserAway = session?.teamId === match.awayTeamId;
 
               return (
                 <div key={match.id}>
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex-1 flex items-center gap-3">
-                      <div className="relative w-9 h-9 shrink-0 bg-white/5 rounded-lg p-1.5 border border-white/10">
+                      <div className={`relative w-9 h-9 shrink-0 rounded-lg p-1.5 border transition-all ${isUserHome ? 'bg-vibrant-pink/10 border-vibrant-pink/50 shadow-[0_0_10px_rgba(233,0,82,0.25)]' : 'bg-white/5 border-white/10'}`}>
                         {home?.logo && (
                           <Image
                             src={home.logo}
@@ -239,10 +241,10 @@ export default function NextMatchdayBanner({
                           />
                         )}
                       </div>
-                      <span className="font-display text-lg font-black uppercase tracking-tighter leading-none hidden sm:block" translate="no">
+                      <span className={`font-display text-lg font-black uppercase tracking-tighter leading-none hidden sm:block ${isUserHome ? 'text-vibrant-pink' : ''}`} translate="no">
                         {home?.name}
                       </span>
-                      <span className="font-display text-lg font-black uppercase tracking-tighter leading-none sm:hidden" translate="no">
+                      <span className={`font-display text-lg font-black uppercase tracking-tighter leading-none sm:hidden ${isUserHome ? 'text-vibrant-pink' : ''}`} translate="no">
                         {home?.shortName || home?.name.slice(0, 3)}
                       </span>
                     </div>
@@ -259,11 +261,11 @@ export default function NextMatchdayBanner({
                         <>
                           <span className="text-[8px] font-black uppercase tracking-widest text-white/65 mb-0.5">{"FT"}</span>
                           <div className="flex items-center gap-3">
-                            <span className="font-display text-3xl font-black text-white">
+                            <span className={`font-display text-3xl font-black ${isUserHome ? 'text-vibrant-pink' : 'text-white'}`}>
                               {match.homeGoals}
                             </span>
                             <div className="w-4 h-[2px] bg-white/10" />
-                            <span className="font-display text-3xl font-black text-white">
+                            <span className={`font-display text-3xl font-black ${isUserAway ? 'text-vibrant-pink' : 'text-white'}`}>
                               {match.awayGoals}
                             </span>
                           </div>
@@ -272,13 +274,13 @@ export default function NextMatchdayBanner({
                     </div>
 
                     <div className="flex-1 flex items-center justify-end gap-3 text-right">
-                      <span className="font-display text-lg font-black uppercase tracking-tighter leading-none hidden sm:block" translate="no">
+                      <span className={`font-display text-lg font-black uppercase tracking-tighter leading-none hidden sm:block ${isUserAway ? 'text-vibrant-pink' : ''}`} translate="no">
                         {away?.name}
                       </span>
-                      <span className="font-display text-lg font-black uppercase tracking-tighter leading-none sm:hidden" translate="no">
+                      <span className={`font-display text-lg font-black uppercase tracking-tighter leading-none sm:hidden ${isUserAway ? 'text-vibrant-pink' : ''}`} translate="no">
                         {away?.shortName || away?.name.slice(0, 3)}
                       </span>
-                      <div className="relative w-9 h-9 shrink-0 bg-white/5 rounded-lg p-1.5 border border-white/10">
+                      <div className={`relative w-9 h-9 shrink-0 rounded-lg p-1.5 border transition-all ${isUserAway ? 'bg-vibrant-pink/10 border-vibrant-pink/50 shadow-[0_0_10px_rgba(233,0,82,0.25)]' : 'bg-white/5 border-white/10'}`}>
                         {away?.logo && (
                           <Image
                             src={away.logo}
