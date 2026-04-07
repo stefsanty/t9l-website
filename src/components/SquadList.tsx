@@ -11,6 +11,7 @@ interface SquadListProps {
   availability: Availability;
   availabilityStatuses: AvailabilityStatuses;
   nextMatchdayId: string;
+  nextMatchdayLabel: string;
   playerPictures: Record<string, string>;
 }
 
@@ -32,6 +33,7 @@ export default function SquadList({
   availability,
   availabilityStatuses,
   nextMatchdayId,
+  nextMatchdayLabel,
   playerPictures,
 }: SquadListProps) {
   const [expandedTeamId, setExpandedTeamId] = useState<string | null>(null);
@@ -104,6 +106,14 @@ export default function SquadList({
                       <span className="text-[10px] font-black uppercase tracking-[0.2em] text-white/30">
                         {teamPlayers.length} SQUAD MEMBERS
                       </span>
+                      {hasAvailabilityData && (
+                        <>
+                          <div className="h-[1px] w-2 bg-white/10" />
+                          <span className="text-[10px] font-black uppercase tracking-[0.2em] text-white/20">
+                            {nextMatchdayLabel} AVAILABILITY
+                          </span>
+                        </>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -126,10 +136,10 @@ export default function SquadList({
                   {teamPlayers.map((player) => {
                     const status = getAvailabilityStatus(player.id, team.id);
                     const badgeProps = (() => {
-                      if (status === 'Y') return { label: 'CONFIRMED', cls: 'bg-electric-green/10 border-electric-green/20 text-electric-green', dotCls: 'bg-electric-green shadow-[0_0_8px_rgba(0,255,133,0.5)]' };
-                      if (status === 'EXPECTED') return { label: 'EXPECTED', cls: 'bg-yellow-400/10 border-yellow-400/20 text-yellow-400', dotCls: 'bg-yellow-400' };
+                      if (status === 'GOING' || status === 'Y') return { label: 'GOING', cls: 'bg-electric-green/10 border-electric-green/20 text-electric-green', dotCls: 'bg-electric-green shadow-[0_0_8px_rgba(0,255,133,0.5)]' };
+                      if (status === 'UNDECIDED' || status === 'EXPECTED') return { label: 'UNDECIDED', cls: 'bg-yellow-400/10 border-yellow-400/20 text-yellow-400', dotCls: 'bg-yellow-400' };
                       if (status === 'PLAYED') return { label: 'PLAYED', cls: 'bg-electric-violet/10 border-electric-violet/20 text-electric-violet', dotCls: 'bg-electric-violet' };
-                      return { label: 'PENDING', cls: 'bg-white/10 border-white/10 text-white/10', dotCls: 'bg-white/10' };
+                      return { label: 'NOT GOING', cls: 'bg-white/[0.06] border-white/10 text-white/30', dotCls: 'bg-white/20' };
                     })();
                     return (
                       <div
@@ -149,8 +159,8 @@ export default function SquadList({
                         </div>
                         {hasAvailabilityData && (
                           <div className={`flex items-center gap-2 px-3 py-1 rounded-full border transition-all ${badgeProps.cls}`}>
-                            <span className="text-[9px] font-black uppercase tracking-widest">{badgeProps.label}</span>
                             <div className={`w-1.5 h-1.5 rounded-full ${badgeProps.dotCls}`} />
+                            <span className="text-[9px] font-black uppercase tracking-widest">{badgeProps.label}</span>
                           </div>
                         )}
                       </div>
