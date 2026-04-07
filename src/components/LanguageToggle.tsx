@@ -21,11 +21,24 @@ export default function LanguageToggle() {
   function toggle(newLocale: 'en' | 'ja') {
     if (newLocale === locale) return;
     
-    // Set googtrans cookie for both current domain and root path
+    // Helper to clear cookies for all likely domains
+    const clearTransCookie = () => {
+      const domains = [
+        window.location.hostname,
+        `.${window.location.hostname}`,
+        window.location.hostname.split('.').slice(-2).join('.')
+      ];
+      domains.forEach(domain => {
+        document.cookie = `googtrans=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=${domain}`;
+        document.cookie = `googtrans=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
+      });
+    };
+
     if (newLocale === 'ja') {
-      document.cookie = 'googtrans=/en/ja; path=/';
+      document.cookie = 'googtrans=/en/ja; path=/;';
     } else {
-      document.cookie = 'googtrans=/en/en; path=/';
+      clearTransCookie();
+      document.cookie = 'googtrans=/en/en; path=/;';
     }
     
     window.location.reload();
