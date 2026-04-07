@@ -78,13 +78,14 @@ export async function fetchSheetData(): Promise<RawSheetData> {
 }
 
 /**
- * Write a player's availability (Y or blank) for a matchday into RosterRaw.
+ * Write a player's availability status for a matchday into RosterRaw.
+ * status: 'GOING' | 'UNDECIDED' | '' (empty = not going)
  * Requires the Google service account to have Editor access on the sheet.
  */
 export async function writeRosterAvailability(
   playerId: string,
   matchdayId: string,
-  going: boolean,
+  status: 'GOING' | 'UNDECIDED' | '',
 ): Promise<void> {
   if (!SHEET_ID || !process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL) {
     throw new Error("Google Sheets not configured");
@@ -124,6 +125,6 @@ export async function writeRosterAvailability(
     spreadsheetId: SHEET_ID,
     range: `RosterRaw!${colLetter}${sheetRowNumber}`,
     valueInputOption: "RAW",
-    requestBody: { values: [[going ? "Y" : ""]] },
+    requestBody: { values: [[status]] },
   });
 }

@@ -12,14 +12,15 @@ export async function POST(req: Request) {
   }
 
   const body = await req.json().catch(() => null);
-  const { matchdayId, going } = (body ?? {}) as {
+  const { matchdayId, status } = (body ?? {}) as {
     matchdayId?: string;
-    going?: boolean;
+    status?: string;
   };
 
-  if (!matchdayId || typeof matchdayId !== "string" || typeof going !== "boolean") {
+  const VALID_STATUSES = ['GOING', 'UNDECIDED', ''];
+  if (!matchdayId || typeof matchdayId !== "string" || !VALID_STATUSES.includes(status ?? 'x')) {
     return NextResponse.json(
-      { error: "matchdayId and going (boolean) required" },
+      { error: "matchdayId and status ('GOING'|'UNDECIDED'|'') required" },
       { status: 400 },
     );
   }
@@ -29,7 +30,7 @@ export async function POST(req: Request) {
   }
 
   try {
-    await writeRosterAvailability(session.playerId, matchdayId.toLowerCase(), going);
+    await writeRosterAvailability(session.playerId, matchdayId.toLowerCase(), status as 'GOING' | 'UNDECIDED' | '');
     revalidatePath('/');
     return NextResponse.json({ ok: true });
   } catch (err) {

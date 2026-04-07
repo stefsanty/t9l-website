@@ -126,14 +126,15 @@ export function parsePlayers(
     // Parse availability and played status
     for (const { mdId, colIndex } of mdColumns) {
       const status = row[colIndex]?.trim().toUpperCase();
-      if (status === "Y" || status === "EXPECTED" || status === "PLAYED") {
+      const countsAsAvailable = ["Y", "EXPECTED", "GOING", "UNDECIDED", "PLAYED"].includes(status);
+      if (countsAsAvailable) {
         if (!availability[mdId]) availability[mdId] = {};
         if (!availability[mdId][teamId]) availability[mdId][teamId] = [];
         availability[mdId][teamId].push(playerId);
 
         if (!availabilityStatuses[mdId]) availabilityStatuses[mdId] = {};
         if (!availabilityStatuses[mdId][teamId]) availabilityStatuses[mdId][teamId] = {};
-        availabilityStatuses[mdId][teamId][playerId] = status as 'Y' | 'EXPECTED' | 'PLAYED';
+        availabilityStatuses[mdId][teamId][playerId] = status as 'Y' | 'EXPECTED' | 'PLAYED' | 'GOING' | 'UNDECIDED';
       }
 
       if (status === "PLAYED") {

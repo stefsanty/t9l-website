@@ -62,7 +62,7 @@ export interface Availability {
 export interface AvailabilityStatuses {
   [matchdayId: string]: {
     [teamId: string]: {
-      [playerId: string]: 'Y' | 'EXPECTED' | 'PLAYED';
+      [playerId: string]: 'Y' | 'EXPECTED' | 'PLAYED' | 'GOING' | 'UNDECIDED';
     };
   };
 }

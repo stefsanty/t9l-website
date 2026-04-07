@@ -1,65 +1,15 @@
 'use client';
 
-import { useState } from 'react';
 import Image from 'next/image';
-import { useSession } from 'next-auth/react';
-import type { Matchday, Team, Player, Availability, PlayedStatus, Goal } from '@/types';
-import RsvpButton from './RsvpButton';
-
-// ── Formation helpers ─────────────────────────────────────────────────────────
-
-interface Formation {
-  label: string;
-  def: number;
-  mid: number;
-  fwd: number;
-}
-
-const FORMATIONS: Formation[] = [
-  { label: '3-4-1', def: 3, mid: 4, fwd: 1 },
-  { label: '3-2-3', def: 3, mid: 2, fwd: 3 },
-  { label: '4-3-1', def: 4, mid: 3, fwd: 1 },
-  { label: '4-2-2', def: 4, mid: 2, fwd: 2 },
-];
-
-function categorizePosition(position: string | null | undefined): 'gk' | 'def' | 'mid' | 'fwd' {
-  if (position === 'GK') return 'gk';
-  if (position === 'DF' || position === 'DF/MF') return 'def';
-  if (position === 'FWD') return 'fwd';
-  return 'mid'; // MF, MF/FWD, null → midfield
-}
-
-function pickFormation(defCount: number, midCount: number, fwdCount: number): Formation {
-  let best = FORMATIONS[0]; // default 3-4-1
-  let bestScore = Infinity;
-  for (const f of FORMATIONS) {
-    const score =
-      Math.abs(defCount - f.def) +
-      Math.abs(midCount - f.mid) +
-      Math.abs(fwdCount - f.fwd);
-    if (score < bestScore) {
-      bestScore = score;
-      best = f;
-    }
-  }
-  return best;
-}
-
-function distributeToSlots<T>(items: T[], slots: number): T[][] {
-  const result: T[][] = Array.from({ length: slots }, () => []);
-  items.forEach((item, i) => result[i % slots].push(item));
-  return result;
-}
+import type { Matchday, Team, Goal } from '@/types';
 
 function formatShortDate(dateStr: string | null): string {
   if (!dateStr) return 'TBD';
-  // Fast path: ISO YYYY-MM-DD (what we normalize to in data.ts)
   const iso = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})/);
   if (iso) {
     const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     return `${monthNames[parseInt(iso[2], 10) - 1]} ${parseInt(iso[3], 10)}`;
   }
-  // Fallback: let the browser parse other formats
   const d = new Date(dateStr);
   if (!isNaN(d.getTime())) {
     return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
@@ -67,185 +17,22 @@ function formatShortDate(dateStr: string | null): string {
   return dateStr;
 }
 
-// ── TeamFormation sub-component ───────────────────────────────────────────────
-
-function TeamFormation({
-  confirmedIds,
-  players,
-  teamColor,
-}: {
-  confirmedIds: string[];
-  players: Player[];
-  teamColor: string;
-}) {
-  const getPlayer = (id: string) => players.find((p) => p.id === id);
-
-  const gks: Player[] = [];
-  const pureDefs: Player[] = [];
-  const defMidHybrids: Player[] = [];
-  const pureMids: Player[] = [];
-  const midFwdHybrids: Player[] = [];
-  const pureFwds: Player[] = [];
-
-  for (const pid of confirmedIds) {
-    const p = getPlayer(pid);
-    if (!p) continue;
-    switch (p.position) {
-      case 'GK':     gks.push(p);            break;
-      case 'DF':     pureDefs.push(p);       break;
-      case 'DF/MF':  defMidHybrids.push(p);  break;
-      case 'MF':     pureMids.push(p);       break;
-      case 'MF/FWD': midFwdHybrids.push(p);  break;
-      case 'FWD':    pureFwds.push(p);       break;
-      default:       pureMids.push(p);       break;
-    }
-  }
-
-  const autoFormation = pickFormation(
-    pureDefs.length + defMidHybrids.length,
-    pureMids.length + midFwdHybrids.length,
-    pureFwds.length,
-  );
-
-  const [formation, setFormation] = useState<Formation>(autoFormation);
-
-  if (confirmedIds.length === 0) {
-    return (
-      <span className="text-[11px] text-white/20 italic py-2 px-1 block">
-        No confirmations yet
-      </span>
-    );
-  }
-
-  const defSlotsLeft = Math.max(0, formation.def - pureDefs.length);
-  const defMidToDef  = defMidHybrids.slice(0, defSlotsLeft);
-  const defMidToMid  = defMidHybrids.slice(defSlotsLeft);
-
-  const midSlotsLeft = Math.max(0, formation.mid - pureMids.length - defMidToMid.length);
-  const midFwdToMid  = midFwdHybrids.slice(0, midSlotsLeft);
-  const midFwdToFwd  = midFwdHybrids.slice(midSlotsLeft);
-
-  const defs = [...pureDefs, ...defMidToDef];
-  const mids = [...pureMids, ...defMidToMid, ...midFwdToMid];
-  const fwds = [...pureFwds, ...midFwdToFwd];
-
-  const fwdSlots = distributeToSlots(fwds, formation.fwd);
-  const midSlots = distributeToSlots(mids, formation.mid);
-  const defSlots = distributeToSlots(defs, formation.def);
-  const gkSlots  = distributeToSlots(gks, 1);
-
-  const rows = [
-    { label: 'FWD', slots: fwdSlots },
-    { label: 'MID', slots: midSlots },
-    { label: 'DEF', slots: defSlots },
-    { label: 'GK',  slots: gkSlots  },
-  ];
-
-  return (
-    <div className="mt-3">
-      <div className="flex justify-between items-center mb-2">
-        <span className="text-[9px] font-black uppercase tracking-widest text-white/25">LINEUP</span>
-        <div className="flex gap-1">
-          {FORMATIONS.map((f) => {
-            const isActive = formation.label === f.label;
-            return (
-              <button
-                key={f.label}
-                onClick={() => setFormation(f)}
-                className="text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded transition-all"
-                style={
-                  isActive
-                    ? { backgroundColor: teamColor + '55', color: '#fff' }
-                    : { backgroundColor: 'rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.3)' }
-                }
-              >
-                {f.label}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      <div
-        className="relative w-full rounded-xl overflow-hidden"
-        style={{
-          aspectRatio: '3 / 4',
-          background: 'repeating-linear-gradient(180deg,#1d6b2b 0%,#1d6b2b 12.5%,#196126 12.5%,#196126 25%)',
-        }}
-      >
-        <svg
-          className="absolute inset-0 w-full h-full"
-          viewBox="0 0 100 133"
-          preserveAspectRatio="none"
-          xmlns="http://www.w3.org/2000/svg"
-        >
-          <rect x="4" y="4" width="92" height="125" fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth="0.9"/>
-          <line x1="4" y1="66.5" x2="96" y2="66.5" stroke="rgba(255,255,255,0.3)" strokeWidth="0.9"/>
-          <circle cx="50" cy="66.5" r="14" fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth="0.9"/>
-          <rect x="23" y="4" width="54" height="22" fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth="0.9"/>
-          <rect x="37" y="4" width="26" height="9" fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth="0.9"/>
-          <rect x="23" y="107" width="54" height="22" fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth="0.9"/>
-          <rect x="37" y="120" width="26" height="9" fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth="0.9"/>
-        </svg>
-
-        <div className="absolute inset-0 flex flex-col justify-evenly py-[9%] px-[5%]">
-          {rows.map(({ label, slots }) => (
-            <div key={label} className="flex justify-around items-start">
-              {slots.map((slotPlayers, i) => (
-                <div key={i} className="flex flex-col items-center gap-[3px]">
-                  {slotPlayers.length > 0 ? (
-                    <>
-                      <div
-                        className="w-5 h-5 rounded-full shrink-0"
-                        style={{
-                          background: teamColor,
-                          boxShadow: '0 0 0 2px rgba(255,255,255,0.85), 0 2px 6px rgba(0,0,0,0.5)',
-                        }}
-                      />
-                      {slotPlayers.map((p) => (
-                        <div
-                          key={p.id}
-                          className="text-[8px] font-black text-white text-center px-1.5 py-[2px] rounded whitespace-nowrap leading-tight"
-                          style={{ backgroundColor: 'rgba(0,0,0,0.62)' }}
-                        >
-                          {p.name}
-                        </div>
-                      ))}
-                    </>
-                  ) : (
-                    <div className="w-5 h-5 rounded-full border-2 border-dashed border-white/40" />
-                  )}
-                </div>
-              ))}
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ── Scorers list for a completed match ───────────────────────────────────────
-
 function MatchScorers({
   matchId,
   homeTeamId,
   awayTeamId,
   goals,
-  teams,
 }: {
   matchId: string;
   homeTeamId: string;
   awayTeamId: string;
   goals: Goal[];
-  teams: Team[];
 }) {
   const matchGoals = goals.filter((g) => g.matchId === matchId);
   if (matchGoals.length === 0) return null;
 
   const homeGoals = matchGoals.filter((g) => g.scoringTeamId === homeTeamId);
   const awayGoals = matchGoals.filter((g) => g.scoringTeamId === awayTeamId);
-  const maxRows = Math.max(homeGoals.length, awayGoals.length);
 
   return (
     <div className="mt-2 grid grid-cols-2 gap-x-3 text-[11px]">
@@ -279,11 +66,9 @@ function MatchScorers({
 
 interface NextMatchdayBannerProps {
   matchdays: Matchday[];
-  defaultMatchdayId: string;
+  selectedMatchdayId: string;
+  onMatchdayChange: (id: string) => void;
   teams: Team[];
-  players: Player[];
-  availability: Availability;
-  played: PlayedStatus;
   goals: Goal[];
 }
 
@@ -292,52 +77,28 @@ const VENUE_MAP_URL = 'https://maps.google.com/maps?q=Tennozu+Park+C,+Shinagawa,
 
 export default function NextMatchdayBanner({
   matchdays,
-  defaultMatchdayId,
+  selectedMatchdayId,
+  onMatchdayChange,
   teams,
-  players,
-  availability,
-  played,
   goals,
 }: NextMatchdayBannerProps) {
-  const [selectedId, setSelectedId] = useState(defaultMatchdayId);
-  const [expandedTeamId, setExpandedTeamId] = useState<string | null>(null);
-  const { data: session } = useSession();
-
-  const matchday = matchdays.find((m) => m.id === selectedId) ?? matchdays[0];
+  const matchday = matchdays.find((m) => m.id === selectedMatchdayId) ?? matchdays[0];
   const isNext = matchday.matches[0].homeGoals === null;
 
-  // Determine if the logged-in user's team is playing this matchday (not sitting out)
-  const userTeamIsPlaying =
-    session?.teamId != null &&
-    session.teamId !== matchday.sittingOutTeamId;
-
-  // Initial RSVP state from sheet availability
-  const userInitialGoing =
-    session?.playerId != null &&
-    session?.teamId != null &&
-    (availability[matchday.id]?.[session.teamId] ?? []).includes(session.playerId);
-
   const getTeam = (id: string) => teams.find((t) => t.id === id);
-
   const sittingOutTeam = getTeam(matchday.sittingOutTeamId);
-  const mdAvailability = availability[matchday.id] || {};
-
-  function handleSelectMatchday(id: string) {
-    setSelectedId(id);
-    setExpandedTeamId(null);
-  }
 
   return (
-    <section className="mb-12 animate-in">
+    <section className="animate-in">
       {/* Matchday pill selector */}
       <div className="flex gap-2 overflow-x-auto pb-3 mb-4 scrollbar-hide -mx-1 px-1">
         {matchdays.map((md) => {
-          const isSelected = md.id === selectedId;
+          const isSelected = md.id === selectedMatchdayId;
           const isCompleted = md.matches[0].homeGoals !== null;
           return (
             <button
               key={md.id}
-              onClick={() => handleSelectMatchday(md.id)}
+              onClick={() => onMatchdayChange(md.id)}
               className={`shrink-0 px-3 py-1.5 rounded-full text-[11px] font-black uppercase tracking-wider transition-all border ${
                 isSelected
                   ? 'bg-vibrant-pink text-white border-vibrant-pink shadow-[0_0_12px_rgba(233,0,82,0.35)]'
@@ -390,7 +151,7 @@ export default function NextMatchdayBanner({
           </a>
 
           {/* Matches */}
-          <div className="space-y-5 mb-8">
+          <div className="space-y-5 mb-6">
             {matchday.matches.map((match) => {
               const home = getTeam(match.homeTeamId);
               const away = getTeam(match.awayTeamId);
@@ -456,14 +217,12 @@ export default function NextMatchdayBanner({
                     </div>
                   </div>
 
-                  {/* Goalscorers (elapsed matchdays only) */}
                   {isPlayed && (
                     <MatchScorers
                       matchId={match.id}
                       homeTeamId={match.homeTeamId}
                       awayTeamId={match.awayTeamId}
                       goals={goals}
-                      teams={teams}
                     />
                   )}
                 </div>
@@ -471,8 +230,9 @@ export default function NextMatchdayBanner({
             })}
           </div>
 
-          <div className="pt-6 border-t border-white/10 relative">
-            <div className="flex items-center gap-3 mb-6 bg-electric-violet/5 p-3 rounded-xl border border-electric-violet/10">
+          {/* Resting team */}
+          <div className="pt-5 border-t border-white/10">
+            <div className="flex items-center gap-3 bg-electric-violet/5 p-3 rounded-xl border border-electric-violet/10">
               <div className="px-2 py-1 bg-electric-violet text-[10px] font-black uppercase tracking-widest rounded-md text-white">
                 RESTING
               </div>
@@ -480,151 +240,6 @@ export default function NextMatchdayBanner({
                 {sittingOutTeam?.name}
               </span>
             </div>
-
-            {isNext ? (
-              <div className="space-y-3">
-                {userTeamIsPlaying && (
-                  <RsvpButton
-                    matchdayId={matchday.id}
-                    initialGoing={userInitialGoing}
-                  />
-                )}
-
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-[11px] font-black uppercase tracking-[0.2em] text-white/30">
-                    PLAYER AVAILABILITY
-                  </h3>
-                  <div className="h-[1px] flex-1 bg-white/10 ml-4" />
-                </div>
-
-                <div className="grid gap-3">
-                  {teams
-                    .filter((t) => t.id !== matchday.sittingOutTeamId)
-                    .map((team) => {
-                      const confirmedIds = mdAvailability[team.id] || [];
-                      const isExpanded = expandedTeamId === team.id;
-
-                      return (
-                        <div
-                          key={team.id}
-                          className={`rounded-xl overflow-hidden transition-all duration-300 border ${
-                            isExpanded ? 'bg-white/10 border-white/15' : 'bg-white/[0.05] border-white/10 hover:border-white/15'
-                          }`}
-                        >
-                          <button
-                            onClick={() =>
-                              setExpandedTeamId(isExpanded ? null : team.id)
-                            }
-                            className="w-full flex items-center justify-between px-4 py-3 text-left transition-colors"
-                          >
-                            <div className="flex items-center gap-3">
-                              <div
-                                className="w-3 h-3 rounded-full"
-                                style={{ backgroundColor: team.color }}
-                              />
-                              <span className="text-[15px] font-black tracking-tight uppercase">
-                                {team.name}
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-3">
-                              <span className={`text-[11px] font-black px-2 py-0.5 rounded ${
-                                confirmedIds.length > 0 ? 'bg-electric-green/10 text-electric-green' : 'bg-white/10 text-white/30'
-                              }`}>
-                                {confirmedIds.length} CONFIRMED
-                              </span>
-                              <svg
-                                className={`w-4 h-4 text-white/20 transition-transform duration-300 ${
-                                  isExpanded ? 'rotate-180' : ''
-                                }`}
-                                fill="none"
-                                viewBox="0 0 24 24"
-                                stroke="currentColor"
-                              >
-                                <path
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  strokeWidth={3}
-                                  d="M19 9l-7 7-7-7"
-                                />
-                              </svg>
-                            </div>
-                          </button>
-
-                          {isExpanded && (
-                            <div className="px-4 pb-4 pt-0 border-t border-white/10 animate-in">
-                              <TeamFormation
-                                confirmedIds={confirmedIds}
-                                players={players}
-                                teamColor={team.color}
-                              />
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                </div>
-              </div>
-            ) : (
-              /* Past matchday — show who played with formations */
-              (() => {
-                const mdPlayed = played[matchday.id] || {};
-                const playingTeams = teams.filter((t) => t.id !== matchday.sittingOutTeamId);
-                const anyPlayed = playingTeams.some((t) => (mdPlayed[t.id] || []).length > 0);
-                if (!anyPlayed) return null;
-                return (
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between mb-4">
-                      <h3 className="text-[11px] font-black uppercase tracking-[0.2em] text-white/30">
-                        WHO PLAYED
-                      </h3>
-                      <div className="h-[1px] flex-1 bg-white/10 ml-4" />
-                    </div>
-                    <div className="grid gap-3">
-                      {playingTeams.map((team) => {
-                        const playedIds = mdPlayed[team.id] || [];
-                        const isExpanded = expandedTeamId === team.id;
-                        return (
-                          <div
-                            key={team.id}
-                            className={`rounded-xl overflow-hidden transition-all duration-300 border ${
-                              isExpanded ? 'bg-white/10 border-white/15' : 'bg-white/[0.05] border-white/10 hover:border-white/15'
-                            }`}
-                          >
-                            <button
-                              onClick={() => setExpandedTeamId(isExpanded ? null : team.id)}
-                              className="w-full flex items-center justify-between px-4 py-3 text-left transition-colors"
-                            >
-                              <div className="flex items-center gap-3">
-                                <div className="w-3 h-3 rounded-full" style={{ backgroundColor: team.color }} />
-                                <span className="text-[15px] font-black tracking-tight uppercase">{team.name}</span>
-                              </div>
-                              <div className="flex items-center gap-3">
-                                <span className={`text-[11px] font-black px-2 py-0.5 rounded ${
-                                  playedIds.length > 0 ? 'bg-electric-violet/10 text-electric-violet' : 'bg-white/10 text-white/30'
-                                }`}>
-                                  {playedIds.length} PLAYED
-                                </span>
-                                <svg
-                                  className={`w-4 h-4 text-white/20 transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`}
-                                  fill="none" viewBox="0 0 24 24" stroke="currentColor"
-                                >
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M19 9l-7 7-7-7" />
-                                </svg>
-                              </div>
-                            </button>
-                            {isExpanded && (
-                              <div className="px-4 pb-4 pt-0 border-t border-white/10 animate-in">
-                                <TeamFormation confirmedIds={playedIds} players={players} teamColor={team.color} />
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
-              })()
-            )}
           </div>
         </div>
       </div>
