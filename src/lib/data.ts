@@ -57,9 +57,9 @@ const TEAM_COLORS: Record<string, string> = {
 };
 
 const TEAM_SHORT_NAMES: Record<string, string> = {
-  "mariners-fc": "MAR",
+  "mariners-fc": "MRN",
   "fenix-fc": "FEN",
-  "hygge-sc": "HYG",
+  "hygge-sc": "HSC",
   "fc-torpedo": "TOR",
 };
 
