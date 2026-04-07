@@ -3,7 +3,6 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
-import { useT } from '@/i18n/I18nProvider';
 
 type RsvpStatus = 'GOING' | 'UNDECIDED' | '';
 
@@ -20,7 +19,6 @@ function normalizeStatus(s: string): RsvpStatus {
 }
 
 export default function RsvpButton({ matchdayId, initialStatus }: RsvpButtonProps) {
-  const { t } = useT();
   const { data: session } = useSession();
   const router = useRouter();
   const [status, setStatus] = useState<RsvpStatus>(() => normalizeStatus(initialStatus));
@@ -53,16 +51,16 @@ export default function RsvpButton({ matchdayId, initialStatus }: RsvpButtonProp
   }
 
   const options: { value: RsvpStatus; label: string }[] = [
-    { value: 'GOING', label: t('rsvpGoing') },
-    { value: 'UNDECIDED', label: t('rsvpUndecided') },
-    { value: '', label: t('rsvpNotGoing') },
+    { value: 'GOING', label: 'Going' },
+    { value: 'UNDECIDED', label: 'Undecided' },
+    { value: '', label: 'Not going' },
   ];
 
   return (
     <div>
       <div className="flex items-center gap-3 mb-3">
         <span className="text-[11px] font-black uppercase tracking-[0.2em] text-white/80">
-          {t('rsvpQuestion')}
+          Your RSVP
         </span>
         <div className="h-[1px] flex-1 bg-white/10" />
         {loading && (
@@ -99,7 +97,7 @@ export default function RsvpButton({ matchdayId, initialStatus }: RsvpButtonProp
 
       {error && (
         <p className="text-vibrant-pink text-[11px] mt-2">
-          {t('rsvpError')}
+          Error saving RSVP. Try again.
         </p>
       )}
     </div>

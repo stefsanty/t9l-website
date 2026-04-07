@@ -1,10 +1,7 @@
 import type { Metadata } from "next";
 import { Inter, Barlow_Condensed } from "next/font/google";
+import Script from "next/script";
 import AuthProvider from "@/components/AuthProvider";
-import { I18nProvider } from "@/i18n/I18nProvider";
-import { getLocale } from "@/i18n/getLocale";
-import { translateDict } from "@/i18n/translate";
-import { en } from "@/i18n/en";
 import "./globals.css";
 
 const inter = Inter({
@@ -18,33 +15,53 @@ const barlowCondensed = Barlow_Condensed({
   weight: ["400", "600", "700", "800"],
 });
 
-export async function generateMetadata(): Promise<Metadata> {
-  const locale = await getLocale();
-  const dict = await translateDict(en, locale);
-  return {
-    title: dict.metaTitle,
-    description: dict.metaDesc,
-  };
-}
+export const metadata: Metadata = {
+  title: "T9L | Tennozu 9-Aside League",
+  description: "Mobile dashboard for the Tennozu 9-Aside League.",
+};
 
-export default async function RootLayout({
+export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const locale = await getLocale();
-  const dict = await translateDict(en, locale);
-
   return (
     <html
-      lang={locale}
+      lang="en"
       className={`${inter.variable} ${barlowCondensed.variable}`}
     >
       <body className="min-h-dvh bg-background text-foreground">
+        <style>{`
+          .skiptranslate, iframe.skiptranslate, .goog-te-banner-frame { 
+            display: none !important; 
+            visibility: hidden !important; 
+            height: 0 !important; 
+            width: 0 !important; 
+            border: none !important;
+          }
+          body { top: 0 !important; position: static !important; }
+          html { height: auto !important; }
+          .goog-te-gadget { display: none !important; }
+          .goog-tooltip, .goog-tooltip:hover { display: none !important; }
+          .goog-text-highlight { background-color: transparent !important; box-shadow: none !important; }
+        `}</style>
+        <div id="google_translate_element" style={{ display: 'none' }}></div>
+        <Script
+          src="https://translate.google.com/translate_a/element.js?cb=googleTranslateElementInit"
+          strategy="afterInteractive"
+        />
+        <Script id="google-translate-init" strategy="afterInteractive">
+          {`
+            function googleTranslateElementInit() {
+              new window.google.translate.TranslateElement({
+                pageLanguage: 'en',
+                autoDisplay: false,
+              }, 'google_translate_element');
+            }
+          `}
+        </Script>
         <AuthProvider>
-          <I18nProvider locale={locale} dict={dict}>
-            {children}
-          </I18nProvider>
+          {children}
         </AuthProvider>
       </body>
     </html>

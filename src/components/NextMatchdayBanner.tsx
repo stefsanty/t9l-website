@@ -5,8 +5,10 @@ import { useSession } from 'next-auth/react';
 import Image from 'next/image';
 import type { Matchday, Team, Goal, AvailabilityStatuses } from '@/types';
 import RsvpButton from './RsvpButton';
-import { useT } from '@/i18n/I18nProvider';
-import { formatMatchDate } from '@/i18n/format';
+function formatMatchDate(dateStr: string) {
+  const d = new Date(dateStr);
+  return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(d);
+}
 
 function MatchScorers({
   matchId,
@@ -31,7 +33,7 @@ function MatchScorers({
         {homeGoals.map((g, i) => (
           <div key={i} className="flex items-start gap-1 text-white/95">
             <span className="shrink-0 mt-px">⚽</span>
-            <span className="font-semibold truncate">
+            <span className="font-semibold truncate" translate="no">
               {g.scorer}
               {g.assister ? <span className="text-white/35 font-normal"> ({g.assister})</span> : null}
             </span>
@@ -41,7 +43,7 @@ function MatchScorers({
       <div className="space-y-0.5 text-right">
         {awayGoals.map((g, i) => (
           <div key={i} className="flex items-start justify-end gap-1 text-white/95">
-            <span className="font-semibold truncate">
+            <span className="font-semibold truncate" translate="no">
               {g.scorer}
               {g.assister ? <span className="text-white/35 font-normal"> ({g.assister})</span> : null}
             </span>
@@ -75,8 +77,7 @@ export default function NextMatchdayBanner({
   goals,
   availabilityStatuses,
 }: NextMatchdayBannerProps) {
-  const { t, locale } = useT();
-  const { data: session, status } = useSession();
+    const { data: session, status } = useSession();
   const [hasDefaulted, setHasDefaulted] = useState(false);
   const [showPills, setShowPills] = useState(false);
 
@@ -114,10 +115,10 @@ export default function NextMatchdayBanner({
   const userTeamIsPlaying = session?.teamId && matchday.sittingOutTeamId !== session.teamId;
 
   const eyebrow = isUserNextMatchday
-    ? t('nextMatchdayYour')
+    ? "YOUR NEXT MATCHDAY"
     : isCompleted
-    ? t('nextMatchdayResults')
-    : t('nextMatchdayDetails');
+    ? "MATCHDAY RESULTS"
+    : "MATCHDAY DETAILS";
 
   const getTeam = (id: string) => teams.find((t) => t.id === id);
   const sittingOutTeam = getTeam(matchday.sittingOutTeamId);
@@ -146,13 +147,13 @@ export default function NextMatchdayBanner({
                   : 'bg-white/5 text-white/80 hover:bg-white/10 hover:text-white/80'
               }`}
             >
-              {showPills ? t('close') : t('browse')}
+              {showPills ? "close" : "browse ▾"}
             </button>
           </div>
 
           <div className="mb-4">
             <h2 className="font-display text-4xl font-black uppercase tracking-tighter text-white leading-tight">
-              {matchday.label} · {matchday.date ? formatMatchDate(matchday.date, locale) : t('tbd')}
+              {matchday.label} · {matchday.date ? formatMatchDate(matchday.date) : "TBD"}
             </h2>
             <a
               href={VENUE_MAP_URL}
@@ -207,7 +208,7 @@ export default function NextMatchdayBanner({
           )}
           {session?.teamId === matchday.sittingOutTeamId && (
                     <p className="text-[10px] font-bold text-vibrant-pink/90 uppercase tracking-tight mt-1">
-                      {t('notScheduled')}
+                      {"You are not scheduled to play on this matchday"}
                     </p>
                   )}
 
@@ -234,10 +235,10 @@ export default function NextMatchdayBanner({
                           />
                         )}
                       </div>
-                      <span className="font-display text-lg font-black uppercase tracking-tighter leading-none hidden sm:block">
+                      <span className="font-display text-lg font-black uppercase tracking-tighter leading-none hidden sm:block" translate="no">
                         {home?.name}
                       </span>
-                      <span className="font-display text-lg font-black uppercase tracking-tighter leading-none sm:hidden">
+                      <span className="font-display text-lg font-black uppercase tracking-tighter leading-none sm:hidden" translate="no">
                         {home?.shortName || home?.name.slice(0, 3)}
                       </span>
                     </div>
@@ -245,14 +246,14 @@ export default function NextMatchdayBanner({
                     <div className="flex flex-col items-center px-4">
                       {!isPlayed ? (
                         <>
-                          <span className="text-[8px] font-black uppercase tracking-widest text-white/65 mb-1.5">{t('kickoffTime')}</span>
+                          <span className="text-[8px] font-black uppercase tracking-widest text-white/65 mb-1.5">{"Kickoff Time"}</span>
                           <span className="font-display text-xl font-black tracking-tighter text-white/90 bg-white/5 px-3 py-1 rounded-lg border border-white/10">
                             {match.kickoff}
                           </span>
                         </>
                       ) : (
                         <>
-                          <span className="text-[8px] font-black uppercase tracking-widest text-white/65 mb-0.5">{t('ft')}</span>
+                          <span className="text-[8px] font-black uppercase tracking-widest text-white/65 mb-0.5">{"FT"}</span>
                           <div className="flex items-center gap-3">
                             <span className="font-display text-3xl font-black text-white">
                               {match.homeGoals}
@@ -267,10 +268,10 @@ export default function NextMatchdayBanner({
                     </div>
 
                     <div className="flex-1 flex items-center justify-end gap-3 text-right">
-                      <span className="font-display text-lg font-black uppercase tracking-tighter leading-none hidden sm:block">
+                      <span className="font-display text-lg font-black uppercase tracking-tighter leading-none hidden sm:block" translate="no">
                         {away?.name}
                       </span>
-                      <span className="font-display text-lg font-black uppercase tracking-tighter leading-none sm:hidden">
+                      <span className="font-display text-lg font-black uppercase tracking-tighter leading-none sm:hidden" translate="no">
                         {away?.shortName || away?.name.slice(0, 3)}
                       </span>
                       <div className="relative w-9 h-9 shrink-0 bg-white/5 rounded-lg p-1.5 border border-white/10">
@@ -303,7 +304,7 @@ export default function NextMatchdayBanner({
                 <div className="h-[1px] flex-1 bg-white/5" />
                 <div className="text-center">
                   <span className="text-[10px] font-black uppercase tracking-widest text-white/65">
-                    {t('sittingOut')}: <span className="text-white/95">{sittingOutTeam.name}</span>
+                    {"Sitting out"}: <span className="text-white/95">{sittingOutTeam.name}</span>
                   </span>
               
                 </div>

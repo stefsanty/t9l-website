@@ -4,15 +4,13 @@ import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import type { Team, Player } from '@/types';
-import { useT } from '@/i18n/I18nProvider';
 
 interface Props {
   playersByTeam: { team: Team; players: Player[] }[];
 }
 
 export default function AssignPlayerClient({ playersByTeam }: Props) {
-  const { t } = useT();
-  const { data: session, update } = useSession();
+    const { data: session, update } = useSession();
   const router = useRouter();
   const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(
     session?.playerId ?? null,
@@ -95,10 +93,10 @@ export default function AssignPlayerClient({ playersByTeam }: Props) {
       {/* Header */}
       <div className="mb-8 text-center">
         <h1 className="font-display text-4xl font-black uppercase tracking-tight text-white">
-          {t('whoAreYou')}
+          {"Who are you?"}
         </h1>
         <p className="text-sm text-white/95 mt-2">
-          {t('selectProfileDesc')}
+          {"Select your player profile. This links your LINE account to your squad entry."}
         </p>
       </div>
 
@@ -107,7 +105,7 @@ export default function AssignPlayerClient({ playersByTeam }: Props) {
         <div className="relative group">
           <input
             type="text"
-            placeholder={t('searchPlaceholder')}
+            placeholder={"Search your name (e.g. 'St')"}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full bg-white/[0.03] border border-white/10 rounded-2xl px-12 py-4 text-white placeholder:text-white/65 focus:outline-none focus:border-electric-green/40 focus:bg-white/[0.05] transition-all"
@@ -130,6 +128,54 @@ export default function AssignPlayerClient({ playersByTeam }: Props) {
               </svg>
             </button>
           )}
+        </div>
+
+        {/* Actions */}
+        <div className="space-y-4">
+          {error && (
+            <p className="text-vibrant-pink text-sm text-center">{error}</p>
+          )}
+
+          <div className="flex flex-col gap-3">
+            <button
+              onClick={handleConfirm}
+              disabled={!selectedPlayerId || submitting || unassigning || isAlreadyAssigned}
+              className={`w-full py-4 rounded-2xl font-display text-lg font-black uppercase tracking-wider transition-all disabled:opacity-30 disabled:cursor-not-allowed ${
+                isAlreadyAssigned
+                  ? 'bg-white/10 text-white/95'
+                  : 'bg-electric-green text-black hover:bg-electric-green/90 active:scale-[0.98]'
+              }`}
+            >
+              {submitting
+                ? "Saving…"
+                : isAlreadyAssigned
+                ? "This is you"
+                : selectedPlayerId
+                ? "Confirm — I’m this player"
+                : "Select a player below"}
+            </button>
+
+            <button
+              onClick={() => router.push('/')}
+              className="w-full py-3 rounded-xl border border-white/10 text-[11px] font-black uppercase tracking-[0.2em] text-white/50 hover:text-white/80 hover:bg-white/5 transition-all"
+            >
+              {"Skip — Browse as Guest"}
+            </button>
+          </div>
+
+          {session?.playerId && (
+            <button
+              onClick={handleUnassign}
+              disabled={submitting || unassigning}
+              className="w-full py-2 text-[11px] font-black uppercase tracking-widest text-vibrant-pink/40 hover:text-vibrant-pink transition-all"
+            >
+              {unassigning ? "Removing…" : "Unassign current player"}
+            </button>
+          )}
+
+          <p className="text-[9px] text-white/40 text-center uppercase tracking-widest">
+            {"Your LINE profile photo will be used as your avatar"}
+          </p>
         </div>
 
         {hasResults ? (
@@ -180,67 +226,17 @@ export default function AssignPlayerClient({ playersByTeam }: Props) {
           </div>
         ) : (
           <div className="text-center py-12 px-8 bg-white/[0.02] border border-dashed border-white/10 rounded-2xl">
-            <p className="text-white/95 text-sm">{t('noPlayersFound')} &ldquo;{searchQuery}&rdquo;</p>
+            <p className="text-white/95 text-sm">{"No players found matching"} &ldquo;{searchQuery}&rdquo;</p>
             <button
               onClick={() => setSearchQuery('')}
               className="mt-2 text-electric-green/60 hover:text-electric-green text-xs font-bold uppercase tracking-widest transition-colors"
             >
-              {t('clearSearch')}
+              {"Clear search"}
             </button>
           </div>
         )}
       </div>
 
-      {/* Confirm button */}
-      <div className="mt-8 pb-12">
-        {error && (
-          <p className="text-vibrant-pink text-sm text-center mb-4">{error}</p>
-        )}
-
-        <div className="flex flex-col gap-3">
-          <button
-            onClick={handleConfirm}
-            disabled={!selectedPlayerId || submitting || unassigning || isAlreadyAssigned}
-            className={`w-full py-4 rounded-2xl font-display text-lg font-black uppercase tracking-wider transition-all disabled:opacity-30 disabled:cursor-not-allowed ${
-              isAlreadyAssigned
-                ? 'bg-white/10 text-white/95'
-                : 'bg-electric-green text-black hover:bg-electric-green/90 active:scale-[0.98]'
-            }`}
-          >
-            {submitting
-              ? t('saving')
-              : isAlreadyAssigned
-              ? t('thisIsYou')
-              : selectedPlayerId
-              ? t('confirmImThisPlayer')
-              : t('selectPlayerAbove')}
-          </button>
-
-          {session?.playerId && (
-            <button
-              onClick={handleUnassign}
-              disabled={submitting || unassigning}
-              className="w-full py-3 rounded-xl font-display text-sm font-black uppercase tracking-wider text-vibrant-pink/60 hover:text-vibrant-pink hover:bg-vibrant-pink/5 transition-all disabled:opacity-30"
-            >
-              {unassigning ? t('removing') : t('unassignCurrentPlayer')}
-            </button>
-          )}
-        </div>
-
-        <p className="text-[10px] text-white/65 text-center mt-4 uppercase tracking-widest">
-          {t('linePhotoAvatarDesc')}
-        </p>
-
-        {/* Guest exit */}
-        <div className="mt-6 text-center">
-          <button
-            onClick={() => router.push('/')}
-            className="text-[13px] text-white/50 hover:text-white/80 transition-colors"
-          >
-            {t('skipForNowGuest')}
-          </button>
-        </div>
-      </div>
     </div>
   );
 }

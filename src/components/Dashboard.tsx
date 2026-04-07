@@ -15,7 +15,6 @@ import MatchResults from './MatchResults';
 import SquadList from './SquadList';
 import LineLoginButton from './LineLoginButton';
 import LanguageToggle from './LanguageToggle';
-import { useT } from '@/i18n/I18nProvider';
 
 type Tab = 'NEXT_GAME' | 'STATS' | 'SQUADS';
 
@@ -54,14 +53,13 @@ function VibesBar({ value }: { value: number }) {
 }
 
 function MatchdayVibesSection({ vibes }: { vibes: MatchdayVibes[] }) {
-  const { t } = useT();
-  if (vibes.length === 0) return null;
+    if (vibes.length === 0) return null;
 
   return (
     <div className="relative">
       <div className="flex items-center gap-4 mb-8">
         <div className="w-1.5 h-7 bg-tertiary rounded-full shadow-[0_0_12px_rgba(0,255,133,0.3)]" />
-        <h2 className="font-display text-4xl font-black uppercase tracking-tight text-white/95">{t('vibes')}</h2>
+        <h2 className="font-display text-4xl font-black uppercase tracking-tight text-white/95">{"Vibes"}</h2>
       </div>
       <div className="pl-card pl-card-tertiary rounded-2xl overflow-hidden relative">
         <div className="absolute inset-0 bg-diagonal-pattern opacity-5 pointer-events-none" />
@@ -71,24 +69,24 @@ function MatchdayVibesSection({ vibes }: { vibes: MatchdayVibes[] }) {
               <div className="flex items-center justify-between mb-3">
                 <span className="text-[11px] font-black uppercase tracking-[0.2em] text-white/95">{v.label}</span>
                 <span className="text-[9px] font-black uppercase tracking-widest text-white/65">
-                  {v.responseCount} {v.responseCount === 1 ? t('response') : t('responses')}
+                  {v.responseCount} {v.responseCount === 1 ? "response" : "responses"}
                 </span>
               </div>
               <div className="grid grid-cols-2 gap-x-6 gap-y-2">
                 <div>
-                  <div className="text-[9px] font-black uppercase tracking-widest text-white/50 mb-1">{t('vibesEnjoyment')}</div>
+                  <div className="text-[9px] font-black uppercase tracking-widest text-white/50 mb-1">{"Enjoyment"}</div>
                   <VibesBar value={v.enjoyment} />
                 </div>
                 <div>
-                  <div className="text-[9px] font-black uppercase tracking-widest text-white/50 mb-1">{t('vibesTeamwork')}</div>
+                  <div className="text-[9px] font-black uppercase tracking-widest text-white/50 mb-1">{"Teamwork"}</div>
                   <VibesBar value={v.teamwork} />
                 </div>
                 <div>
-                  <div className="text-[9px] font-black uppercase tracking-widest text-white/50 mb-1">{t('vibesCompetitiveness')}</div>
+                  <div className="text-[9px] font-black uppercase tracking-widest text-white/50 mb-1">{"Competitiveness"}</div>
                   <VibesBar value={v.gamesClose} />
                 </div>
                 <div>
-                  <div className="text-[9px] font-black uppercase tracking-widest text-white/50 mb-1">{t('vibesRefereeing')}</div>
+                  <div className="text-[9px] font-black uppercase tracking-widest text-white/50 mb-1">{"Refereeing"}</div>
                   <VibesBar value={v.refereeing} />
                 </div>
               </div>
@@ -116,8 +114,7 @@ export default function Dashboard({
   nextMd,
   playerPictures,
 }: DashboardProps) {
-  const { t } = useT();
-  const [activeTab, setActiveTab] = useState<Tab>('NEXT_GAME');
+    const [activeTab, setActiveTab] = useState<Tab>('NEXT_GAME');
   const [selectedMatchdayId, setSelectedMatchdayId] = useState(
     nextMd?.matchday.id ?? matchdays[0]?.id ?? ''
   );
@@ -175,8 +172,8 @@ export default function Dashboard({
             ) : (
               <div className="text-center py-24 bg-white/[0.05] rounded-3xl border border-white/10 relative overflow-hidden">
                 <div className="absolute inset-0 bg-diagonal-pattern opacity-5" />
-                <p className="font-display text-4xl font-black uppercase italic text-white/90 relative">{t('seasonFinished')}</p>
-                <p className="text-xs uppercase tracking-[0.5em] mt-4 text-white/65 font-black relative">{t('seeYouAutumn')}</p>
+                <p className="font-display text-4xl font-black uppercase italic text-white/90 relative">{"Season Finished"}</p>
+                <p className="text-xs uppercase tracking-[0.5em] mt-4 text-white/65 font-black relative">{"See you in the Autumn!"}</p>
               </div>
             )}
           </div>
@@ -187,7 +184,7 @@ export default function Dashboard({
             <div className="relative">
               <div className="flex items-center gap-4 mb-8">
                 <div className="w-1.5 h-7 bg-vibrant-pink rounded-full" />
-                <h2 className="font-display text-4xl font-black uppercase tracking-tight text-white/95">{t('standings')}</h2>
+                <h2 className="font-display text-4xl font-black uppercase tracking-tight text-white/95">{"Standings"}</h2>
               </div>
               <LeagueTable rows={leagueTable} />
             </div>
@@ -195,7 +192,7 @@ export default function Dashboard({
             <div className="relative">
               <div className="flex items-center gap-4 mb-8">
                 <div className="w-1.5 h-7 bg-electric-violet rounded-full" />
-                <h2 className="font-display text-4xl font-black uppercase tracking-tight text-white/95">{t('statistics')}</h2>
+                <h2 className="font-display text-4xl font-black uppercase tracking-tight text-white/95">{"Statistics"}</h2>
               </div>
               <TopPerformers playerStats={playerStats} />
             </div>
@@ -203,7 +200,7 @@ export default function Dashboard({
             <div className="relative">
               <div className="flex items-center gap-4 mb-8">
                 <div className="w-1.5 h-7 bg-tertiary rounded-full shadow-[0_0_12px_rgba(0,255,133,0.3)]" />
-                <h2 className="font-display text-4xl font-black uppercase tracking-tight text-white/95">{t('results')}</h2>
+                <h2 className="font-display text-4xl font-black uppercase tracking-tight text-white/95">{"Results"}</h2>
               </div>
               <MatchResults matchdays={matchdays} teams={teams} goals={goals} />
             </div>
@@ -216,7 +213,7 @@ export default function Dashboard({
           <div className="animate-in pb-12">
             <div className="flex items-center gap-4 mb-8">
               <div className="w-1.5 h-7 bg-vibrant-pink rounded-full" />
-              <h2 className="font-display text-4xl font-black uppercase tracking-tight text-white/95">{t('squads')}</h2>
+              <h2 className="font-display text-4xl font-black uppercase tracking-tight text-white/95">{"Squads"}</h2>
             </div>
             <SquadList
               teams={teams}
@@ -251,7 +248,7 @@ export default function Dashboard({
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
               </svg>
             </div>
-            <span className={`text-[10px] font-black uppercase tracking-[0.15em] transition-opacity duration-300 ${activeTab === 'NEXT_GAME' ? 'opacity-100' : 'opacity-70'}`}>{t('tabHome')}</span>
+            <span className={`text-[10px] font-black uppercase tracking-[0.15em] transition-opacity duration-300 ${activeTab === 'NEXT_GAME' ? 'opacity-100' : 'opacity-70'}`}>{"Home"}</span>
             {activeTab === 'NEXT_GAME' && (
               <div className="absolute -top-[1px] left-1/2 -translate-x-1/2 w-12 h-[3px] bg-vibrant-pink rounded-b-full shadow-[0_2px_10px_rgba(233,0,82,0.4)]" />
             )}
@@ -268,7 +265,7 @@ export default function Dashboard({
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
               </svg>
             </div>
-            <span className={`text-[10px] font-black uppercase tracking-[0.15em] transition-opacity duration-300 ${activeTab === 'STATS' ? 'opacity-100' : 'opacity-70'}`}>{t('tabStats')}</span>
+            <span className={`text-[10px] font-black uppercase tracking-[0.15em] transition-opacity duration-300 ${activeTab === 'STATS' ? 'opacity-100' : 'opacity-70'}`}>{"Stats"}</span>
             {activeTab === 'STATS' && (
               <div className="absolute -top-[1px] left-1/2 -translate-x-1/2 w-12 h-[3px] bg-vibrant-pink rounded-b-full shadow-[0_2px_10px_rgba(233,0,82,0.4)]" />
             )}
@@ -285,7 +282,7 @@ export default function Dashboard({
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
               </svg>
             </div>
-            <span className={`text-[10px] font-black uppercase tracking-[0.15em] transition-opacity duration-300 ${activeTab === 'SQUADS' ? 'opacity-100' : 'opacity-70'}`}>{t('tabTeams')}</span>
+            <span className={`text-[10px] font-black uppercase tracking-[0.15em] transition-opacity duration-300 ${activeTab === 'SQUADS' ? 'opacity-100' : 'opacity-70'}`}>{"Teams"}</span>
             {activeTab === 'SQUADS' && (
               <div className="absolute -top-[1px] left-1/2 -translate-x-1/2 w-12 h-[3px] bg-vibrant-pink rounded-b-full shadow-[0_2px_10px_rgba(233,0,82,0.4)]" />
             )}

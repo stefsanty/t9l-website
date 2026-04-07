@@ -1,18 +1,34 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
-import { useT } from '@/i18n/I18nProvider';
-import { setLocaleAction } from '@/app/actions/setLocale';
-import { Locale } from '@/i18n/getLocale';
+import { useState, useEffect } from 'react';
 
 export default function LanguageToggle() {
-  const { locale } = useT();
-  const router = useRouter();
+  const [locale, setLocale] = useState<'en' | 'ja'>('en');
 
-  async function toggle(newLocale: Locale) {
+  useEffect(() => {
+    // Check if googtrans cookie is set to /en/ja
+    if (typeof document !== 'undefined') {
+      if (document.cookie.includes('googtrans=/en/ja')) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setLocale('ja');
+      } else {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setLocale('en');
+      }
+    }
+  }, []);
+
+  function toggle(newLocale: 'en' | 'ja') {
     if (newLocale === locale) return;
-    await setLocaleAction(newLocale);
-    router.refresh();
+    
+    // Set googtrans cookie for both current domain and root path
+    if (newLocale === 'ja') {
+      document.cookie = 'googtrans=/en/ja; path=/';
+    } else {
+      document.cookie = 'googtrans=/en/en; path=/';
+    }
+    
+    window.location.reload();
   }
 
   return (

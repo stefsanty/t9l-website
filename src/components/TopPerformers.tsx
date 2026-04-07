@@ -4,7 +4,6 @@ import { useState, useMemo } from 'react';
 import Image from 'next/image';
 import PlayerAvatar from './PlayerAvatar';
 import type { PlayerStats } from '@/types';
-import { useT } from '@/i18n/I18nProvider';
 
 interface TopPerformersProps {
   playerStats: PlayerStats[];
@@ -29,8 +28,7 @@ function SortIcon({
 export default function TopPerformers({
   playerStats,
 }: TopPerformersProps) {
-  const { t } = useT();
-  const [visibleCount, setVisibleCount] = useState(10);
+    const [visibleCount, setVisibleCount] = useState(10);
   const [sortField, setSortField] = useState<SortField>('goals');
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
 
@@ -72,33 +70,33 @@ export default function TopPerformers({
                 className="py-4 pl-4 pr-2 cursor-pointer hover:bg-white/[0.10] transition-colors"
                 onClick={() => handleSort('playerName')}
               >
-                {t('playerHeader')} <SortIcon field="playerName" sortField={sortField} sortOrder={sortOrder} />
+                {"PLAYER"} <SortIcon field="playerName" sortField={sortField} sortOrder={sortOrder} />
               </th>
               <th 
                 className="py-4 px-1 text-center cursor-pointer hover:bg-white/[0.10] transition-colors whitespace-nowrap"
                 onClick={() => handleSort('matchesPlayed')}
-                title={t('matchesPlayed')}
+                title={"Matches Played"}
               >
                 🅿️ <SortIcon field="matchesPlayed" sortField={sortField} sortOrder={sortOrder} />
               </th>
               <th 
                 className="py-4 px-1 text-center cursor-pointer hover:bg-white/[0.10] transition-colors whitespace-nowrap"
                 onClick={() => handleSort('avgRating')}
-                title={t('rating')}
+                title={"Rating"}
               >
                 ✨️ <SortIcon field="avgRating" sortField={sortField} sortOrder={sortOrder} />
               </th>
               <th 
                 className="py-4 px-1 text-center cursor-pointer hover:bg-white/[0.10] transition-colors whitespace-nowrap"
                 onClick={() => handleSort('goals')}
-                title={t('goals')}
+                title={"Goals"}
               >
                 ⚽️ <SortIcon field="goals" sortField={sortField} sortOrder={sortOrder} />
               </th>
               <th 
                 className="py-4 px-1 text-center cursor-pointer hover:bg-white/[0.10] transition-colors whitespace-nowrap"
                 onClick={() => handleSort('assists')}
-                title={t('assists')}
+                title={"Assists"}
               >
                 👟 <SortIcon field="assists" sortField={sortField} sortOrder={sortOrder} />
               </th>
@@ -118,7 +116,7 @@ export default function TopPerformers({
                     <div className="flex items-center gap-3">
                       <PlayerAvatar playerName={stat.playerName} size="md" className="ring-2 ring-white/5 group-hover:ring-electric-violet/30 transition-all" />
                       <div className="flex flex-col min-w-0">
-                        <span className="font-bold uppercase tracking-tight text-white group-hover:text-electric-violet transition-colors leading-tight break-words">
+                        <span className="font-bold uppercase tracking-tight text-white group-hover:text-electric-violet transition-colors leading-tight break-words" translate="no">
                           {stat.playerName}
                         </span>
                         <div className="flex items-center gap-1.5 mt-1">
@@ -134,7 +132,7 @@ export default function TopPerformers({
                               <div className="w-full h-full rounded-full" style={{ backgroundColor: stat.teamColor }} />
                             )}
                           </div>
-                          <span className="text-[9px] font-black text-white/65 uppercase tracking-widest leading-none truncate">{stat.teamName}</span>
+                          <span className="text-[9px] font-black text-white/65 uppercase tracking-widest leading-none truncate" translate="no">{stat.teamName}</span>
                         </div>
                       </div>
                     </div>
@@ -167,7 +165,7 @@ export default function TopPerformers({
             onClick={() => setVisibleCount((prev) => prev + 10)}
             className="w-full py-3 bg-electric-violet hover:bg-electric-violet/80 text-white rounded-xl text-[11px] font-black uppercase tracking-[0.2em] transition-all hover:-translate-y-0.5 active:translate-y-0"
           >
-            {t('loadMore')}
+            {"Load more players"}
           </button>
         </div>
       )}

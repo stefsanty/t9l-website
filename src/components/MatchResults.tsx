@@ -3,7 +3,6 @@
 import { useState } from 'react';
 import Image from 'next/image';
 import type { Matchday, Team, Goal } from '@/types';
-import { useT } from '@/i18n/I18nProvider';
 
 interface MatchResultsProps {
   matchdays: Matchday[];
@@ -16,8 +15,7 @@ export default function MatchResults({
   teams,
   goals,
 }: MatchResultsProps) {
-  const { t } = useT();
-  const [expandedMatchId, setExpandedMatchId] = useState<string | null>(null);
+    const [expandedMatchId, setExpandedMatchId] = useState<string | null>(null);
 
   // Show played matchdays first, most recent first
   const playedMatchdays = matchdays
@@ -39,7 +37,7 @@ export default function MatchResults({
             <div className="absolute inset-0 bg-diagonal-pattern opacity-5 pointer-events-none" />
             <div className="bg-white/[0.07] px-5 py-3 border-b border-white/15 flex justify-between items-center relative">
               <span className="font-display text-[10px] font-black uppercase tracking-[0.2em] text-white/95">
-                {md.label} — {md.date || t('tbd')}
+                {md.label} — {md.date || "TBD"}
               </span>
               <div className="h-1.5 w-1.5 rounded-full bg-tertiary shadow-[0_0_8px_rgba(0,255,133,0.5)]" />
             </div>
@@ -101,12 +99,12 @@ export default function MatchResults({
                                 }`}>
                                   <div className="w-1.5 h-1.5 rounded-full bg-electric-green animate-pulse" />
                                   <div className="flex flex-col">
-                                    <span className="text-[11px] font-black uppercase tracking-tight text-white">
-                                      {goal.scorer === "Guest" ? t('guestNonRostered') : goal.scorer}
+                                    <span className="text-[11px] font-black uppercase tracking-tight text-white" translate="no">
+                                      {goal.scorer === "Guest" ? "Guest (non-rostered)" : goal.scorer}
                                     </span>
                                     {goal.assister && (
                                       <span className="text-[9px] font-bold text-white/80 uppercase tracking-widest leading-none">
-                                        {t('asst')} {goal.assister}
+                                        {"asst:"} {goal.assister}
                                       </span>
                                     )}
                                   </div>
@@ -116,7 +114,7 @@ export default function MatchResults({
                           </div>
                         ) : (
                           <div className="text-[10px] text-white/65 font-bold uppercase tracking-widest text-center py-4 bg-white/[0.03] rounded-xl border border-dashed border-white/10">
-                            {t('noGoalDetails')}
+                            {"No goal details recorded"}
                           </div>
                         )}
                       </div>

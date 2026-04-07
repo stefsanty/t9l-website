@@ -4,7 +4,6 @@ import { useState } from 'react';
 import Image from 'next/image';
 import PlayerAvatar from './PlayerAvatar';
 import type { Team, Player, Availability, AvailabilityStatuses } from '@/types';
-import { useT } from '@/i18n/I18nProvider';
 
 interface SquadListProps {
   teams: Team[];
@@ -37,8 +36,7 @@ export default function SquadList({
   nextMatchdayLabel,
   playerPictures,
 }: SquadListProps) {
-  const { t } = useT();
-  const [expandedTeamId, setExpandedTeamId] = useState<string | null>(null);
+    const [expandedTeamId, setExpandedTeamId] = useState<string | null>(null);
 
   const getTeamPlayers = (teamId: string) => {
     const positionOrder: Record<string, number> = {
@@ -106,13 +104,13 @@ export default function SquadList({
                     <div className="flex items-center gap-2 mt-1">
                       <div className="h-[1px] w-4 bg-white/10" />
                       <span className="text-[10px] font-black uppercase tracking-[0.2em] text-white/80">
-                        {teamPlayers.length} {t('squadMembers')}
+                        {teamPlayers.length} {"SQUAD MEMBERS"}
                       </span>
                       {hasAvailabilityData && (
                         <>
                           <div className="h-[1px] w-2 bg-white/10" />
                           <span className="text-[10px] font-black uppercase tracking-[0.2em] text-white/65">
-                            {nextMatchdayLabel} {t('availability')}
+                            {nextMatchdayLabel} {"AVAILABILITY"}
                           </span>
                         </>
                       )}
@@ -138,10 +136,10 @@ export default function SquadList({
                   {teamPlayers.map((player) => {
                     const status = getAvailabilityStatus(player.id, team.id);
                     const badgeProps = (() => {
-                      if (status === 'GOING' || status === 'Y') return { label: t('statusGoing'), cls: 'bg-electric-green/10 border-electric-green/20 text-electric-green', dotCls: 'bg-electric-green shadow-[0_0_8px_rgba(0,255,133,0.5)]' };
-                      if (status === 'UNDECIDED' || status === 'EXPECTED') return { label: t('statusUndecided'), cls: 'bg-yellow-400/10 border-yellow-400/20 text-yellow-400', dotCls: 'bg-yellow-400' };
-                      if (status === 'PLAYED') return { label: t('statusPlayed'), cls: 'bg-electric-violet/10 border-electric-violet/20 text-electric-violet', dotCls: 'bg-electric-violet' };
-                      return { label: t('statusNotGoing'), cls: 'bg-white/[0.06] border-white/10 text-white/80', dotCls: 'bg-white/20' };
+                      if (status === 'GOING' || status === 'Y') return { label: "GOING", cls: 'bg-electric-green/10 border-electric-green/20 text-electric-green', dotCls: 'bg-electric-green shadow-[0_0_8px_rgba(0,255,133,0.5)]' };
+                      if (status === 'UNDECIDED' || status === 'EXPECTED') return { label: "UNDECIDED", cls: 'bg-yellow-400/10 border-yellow-400/20 text-yellow-400', dotCls: 'bg-yellow-400' };
+                      if (status === 'PLAYED') return { label: "PLAYED", cls: 'bg-electric-violet/10 border-electric-violet/20 text-electric-violet', dotCls: 'bg-electric-violet' };
+                      return { label: "NOT GOING", cls: 'bg-white/[0.06] border-white/10 text-white/80', dotCls: 'bg-white/20' };
                     })();
                     return (
                       <div
@@ -151,10 +149,10 @@ export default function SquadList({
                         <div className="flex items-center gap-4">
                           <PlayerAvatar playerName={player.name} pictureUrl={playerPictures[player.id]} size="md" className="ring-2 ring-white/5 group-hover:ring-electric-violet/20 transition-all" />
                           <div className="flex flex-col items-start gap-1">
-                            <span className="text-sm font-black uppercase tracking-tight text-white group-hover:text-electric-violet transition-colors">
+                            <span className="text-sm font-black uppercase tracking-tight text-white group-hover:text-electric-violet transition-colors" translate="no">
                               {player.name}
                             </span>
-                            <span className={`inline-flex items-center justify-center w-14 py-0.5 rounded text-[9px] font-black uppercase tracking-wider border ${getPositionColor(player.position)}`}>
+                            <span className={`inline-flex items-center justify-center w-14 py-0.5 rounded text-[9px] font-black uppercase tracking-wider border ${getPositionColor(player.position)}`} translate="no">
                               {player.position || "—"}
                             </span>
                           </div>

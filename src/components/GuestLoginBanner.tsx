@@ -1,7 +1,6 @@
 'use client';
 
 import { useSession, signIn } from 'next-auth/react';
-import { useT } from '@/i18n/I18nProvider';
 
 function LineIcon({ className = 'w-4 h-4' }: { className?: string }) {
   return (
@@ -12,7 +11,6 @@ function LineIcon({ className = 'w-4 h-4' }: { className?: string }) {
 }
 
 export default function GuestLoginBanner() {
-  const { t } = useT();
   const { data: session, status } = useSession();
 
   if (status === 'loading' || session) return null;
@@ -23,10 +21,10 @@ export default function GuestLoginBanner() {
       <div className="px-5 py-4 relative flex items-center justify-between gap-4">
         <div className="min-w-0">
           <h3 className="font-display text-lg font-black uppercase tracking-tight text-white leading-none mb-1">
-            {t('rsvpMatchdays')}
+            RSVP to your matchdays
           </h3>
           <p className="text-[11px] font-bold text-white/80 leading-tight">
-            {t('loginLineConfirm')}
+            Login with LINE to confirm attendance.
           </p>
         </div>
         <button
@@ -34,7 +32,7 @@ export default function GuestLoginBanner() {
           className="shrink-0 flex items-center gap-2 bg-[#06C755] hover:bg-[#05b34c] active:scale-95 text-white text-[12px] font-black uppercase tracking-wider px-4 py-2 rounded-xl transition-all shadow-[0_4px_12px_rgba(6,199,85,0.2)]"
         >
           <LineIcon className="w-4 h-4" />
-          {t('login')}
+          Login
         </button>
       </div>
     </div>

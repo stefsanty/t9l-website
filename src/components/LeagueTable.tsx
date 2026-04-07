@@ -2,15 +2,13 @@
 
 import Image from "next/image";
 import type { LeagueTableRow } from "@/types";
-import { useT } from "@/i18n/I18nProvider";
 
 interface LeagueTableProps {
   rows: LeagueTableRow[];
 }
 
 export default function LeagueTable({ rows }: LeagueTableProps) {
-  const { t } = useT();
-  const leaderPoints = rows[0]?.points ?? 0;
+    const leaderPoints = rows[0]?.points ?? 0;
   return (
     <div className="pl-card pl-card-magenta rounded-2xl overflow-hidden mb-10 relative">
       <div className="absolute inset-0 bg-diagonal-pattern opacity-5 pointer-events-none" />
@@ -18,16 +16,16 @@ export default function LeagueTable({ rows }: LeagueTableProps) {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-white/15 bg-white/[0.07] text-white/95 text-[10px] font-black uppercase tracking-[0.2em]">
-              <th className="py-4 pl-4 pr-1 text-left w-8">{t('pos')}</th>
-              <th className="py-4 px-3 text-left">{t('club')}</th>
-              <th className="py-4 px-2 text-center">{t('mp')}</th>
-              <th className="py-4 px-2 text-center">{t('w')}</th>
-              <th className="py-4 px-2 text-center">{t('d')}</th>
-              <th className="py-4 px-2 text-center">{t('l')}</th>
-              <th className="py-4 px-2 text-center hidden sm:table-cell">{t('gf')}</th>
-              <th className="py-4 px-2 text-center hidden sm:table-cell">{t('ga')}</th>
-              <th className="py-4 px-2 text-center">{t('gd')}</th>
-              <th className="py-4 pr-4 pl-2 text-center font-black text-white">{t('pts')}</th>
+              <th className="py-4 pl-4 pr-1 text-left w-8">{"POS"}</th>
+              <th className="py-4 px-3 text-left">{"CLUB"}</th>
+              <th className="py-4 px-2 text-center">{"MP"}</th>
+              <th className="py-4 px-2 text-center">{"W"}</th>
+              <th className="py-4 px-2 text-center">{"D"}</th>
+              <th className="py-4 px-2 text-center">{"L"}</th>
+              <th className="py-4 px-2 text-center hidden sm:table-cell">{"GF"}</th>
+              <th className="py-4 px-2 text-center hidden sm:table-cell">{"GA"}</th>
+              <th className="py-4 px-2 text-center">{"GD"}</th>
+              <th className="py-4 pr-4 pl-2 text-center font-black text-white">{"PTS"}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-white/10">
@@ -60,7 +58,7 @@ export default function LeagueTable({ rows }: LeagueTableProps) {
                         />
                       )}
                     </div>
-                    <span className="font-bold uppercase tracking-tight text-white group-hover:text-vibrant-pink transition-colors">
+                    <span className="font-bold uppercase tracking-tight text-white group-hover:text-vibrant-pink transition-colors" translate="no">
                       <span className="sm:hidden">{row.team.shortName}</span>
                       <span className="hidden sm:inline">{row.team.name}</span>
                     </span>
