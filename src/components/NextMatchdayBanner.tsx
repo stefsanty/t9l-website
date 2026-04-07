@@ -208,7 +208,7 @@ export default function NextMatchdayBanner({
           )}
 
           {/* RSVP Button embedded directly in hero */}
-          {userTeamIsPlaying && session?.playerId && (
+          {userTeamIsPlaying && session?.playerId && !isCompleted && (
             <div className="mt-6 mb-2">
               <RsvpButton
                 matchdayId={matchday.id}
