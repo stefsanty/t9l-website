@@ -337,8 +337,9 @@ export function parseRatings(
   const teamNameToId = new Map(teams.map((t) => [t.name, t.id]));
   const ratings: PlayerRating[] = [];
 
-  // Player name columns: 3 to header.length - 4 (last 4 are meta ratings)
-  const metaStartIndex = header.length - 4;
+  // Meta ratings are in BE:BH (indices 56, 57, 58, 59)
+  // Player columns are between index 3 and the first meta column
+  const metaStartIndex = 56;
 
   for (let i = 1; i < rows.length; i++) {
     const row = rows[i];
@@ -351,6 +352,7 @@ export function parseRatings(
     const matchdayId = resolveMatchdayId(mdRaw, timestampRaw, matchdays);
 
     const playerRatings: Record<string, number> = {};
+    // Player names are headers from index 3 up to BE
     for (let col = 3; col < metaStartIndex; col++) {
       const playerName = header[col]?.trim();
       if (!playerName) continue;
