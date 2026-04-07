@@ -3,179 +3,340 @@
 > Project context for AI assistants working on this codebase.
 > See CLAUDE.md for the authoritative version — this file mirrors it.
 
+# CLAUDE.md
+
+> **Maintenance rule:** Whenever an architectural decision is made — new component, changed data flow, new API route, modified sheet schema, UX philosophy change — update this file immediately as part of the same commit. This file is the single source of truth for how the project works.
+
 ## Project
 
-T9L.me — mobile-first website for the Tennozu 9-Aside League, a recreational football league in Tokyo. Players log in via LINE, assign themselves to their roster entry, RSVP availability, and view live league data from a Google Sheet.
+T9L.me — mobile-first website for the Tennozu 9-Aside League, a recreational football league in Tokyo. Players can log in via LINE, assign themselves to their roster entry, RSVP availability for upcoming matchdays, and view live league data sourced from a Google Sheet.
 
 ## Stack
 
-- **Next.js** (App Router, server + client components, ISR `revalidate=300`)
-- **TypeScript** strict mode
-- **Tailwind CSS v4**
-- **`googleapis`** — Google Sheets API (read + write)
-- **`next-auth` v4** — LINE OAuth
-- **`@upstash/redis`** — lineId → player mapping
-- **`@vercel/blob`** — player profile pictures
-- Deployed to **Vercel**
+- Next.js (App Router, server + client components, ISR)
+- TypeScript (strict mode)
+- Tailwind CSS v4
+- `googleapis` — Google Sheets API (read + write)
+- `next-auth` v4 — LINE OAuth authentication
+- `@upstash/redis` — JWT→player mapping storage
+- `@vercel/blob` — player profile picture storage
+- Deployed to Vercel
 
-## Architecture
-
-```
-Google Sheets  ←→  lib/sheets.ts  →  lib/data.ts  →  lib/stats.ts
-                                                          ↓
-                                              app/page.tsx (ISR server component)
-                                                          ↓
-                                              components/Dashboard.tsx (client)
-                                          ┌───────────────┼────────────────────┐
-                                     Home tab         Stats tab           Teams tab
-                               NextMatchdayBanner  LeagueTable           SquadList
-                                                   TopPerformers
-                                                   MatchResults
-
-LINE OAuth → next-auth → Upstash Redis (lineId → {playerId, playerName, teamId})
-Player pics → Vercel Blob ← fetched in page.tsx, passed as playerPictures prop
-```
-
-## Environment Variables
+## Architecture Overview
 
 ```
-# Google Sheets (Editor access required for RSVP write-back)
+Google Sheets (source of truth)
+       ↕ read (batchGet) + write (availability cell updates)
+  lib/sheets.ts
+       ↓ parse
+  lib/data.ts → lib/stats.ts
+       ↓
+  app/page.tsx (server component, ISR revalidate=300)
+       ↓ props
+  components/Dashboard.tsx (client, 3-tab UI)
+       ├── NextMatchdayBanner      (Home tab — match info only)
+       ├── MatchdayAvailability    (Home tab — RSVP + per-team attendance)
+       ├── LeagueTable             (Stats tab)
+       ├── TopPerformers           (Stats tab)
+       ├── MatchResults            (Stats tab)
+       └── SquadList               (Teams tab)
+
+LINE OAuth → next-auth → Upstash Redis (lineId → player mapping)
+Player pics → Vercel Blob Storage ← fetched at page.tsx render time
+```
+
+## Data Source
+
+All data is read from a single Google Sheet via the Sheets API using a service account.
+
+- Sheet ID: `1BLTV9v518fEi3DXRA-qcYY3bLDm_qftNoY_5SNzjKSc`
+- Caching: ISR with `revalidate = 300` (5 minutes)
+- Read strategy: Single `batchGet` call fetching all 7 tabs per page render
+- Write: `writeRosterAvailability()` in `sheets.ts` writes RSVP status back to `RosterRaw` (requires service account Editor access)
+
+### Environment Variables
+
+```
+# Google Sheets (service account — needs Editor access for RSVP write-back)
 GOOGLE_SERVICE_ACCOUNT_EMAIL
-GOOGLE_PRIVATE_KEY             # PEM format, \n-escaped
+GOOGLE_PRIVATE_KEY             # PEM format, newlines as \n
+
 GOOGLE_SHEET_ID                # 1BLTV9v518fEi3DXRA-qcYY3bLDm_qftNoY_5SNzjKSc
 
-# LINE OAuth
+# LINE OAuth (next-auth)
 LINE_CLIENT_ID
 LINE_CLIENT_SECRET
 NEXTAUTH_SECRET
-NEXTAUTH_URL
+NEXTAUTH_URL                   # https://t9l.me in prod, http://localhost:3000 in dev
 
-# Upstash Redis
+# Upstash Redis (lineId → player mapping)
 KV_REST_API_URL
 KV_REST_API_TOKEN
 
-# Vercel Blob
+# Vercel Blob (player profile pictures)
 BLOB_READ_WRITE_TOKEN
 ```
 
-Missing `GOOGLE_SHEET_ID` or `GOOGLE_SERVICE_ACCOUNT_EMAIL` → falls back to `lib/mock-data.ts`.
+If `GOOGLE_SHEET_ID` or `GOOGLE_SERVICE_ACCOUNT_EMAIL` are absent, `fetchSheetData()` falls back to `lib/mock-data.ts` automatically. Auth features (RSVP, player assignment) degrade gracefully when KV/Blob vars are missing.
 
-## Google Sheet Tabs
+### Sheet Tabs & Ranges
 
 | Tab | Range | Purpose |
 |-----|-------|---------|
-| `TeamRaw` | `A:B` | Team names + logos |
-| `RosterRaw` | `A:L` | Players: picture, name, team, position, MD1–MD8 (`Y`/`EXPECTED`/`PLAYED`/blank) |
-| `ScheduleRaw` | `A:F` | 24 matches: matchday, match#, kickoff, full time, home, away |
+| `TeamRaw` | `A:B` | Team names and logos |
+| `RosterRaw` | `A:L` | Players: picture, name, team, position, MD1–MD8 availability (`Y` / `EXPECTED` / `PLAYED` / blank) |
+| `ScheduleRaw` | `A:F` | 24 matches: matchday, match number, kickoff, full time, home team, away team |
 | `GoalsRaw` | `A:F` | Goals: matchday, timestamp, scoring team, conceding team, scorer, assister |
-| `RatingsRaw` | `A:BH` | Peer ratings: matchday, timestamp, respondent team, 53 player columns, 4 meta columns |
-| `Schedule Formula` | `A:E` | Sitting-out team per matchday |
-| `MDScheduleRaw` | `A:B` | Matchday dates (label → date) |
+| `RatingsRaw` | `A:BH` | Peer ratings: matchday, timestamp, respondent team, 53 player columns (1–5), 4 meta columns |
+| `Schedule Formula` | `A:E` | Rotation: which team plays first/last/middle/sits out per matchday |
+| `MDScheduleRaw` | `A:B` | Matchday dates (label → YYYY-MM-DD or other parseable format) |
 
-Row 1 of every tab = header, skip it.
+### Data Parsing Rules
 
-## Key Parsing Rules
+**Row 1 of every tab is the header row. Skip it.**
 
-- **Slugify**: `name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,'-').replace(/[^a-z0-9-]/g,'')` → player/team IDs
-- **Team name normalization**: "Blue Mariners FC" → "Mariners FC", "Yellow Fenix FC" → "Fenix FC"
-- **Availability**: `Y` + `EXPECTED` → `availability`; only `PLAYED` → `played`
-- **`#REF!`**: GoalsRaw/RatingsRaw col 0 may be broken — fall back to timestamp-based matchday inference
-- **Guest scorer**: non-rostered, keep as "Guest", exclude from player stats
-- **Match scores**: derived by counting goals per match. If a matchday has any goals, all 3 matches are treated as played (even 0-0)
+**Team name normalization** — RatingsRaw prepends color names. Strip them:
+- "Blue Mariners FC" → "Mariners FC"
+- "Yellow Fenix FC" → "Fenix FC"
+- "Hygge SC" / "FC Torpedo" — no change
+
+**Player ID** — `slugify(name)`: lowercase, strip accents (NFD), replace spaces with `-`, remove non-alphanumeric. Example: "Ian Noseda" → `ian-noseda`.
+
+**Team ID** — same slug approach: "Mariners FC" → `mariners-fc`.
+
+**`#REF!` handling** — GoalsRaw and RatingsRaw column 0 may contain `#REF!`. If value matches `/MD\d+/i`, use it. Otherwise fall back to inferring matchday from timestamp date against `MDScheduleRaw` dates.
+
+**Availability statuses** — `RosterRaw` MD columns: `Y` / `GOING` = confirmed, `EXPECTED` / `UNDECIDED` = tentative, `PLAYED` = actually played, blank = not going. Both confirmed and tentative statuses count toward `availability`. Only `PLAYED` counts toward `played` (used for match stats). New RSVPs write `GOING` / `UNDECIDED` / `''`; legacy `Y` / `EXPECTED` values from the sheet are still parsed correctly.
+
+**Goal-to-match mapping** — Match by `(scoringTeamId, concedingTeamId)` or `(concedingTeamId, scoringTeamId)` within the matchday's 3 matches.
+
+**"Guest" scorer** — non-rostered player, keep as-is in data, exclude from player stat aggregations.
+
+**Ratings** — RatingsRaw is wide. Columns 3 to `header.length - 4` are player columns (header = player name). Last 4 columns are meta ratings: refereeing, gamesClose, teamwork, enjoyment.
 
 ## File Structure
 
 ```
 src/
 ├── app/
-│   ├── layout.tsx                    # Fonts + AuthProvider
-│   ├── page.tsx                      # Server component (ISR) — fetch → parse → Dashboard
-│   ├── globals.css                   # Design tokens + Tailwind
-│   ├── assign-player/page.tsx        # Roster picker (server → AssignPlayerClient)
+│   ├── layout.tsx                    # Fonts (Barlow Condensed + Inter), AuthProvider wrapper
+│   ├── page.tsx                      # Server component: fetchSheetData → parse → Dashboard
+│   ├── globals.css                   # Tailwind + custom design tokens
 │   └── api/
 │       ├── auth/[...nextauth]/       # next-auth handler
-│       ├── assign-player/route.ts    # Map lineId → playerId in Redis + upload pic to Blob
-│       └── rsvp/route.ts            # Write availability to RosterRaw + revalidatePath('/')
+│       ├── assign-player/route.ts    # POST: map lineId → playerId in Redis, upload pic to Blob
+│       └── rsvp/route.ts            # POST: write availability to RosterRaw, revalidatePath('/')
+├── assign-player/
+│   └── page.tsx                      # Server component: roster → AssignPlayerClient
 ├── components/
-│   ├── Dashboard.tsx                 # 3-tab client shell + header + bottom nav
-│   ├── NextMatchdayBanner.tsx        # Matchday selector, matches, RSVP, formations
-│   ├── LeagueTable.tsx               # Standings
-│   ├── TopPerformers.tsx             # Sortable player stats table
-│   ├── MatchResults.tsx              # Past results + goalscorers
-│   ├── SquadList.tsx                 # Team rosters + availability
-│   ├── PlayerAvatar.tsx              # Avatar with fallback: Blob → local → initials
-│   ├── RsvpButton.tsx                # Optimistic RSVP toggle
-│   ├── LineLoginButton.tsx           # Login + assignment modal
-│   └── AssignPlayerClient.tsx        # Player self-assignment UI
+│   ├── Dashboard.tsx                 # Client: 3-tab layout (Home / Stats / Teams) + header/nav
+│   ├── NextMatchdayBanner.tsx        # Matchday pill selector, match cards, sitting-out badge
+│   ├── MatchdayAvailability.tsx      # RSVP control + per-team attendance (expanded by default)
+│   ├── LeagueTable.tsx               # Standings table (responsive, highlights leader)
+│   ├── TopPerformers.tsx             # Sortable player stats table with load-more
+│   ├── MatchResults.tsx              # Past results, expandable goalscorers, most recent first
+│   ├── SquadList.tsx                 # Per-team collapsible lists, availability badges
+│   ├── PlayerAvatar.tsx              # Avatar with fallback chain: Blob URL → local pic → initials
+│   ├── RsvpButton.tsx                # 3-state RSVP (Going / Undecided / Not going), optimistic UI
+│   ├── LineLoginButton.tsx           # Login button + dropdown + first-login assignment modal
+│   └── AssignPlayerClient.tsx        # Roster picker (team-grouped grid) for player self-assignment
 ├── lib/
-│   ├── sheets.ts                     # batchGet + writeRosterAvailability
-│   ├── data.ts                       # Parse raw arrays → typed model
-│   ├── stats.ts                      # computeLeagueTable, computePlayerStats, findNextMatchday
-│   ├── auth.ts                       # next-auth authOptions (LINE + Redis lookup)
-│   └── mock-data.ts                  # Dev fallback
-└── types/index.ts                    # All TypeScript interfaces
+│   ├── sheets.ts                     # batchGet (read) + writeRosterAvailability (write)
+│   ├── data.ts                       # parseTeams/parsePlayers/parseSchedule/parseGoals/parseRatings
+│   ├── stats.ts                      # computeLeagueTable/computePlayerStats/findNextMatchday
+│   ├── auth.ts                       # next-auth authOptions (LINE provider, JWT, Redis lookup)
+│   └── mock-data.ts                  # Fallback data when Sheets credentials absent
+└── types/
+    └── index.ts                      # All TypeScript interfaces
 ```
 
-## Core Types (abbreviated)
+## Key Types
 
 ```typescript
-Team        { id, name, shortName, color, logo }
-Player      { id, name, teamId, position, picture }
-Match       { id, matchNumber, kickoff, fullTime, homeTeamId, awayTeamId, homeGoals, awayGoals }
-Matchday    { id, label, date, matches[3], sittingOutTeamId }
-Goal        { id, matchId, matchdayId, scoringTeamId, concedingTeamId, scorer, assister }
-PlayerRating { matchdayId, respondentTeamId, playerRatings: Record<playerId, 1-5>,
-               refereeing, gamesClose, teamwork, enjoyment }
-Availability { [matchdayId]: { [teamId]: playerId[] } }
-PlayedStatus { [matchdayId]: { [teamId]: playerId[] } }
-PlayerStats  { playerId, playerName, teamId, teamName, teamColor, teamLogo,
-               matchesPlayed, goals, assists, avgRating, matchdaysRated, gaPerGame }
-LeagueData   { teams, players, matchdays, goals, ratings, availability, played }
+interface Team {
+  id: string;            // "mariners-fc"
+  name: string;          // "Mariners FC"
+  shortName: string;     // "MFC"
+  color: string;         // hex
+  logo: string | null;
+}
+
+interface Player {
+  id: string;            // "ian-noseda"
+  name: string;
+  teamId: string;
+  position: string | null; // "GK" | "DF" | "DF/MF" | "MF" | "MF/FWD" | "FWD" | null
+  picture: string | null;
+}
+
+interface Match {
+  id: string;            // "md1-m1"
+  matchNumber: number;
+  kickoff: string;       // "19:05"
+  fullTime: string;
+  homeTeamId: string;
+  awayTeamId: string;
+  homeGoals: number | null;  // null = unplayed
+  awayGoals: number | null;
+}
+
+interface Matchday {
+  id: string;            // "md1"
+  label: string;         // "MD1"
+  date: string | null;   // "YYYY-MM-DD" or null
+  matches: Match[];      // always 3
+  sittingOutTeamId: string;
+}
+
+interface Goal {
+  id: string;
+  matchId: string;
+  matchdayId: string;
+  scoringTeamId: string;
+  concedingTeamId: string;
+  scorer: string;        // player name or "Guest"
+  assister: string | null;
+}
+
+interface PlayerRating {
+  matchdayId: string;
+  respondentTeamId: string;
+  playerRatings: Record<string, number>; // playerId → 1-5
+  refereeing: number;
+  gamesClose: number;
+  teamwork: number;
+  enjoyment: number;
+}
+
+interface Availability {
+  [matchdayId: string]: { [teamId: string]: string[] };
+}
+
+interface PlayedStatus {
+  [matchdayId: string]: { [teamId: string]: string[] }; // players with "PLAYED" status
+}
+
+interface PlayerStats {
+  playerId: string;
+  playerName: string;
+  teamId: string;
+  teamName: string;
+  teamShortName: string;
+  teamLogo: string | null;
+  teamColor: string;
+  matchesPlayed: number;
+  goals: number;
+  assists: number;
+  avgRating: number;
+  matchdaysRated: number;
+  gaPerGame: number;
+}
+
+interface LeagueData {
+  teams: Team[];
+  players: Player[];
+  matchdays: Matchday[];
+  goals: Goal[];
+  ratings: PlayerRating[];
+  availability: Availability;
+  played: PlayedStatus;
+}
 ```
 
-## Session Shape
+## Session Shape (next-auth extension)
 
 ```typescript
+// session.user is extended via next-auth module augmentation
 session.lineId: string
-session.playerId: string | null   // null until self-assigned
+session.playerId: string | null   // null until player self-assigns
 session.playerName: string | null
 session.teamId: string | null
 session.linePictureUrl: string
 ```
 
-## Auth Flow
+## Computed Stats (`lib/stats.ts`)
 
-1. LINE OAuth → `next-auth` JWT
-2. `jwt` callback → Redis lookup `hget("line-player-map", lineId)`
-3. If mapping exists → populate `playerId`, `playerName`, `teamId` on token
-4. If not → show "Assign player" prompt in LineLoginButton
-5. `/assign-player` → `POST /api/assign-player` → Redis + Blob → session refreshes
+- `computeLeagueTable(teams, matchdays)` — W/D/L/GF/GA/GD/Pts per team. Sort: Pts → GD → GF.
+- `computePlayerStats(teams, players, goals, ratings, played)` — per-player: matchesPlayed (from `played`, each matchday = 2 matches), goals, assists, avgRating, G+A per game.
+- `computeTopScorers`, `computeTopAssisters`, `computeTopRated` — legacy helpers (not currently used in UI but available).
+- `findNextMatchday(matchdays)` — first matchday with `homeGoals === null`; falls back to last played.
+
+## Auth & Player Assignment Flow
+
+1. User taps "Login" → LINE OAuth → `next-auth` JWT session created
+2. `jwt` callback checks Upstash Redis hash `line-player-map` for `lineId` key
+3. If no mapping found: `session.playerId` = null → LineLoginButton shows "Assign player" prompt
+4. User visits `/assign-player` → selects themselves from team-grouped roster grid
+5. `POST /api/assign-player` → stores `{playerId, playerName, teamId}` in Redis + downloads LINE profile pic to Vercel Blob
+6. JWT is refreshed on next request → session now has full player context
 
 ## RSVP Flow
 
-`RsvpButton` (auth required, team must be playing) → `POST /api/rsvp {matchdayId, going}` → `writeRosterAvailability()` updates RosterRaw cell → `revalidatePath('/')` → optimistic UI
+1. `RsvpButton` renders only if `session.teamId !== matchday.sittingOutTeamId`
+2. User selects one of three states → `POST /api/rsvp` with `{matchdayId, status: 'GOING' | 'UNDECIDED' | ''}`
+3. `writeRosterAvailability(playerId, matchdayId, status)` writes the string value to `RosterRaw` via Sheets API
+4. `revalidatePath('/')` invalidates the ISR cache — next visitor triggers a fresh sheet read
+5. RsvpButton uses optimistic UI; reverts on error
 
-## Design System
+**RSVP status values written to sheet:**
+- `GOING` — player confirmed (maps to `Y` in legacy data)
+- `UNDECIDED` — player tentative (maps to `EXPECTED` in legacy data)
+- `''` (blank) — not going / no response
+
+## UI — 3-Tab Layout
+
+**Header** (fixed): "T9L '26 SPRING" branding + LINE login button  
+**Bottom nav**: Home / Stats / Teams tabs
+
+| Tab | Contents |
+|-----|----------|
+| **Home** | Personal status card (your next playing matchday + your RSVP status) → NextMatchdayBanner (pill selector, match cards, sitting-out badge) → MatchdayAvailability (3-state RSVP + per-team attendance, expanded by default with pitch formation view) |
+| **Stats** | Standings table → Sortable player stats table (goals, assists, rating, G+A/game, load-more) → Past match results with expandable goalscorers |
+| **Teams** | Per-team collapsible squad lists with position badges, availability status (CONFIRMED/PENDING), player avatars |
+
+## Home Dashboard UX Philosophy
+
+The Home tab is the primary screen for players. Its job is to answer three questions as fast as possible:
+
+1. **Is my team playing soon, and when?** — A personal status card at the top of the Home tab shows the next matchday where the logged-in user's team plays (skipping any matchday where their team sits out). It displays the matchday label, date, and the user's current RSVP status as a color badge.
+
+2. **Am I going?** — The RSVP control lives in `MatchdayAvailability`, visually separate from the match schedule. It offers three states with clear language:
+   - **Going** → writes `GOING` to the sheet
+   - **Undecided** → writes `UNDECIDED` to the sheet
+   - **Not going** → writes blank to the sheet
+
+3. **Who else is coming?** — Per-team attendance cards are **expanded by default** so the player count and pitch formation are immediately visible without any interaction. Users can still collapse individual team sections.
+
+**Separation of concerns in the Home tab:**
+- `NextMatchdayBanner` — pure match schedule: pill selector, match cards (scores/kickoffs), sitting-out team. No RSVP, no availability.
+- `MatchdayAvailability` — pure attendance: RSVP control + per-team attendance with formation view. Reacts to the same selected matchday as the banner.
+
+This separation keeps each component focused and makes it easy to iterate on RSVP UX without touching match display logic.
+
+## Design Tokens
 
 - Background: `#0D060E` (midnight)
-- Primary: `#E90052` (vibrant-pink)
-- Secondary: `#963CFF` (electric-violet)
+- Primary accent: `#E90052` (vibrant-pink)
+- Secondary accent: `#963CFF` (electric-violet)
 - Success: `#00FF85` (electric-green)
-- Display font: Barlow Condensed | Body: Inter
-- Layout: `max-w-lg`, centered, mobile-first (375–430px)
-- Cards: left accent border (`pl-card`), `rounded-2xl`, subtle bg
+- Display font: Barlow Condensed (bold/black for headers, scores)
+- Body font: Inter
+- Max-width: `max-w-lg` (centered, mobile-first at 375–430px)
+- Cards: `pl-card` class with left accent border, subtle background, `rounded-2xl`
 
 ## Commands
 
 ```bash
-npm run dev    # Local dev (auto-uses mock data if no Sheets env vars)
-npm run build  # Production build
-npm run lint   # ESLint
+npm run dev          # Local dev (uses mock data if env vars absent)
+npm run build        # Production build
+npm run lint         # ESLint
 ```
 
-## Key Facts
+## Important Notes
 
-- 4 teams, ~53 players, 8 matchdays, 24 matches
-- FC Torpedo: no positions in sheet → store `null`, display "—"
-- Matchday dates from `MDScheduleRaw`, not `ScheduleRaw` → show "TBD" when null
-- `/minato` redirects to team's AppSheet data-entry form
+- **4 teams, ~53 players, 8 matchdays, 24 matches**, 33-minute match duration
+- FC Torpedo players have no positions in the sheet — store as `null`, display "—"
+- Matchday dates come from `MDScheduleRaw`, not `ScheduleRaw`. Display "TBD" when null.
+- `computeMatchScores`: if a matchday has any goals at all, all 3 matches are treated as played (even if 0-0). This is a simplification — no explicit "match finished" flag exists.
+- Player pictures: fetched from Redis/Blob at page.tsx render time and passed down as `playerPictures: Record<string, string>` to avoid per-component async calls
+- The `/minato` route redirects to the team's AppSheet data-entry form

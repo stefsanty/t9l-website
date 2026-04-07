@@ -1,5 +1,7 @@
 'use client';
 
+import { useEffect, useState } from 'react';
+import { useSession } from 'next-auth/react';
 import Image from 'next/image';
 import type { Matchday, Team, Goal } from '@/types';
 
@@ -82,6 +84,27 @@ export default function NextMatchdayBanner({
   teams,
   goals,
 }: NextMatchdayBannerProps) {
+  const { data: session, status } = useSession();
+  const [hasDefaulted, setHasDefaulted] = useState(false);
+
+  useEffect(() => {
+    if (status === 'loading' || hasDefaulted) return;
+
+    if (session?.teamId) {
+      // Find the first upcoming matchday where the user's team is NOT sitting out
+      const playerNextMd = matchdays.find(
+        (md) =>
+          md.sittingOutTeamId !== session.teamId &&
+          md.matches[0].homeGoals === null
+      );
+
+      if (playerNextMd && playerNextMd.id !== selectedMatchdayId) {
+        onMatchdayChange(playerNextMd.id);
+      }
+    }
+    setHasDefaulted(true);
+  }, [status, session, matchdays, onMatchdayChange, selectedMatchdayId, hasDefaulted]);
+
   const matchday = matchdays.find((m) => m.id === selectedMatchdayId) ?? matchdays[0];
   const isNext = matchday.matches[0].homeGoals === null;
 
@@ -90,48 +113,45 @@ export default function NextMatchdayBanner({
 
   return (
     <section className="animate-in">
-      {/* Matchday pill selector */}
-      <div className="flex gap-2 overflow-x-auto pb-3 mb-4 scrollbar-hide -mx-1 px-1">
-        {matchdays.map((md) => {
-          const isSelected = md.id === selectedMatchdayId;
-          const isCompleted = md.matches[0].homeGoals !== null;
-          return (
-            <button
-              key={md.id}
-              onClick={() => onMatchdayChange(md.id)}
-              className={`shrink-0 px-3 py-1.5 rounded-full text-[11px] font-black uppercase tracking-wider transition-all border ${
-                isSelected
-                  ? 'bg-vibrant-pink text-white border-vibrant-pink shadow-[0_0_12px_rgba(233,0,82,0.35)]'
-                  : isCompleted
-                  ? 'bg-white/[0.06] text-white/50 border-white/15 hover:border-white/20 hover:text-white/70'
-                  : 'bg-white/[0.07] text-white/40 border-white/[0.12] hover:border-white/15 hover:text-white/60'
-              }`}
-            >
-              {md.label}
-              {md.date && (
-                <span className={`ml-1.5 font-normal tracking-normal normal-case ${isSelected ? 'text-white/80' : 'text-white/30'}`}>
-                  {formatShortDate(md.date)}
-                </span>
-              )}
-            </button>
-          );
-        })}
-      </div>
-
       <div className="pl-card pl-card-magenta rounded-3xl overflow-hidden relative group">
         <div className="absolute inset-0 bg-diagonal-pattern opacity-[0.03] pointer-events-none group-hover:opacity-[0.05] transition-opacity duration-500" />
 
-        {/* Card header */}
-        <div className="bg-white/[0.05] px-7 py-5 border-b border-white/[0.10] flex justify-between items-center relative">
-          <div className="flex items-center gap-4">
-            <div className={`w-2.5 h-2.5 rounded-full ${isNext ? 'bg-vibrant-pink animate-pulse' : 'bg-white/10'}`} />
-            <h2 className="font-display text-2xl font-black uppercase tracking-tight text-white/90">
-              {isNext ? 'UPCOMING' : 'RESULTS'} — {matchday.label}
-            </h2>
+        {/* Combined Header & Matchday Selector */}
+        <div className="bg-white/[0.05] border-b border-white/[0.10] relative">
+          <div className="px-7 pt-5 pb-3 flex justify-between items-center">
+            <div className="flex items-center gap-3">
+              <div className={`w-2 h-2 rounded-full ${isNext ? 'bg-vibrant-pink animate-pulse' : 'bg-white/10'}`} />
+              <h2 className="font-display text-xl font-black uppercase tracking-tight text-white/90">
+                {isNext ? 'UPCOMING' : 'RESULTS'}
+              </h2>
+            </div>
+            <span className="text-[10px] font-black text-white/30 uppercase tracking-[0.2em] bg-white/[0.07] px-3 py-1 rounded-full border border-white/[0.10]">
+              {matchday.date ? formatShortDate(matchday.date) : 'TBD'}
+            </span>
           </div>
-          <span className="text-[12px] font-black text-white/30 uppercase tracking-[0.2em] bg-white/[0.07] px-4 py-1.5 rounded-full border border-white/[0.10]">
-            {matchday.date ? formatShortDate(matchday.date) : 'TBD'}
-          </span>
+
+          {/* Matchday pill selector integrated into header */}
+          <div className="flex gap-2 overflow-x-auto pb-4 px-6 scrollbar-hide">
+            {matchdays.map((md) => {
+              const isSelected = md.id === selectedMatchdayId;
+              const isCompleted = md.matches[0].homeGoals !== null;
+              return (
+                <button
+                  key={md.id}
+                  onClick={() => onMatchdayChange(md.id)}
+                  className={`shrink-0 px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider transition-all border ${
+                    isSelected
+                      ? 'bg-vibrant-pink text-white border-vibrant-pink shadow-[0_0_12px_rgba(233,0,82,0.35)]'
+                      : isCompleted
+                      ? 'bg-white/[0.06] text-white/50 border-white/15 hover:border-white/20 hover:text-white/70'
+                      : 'bg-white/[0.07] text-white/40 border-white/[0.12] hover:border-white/15 hover:text-white/60'
+                  }`}
+                >
+                  {md.label}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         <div className="p-6 relative">
@@ -228,18 +248,6 @@ export default function NextMatchdayBanner({
                 </div>
               );
             })}
-          </div>
-
-          {/* Resting team */}
-          <div className="pt-5 border-t border-white/10">
-            <div className="flex items-center gap-3 bg-electric-violet/5 p-3 rounded-xl border border-electric-violet/10">
-              <div className="px-2 py-1 bg-electric-violet text-[10px] font-black uppercase tracking-widest rounded-md text-white">
-                RESTING
-              </div>
-              <span className="text-sm font-bold text-white/80">
-                {sittingOutTeam?.name}
-              </span>
-            </div>
           </div>
         </div>
       </div>
