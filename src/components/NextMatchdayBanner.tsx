@@ -201,7 +201,7 @@ export default function NextMatchdayBanner({
 
                     <div className="flex flex-col items-center px-4">
                       {!isPlayed ? (
-                        <span className="font-display text-2xl font-black tracking-tighter text-vibrant-pink bg-vibrant-pink/10 px-4 py-1.5 rounded-xl border border-vibrant-pink/20">
+                        <span className="font-display text-2xl font-black tracking-tighter text-white bg-white/10 px-4 py-1.5 rounded-xl border border-white/15">
                           {match.kickoff}
                         </span>
                       ) : (
