@@ -3,7 +3,8 @@
 import { useState, useMemo } from 'react';
 import Image from 'next/image';
 import PlayerAvatar from './PlayerAvatar';
-import type { Team, PlayerStats } from '@/types';
+import type { PlayerStats } from '@/types';
+import { useT } from '@/i18n/I18nProvider';
 
 interface TopPerformersProps {
   playerStats: PlayerStats[];
@@ -12,9 +13,23 @@ interface TopPerformersProps {
 type SortField = 'playerName' | 'matchesPlayed' | 'goals' | 'assists' | 'avgRating' | 'gaPerGame';
 type SortOrder = 'asc' | 'desc';
 
+function SortIcon({ 
+  field, 
+  sortField, 
+  sortOrder 
+}: { 
+  field: SortField; 
+  sortField: SortField; 
+  sortOrder: SortOrder 
+}) {
+  if (sortField !== field) return <span className="ml-1 opacity-20">↕</span>;
+  return <span className="ml-1 text-electric-violet">{sortOrder === 'asc' ? '↑' : '↓'}</span>;
+}
+
 export default function TopPerformers({
   playerStats,
 }: TopPerformersProps) {
+  const { t } = useT();
   const [visibleCount, setVisibleCount] = useState(10);
   const [sortField, setSortField] = useState<SortField>('goals');
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
@@ -46,57 +61,52 @@ export default function TopPerformers({
   const visibleStats = sortedStats.slice(0, visibleCount);
   const hasMore = visibleCount < sortedStats.length;
 
-  const SortIcon = ({ field }: { field: SortField }) => {
-    if (sortField !== field) return <span className="ml-1 opacity-20">↕</span>;
-    return <span className="ml-1 text-electric-violet">{sortOrder === 'asc' ? '↑' : '↓'}</span>;
-  };
-
   return (
     <div className="pl-card pl-card-violet rounded-2xl overflow-hidden mb-10 relative">
       <div className="absolute inset-0 bg-diagonal-pattern opacity-5 pointer-events-none" />
       <div className="overflow-x-auto relative">
         <table className="w-full text-left text-sm border-collapse">
           <thead>
-            <tr className="border-b border-white/15 bg-white/[0.07] text-white/40 text-[10px] font-black uppercase tracking-[0.1em]">
+            <tr className="border-b border-white/15 bg-white/[0.07] text-white/95 text-[10px] font-black uppercase tracking-[0.1em]">
               <th 
                 className="py-4 pl-4 pr-2 cursor-pointer hover:bg-white/[0.10] transition-colors"
                 onClick={() => handleSort('playerName')}
               >
-                PLAYER <SortIcon field="playerName" />
+                {t('playerHeader')} <SortIcon field="playerName" sortField={sortField} sortOrder={sortOrder} />
               </th>
               <th 
                 className="py-4 px-1 text-center cursor-pointer hover:bg-white/[0.10] transition-colors whitespace-nowrap"
                 onClick={() => handleSort('matchesPlayed')}
-                title="Matches Played"
+                title={t('matchesPlayed')}
               >
-                🅿️ <SortIcon field="matchesPlayed" />
+                🅿️ <SortIcon field="matchesPlayed" sortField={sortField} sortOrder={sortOrder} />
               </th>
               <th 
                 className="py-4 px-1 text-center cursor-pointer hover:bg-white/[0.10] transition-colors whitespace-nowrap"
                 onClick={() => handleSort('avgRating')}
-                title="Rating"
+                title={t('rating')}
               >
-                ✨️ <SortIcon field="avgRating" />
+                ✨️ <SortIcon field="avgRating" sortField={sortField} sortOrder={sortOrder} />
               </th>
               <th 
                 className="py-4 px-1 text-center cursor-pointer hover:bg-white/[0.10] transition-colors whitespace-nowrap"
                 onClick={() => handleSort('goals')}
-                title="Goals"
+                title={t('goals')}
               >
-                ⚽️ <SortIcon field="goals" />
+                ⚽️ <SortIcon field="goals" sortField={sortField} sortOrder={sortOrder} />
               </th>
               <th 
                 className="py-4 px-1 text-center cursor-pointer hover:bg-white/[0.10] transition-colors whitespace-nowrap"
                 onClick={() => handleSort('assists')}
-                title="Assists"
+                title={t('assists')}
               >
-                👟 <SortIcon field="assists" />
+                👟 <SortIcon field="assists" sortField={sortField} sortOrder={sortOrder} />
               </th>
               <th 
                 className="py-4 pl-1 pr-4 text-right cursor-pointer hover:bg-white/[0.10] transition-colors whitespace-nowrap"
                 onClick={() => handleSort('gaPerGame')}
               >
-                G+A/G <SortIcon field="gaPerGame" />
+                G+A/G <SortIcon field="gaPerGame" sortField={sortField} sortOrder={sortOrder} />
               </th>
             </tr>
           </thead>
@@ -124,24 +134,24 @@ export default function TopPerformers({
                               <div className="w-full h-full rounded-full" style={{ backgroundColor: stat.teamColor }} />
                             )}
                           </div>
-                          <span className="text-[9px] font-black text-white/20 uppercase tracking-widest leading-none truncate">{stat.teamName}</span>
+                          <span className="text-[9px] font-black text-white/65 uppercase tracking-widest leading-none truncate">{stat.teamName}</span>
                         </div>
                       </div>
                     </div>
                   </td>
-                  <td className="py-4 px-1 text-center font-display font-black text-base text-white/40 tabular-nums">
+                  <td className="py-4 px-1 text-center font-display font-black text-base text-white/95 tabular-nums">
                     {stat.matchesPlayed}
                   </td>
-                  <td className="py-4 px-1 text-center font-display font-black text-base text-electric-violet tabular-nums">
+                  <td className="py-4 px-1 text-center font-display font-black text-base text-tertiary tabular-nums">
                     {stat.avgRating > 0 ? stat.avgRating.toFixed(1) : '—'}
                   </td>
                   <td className="py-4 px-1 text-center font-display font-black text-lg text-white tabular-nums">
                     {stat.goals}
                   </td>
-                  <td className="py-4 px-1 text-center font-display font-black text-base text-white/60 tabular-nums">
+                  <td className="py-4 px-1 text-center font-display font-black text-base text-white/95 tabular-nums">
                     {stat.assists}
                   </td>
-                  <td className="py-4 pl-1 pr-4 text-right font-display font-black text-sm text-white/30 tabular-nums">
+                  <td className="py-4 pl-1 pr-4 text-right font-display font-black text-sm text-white/80 tabular-nums">
                     {stat.gaPerGame.toFixed(2)}
                   </td>
                 </tr>
@@ -157,7 +167,7 @@ export default function TopPerformers({
             onClick={() => setVisibleCount((prev) => prev + 10)}
             className="w-full py-3 bg-electric-violet hover:bg-electric-violet/80 text-white rounded-xl text-[11px] font-black uppercase tracking-[0.2em] transition-all hover:-translate-y-0.5 active:translate-y-0"
           >
-            Load more players
+            {t('loadMore')}
           </button>
         </div>
       )}

@@ -1,11 +1,15 @@
+'use client';
+
 import Image from "next/image";
 import type { LeagueTableRow } from "@/types";
+import { useT } from "@/i18n/I18nProvider";
 
 interface LeagueTableProps {
   rows: LeagueTableRow[];
 }
 
 export default function LeagueTable({ rows }: LeagueTableProps) {
+  const { t } = useT();
   const leaderPoints = rows[0]?.points ?? 0;
   return (
     <div className="pl-card pl-card-magenta rounded-2xl overflow-hidden mb-10 relative">
@@ -13,17 +17,17 @@ export default function LeagueTable({ rows }: LeagueTableProps) {
       <div className="overflow-x-auto relative">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-white/15 bg-white/[0.07] text-white/40 text-[10px] font-black uppercase tracking-[0.2em]">
-              <th className="py-4 pl-4 pr-1 text-left w-8">POS</th>
-              <th className="py-4 px-3 text-left">CLUB</th>
-              <th className="py-4 px-2 text-center">MP</th>
-              <th className="py-4 px-2 text-center">W</th>
-              <th className="py-4 px-2 text-center">D</th>
-              <th className="py-4 px-2 text-center">L</th>
-              <th className="py-4 px-2 text-center hidden sm:table-cell">GF</th>
-              <th className="py-4 px-2 text-center hidden sm:table-cell">GA</th>
-              <th className="py-4 px-2 text-center">GD</th>
-              <th className="py-4 pr-4 pl-2 text-center font-black text-white">PTS</th>
+            <tr className="border-b border-white/15 bg-white/[0.07] text-white/95 text-[10px] font-black uppercase tracking-[0.2em]">
+              <th className="py-4 pl-4 pr-1 text-left w-8">{t('pos')}</th>
+              <th className="py-4 px-3 text-left">{t('club')}</th>
+              <th className="py-4 px-2 text-center">{t('mp')}</th>
+              <th className="py-4 px-2 text-center">{t('w')}</th>
+              <th className="py-4 px-2 text-center">{t('d')}</th>
+              <th className="py-4 px-2 text-center">{t('l')}</th>
+              <th className="py-4 px-2 text-center hidden sm:table-cell">{t('gf')}</th>
+              <th className="py-4 px-2 text-center hidden sm:table-cell">{t('ga')}</th>
+              <th className="py-4 px-2 text-center">{t('gd')}</th>
+              <th className="py-4 pr-4 pl-2 text-center font-black text-white">{t('pts')}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-white/10">
@@ -35,7 +39,7 @@ export default function LeagueTable({ rows }: LeagueTableProps) {
                 }`}
               >
                 <td className="py-4 pl-4 pr-1">
-                  <span className={`font-display text-base font-black ${i === 0 ? "text-vibrant-pink" : "text-white/40"}`}>
+                  <span className={`font-display text-base font-black ${i === 0 ? "text-vibrant-pink" : "text-white/95"}`}>
                     {i + 1}
                   </span>
                 </td>
@@ -62,19 +66,19 @@ export default function LeagueTable({ rows }: LeagueTableProps) {
                     </span>
                   </div>
                 </td>
-                <td className="py-4 px-2 text-center font-bold text-white/60 tabular-nums">
+                <td className="py-4 px-2 text-center font-bold text-white/95 tabular-nums">
                   {row.played}
                 </td>
                 <td className="py-4 px-2 text-center font-bold text-white/80 tabular-nums">{row.won}</td>
                 <td className="py-4 px-2 text-center font-bold text-white/80 tabular-nums">{row.drawn}</td>
                 <td className="py-4 px-2 text-center font-bold text-white/80 tabular-nums">{row.lost}</td>
-                <td className="py-4 px-2 text-center hidden sm:table-cell font-bold text-white/40 tabular-nums">
+                <td className="py-4 px-2 text-center hidden sm:table-cell font-bold text-white/95 tabular-nums">
                   {row.goalsFor}
                 </td>
-                <td className="py-4 px-2 text-center hidden sm:table-cell font-bold text-white/40 tabular-nums">
+                <td className="py-4 px-2 text-center hidden sm:table-cell font-bold text-white/95 tabular-nums">
                   {row.goalsAgainst}
                 </td>
-                <td className="py-4 px-2 text-center font-bold text-white/60 tabular-nums">
+                <td className="py-4 px-2 text-center font-bold text-white/95 tabular-nums">
                   {row.goalDifference > 0
                     ? `+${row.goalDifference}`
                     : row.goalDifference}
@@ -84,7 +88,7 @@ export default function LeagueTable({ rows }: LeagueTableProps) {
                     {row.points}
                   </span>
                   {i > 0 && row.points < leaderPoints && (
-                    <div className="text-[9px] font-black tabular-nums text-white/20 leading-none mt-0.5">
+                    <div className="text-[9px] font-black tabular-nums text-white/65 leading-none mt-0.5">
                       -{leaderPoints - row.points}
                     </div>
                   )}

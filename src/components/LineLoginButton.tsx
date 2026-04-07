@@ -5,6 +5,7 @@ import { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import Image from 'next/image';
 import Link from 'next/link';
+import { useT } from '@/i18n/I18nProvider';
 
 const GUEST_DISMISSED_KEY = 't9l-guest-dismissed';
 
@@ -17,6 +18,7 @@ function LineIcon({ className = 'w-4 h-4' }: { className?: string }) {
 }
 
 function AssignModal({ onDismiss }: { onDismiss: () => void }) {
+  const { t } = useT();
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center px-5">
       {/* Backdrop */}
@@ -35,10 +37,10 @@ function AssignModal({ onDismiss }: { onDismiss: () => void }) {
           </div>
 
           <h2 className="font-display text-3xl font-black uppercase tracking-tight text-white leading-tight">
-            You&apos;re logged in!
+            {t('loggedInTitle')}
           </h2>
-          <p className="text-sm text-white/50 mt-2 leading-relaxed">
-            Link your LINE account to your player profile to RSVP to matchdays and show your photo in the squad list.
+          <p className="text-sm text-white/80 mt-2 leading-relaxed">
+            {t('loggedInDesc')}
           </p>
 
           {/* CTA */}
@@ -49,15 +51,15 @@ function AssignModal({ onDismiss }: { onDismiss: () => void }) {
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
             </svg>
-            Assign to my player
+            {t('assignToPlayer')}
           </Link>
 
           {/* Guest link */}
           <button
             onClick={onDismiss}
-            className="w-full mt-4 text-[13px] text-white/30 hover:text-white/60 transition-colors py-2"
+            className="w-full mt-4 text-[13px] text-white/80 hover:text-white/95 transition-colors py-2"
           >
-            Continue as guest
+            {t('continueAsGuest')}
           </button>
         </div>
       </div>
@@ -66,6 +68,7 @@ function AssignModal({ onDismiss }: { onDismiss: () => void }) {
 }
 
 export default function LineLoginButton() {
+  const { t } = useT();
   const { data: session, status } = useSession();
   const [open, setOpen] = useState(false);
   const [showAssignModal, setShowAssignModal] = useState(false);
@@ -115,7 +118,7 @@ export default function LineLoginButton() {
           className="flex items-center gap-1.5 bg-[#06C755] hover:bg-[#05b34c] active:scale-95 text-white text-[11px] font-black uppercase tracking-wider px-3 py-1.5 rounded-full transition-all"
         >
           <LineIcon className="w-3.5 h-3.5" />
-          Login {process.env.NODE_ENV === 'development' && (
+          {t('login')} {process.env.NODE_ENV === 'development' && (
             <svg className={`w-3 h-3 transition-transform ${open ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M19 9l-7 7-7-7" />
             </svg>
@@ -126,14 +129,14 @@ export default function LineLoginButton() {
           <div className="absolute right-0 top-full mt-2 w-52 bg-deep-purple border border-white/15 rounded-2xl overflow-hidden z-50 shadow-2xl">
             <button
               onClick={() => signIn('line')}
-              className="w-full flex items-center gap-2 px-4 py-3 text-[12px] font-bold text-white/60 hover:text-white/80 hover:bg-white/5 transition-colors border-b border-white/10"
+              className="w-full flex items-center gap-2 px-4 py-3 text-[12px] font-bold text-white/95 hover:text-white/80 hover:bg-white/5 transition-colors border-b border-white/10"
             >
               <LineIcon className="w-4 h-4 text-[#06C755]" />
-              Login via LINE
+              {t('loginViaLine')}
             </button>
 
             <div className="px-3 py-3 bg-white/[0.02]">
-              <p className="text-[9px] font-black uppercase tracking-[0.2em] text-white/20 mb-2 px-1">Dev Shortcuts</p>
+              <p className="text-[9px] font-black uppercase tracking-[0.2em] text-white/65 mb-2 px-1">{t('devShortcuts')}</p>
               <div className="grid grid-cols-1 gap-1">
                 {[
                   { id: 'ian-noseda', name: 'Ian Noseda', teamId: 'mariners-fc' },
@@ -149,9 +152,9 @@ export default function LineLoginButton() {
                       teamId: p.teamId,
                       callbackUrl: '/'
                     })}
-                    className="text-left px-2 py-1.5 rounded-lg text-[10px] font-bold text-white/30 hover:text-electric-green hover:bg-electric-green/5 transition-all truncate"
+                    className="text-left px-2 py-1.5 rounded-lg text-[10px] font-bold text-white/80 hover:text-electric-green hover:bg-electric-green/5 transition-all truncate"
                   >
-                    Impersonate: {p.name}
+                    {t('impersonate')} {p.name}
                   </button>
                 ))}
                 <button
@@ -161,9 +164,9 @@ export default function LineLoginButton() {
                     teamId: '',
                     callbackUrl: '/assign-player'
                   })}
-                  className="text-left px-2 py-1.5 rounded-lg text-[10px] font-bold text-white/30 hover:text-vibrant-pink hover:bg-vibrant-pink/5 transition-all truncate"
+                  className="text-left px-2 py-1.5 rounded-lg text-[10px] font-bold text-white/80 hover:text-vibrant-pink hover:bg-vibrant-pink/5 transition-all truncate"
                 >
-                  Login as Guest (No Player)
+                  {t('loginAsGuestNoPlayer')}
                 </button>
               </div>
             </div>
@@ -211,12 +214,12 @@ export default function LineLoginButton() {
           <div className="absolute right-0 top-full mt-2 w-52 bg-deep-purple border border-white/15 rounded-2xl overflow-hidden z-50 shadow-2xl">
             {needsSetup ? (
               <div className="px-4 py-3 border-b border-white/10">
-                <p className="text-[10px] font-black uppercase tracking-widest text-white/30">Signed in as guest</p>
-                <p className="text-xs text-white/40 mt-0.5">No player assigned yet</p>
+                <p className="text-[10px] font-black uppercase tracking-widest text-white/80">{t('signedInAsGuest')}</p>
+                <p className="text-xs text-white/95 mt-0.5">{t('noPlayerAssigned')}</p>
               </div>
             ) : (
               <div className="px-4 py-3 border-b border-white/10">
-                <p className="text-[10px] font-black uppercase tracking-widest text-white/30">Playing as</p>
+                <p className="text-[10px] font-black uppercase tracking-widest text-white/80">{t('playingAs')}</p>
                 <p className="text-sm font-black text-white mt-0.5 truncate">{session.playerName}</p>
               </div>
             )}
@@ -230,35 +233,35 @@ export default function LineLoginButton() {
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                 </svg>
-                Assign to my player
+                {t('assignToPlayer')}
               </Link>
             ) : (
               <Link
                 href="/assign-player"
                 onClick={() => setOpen(false)}
-                className="flex items-center gap-2 px-4 py-3 text-[12px] font-bold text-white/60 hover:text-white/80 hover:bg-white/5 transition-colors"
+                className="flex items-center gap-2 px-4 py-3 text-[12px] font-bold text-white/95 hover:text-white/80 hover:bg-white/5 transition-colors"
               >
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                 </svg>
-                Change/Unassign player
+                {t('changeUnassignPlayer')}
               </Link>
             )}
 
             <button
               onClick={() => { setOpen(false); signOut(); }}
-              className="w-full flex items-center gap-2 px-4 py-3 text-[12px] font-bold text-white/40 hover:text-white/70 hover:bg-white/10 transition-colors"
+              className="w-full flex items-center gap-2 px-4 py-3 text-[12px] font-bold text-white/95 hover:text-white/70 hover:bg-white/10 transition-colors"
             >
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
               </svg>
-              Sign out
+              {t('signOut')}
             </button>
 
             {/* Dev Mode Switching (Local only) */}
             {process.env.NODE_ENV === 'development' && (
               <div className="border-t border-white/10 px-3 py-3 bg-white/[0.02]">
-                <p className="text-[9px] font-black uppercase tracking-[0.2em] text-white/20 mb-2 px-1">Dev Shortcuts</p>
+                <p className="text-[9px] font-black uppercase tracking-[0.2em] text-white/65 mb-2 px-1">{t('devShortcuts')}</p>
                 <div className="grid grid-cols-1 gap-1">
                   {[
                     { id: 'ian-noseda', name: 'Ian Noseda', teamId: 'mariners-fc' },
@@ -274,9 +277,9 @@ export default function LineLoginButton() {
                         teamId: p.teamId,
                         callbackUrl: '/'
                       })}
-                      className="text-left px-2 py-1.5 rounded-lg text-[10px] font-bold text-white/30 hover:text-electric-green hover:bg-electric-green/5 transition-all truncate"
+                      className="text-left px-2 py-1.5 rounded-lg text-[10px] font-bold text-white/80 hover:text-electric-green hover:bg-electric-green/5 transition-all truncate"
                     >
-                      Impersonate: {p.name}
+                      {t('impersonate')} {p.name}
                     </button>
                   ))}
                   <button
@@ -286,9 +289,9 @@ export default function LineLoginButton() {
                       teamId: '',
                       callbackUrl: '/assign-player'
                     })}
-                    className="text-left px-2 py-1.5 rounded-lg text-[10px] font-bold text-white/30 hover:text-vibrant-pink hover:bg-vibrant-pink/5 transition-all truncate"
+                    className="text-left px-2 py-1.5 rounded-lg text-[10px] font-bold text-white/80 hover:text-vibrant-pink hover:bg-vibrant-pink/5 transition-all truncate"
                   >
-                    Login as Guest (No Player)
+                    {t('loginAsGuestNoPlayer')}
                   </button>
                 </div>
               </div>

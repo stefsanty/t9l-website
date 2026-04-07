@@ -14,6 +14,8 @@ import TopPerformers from './TopPerformers';
 import MatchResults from './MatchResults';
 import SquadList from './SquadList';
 import LineLoginButton from './LineLoginButton';
+import LanguageToggle from './LanguageToggle';
+import { useT } from '@/i18n/I18nProvider';
 
 type Tab = 'NEXT_GAME' | 'STATS' | 'SQUADS';
 
@@ -44,7 +46,7 @@ function VibesBar({ value }: { value: number }) {
           style={{ width: `${pct}%` }}
         />
       </div>
-      <span className="text-[11px] font-black tabular-nums text-white/60 w-6 text-right">
+      <span className="text-[11px] font-black tabular-nums text-white/95 w-6 text-right">
         {value.toFixed(1)}
       </span>
     </div>
@@ -52,40 +54,41 @@ function VibesBar({ value }: { value: number }) {
 }
 
 function MatchdayVibesSection({ vibes }: { vibes: MatchdayVibes[] }) {
+  const { t } = useT();
   if (vibes.length === 0) return null;
 
   return (
     <div className="relative">
       <div className="flex items-center gap-4 mb-8">
-        <div className="w-1.5 h-7 bg-electric-green rounded-full" />
-        <h2 className="font-display text-4xl font-black uppercase tracking-tight text-white/95">Vibes</h2>
+        <div className="w-1.5 h-7 bg-tertiary rounded-full shadow-[0_0_12px_rgba(0,255,133,0.3)]" />
+        <h2 className="font-display text-4xl font-black uppercase tracking-tight text-white/95">{t('vibes')}</h2>
       </div>
-      <div className="pl-card pl-card-magenta rounded-2xl overflow-hidden relative">
+      <div className="pl-card pl-card-tertiary rounded-2xl overflow-hidden relative">
         <div className="absolute inset-0 bg-diagonal-pattern opacity-5 pointer-events-none" />
         <div className="divide-y divide-white/5 relative">
           {vibes.map((v) => (
             <div key={v.matchdayId} className="px-5 py-4">
               <div className="flex items-center justify-between mb-3">
-                <span className="text-[11px] font-black uppercase tracking-[0.2em] text-white/60">{v.label}</span>
-                <span className="text-[9px] font-black uppercase tracking-widest text-white/40">
-                  {v.responseCount} {v.responseCount === 1 ? 'response' : 'responses'}
+                <span className="text-[11px] font-black uppercase tracking-[0.2em] text-white/95">{v.label}</span>
+                <span className="text-[9px] font-black uppercase tracking-widest text-white/65">
+                  {v.responseCount} {v.responseCount === 1 ? t('response') : t('responses')}
                 </span>
               </div>
               <div className="grid grid-cols-2 gap-x-6 gap-y-2">
                 <div>
-                  <div className="text-[9px] font-black uppercase tracking-widest text-white/25 mb-1">Enjoyment</div>
+                  <div className="text-[9px] font-black uppercase tracking-widest text-white/50 mb-1">{t('vibesEnjoyment')}</div>
                   <VibesBar value={v.enjoyment} />
                 </div>
                 <div>
-                  <div className="text-[9px] font-black uppercase tracking-widest text-white/25 mb-1">Teamwork</div>
+                  <div className="text-[9px] font-black uppercase tracking-widest text-white/50 mb-1">{t('vibesTeamwork')}</div>
                   <VibesBar value={v.teamwork} />
                 </div>
                 <div>
-                  <div className="text-[9px] font-black uppercase tracking-widest text-white/25 mb-1">Competitiveness</div>
+                  <div className="text-[9px] font-black uppercase tracking-widest text-white/50 mb-1">{t('vibesCompetitiveness')}</div>
                   <VibesBar value={v.gamesClose} />
                 </div>
                 <div>
-                  <div className="text-[9px] font-black uppercase tracking-widest text-white/25 mb-1">Refereeing</div>
+                  <div className="text-[9px] font-black uppercase tracking-widest text-white/50 mb-1">{t('vibesRefereeing')}</div>
                   <VibesBar value={v.refereeing} />
                 </div>
               </div>
@@ -113,8 +116,8 @@ export default function Dashboard({
   nextMd,
   playerPictures,
 }: DashboardProps) {
+  const { t } = useT();
   const [activeTab, setActiveTab] = useState<Tab>('NEXT_GAME');
-  const [lang, setLang] = useState<'EN' | 'JP'>('EN');
   const [selectedMatchdayId, setSelectedMatchdayId] = useState(
     nextMd?.matchday.id ?? matchdays[0]?.id ?? ''
   );
@@ -133,29 +136,12 @@ export default function Dashboard({
           
           <div className="hidden sm:block h-[1px] w-4 bg-white/10" />
           
-          <p className="text-[9px] font-black text-white/20 uppercase tracking-[0.3em] flex-1 truncate hidden min-[400px]:block">
+          <p className="text-[9px] font-black text-white/45 uppercase tracking-[0.3em] flex-1 truncate hidden min-[400px]:block">
             Tennozu 9-Aside League
           </p>
 
           <div className="flex-1 min-[400px]:flex-none flex justify-end">
-            <div className="flex items-center bg-white/5 rounded-full p-0.5 border border-white/10">
-              <button
-                onClick={() => setLang('EN')}
-                className={`px-2 py-1 rounded-full text-[9px] font-black transition-all ${
-                  lang === 'EN' ? 'bg-vibrant-pink text-white shadow-[0_0_8px_rgba(233,0,82,0.4)]' : 'text-white/20 hover:text-white/40'
-                }`}
-              >
-                EN
-              </button>
-              <button
-                onClick={() => setLang('JP')}
-                className={`px-2 py-1 rounded-full text-[9px] font-black transition-all ${
-                  lang === 'JP' ? 'bg-vibrant-pink text-white shadow-[0_0_8px_rgba(233,0,82,0.4)]' : 'text-white/20 hover:text-white/40'
-                }`}
-              >
-                JP
-              </button>
-            </div>
+            <LanguageToggle />
           </div>
 
           <LineLoginButton />
@@ -189,8 +175,8 @@ export default function Dashboard({
             ) : (
               <div className="text-center py-24 bg-white/[0.05] rounded-3xl border border-white/10 relative overflow-hidden">
                 <div className="absolute inset-0 bg-diagonal-pattern opacity-5" />
-                <p className="font-display text-4xl font-black uppercase italic text-white/90 relative">Season Finished</p>
-                <p className="text-xs uppercase tracking-[0.5em] mt-4 text-white/40 font-black relative">See you in the Autumn!</p>
+                <p className="font-display text-4xl font-black uppercase italic text-white/90 relative">{t('seasonFinished')}</p>
+                <p className="text-xs uppercase tracking-[0.5em] mt-4 text-white/65 font-black relative">{t('seeYouAutumn')}</p>
               </div>
             )}
           </div>
@@ -201,7 +187,7 @@ export default function Dashboard({
             <div className="relative">
               <div className="flex items-center gap-4 mb-8">
                 <div className="w-1.5 h-7 bg-vibrant-pink rounded-full" />
-                <h2 className="font-display text-4xl font-black uppercase tracking-tight text-white/95">Standings</h2>
+                <h2 className="font-display text-4xl font-black uppercase tracking-tight text-white/95">{t('standings')}</h2>
               </div>
               <LeagueTable rows={leagueTable} />
             </div>
@@ -209,15 +195,15 @@ export default function Dashboard({
             <div className="relative">
               <div className="flex items-center gap-4 mb-8">
                 <div className="w-1.5 h-7 bg-electric-violet rounded-full" />
-                <h2 className="font-display text-4xl font-black uppercase tracking-tight text-white/95">Statistics</h2>
+                <h2 className="font-display text-4xl font-black uppercase tracking-tight text-white/95">{t('statistics')}</h2>
               </div>
               <TopPerformers playerStats={playerStats} />
             </div>
 
             <div className="relative">
               <div className="flex items-center gap-4 mb-8">
-                <div className="w-1.5 h-7 bg-electric-green rounded-full" />
-                <h2 className="font-display text-4xl font-black uppercase tracking-tight text-white/95">Results</h2>
+                <div className="w-1.5 h-7 bg-tertiary rounded-full shadow-[0_0_12px_rgba(0,255,133,0.3)]" />
+                <h2 className="font-display text-4xl font-black uppercase tracking-tight text-white/95">{t('results')}</h2>
               </div>
               <MatchResults matchdays={matchdays} teams={teams} goals={goals} />
             </div>
@@ -230,7 +216,7 @@ export default function Dashboard({
           <div className="animate-in pb-12">
             <div className="flex items-center gap-4 mb-8">
               <div className="w-1.5 h-7 bg-vibrant-pink rounded-full" />
-              <h2 className="font-display text-4xl font-black uppercase tracking-tight text-white/95">Squads</h2>
+              <h2 className="font-display text-4xl font-black uppercase tracking-tight text-white/95">{t('squads')}</h2>
             </div>
             <SquadList
               teams={teams}
@@ -257,7 +243,7 @@ export default function Dashboard({
           <button
             onClick={() => setActiveTab('NEXT_GAME')}
             className={`flex flex-col items-center justify-center flex-1 h-full gap-1.5 transition-all duration-300 relative ${
-              activeTab === 'NEXT_GAME' ? 'text-vibrant-pink' : 'text-white/60 hover:text-white/60'
+              activeTab === 'NEXT_GAME' ? 'text-vibrant-pink' : 'text-white/95 hover:text-white/95'
             }`}
           >
             <div className={`p-1.5 rounded-xl transition-all duration-300 ${activeTab === 'NEXT_GAME' ? 'bg-vibrant-pink/10' : ''}`}>
@@ -265,7 +251,7 @@ export default function Dashboard({
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
               </svg>
             </div>
-            <span className={`text-[10px] font-black uppercase tracking-[0.15em] transition-opacity duration-300 ${activeTab === 'NEXT_GAME' ? 'opacity-100' : 'opacity-70'}`}>Home</span>
+            <span className={`text-[10px] font-black uppercase tracking-[0.15em] transition-opacity duration-300 ${activeTab === 'NEXT_GAME' ? 'opacity-100' : 'opacity-70'}`}>{t('tabHome')}</span>
             {activeTab === 'NEXT_GAME' && (
               <div className="absolute -top-[1px] left-1/2 -translate-x-1/2 w-12 h-[3px] bg-vibrant-pink rounded-b-full shadow-[0_2px_10px_rgba(233,0,82,0.4)]" />
             )}
@@ -274,7 +260,7 @@ export default function Dashboard({
           <button
             onClick={() => setActiveTab('STATS')}
             className={`flex flex-col items-center justify-center flex-1 h-full gap-1.5 transition-all duration-300 relative ${
-              activeTab === 'STATS' ? 'text-vibrant-pink' : 'text-white/60 hover:text-white/60'
+              activeTab === 'STATS' ? 'text-vibrant-pink' : 'text-white/95 hover:text-white/95'
             }`}
           >
             <div className={`p-1.5 rounded-xl transition-all duration-300 ${activeTab === 'STATS' ? 'bg-vibrant-pink/10' : ''}`}>
@@ -282,7 +268,7 @@ export default function Dashboard({
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
               </svg>
             </div>
-            <span className={`text-[10px] font-black uppercase tracking-[0.15em] transition-opacity duration-300 ${activeTab === 'STATS' ? 'opacity-100' : 'opacity-70'}`}>Stats</span>
+            <span className={`text-[10px] font-black uppercase tracking-[0.15em] transition-opacity duration-300 ${activeTab === 'STATS' ? 'opacity-100' : 'opacity-70'}`}>{t('tabStats')}</span>
             {activeTab === 'STATS' && (
               <div className="absolute -top-[1px] left-1/2 -translate-x-1/2 w-12 h-[3px] bg-vibrant-pink rounded-b-full shadow-[0_2px_10px_rgba(233,0,82,0.4)]" />
             )}
@@ -291,7 +277,7 @@ export default function Dashboard({
           <button
             onClick={() => setActiveTab('SQUADS')}
             className={`flex flex-col items-center justify-center flex-1 h-full gap-1.5 transition-all duration-300 relative ${
-              activeTab === 'SQUADS' ? 'text-vibrant-pink' : 'text-white/60 hover:text-white/60'
+              activeTab === 'SQUADS' ? 'text-vibrant-pink' : 'text-white/95 hover:text-white/95'
             }`}
           >
             <div className={`p-1.5 rounded-xl transition-all duration-300 ${activeTab === 'SQUADS' ? 'bg-vibrant-pink/10' : ''}`}>
@@ -299,7 +285,7 @@ export default function Dashboard({
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
               </svg>
             </div>
-            <span className={`text-[10px] font-black uppercase tracking-[0.15em] transition-opacity duration-300 ${activeTab === 'SQUADS' ? 'opacity-100' : 'opacity-70'}`}>Teams</span>
+            <span className={`text-[10px] font-black uppercase tracking-[0.15em] transition-opacity duration-300 ${activeTab === 'SQUADS' ? 'opacity-100' : 'opacity-70'}`}>{t('tabTeams')}</span>
             {activeTab === 'SQUADS' && (
               <div className="absolute -top-[1px] left-1/2 -translate-x-1/2 w-12 h-[3px] bg-vibrant-pink rounded-b-full shadow-[0_2px_10px_rgba(233,0,82,0.4)]" />
             )}

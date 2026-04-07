@@ -1,15 +1,16 @@
 @import "tailwindcss";
 
 :root {
-  --background: #0D060E; /* Dark but distinct Midnight Purple */
+  --background: #1a0f1e; /* Softer, lighter Dark Purple */
   --foreground: #FFFFFF;
-  --primary: #E90052;    /* Vibrant Pink/Magenta */
-  --secondary: #963CFF;  /* Electric Violet */
+  --primary: #FF1A6B;    /* More vibrant Pink/Magenta */
+  --secondary: #AC66FF;  /* More vibrant Electric Violet */
   --success: #00FF85;    /* Electric Green */
-  --muted: #A68BA8;      /* Lightened Muted Purple-Grey */
+  --tertiary: #00FF85;
+  --muted: #DED3E0;      /* Lightened Muted Purple-Grey */
   --border: #2A152E;     /* More visible Dark Purple Border */
-  --card: #1A0F1F;       /* Noticeably lighter Card Background */
-  --accent: #E90052;
+  --card: #251629;       /* Noticeably lighter Card Background */
+  --accent: #FF1A6B;
 }
 
 @theme inline {
@@ -18,17 +19,19 @@
   --color-primary: var(--primary);
   --color-secondary: var(--secondary);
   --color-success: var(--success);
+  --color-tertiary: var(--tertiary);
   --color-muted: var(--muted);
   --color-border: var(--border);
   --color-card: var(--card);
   --color-accent: var(--accent);
   
   /* Brand Specific */
-  --color-deep-purple: #1A0F1F;
-  --color-midnight: #0D060E;
-  --color-vibrant-pink: #E90052;
-  --color-electric-violet: #963CFF;
+  --color-deep-purple: #251629;
+  --color-midnight: #1a0f1e;
+  --color-vibrant-pink: #FF1A6B;
+  --color-electric-violet: #AC66FF;
   --color-electric-green: #00FF85;
+  --color-tertiary-accent: #00FF8599;
 
   --font-display: var(--font-barlow-condensed);
   --font-body: var(--font-inter);
@@ -55,6 +58,19 @@ body {
   font-family: var(--font-body), system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+a {
+  color: var(--primary);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  text-decoration-color: rgba(233, 0, 82, 0.3);
+  transition: all 0.2s ease-in-out;
+}
+
+a:hover {
+  color: #FF2E7E; /* Slightly brighter pink */
+  text-decoration-color: var(--primary);
 }
 
 /* Custom geometric patterns/backgrounds */
@@ -85,8 +101,8 @@ body {
   border-top: 2px solid var(--secondary);
 }
 
-.pl-card-green {
-  border-top: 2px solid var(--success);
+.pl-card-green, .pl-card-tertiary {
+  border-top: 2px solid var(--tertiary);
 }
 
 /* Hide scrollbar visually while keeping scroll functionality */

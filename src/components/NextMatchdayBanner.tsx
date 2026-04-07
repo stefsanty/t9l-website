@@ -5,20 +5,8 @@ import { useSession } from 'next-auth/react';
 import Image from 'next/image';
 import type { Matchday, Team, Goal, AvailabilityStatuses } from '@/types';
 import RsvpButton from './RsvpButton';
-
-function formatShortDate(dateStr: string | null): string {
-  if (!dateStr) return 'TBD';
-  const iso = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (iso) {
-    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    return `${monthNames[parseInt(iso[2], 10) - 1]} ${parseInt(iso[3], 10)}`;
-  }
-  const d = new Date(dateStr);
-  if (!isNaN(d.getTime())) {
-    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-  }
-  return dateStr;
-}
+import { useT } from '@/i18n/I18nProvider';
+import { formatMatchDate } from '@/i18n/format';
 
 function MatchScorers({
   matchId,
@@ -41,7 +29,7 @@ function MatchScorers({
     <div className="mt-2 grid grid-cols-2 gap-x-3 text-[11px]">
       <div className="space-y-0.5">
         {homeGoals.map((g, i) => (
-          <div key={i} className="flex items-start gap-1 text-white/60">
+          <div key={i} className="flex items-start gap-1 text-white/95">
             <span className="shrink-0 mt-px">⚽</span>
             <span className="font-semibold truncate">
               {g.scorer}
@@ -52,7 +40,7 @@ function MatchScorers({
       </div>
       <div className="space-y-0.5 text-right">
         {awayGoals.map((g, i) => (
-          <div key={i} className="flex items-start justify-end gap-1 text-white/60">
+          <div key={i} className="flex items-start justify-end gap-1 text-white/95">
             <span className="font-semibold truncate">
               {g.scorer}
               {g.assister ? <span className="text-white/35 font-normal"> ({g.assister})</span> : null}
@@ -87,6 +75,7 @@ export default function NextMatchdayBanner({
   goals,
   availabilityStatuses,
 }: NextMatchdayBannerProps) {
+  const { t, locale } = useT();
   const { data: session, status } = useSession();
   const [hasDefaulted, setHasDefaulted] = useState(false);
   const [showPills, setShowPills] = useState(false);
@@ -125,10 +114,10 @@ export default function NextMatchdayBanner({
   const userTeamIsPlaying = session?.teamId && matchday.sittingOutTeamId !== session.teamId;
 
   const eyebrow = isUserNextMatchday
-    ? 'YOUR NEXT MATCHDAY'
+    ? t('nextMatchdayYour')
     : isCompleted
-    ? 'MATCHDAY RESULTS'
-    : 'MATCHDAY DETAILS';
+    ? t('nextMatchdayResults')
+    : t('nextMatchdayDetails');
 
   const getTeam = (id: string) => teams.find((t) => t.id === id);
   const sittingOutTeam = getTeam(matchday.sittingOutTeamId);
@@ -146,7 +135,7 @@ export default function NextMatchdayBanner({
 
         <div className="p-7 pb-6 relative">
           <div className="flex justify-between items-start mb-1">
-            <span className="text-[10px] font-black uppercase tracking-[0.25em] text-white/40">
+            <span className="text-[10px] font-black uppercase tracking-[0.25em] text-white/95">
               {eyebrow}
             </span>
             <button
@@ -154,16 +143,16 @@ export default function NextMatchdayBanner({
               className={`text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-lg transition-all ${
                 showPills
                   ? 'bg-vibrant-pink text-white'
-                  : 'bg-white/5 text-white/30 hover:bg-white/10 hover:text-white/50'
+                  : 'bg-white/5 text-white/80 hover:bg-white/10 hover:text-white/80'
               }`}
             >
-              {showPills ? 'close' : 'browse ▾'}
+              {showPills ? t('close') : t('browse')}
             </button>
           </div>
 
           <div className="mb-4">
             <h2 className="font-display text-4xl font-black uppercase tracking-tighter text-white leading-tight">
-              {matchday.label} · {matchday.date ? formatShortDate(matchday.date) : 'TBD'}
+              {matchday.label} · {matchday.date ? formatMatchDate(matchday.date, locale) : t('tbd')}
             </h2>
             <a
               href={VENUE_MAP_URL}
@@ -195,8 +184,8 @@ export default function NextMatchdayBanner({
                         isSelected
                           ? 'bg-vibrant-pink text-white border-vibrant-pink shadow-[0_0_12px_rgba(233,0,82,0.35)]'
                           : isCompletedMd
-                          ? 'bg-white/[0.06] text-white/50 border-white/15 hover:border-white/20 hover:text-white/70'
-                          : 'bg-white/[0.07] text-white/40 border-white/[0.12] hover:border-white/15 hover:text-white/60'
+                          ? 'bg-white/[0.06] text-white/80 border-white/15 hover:border-white/20 hover:text-white/70'
+                          : 'bg-white/[0.07] text-white/95 border-white/[0.12] hover:border-white/15 hover:text-white/95'
                       }`}
                     >
                       {md.label}
@@ -216,6 +205,11 @@ export default function NextMatchdayBanner({
               />
             </div>
           )}
+          {session?.teamId === matchday.sittingOutTeamId && (
+                    <p className="text-[10px] font-bold text-vibrant-pink/90 uppercase tracking-tight mt-1">
+                      {t('notScheduled')}
+                    </p>
+                  )}
 
           <div className="h-[1px] w-full bg-white/10 my-6" />
 
@@ -251,14 +245,14 @@ export default function NextMatchdayBanner({
                     <div className="flex flex-col items-center px-4">
                       {!isPlayed ? (
                         <>
-                          <span className="text-[8px] font-black uppercase tracking-widest text-white/20 mb-1.5">Kickoff Time</span>
+                          <span className="text-[8px] font-black uppercase tracking-widest text-white/65 mb-1.5">{t('kickoffTime')}</span>
                           <span className="font-display text-xl font-black tracking-tighter text-white/90 bg-white/5 px-3 py-1 rounded-lg border border-white/10">
                             {match.kickoff}
                           </span>
                         </>
                       ) : (
                         <>
-                          <span className="text-[8px] font-black uppercase tracking-widest text-white/20 mb-0.5">FT</span>
+                          <span className="text-[8px] font-black uppercase tracking-widest text-white/65 mb-0.5">{t('ft')}</span>
                           <div className="flex items-center gap-3">
                             <span className="font-display text-3xl font-black text-white">
                               {match.homeGoals}
@@ -308,14 +302,10 @@ export default function NextMatchdayBanner({
               <div className="pt-2 flex items-center gap-2">
                 <div className="h-[1px] flex-1 bg-white/5" />
                 <div className="text-center">
-                  <span className="text-[10px] font-black uppercase tracking-widest text-white/20">
-                    Sitting out: <span className="text-white/40">{sittingOutTeam.name}</span>
+                  <span className="text-[10px] font-black uppercase tracking-widest text-white/65">
+                    {t('sittingOut')}: <span className="text-white/95">{sittingOutTeam.name}</span>
                   </span>
-                  {session?.teamId === matchday.sittingOutTeamId && (
-                    <p className="text-[10px] font-bold text-vibrant-pink/90 uppercase tracking-tight mt-1">
-                      You are not scheduled to play on this matchday
-                    </p>
-                  )}
+              
                 </div>
                 <div className="h-[1px] flex-1 bg-white/5" />
               </div>

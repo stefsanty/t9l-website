@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
+import { useT } from '@/i18n/I18nProvider';
 
 type RsvpStatus = 'GOING' | 'UNDECIDED' | '';
 
@@ -19,6 +20,7 @@ function normalizeStatus(s: string): RsvpStatus {
 }
 
 export default function RsvpButton({ matchdayId, initialStatus }: RsvpButtonProps) {
+  const { t } = useT();
   const { data: session } = useSession();
   const router = useRouter();
   const [status, setStatus] = useState<RsvpStatus>(() => normalizeStatus(initialStatus));
@@ -51,16 +53,16 @@ export default function RsvpButton({ matchdayId, initialStatus }: RsvpButtonProp
   }
 
   const options: { value: RsvpStatus; label: string }[] = [
-    { value: 'GOING', label: 'Going' },
-    { value: 'UNDECIDED', label: 'Undecided' },
-    { value: '', label: 'Not going' },
+    { value: 'GOING', label: t('rsvpGoing') },
+    { value: 'UNDECIDED', label: t('rsvpUndecided') },
+    { value: '', label: t('rsvpNotGoing') },
   ];
 
   return (
     <div>
       <div className="flex items-center gap-3 mb-3">
-        <span className="text-[11px] font-black uppercase tracking-[0.2em] text-white/30">
-          Your RSVP
+        <span className="text-[11px] font-black uppercase tracking-[0.2em] text-white/80">
+          {t('rsvpQuestion')}
         </span>
         <div className="h-[1px] flex-1 bg-white/10" />
         {loading && (
@@ -68,25 +70,25 @@ export default function RsvpButton({ matchdayId, initialStatus }: RsvpButtonProp
         )}
       </div>
 
-      <div className="flex rounded-xl overflow-hidden border border-white/10 bg-white/[0.04]">
+      <div className="flex gap-2">
         {options.map(({ value, label }) => {
           const isActive = status === value;
           const activeStyles =
             value === 'GOING'
-              ? 'bg-electric-green/20 text-electric-green border-electric-green/40'
+              ? 'bg-electric-green/20 text-electric-green border-electric-green/50 shadow-[0_0_15px_rgba(0,255,133,0.15)]'
               : value === 'UNDECIDED'
-              ? 'bg-yellow-400/15 text-yellow-400 border-yellow-400/30'
-              : 'bg-vibrant-pink/10 text-vibrant-pink/70 border-vibrant-pink/20';
+              ? 'bg-yellow-400/15 text-yellow-400 border-yellow-400/40 shadow-[0_0_15px_rgba(250,204,21,0.1)]'
+              : 'bg-vibrant-pink/15 text-vibrant-pink border-vibrant-pink/30 shadow-[0_0_15px_rgba(233,0,82,0.1)]';
 
           return (
             <button
               key={value}
               onClick={() => select(value)}
               disabled={loading}
-              className={`flex-1 py-2.5 text-[11px] font-black uppercase tracking-wider transition-all border-b-2 disabled:opacity-50 active:scale-95 ${
+              className={`flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all border disabled:opacity-50 active:scale-95 ${
                 isActive
                   ? activeStyles
-                  : 'text-white/30 border-transparent hover:text-white/50 hover:bg-white/[0.04]'
+                  : 'bg-white/5 text-white/65 border-white/10 hover:bg-white/10 hover:text-white/80 hover:border-white/20'
               }`}
             >
               {label}
@@ -97,7 +99,7 @@ export default function RsvpButton({ matchdayId, initialStatus }: RsvpButtonProp
 
       {error && (
         <p className="text-vibrant-pink text-[11px] mt-2">
-          Could not update — try again
+          {t('rsvpError')}
         </p>
       )}
     </div>

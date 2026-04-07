@@ -310,7 +310,7 @@ The Home tab is the primary screen for players. Its job is to answer three quest
 
 ## Design Tokens
 
-- Background: `#0D060E` (midnight)
+- Background: `#0A050B` (midnight)
 - Primary accent: `#E90052` (vibrant-pink)
 - Secondary accent: `#963CFF` (electric-violet)
 - Success: `#00FF85` (electric-green)

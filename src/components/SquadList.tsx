@@ -4,6 +4,7 @@ import { useState } from 'react';
 import Image from 'next/image';
 import PlayerAvatar from './PlayerAvatar';
 import type { Team, Player, Availability, AvailabilityStatuses } from '@/types';
+import { useT } from '@/i18n/I18nProvider';
 
 interface SquadListProps {
   teams: Team[];
@@ -23,7 +24,7 @@ const getPositionColor = (pos: string | null) => {
     case 'MF': return 'bg-emerald-600 text-white border-emerald-400/30';
     case 'MF/FWD': return 'bg-orange-600 text-white border-orange-400/30';
     case 'FWD': return 'bg-red-600 text-white border-red-400/30';
-    default: return 'bg-white/10 text-white/20 border-white/10';
+    default: return 'bg-white/10 text-white/65 border-white/10';
   }
 };
 
@@ -36,6 +37,7 @@ export default function SquadList({
   nextMatchdayLabel,
   playerPictures,
 }: SquadListProps) {
+  const { t } = useT();
   const [expandedTeamId, setExpandedTeamId] = useState<string | null>(null);
 
   const getTeamPlayers = (teamId: string) => {
@@ -103,14 +105,14 @@ export default function SquadList({
                     </h3>
                     <div className="flex items-center gap-2 mt-1">
                       <div className="h-[1px] w-4 bg-white/10" />
-                      <span className="text-[10px] font-black uppercase tracking-[0.2em] text-white/30">
-                        {teamPlayers.length} SQUAD MEMBERS
+                      <span className="text-[10px] font-black uppercase tracking-[0.2em] text-white/80">
+                        {teamPlayers.length} {t('squadMembers')}
                       </span>
                       {hasAvailabilityData && (
                         <>
                           <div className="h-[1px] w-2 bg-white/10" />
-                          <span className="text-[10px] font-black uppercase tracking-[0.2em] text-white/20">
-                            {nextMatchdayLabel} AVAILABILITY
+                          <span className="text-[10px] font-black uppercase tracking-[0.2em] text-white/65">
+                            {nextMatchdayLabel} {t('availability')}
                           </span>
                         </>
                       )}
@@ -121,7 +123,7 @@ export default function SquadList({
                   isExpanded ? 'rotate-180 bg-electric-violet/10 border-electric-violet/20' : ''
                 }`}>
                   <svg
-                    className={`w-5 h-5 ${isExpanded ? 'text-electric-violet' : 'text-white/20'}`}
+                    className={`w-5 h-5 ${isExpanded ? 'text-electric-violet' : 'text-white/65'}`}
                     fill="none"
                     viewBox="0 0 24 24"
                     stroke="currentColor"
@@ -136,10 +138,10 @@ export default function SquadList({
                   {teamPlayers.map((player) => {
                     const status = getAvailabilityStatus(player.id, team.id);
                     const badgeProps = (() => {
-                      if (status === 'GOING' || status === 'Y') return { label: 'GOING', cls: 'bg-electric-green/10 border-electric-green/20 text-electric-green', dotCls: 'bg-electric-green shadow-[0_0_8px_rgba(0,255,133,0.5)]' };
-                      if (status === 'UNDECIDED' || status === 'EXPECTED') return { label: 'UNDECIDED', cls: 'bg-yellow-400/10 border-yellow-400/20 text-yellow-400', dotCls: 'bg-yellow-400' };
-                      if (status === 'PLAYED') return { label: 'PLAYED', cls: 'bg-electric-violet/10 border-electric-violet/20 text-electric-violet', dotCls: 'bg-electric-violet' };
-                      return { label: 'NOT GOING', cls: 'bg-white/[0.06] border-white/10 text-white/30', dotCls: 'bg-white/20' };
+                      if (status === 'GOING' || status === 'Y') return { label: t('statusGoing'), cls: 'bg-electric-green/10 border-electric-green/20 text-electric-green', dotCls: 'bg-electric-green shadow-[0_0_8px_rgba(0,255,133,0.5)]' };
+                      if (status === 'UNDECIDED' || status === 'EXPECTED') return { label: t('statusUndecided'), cls: 'bg-yellow-400/10 border-yellow-400/20 text-yellow-400', dotCls: 'bg-yellow-400' };
+                      if (status === 'PLAYED') return { label: t('statusPlayed'), cls: 'bg-electric-violet/10 border-electric-violet/20 text-electric-violet', dotCls: 'bg-electric-violet' };
+                      return { label: t('statusNotGoing'), cls: 'bg-white/[0.06] border-white/10 text-white/80', dotCls: 'bg-white/20' };
                     })();
                     return (
                       <div

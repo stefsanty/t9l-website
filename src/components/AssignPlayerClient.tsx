@@ -4,12 +4,14 @@ import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import type { Team, Player } from '@/types';
+import { useT } from '@/i18n/I18nProvider';
 
 interface Props {
   playersByTeam: { team: Team; players: Player[] }[];
 }
 
 export default function AssignPlayerClient({ playersByTeam }: Props) {
+  const { t } = useT();
   const { data: session, update } = useSession();
   const router = useRouter();
   const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(
@@ -93,10 +95,10 @@ export default function AssignPlayerClient({ playersByTeam }: Props) {
       {/* Header */}
       <div className="mb-8 text-center">
         <h1 className="font-display text-4xl font-black uppercase tracking-tight text-white">
-          Who are you?
+          {t('whoAreYou')}
         </h1>
-        <p className="text-sm text-white/40 mt-2">
-          Select your player profile. This links your LINE account to your squad entry.
+        <p className="text-sm text-white/95 mt-2">
+          {t('selectProfileDesc')}
         </p>
       </div>
 
@@ -105,13 +107,13 @@ export default function AssignPlayerClient({ playersByTeam }: Props) {
         <div className="relative group">
           <input
             type="text"
-            placeholder="Search your name (e.g. 'St')"
+            placeholder={t('searchPlaceholder')}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-white/[0.03] border border-white/10 rounded-2xl px-12 py-4 text-white placeholder:text-white/20 focus:outline-none focus:border-electric-green/40 focus:bg-white/[0.05] transition-all"
+            className="w-full bg-white/[0.03] border border-white/10 rounded-2xl px-12 py-4 text-white placeholder:text-white/65 focus:outline-none focus:border-electric-green/40 focus:bg-white/[0.05] transition-all"
           />
           <svg
-            className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-white/20 group-focus-within:text-electric-green/60 transition-colors"
+            className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-white/65 group-focus-within:text-electric-green/60 transition-colors"
             fill="none"
             viewBox="0 0 24 24"
             stroke="currentColor"
@@ -121,7 +123,7 @@ export default function AssignPlayerClient({ playersByTeam }: Props) {
           {searchQuery && (
             <button
               onClick={() => setSearchQuery('')}
-              className="absolute right-4 top-1/2 -translate-y-1/2 p-1 rounded-full hover:bg-white/10 text-white/40 transition-colors"
+              className="absolute right-4 top-1/2 -translate-y-1/2 p-1 rounded-full hover:bg-white/10 text-white/95 transition-colors"
             >
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
@@ -136,7 +138,7 @@ export default function AssignPlayerClient({ playersByTeam }: Props) {
               <div key={team.id}>
                 <div className="flex items-center gap-3 mb-3">
                   <div className="w-3 h-3 rounded-full" style={{ backgroundColor: team.color }} />
-                  <span className="text-[11px] font-black uppercase tracking-[0.25em] text-white/40">
+                  <span className="text-[11px] font-black uppercase tracking-[0.25em] text-white/95">
                     {team.name}
                   </span>
                 </div>
@@ -151,7 +153,7 @@ export default function AssignPlayerClient({ playersByTeam }: Props) {
                         className={`flex items-center gap-3 px-4 py-3 rounded-xl border text-left transition-all ${
                           isSelected
                             ? 'border-electric-green/60 bg-electric-green/5 text-electric-green'
-                            : 'border-white/5 bg-white/[0.02] text-white/60 hover:border-white/20 hover:text-white/80'
+                            : 'border-white/5 bg-white/[0.02] text-white/95 hover:border-white/20 hover:text-white/80'
                         }`}
                       >
                         <div
@@ -178,12 +180,12 @@ export default function AssignPlayerClient({ playersByTeam }: Props) {
           </div>
         ) : (
           <div className="text-center py-12 px-8 bg-white/[0.02] border border-dashed border-white/10 rounded-2xl">
-            <p className="text-white/40 text-sm">No players found matching &ldquo;{searchQuery}&rdquo;</p>
+            <p className="text-white/95 text-sm">{t('noPlayersFound')} &ldquo;{searchQuery}&rdquo;</p>
             <button
               onClick={() => setSearchQuery('')}
               className="mt-2 text-electric-green/60 hover:text-electric-green text-xs font-bold uppercase tracking-widest transition-colors"
             >
-              Clear search
+              {t('clearSearch')}
             </button>
           </div>
         )}
@@ -201,17 +203,17 @@ export default function AssignPlayerClient({ playersByTeam }: Props) {
             disabled={!selectedPlayerId || submitting || unassigning || isAlreadyAssigned}
             className={`w-full py-4 rounded-2xl font-display text-lg font-black uppercase tracking-wider transition-all disabled:opacity-30 disabled:cursor-not-allowed ${
               isAlreadyAssigned
-                ? 'bg-white/10 text-white/40'
+                ? 'bg-white/10 text-white/95'
                 : 'bg-electric-green text-black hover:bg-electric-green/90 active:scale-[0.98]'
             }`}
           >
             {submitting
-              ? 'Saving\u2026'
+              ? t('saving')
               : isAlreadyAssigned
-              ? 'This is you'
+              ? t('thisIsYou')
               : selectedPlayerId
-              ? "Confirm \u2014 I\u2019m this player"
-              : 'Select a player above'}
+              ? t('confirmImThisPlayer')
+              : t('selectPlayerAbove')}
           </button>
 
           {session?.playerId && (
@@ -220,22 +222,22 @@ export default function AssignPlayerClient({ playersByTeam }: Props) {
               disabled={submitting || unassigning}
               className="w-full py-3 rounded-xl font-display text-sm font-black uppercase tracking-wider text-vibrant-pink/60 hover:text-vibrant-pink hover:bg-vibrant-pink/5 transition-all disabled:opacity-30"
             >
-              {unassigning ? 'Removing\u2026' : 'Unassign from current player'}
+              {unassigning ? t('removing') : t('unassignCurrentPlayer')}
             </button>
           )}
         </div>
 
-        <p className="text-[10px] text-white/20 text-center mt-4 uppercase tracking-widest">
-          Your LINE profile photo will be used as your avatar
+        <p className="text-[10px] text-white/65 text-center mt-4 uppercase tracking-widest">
+          {t('linePhotoAvatarDesc')}
         </p>
 
         {/* Guest exit */}
         <div className="mt-6 text-center">
           <button
             onClick={() => router.push('/')}
-            className="text-[13px] text-white/25 hover:text-white/50 transition-colors"
+            className="text-[13px] text-white/50 hover:text-white/80 transition-colors"
           >
-            Skip for now — keep browsing as guest
+            {t('skipForNowGuest')}
           </button>
         </div>
       </div>

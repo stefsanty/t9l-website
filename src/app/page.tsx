@@ -7,8 +7,13 @@ import {
   computeMatchdayVibes,
 } from "@/lib/stats";
 import Dashboard from "@/components/Dashboard";
+import { unstable_cache } from "next/cache";
 
-export const revalidate = 300; // ISR: 5 minutes
+const getCachedSheetData = unstable_cache(
+  async () => fetchSheetData(),
+  ["sheet-data"],
+  { revalidate: 300, tags: ["sheet-data"] }
+);
 
 async function fetchPlayerPictures(
   playerIds: string[],
@@ -27,7 +32,7 @@ async function fetchPlayerPictures(
       token: process.env.KV_REST_API_TOKEN,
     });
     const keys = playerIds.map((id) => `player-pic:${id}`);
-    const values = await redis.mget<(string | null)[]>(...keys);
+    const values = await redis.mget<(string | null)[]>(keys);
     const result: Record<string, string> = {};
     playerIds.forEach((id, i) => {
       if (values[i]) result[id] = values[i] as string;
@@ -41,13 +46,13 @@ async function fetchPlayerPictures(
 export default async function Home() {
   let raw;
   try {
-    raw = await fetchSheetData();
+    raw = await getCachedSheetData();
   } catch {
     return (
       <div className="flex items-center justify-center min-h-dvh bg-midnight text-white px-6 text-center">
         <div>
           <p className="font-display text-3xl font-black uppercase text-white/80 mb-2">Data unavailable</p>
-          <p className="text-sm text-white/30 font-bold uppercase tracking-widest">Try again in a moment</p>
+          <p className="text-sm text-white/80 font-bold uppercase tracking-widest">Try again in a moment</p>
         </div>
       </div>
     );

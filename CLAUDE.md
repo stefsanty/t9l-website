@@ -13,7 +13,8 @@ T9L.me — mobile-first website for the Tennozu 9-Aside League, a recreational f
 - Tailwind CSS v4
 - `googleapis` — Google Sheets API (read + write)
 - `next-auth` v4 — LINE OAuth authentication
-- `@upstash/redis` — JWT→player mapping storage
+- `@upstash/redis` — JWT→player mapping storage, i18n translation cache
+- `@anthropic-ai/sdk` — Runtime translation (Claude 3.5 Haiku)
 - `@vercel/blob` — player profile picture storage
 - Deployed to Vercel
 
@@ -37,8 +38,20 @@ Google Sheets (source of truth)
        └── SquadList               (Teams tab)
 
 LINE OAuth → next-auth → Upstash Redis (lineId → player mapping)
+i18n → cookie t9l-lang → translateDict (Claude + Redis cache) → I18nProvider
 Player pics → Vercel Blob Storage ← fetched at page.tsx render time
 ```
+
+## Internationalization (i18n)
+
+The app supports English (`en`) and Japanese (`ja`) based on the `t9l-lang` cookie.
+
+- **Source of Truth:** All UI strings are defined in English in `src/i18n/en.ts`.
+- **Translation:** Japanese translations are generated at runtime via Claude API (`claude-3-5-haiku-20241022`) and cached in Upstash Redis (`t9l:i18n:ja:<key>`).
+- **Provider:** `I18nProvider` wraps the app in `layout.tsx`, providing `locale` and `dict` to client components via `useT()`.
+- **Dates:** Formatted via `Intl.DateTimeFormat` in `src/i18n/format.ts` based on the current locale.
+- **Toggle:** `LanguageToggle` component in the header sets the `t9l-lang` cookie via a server action and refreshes the page.
+- **Cache Invalidation:** To bust the translation cache, manually delete Redis keys matching `t9l:i18n:ja:*`.
 
 ## Data Source
 
@@ -64,15 +77,18 @@ LINE_CLIENT_SECRET
 NEXTAUTH_SECRET
 NEXTAUTH_URL                   # https://t9l.me in prod, http://localhost:3000 in dev
 
-# Upstash Redis (lineId → player mapping)
+# Upstash Redis (lineId → player mapping, i18n cache)
 KV_REST_API_URL
 KV_REST_API_TOKEN
+
+# Anthropic (runtime translation)
+ANTHROPIC_API_KEY
 
 # Vercel Blob (player profile pictures)
 BLOB_READ_WRITE_TOKEN
 ```
 
-If `GOOGLE_SHEET_ID` or `GOOGLE_SERVICE_ACCOUNT_EMAIL` are absent, `fetchSheetData()` falls back to `lib/mock-data.ts` automatically. Auth features (RSVP, player assignment) degrade gracefully when KV/Blob vars are missing.
+If `GOOGLE_SHEET_ID` or `GOOGLE_SERVICE_ACCOUNT_EMAIL` are absent, `fetchSheetData()` falls back to `lib/mock-data.ts` automatically. Auth features (RSVP, player assignment) degrade gracefully when KV/Blob vars are missing. i18n falls back to English if `ANTHROPIC_API_KEY` is missing or translation fails.
 
 ### Sheet Tabs & Ranges
 
@@ -114,27 +130,36 @@ If `GOOGLE_SHEET_ID` or `GOOGLE_SERVICE_ACCOUNT_EMAIL` are absent, `fetchSheetDa
 ```
 src/
 ├── app/
-│   ├── layout.tsx                    # Fonts (Barlow Condensed + Inter), AuthProvider wrapper
-│   ├── page.tsx                      # Server component: fetchSheetData → parse → Dashboard
+│   ├── layout.tsx                    # i18n-aware RootLayout, AuthProvider + I18nProvider
+│   ├── page.tsx                      # Server component: cached fetchSheetData → parse → Dashboard
 │   ├── globals.css                   # Tailwind + custom design tokens
+│   ├── actions/
+│   │   └── setLocale.ts              # Server action: set t9l-lang cookie
 │   └── api/
 │       ├── auth/[...nextauth]/       # next-auth handler
 │       ├── assign-player/route.ts    # POST: map lineId → playerId in Redis, upload pic to Blob
 │       └── rsvp/route.ts            # POST: write availability to RosterRaw, revalidatePath('/')
+├── i18n/
+│   ├── en.ts                         # Master English dictionary
+│   ├── translate.ts                  # Server: Claude + Redis translation logic
+│   ├── I18nProvider.tsx              # Client: context + useT() hook
+│   ├── getLocale.ts                  # Server: read t9l-lang cookie
+│   └── format.ts                     # Intl.DateTimeFormat helpers
 ├── assign-player/
 │   └── page.tsx                      # Server component: roster → AssignPlayerClient
 ├── components/
-│   ├── Dashboard.tsx                 # Client: 3-tab layout (Home / Stats / Teams) + header/nav
-│   ├── NextMatchdayBanner.tsx        # Matchday pill selector, match cards, sitting-out badge
-│   ├── MatchdayAvailability.tsx      # RSVP control + per-team attendance (expanded by default)
-│   ├── LeagueTable.tsx               # Standings table (responsive, highlights leader)
-│   ├── TopPerformers.tsx             # Sortable player stats table with load-more
-│   ├── MatchResults.tsx              # Past results, expandable goalscorers, most recent first
-│   ├── SquadList.tsx                 # Per-team collapsible lists, availability badges
-│   ├── PlayerAvatar.tsx              # Avatar with fallback chain: Blob URL → local pic → initials
-│   ├── RsvpButton.tsx                # 3-state RSVP (Going / Undecided / Not going), optimistic UI
-│   ├── LineLoginButton.tsx           # Login button + dropdown + first-login assignment modal
-│   └── AssignPlayerClient.tsx        # Roster picker (team-grouped grid) for player self-assignment
+│   ├── Dashboard.tsx                 # Client: 3-tab layout + LanguageToggle
+│   ├── NextMatchdayBanner.tsx        # i18n-aware match cards
+│   ├── MatchdayAvailability.tsx      # i18n-aware attendance pitch view
+│   ├── LeagueTable.tsx               # i18n-aware standings
+│   ├── TopPerformers.tsx             # i18n-aware player stats
+│   ├── MatchResults.tsx              # i18n-aware past results
+│   ├── SquadList.tsx                 # i18n-aware squad lists
+│   ├── LanguageToggle.tsx            # Client: EN/JP switch
+│   ├── PlayerAvatar.tsx              # Avatar with fallback chain
+│   ├── RsvpButton.tsx                # i18n-aware 3-state RSVP
+│   ├── LineLoginButton.tsx           # i18n-aware login dropdown
+│   └── AssignPlayerClient.tsx        # i18n-aware player assignment grid
 ├── lib/
 │   ├── sheets.ts                     # batchGet (read) + writeRosterAvailability (write)
 │   ├── data.ts                       # parseTeams/parsePlayers/parseSchedule/parseGoals/parseRatings
@@ -145,179 +170,13 @@ src/
     └── index.ts                      # All TypeScript interfaces
 ```
 
-## Key Types
+## Key i18n Workflow
 
-```typescript
-interface Team {
-  id: string;            // "mariners-fc"
-  name: string;          // "Mariners FC"
-  shortName: string;     // "MFC"
-  color: string;         // hex
-  logo: string | null;
-}
-
-interface Player {
-  id: string;            // "ian-noseda"
-  name: string;
-  teamId: string;
-  position: string | null; // "GK" | "DF" | "DF/MF" | "MF" | "MF/FWD" | "FWD" | null
-  picture: string | null;
-}
-
-interface Match {
-  id: string;            // "md1-m1"
-  matchNumber: number;
-  kickoff: string;       // "19:05"
-  fullTime: string;
-  homeTeamId: string;
-  awayTeamId: string;
-  homeGoals: number | null;  // null = unplayed
-  awayGoals: number | null;
-}
-
-interface Matchday {
-  id: string;            // "md1"
-  label: string;         // "MD1"
-  date: string | null;   // "YYYY-MM-DD" or null
-  matches: Match[];      // always 3
-  sittingOutTeamId: string;
-}
-
-interface Goal {
-  id: string;
-  matchId: string;
-  matchdayId: string;
-  scoringTeamId: string;
-  concedingTeamId: string;
-  scorer: string;        // player name or "Guest"
-  assister: string | null;
-}
-
-interface PlayerRating {
-  matchdayId: string;
-  respondentTeamId: string;
-  playerRatings: Record<string, number>; // playerId → 1-5
-  refereeing: number;
-  gamesClose: number;
-  teamwork: number;
-  enjoyment: number;
-}
-
-interface Availability {
-  [matchdayId: string]: { [teamId: string]: string[] };
-}
-
-interface PlayedStatus {
-  [matchdayId: string]: { [teamId: string]: string[] }; // players with "PLAYED" status
-}
-
-interface PlayerStats {
-  playerId: string;
-  playerName: string;
-  teamId: string;
-  teamName: string;
-  teamShortName: string;
-  teamLogo: string | null;
-  teamColor: string;
-  matchesPlayed: number;
-  goals: number;
-  assists: number;
-  avgRating: number;
-  matchdaysRated: number;
-  gaPerGame: number;
-}
-
-interface LeagueData {
-  teams: Team[];
-  players: Player[];
-  matchdays: Matchday[];
-  goals: Goal[];
-  ratings: PlayerRating[];
-  availability: Availability;
-  played: PlayedStatus;
-}
-```
-
-## Session Shape (next-auth extension)
-
-```typescript
-// session.user is extended via next-auth module augmentation
-session.lineId: string
-session.playerId: string | null   // null until player self-assigns
-session.playerName: string | null
-session.teamId: string | null
-session.linePictureUrl: string
-```
-
-## Computed Stats (`lib/stats.ts`)
-
-- `computeLeagueTable(teams, matchdays)` — W/D/L/GF/GA/GD/Pts per team. Sort: Pts → GD → GF.
-- `computePlayerStats(teams, players, goals, ratings, played)` — per-player: matchesPlayed (from `played`, each matchday = 2 matches), goals, assists, avgRating, G+A per game.
-- `computeTopScorers`, `computeTopAssisters`, `computeTopRated` — legacy helpers (not currently used in UI but available).
-- `findNextMatchday(matchdays)` — first matchday with `homeGoals === null`; falls back to last played.
-
-## Auth & Player Assignment Flow
-
-1. User taps "Login" → LINE OAuth → `next-auth` JWT session created
-2. `jwt` callback checks Upstash Redis hash `line-player-map` for `lineId` key
-3. If no mapping found: `session.playerId` = null → LineLoginButton shows "Assign player" prompt
-4. User visits `/assign-player` → selects themselves from team-grouped roster grid
-5. `POST /api/assign-player` → stores `{playerId, playerName, teamId}` in Redis + downloads LINE profile pic to Vercel Blob
-6. JWT is refreshed on next request → session now has full player context
-
-## RSVP Flow
-
-1. `RsvpButton` renders only if `session.teamId !== matchday.sittingOutTeamId`
-2. User selects one of three states → `POST /api/rsvp` with `{matchdayId, status: 'GOING' | 'UNDECIDED' | ''}`
-3. `writeRosterAvailability(playerId, matchdayId, status)` writes the string value to `RosterRaw` via Sheets API
-4. `revalidatePath('/')` invalidates the ISR cache — next visitor triggers a fresh sheet read
-5. RsvpButton uses optimistic UI; reverts on error
-
-**RSVP status values written to sheet:**
-- `GOING` — player confirmed (maps to `Y` in legacy data)
-- `UNDECIDED` — player tentative (maps to `EXPECTED` in legacy data)
-- `''` (blank) — not going / no response
-
-## UI — 3-Tab Layout
-
-**Header** (fixed): "T9L '26 SPRING" branding + LINE login button  
-**Bottom nav**: Home / Stats / Teams tabs
-
-| Tab | Contents |
-|-----|----------|
-| **Home** | Personal status card (your next playing matchday + your RSVP status) → NextMatchdayBanner (pill selector, match cards, sitting-out badge) → MatchdayAvailability (3-state RSVP + per-team attendance, expanded by default with pitch formation view) |
-| **Stats** | Standings table → Sortable player stats table (goals, assists, rating, G+A/game, load-more) → Past match results with expandable goalscorers |
-| **Teams** | Per-team collapsible squad lists with position badges, availability status (CONFIRMED/PENDING), player avatars |
-
-## Home Dashboard UX Philosophy
-
-The Home tab is the primary screen for players. Its job is to answer three questions as fast as possible:
-
-1. **Is my team playing soon, and when?** — A personal status card at the top of the Home tab shows the next matchday where the logged-in user's team plays (skipping any matchday where their team sits out). It displays the matchday label, date, and the user's current RSVP status as a color badge.
-
-2. **Am I going?** — The RSVP control lives in `MatchdayAvailability`, visually separate from the match schedule. It offers three states with clear language:
-   - **Going** → writes `GOING` to the sheet
-   - **Undecided** → writes `UNDECIDED` to the sheet
-   - **Not going** → writes blank to the sheet
-
-3. **Who else is coming?** — Per-team attendance cards are **expanded by default** so the player count and pitch formation are immediately visible without any interaction. Users can still collapse individual team sections.
-
-**Separation of concerns in the Home tab:**
-- `NextMatchdayBanner` — pure match schedule: pill selector, match cards (scores/kickoffs), sitting-out team. No RSVP, no availability.
-- `MatchdayAvailability` — pure attendance: RSVP control + per-team attendance with formation view. Reacts to the same selected matchday as the banner.
-
-This separation keeps each component focused and makes it easy to iterate on RSVP UX without touching match display logic.
-
-## Design Tokens
-
-- Background: `#0D060E` (midnight)
-- Primary accent: `#E90052` (vibrant-pink)
-- Secondary accent: `#963CFF` (electric-violet)
-- Success: `#00FF85` (electric-green)
-- Display font: Barlow Condensed (bold/black for headers, scores)
-- Body font: Inter
-- Max-width: `max-w-lg` (centered, mobile-first at 375–430px)
-- Cards: `pl-card` class with left accent border, subtle background, `rounded-2xl`
+1. `RootLayout` calls `getLocale()` (reads cookie) and `translateDict(en, locale)` (Claude + Redis).
+2. `I18nProvider` receives `locale` and `dict`, making them available via `useT()`.
+3. Client components use `const { t, locale } = useT()` to render localized strings: `t('standings')`.
+4. Dates use `formatMatchDate(date, locale)` for local-appropriate formatting.
+5. `LanguageToggle` triggers `setLocaleAction` → `revalidatePath('/')` → server re-renders with new locale.
 
 ## Commands
 

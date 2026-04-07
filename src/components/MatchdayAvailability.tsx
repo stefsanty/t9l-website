@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import type { Matchday, Team, Player, Availability, AvailabilityStatuses, PlayedStatus } from '@/types';
+import { useT } from '@/i18n/I18nProvider';
 
 // ── Formation helpers (moved from NextMatchdayBanner) ─────────────────────────
 
@@ -52,6 +53,7 @@ function TeamFormation({
   players: Player[];
   teamColor: string;
 }) {
+  const { t } = useT();
   const getPlayer = (id: string) => players.find((p) => p.id === id);
 
   const gks: Player[] = [];
@@ -85,8 +87,8 @@ function TeamFormation({
 
   if (confirmedIds.length === 0) {
     return (
-      <span className="text-[11px] text-white/20 italic py-2 px-1 block">
-        No confirmations yet
+      <span className="text-[11px] text-white/65 italic py-2 px-1 block">
+        {t('noConfirmations')}
       </span>
     );
   }
@@ -109,16 +111,16 @@ function TeamFormation({
   const gkSlots  = distributeToSlots(gks, 1);
 
   const rows = [
-    { label: 'FWD', slots: fwdSlots },
-    { label: 'MID', slots: midSlots },
-    { label: 'DEF', slots: defSlots },
-    { label: 'GK',  slots: gkSlots  },
+    { label: t('fwd'), slots: fwdSlots },
+    { label: t('mid'), slots: midSlots },
+    { label: t('def'), slots: defSlots },
+    { label: t('gk'),  slots: gkSlots  },
   ];
 
   return (
     <div className="mt-3">
       <div className="flex justify-between items-center mb-2">
-        <span className="text-[9px] font-black uppercase tracking-widest text-white/25">LINEUP</span>
+        <span className="text-[9px] font-black uppercase tracking-widest text-white/50">{t('lineup')}</span>
         <div className="flex gap-1">
           {FORMATIONS.map((f) => {
             const isActive = formation.label === f.label;
@@ -218,6 +220,7 @@ export default function MatchdayAvailability({
   availabilityStatuses,
   played,
 }: MatchdayAvailabilityProps) {
+  const { t } = useT();
   const isNext = matchday.matches[0].homeGoals === null;
   const playingTeams = teams.filter((t) => t.id !== matchday.sittingOutTeamId);
 
@@ -246,8 +249,8 @@ export default function MatchdayAvailability({
     return (
       <section className="mt-4 mb-12 animate-in">
         <div className="flex items-center gap-3 mb-3">
-          <h3 className="text-[11px] font-black uppercase tracking-[0.2em] text-white/30">
-            Who Played
+          <h3 className="text-[11px] font-black uppercase tracking-[0.2em] text-white/80">
+            {t('whoPlayed')}
           </h3>
           <div className="h-[1px] flex-1 bg-white/10" />
         </div>
@@ -274,12 +277,12 @@ export default function MatchdayAvailability({
                   </div>
                   <div className="flex items-center gap-3">
                     <span className={`text-[11px] font-black px-2 py-0.5 rounded ${
-                      playedIds.length > 0 ? 'bg-electric-violet/10 text-electric-violet' : 'bg-white/10 text-white/30'
+                      playedIds.length > 0 ? 'bg-electric-violet/10 text-electric-violet' : 'bg-white/10 text-white/80'
                     }`}>
-                      {playedIds.length} played
+                      {playedIds.length} {t('playedCount')}
                     </span>
                     <svg
-                      className={`w-4 h-4 text-white/20 transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`}
+                      className={`w-4 h-4 text-white/65 transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`}
                       fill="none" viewBox="0 0 24 24" stroke="currentColor"
                     >
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M19 9l-7 7-7-7" />
@@ -304,8 +307,8 @@ export default function MatchdayAvailability({
     <section className="mt-4 mb-12 animate-in">
       {/* Player availability */}
       <div className="flex items-center gap-3 mb-3">
-        <h3 className="text-[11px] font-black uppercase tracking-[0.2em] text-white/30">
-          Player Availability
+        <h3 className="text-[11px] font-black uppercase tracking-[0.2em] text-white/80">
+          {t('playerAvailability')}
         </h3>
         <div className="h-[1px] flex-1 bg-white/10" />
       </div>
@@ -349,21 +352,21 @@ export default function MatchdayAvailability({
                 <div className="flex items-center gap-3">
                   {goingIds.length > 0 && (
                     <span className="text-[11px] font-black px-2 py-0.5 rounded bg-electric-green/10 text-electric-green">
-                      {goingIds.length} going
+                      {goingIds.length} {t('goingCount')}
                     </span>
                   )}
                   {undecidedIds.length > 0 && (
                     <span className="text-[11px] font-black px-2 py-0.5 rounded bg-yellow-400/10 text-yellow-400">
-                      {undecidedIds.length} undecided
+                      {undecidedIds.length} {t('undecidedCount')}
                     </span>
                   )}
                   {goingIds.length === 0 && undecidedIds.length === 0 && (
-                    <span className="text-[11px] font-black px-2 py-0.5 rounded bg-white/10 text-white/30">
-                      0 going
+                    <span className="text-[11px] font-black px-2 py-0.5 rounded bg-white/10 text-white/80">
+                      0 {t('goingCount')}
                     </span>
                   )}
                   <svg
-                    className={`w-4 h-4 text-white/20 transition-transform duration-300 ${
+                    className={`w-4 h-4 text-white/65 transition-transform duration-300 ${
                       isExpanded ? 'rotate-180' : ''
                     }`}
                     fill="none"
