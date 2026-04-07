@@ -2,6 +2,7 @@
 
 import { useSession, signIn, signOut } from 'next-auth/react';
 import { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import Image from 'next/image';
 import Link from 'next/link';
 
@@ -17,19 +18,15 @@ function LineIcon({ className = 'w-4 h-4' }: { className?: string }) {
 
 function AssignModal({ onDismiss }: { onDismiss: () => void }) {
   return (
-    <div className="fixed inset-0 z-[200] flex items-end sm:items-center justify-center">
+    <div className="fixed inset-0 z-[200] flex items-center justify-center px-5">
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-black/70 backdrop-blur-sm"
         onClick={onDismiss}
       />
 
-      {/* Sheet */}
-      <div className="relative w-full max-w-lg mx-auto bg-[#0F0311] border border-white/10 rounded-t-3xl sm:rounded-3xl overflow-hidden shadow-2xl animate-in">
-        {/* Drag handle (mobile) */}
-        <div className="flex justify-center pt-4 pb-1 sm:hidden">
-          <div className="w-10 h-1 rounded-full bg-white/15" />
-        </div>
+      {/* Card */}
+      <div className="relative w-full max-w-sm mx-auto bg-[#0F0311] border border-white/10 rounded-3xl overflow-hidden shadow-2xl animate-in">
 
         <div className="px-7 pt-5 pb-8">
           {/* Icon */}
@@ -120,8 +117,11 @@ export default function LineLoginButton() {
 
   return (
     <>
-      {/* First-login lightbox */}
-      {showAssignModal && <AssignModal onDismiss={handleVisitAsGuest} />}
+      {/* First-login lightbox — rendered via portal to escape header's transform stacking context */}
+      {showAssignModal && createPortal(
+        <AssignModal onDismiss={handleVisitAsGuest} />,
+        document.body,
+      )}
 
       <div className="relative" ref={ref}>
         <button
