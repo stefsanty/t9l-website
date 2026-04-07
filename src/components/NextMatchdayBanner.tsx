@@ -5,6 +5,7 @@ import { useSession } from 'next-auth/react';
 import Image from 'next/image';
 import type { Matchday, Team, Goal, AvailabilityStatuses } from '@/types';
 import RsvpButton from './RsvpButton';
+import MatchdayCountdown from './MatchdayCountdown';
 function formatMatchDate(dateStr: string) {
   const d = new Date(dateStr);
   return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(d);
@@ -155,6 +156,9 @@ export default function NextMatchdayBanner({
             <h2 className="font-display text-4xl font-black uppercase tracking-tighter text-white leading-tight">
               {matchday.label} · {matchday.date ? formatMatchDate(matchday.date) : "TBD"}
             </h2>
+            <div className="mt-1 mb-1">
+              <MatchdayCountdown matchday={matchday} />
+            </div>
             <a
               href={VENUE_MAP_URL}
               target="_blank"
