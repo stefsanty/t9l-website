@@ -103,13 +103,73 @@ export default function LineLoginButton() {
 
   if (!session) {
     return (
-      <button
-        onClick={() => signIn('line')}
-        className="flex items-center gap-1.5 bg-[#06C755] hover:bg-[#05b34c] active:scale-95 text-white text-[11px] font-black uppercase tracking-wider px-3 py-1.5 rounded-full transition-all"
-      >
-        <LineIcon className="w-3.5 h-3.5" />
-        Login
-      </button>
+      <div className="relative" ref={ref}>
+        <button
+          onClick={() => {
+            if (process.env.NODE_ENV === 'development') {
+              setOpen(!open);
+            } else {
+              signIn('line');
+            }
+          }}
+          className="flex items-center gap-1.5 bg-[#06C755] hover:bg-[#05b34c] active:scale-95 text-white text-[11px] font-black uppercase tracking-wider px-3 py-1.5 rounded-full transition-all"
+        >
+          <LineIcon className="w-3.5 h-3.5" />
+          Login {process.env.NODE_ENV === 'development' && (
+            <svg className={`w-3 h-3 transition-transform ${open ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M19 9l-7 7-7-7" />
+            </svg>
+          )}
+        </button>
+
+        {open && process.env.NODE_ENV === 'development' && (
+          <div className="absolute right-0 top-full mt-2 w-52 bg-deep-purple border border-white/15 rounded-2xl overflow-hidden z-50 shadow-2xl">
+            <button
+              onClick={() => signIn('line')}
+              className="w-full flex items-center gap-2 px-4 py-3 text-[12px] font-bold text-white/60 hover:text-white/80 hover:bg-white/5 transition-colors border-b border-white/10"
+            >
+              <LineIcon className="w-4 h-4 text-[#06C755]" />
+              Login via LINE
+            </button>
+
+            <div className="px-3 py-3 bg-white/[0.02]">
+              <p className="text-[9px] font-black uppercase tracking-[0.2em] text-white/20 mb-2 px-1">Dev Shortcuts</p>
+              <div className="grid grid-cols-1 gap-1">
+                {[
+                  { id: 'ian-noseda', name: 'Ian Noseda', teamId: 'mariners-fc' },
+                  { id: 'ivo-rodrigues', name: 'Ivo Rodrigues', teamId: 'fenix-fc' },
+                  { id: 'ryohei-enomoto', name: 'Ryohei Enomoto', teamId: 'hygge-sc' },
+                  { id: 'riki-imai', name: 'Riki Imai', teamId: 'fc-torpedo' },
+                ].map((p) => (
+                  <button
+                    key={p.id}
+                    onClick={() => signIn('dev-login', {
+                      playerId: p.id,
+                      playerName: p.name,
+                      teamId: p.teamId,
+                      callbackUrl: '/'
+                    })}
+                    className="text-left px-2 py-1.5 rounded-lg text-[10px] font-bold text-white/30 hover:text-electric-green hover:bg-electric-green/5 transition-all truncate"
+                  >
+                    Impersonate: {p.name}
+                  </button>
+                ))}
+                <button
+                  onClick={() => signIn('dev-login', {
+                    playerId: 'guest-dev',
+                    playerName: 'Guest Dev',
+                    teamId: '',
+                    callbackUrl: '/assign-player'
+                  })}
+                  className="text-left px-2 py-1.5 rounded-lg text-[10px] font-bold text-white/30 hover:text-vibrant-pink hover:bg-vibrant-pink/5 transition-all truncate"
+                >
+                  Login as Guest (No Player)
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
     );
   }
 
