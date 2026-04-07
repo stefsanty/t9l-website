@@ -250,19 +250,25 @@ export default function NextMatchdayBanner({
 
                     <div className="flex flex-col items-center px-4">
                       {!isPlayed ? (
-                        <span className="font-display text-xl font-black tracking-tighter text-white/90 bg-white/5 px-3 py-1 rounded-lg border border-white/10">
-                          {match.kickoff}
-                        </span>
+                        <>
+                          <span className="text-[8px] font-black uppercase tracking-widest text-white/20 mb-1.5">Kickoff Time</span>
+                          <span className="font-display text-xl font-black tracking-tighter text-white/90 bg-white/5 px-3 py-1 rounded-lg border border-white/10">
+                            {match.kickoff}
+                          </span>
+                        </>
                       ) : (
-                        <div className="flex items-center gap-3">
-                          <span className="font-display text-3xl font-black text-white">
-                            {match.homeGoals}
-                          </span>
-                          <div className="w-4 h-[2px] bg-white/10" />
-                          <span className="font-display text-3xl font-black text-white">
-                            {match.awayGoals}
-                          </span>
-                        </div>
+                        <>
+                          <span className="text-[8px] font-black uppercase tracking-widest text-white/20 mb-0.5">FT</span>
+                          <div className="flex items-center gap-3">
+                            <span className="font-display text-3xl font-black text-white">
+                              {match.homeGoals}
+                            </span>
+                            <div className="w-4 h-[2px] bg-white/10" />
+                            <span className="font-display text-3xl font-black text-white">
+                              {match.awayGoals}
+                            </span>
+                          </div>
+                        </>
                       )}
                     </div>
 
