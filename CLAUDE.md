@@ -1,5 +1,7 @@
 # CLAUDE.md
 
+> **Maintenance rule:** Whenever an architectural decision is made — new component, changed data flow, new API route, modified sheet schema, UX philosophy change — update this file immediately as part of the same commit. This file is the single source of truth for how the project works.
+
 ## Project
 
 T9L.me — mobile-first website for the Tennozu 9-Aside League, a recreational football league in Tokyo. Players can log in via LINE, assign themselves to their roster entry, RSVP availability for upcoming matchdays, and view live league data sourced from a Google Sheet.
@@ -27,11 +29,12 @@ Google Sheets (source of truth)
   app/page.tsx (server component, ISR revalidate=300)
        ↓ props
   components/Dashboard.tsx (client, 3-tab UI)
-       ├── NextMatchdayBanner  (Home tab)
-       ├── LeagueTable         (Stats tab)
-       ├── TopPerformers       (Stats tab)
-       ├── MatchResults        (Stats tab)
-       └── SquadList           (Teams tab)
+       ├── NextMatchdayBanner      (Home tab — match info only)
+       ├── MatchdayAvailability    (Home tab — RSVP + per-team attendance)
+       ├── LeagueTable             (Stats tab)
+       ├── TopPerformers           (Stats tab)
+       ├── MatchResults            (Stats tab)
+       └── SquadList               (Teams tab)
 
 LINE OAuth → next-auth → Upstash Redis (lineId → player mapping)
 Player pics → Vercel Blob Storage ← fetched at page.tsx render time
@@ -98,7 +101,7 @@ If `GOOGLE_SHEET_ID` or `GOOGLE_SERVICE_ACCOUNT_EMAIL` are absent, `fetchSheetDa
 
 **`#REF!` handling** — GoalsRaw and RatingsRaw column 0 may contain `#REF!`. If value matches `/MD\d+/i`, use it. Otherwise fall back to inferring matchday from timestamp date against `MDScheduleRaw` dates.
 
-**Availability statuses** — `RosterRaw` MD columns: `Y` = confirmed, `EXPECTED` = expected, `PLAYED` = actually played. Both `Y` and `EXPECTED` count toward `availability`. Only `PLAYED` counts toward `played` (used for match stats).
+**Availability statuses** — `RosterRaw` MD columns: `Y` / `GOING` = confirmed, `EXPECTED` / `UNDECIDED` = tentative, `PLAYED` = actually played, blank = not going. Both confirmed and tentative statuses count toward `availability`. Only `PLAYED` counts toward `played` (used for match stats). New RSVPs write `GOING` / `UNDECIDED` / `''`; legacy `Y` / `EXPECTED` values from the sheet are still parsed correctly.
 
 **Goal-to-match mapping** — Match by `(scoringTeamId, concedingTeamId)` or `(concedingTeamId, scoringTeamId)` within the matchday's 3 matches.
 
@@ -122,13 +125,14 @@ src/
 │   └── page.tsx                      # Server component: roster → AssignPlayerClient
 ├── components/
 │   ├── Dashboard.tsx                 # Client: 3-tab layout (Home / Stats / Teams) + header/nav
-│   ├── NextMatchdayBanner.tsx        # Matchday selector, match cards, RSVP, team formations
+│   ├── NextMatchdayBanner.tsx        # Matchday pill selector, match cards, sitting-out badge
+│   ├── MatchdayAvailability.tsx      # RSVP control + per-team attendance (expanded by default)
 │   ├── LeagueTable.tsx               # Standings table (responsive, highlights leader)
 │   ├── TopPerformers.tsx             # Sortable player stats table with load-more
 │   ├── MatchResults.tsx              # Past results, expandable goalscorers, most recent first
 │   ├── SquadList.tsx                 # Per-team collapsible lists, availability badges
 │   ├── PlayerAvatar.tsx              # Avatar with fallback chain: Blob URL → local pic → initials
-│   ├── RsvpButton.tsx                # Optimistic toggle (requires auth + team is playing)
+│   ├── RsvpButton.tsx                # 3-state RSVP (Going / Undecided / Not going), optimistic UI
 │   ├── LineLoginButton.tsx           # Login button + dropdown + first-login assignment modal
 │   └── AssignPlayerClient.tsx        # Roster picker (team-grouped grid) for player self-assignment
 ├── lib/
@@ -264,10 +268,15 @@ session.linePictureUrl: string
 ## RSVP Flow
 
 1. `RsvpButton` renders only if `session.teamId !== matchday.sittingOutTeamId`
-2. User toggles → `POST /api/rsvp` with `{matchdayId, going}`
-3. `writeRosterAvailability(playerId, matchdayId, going)` updates the cell in `RosterRaw` via Sheets API
+2. User selects one of three states → `POST /api/rsvp` with `{matchdayId, status: 'GOING' | 'UNDECIDED' | ''}`
+3. `writeRosterAvailability(playerId, matchdayId, status)` writes the string value to `RosterRaw` via Sheets API
 4. `revalidatePath('/')` invalidates the ISR cache — next visitor triggers a fresh sheet read
 5. RsvpButton uses optimistic UI; reverts on error
+
+**RSVP status values written to sheet:**
+- `GOING` — player confirmed (maps to `Y` in legacy data)
+- `UNDECIDED` — player tentative (maps to `EXPECTED` in legacy data)
+- `''` (blank) — not going / no response
 
 ## UI — 3-Tab Layout
 
@@ -276,9 +285,28 @@ session.linePictureUrl: string
 
 | Tab | Contents |
 |-----|----------|
-| **Home** | NextMatchdayBanner: matchday pill selector, match cards with scores/kickoffs, resting team badge, RSVP button, per-team availability with collapsible pitch formation view |
+| **Home** | Personal status card (your next playing matchday + your RSVP status) → NextMatchdayBanner (pill selector, match cards, sitting-out badge) → MatchdayAvailability (3-state RSVP + per-team attendance, expanded by default with pitch formation view) |
 | **Stats** | Standings table → Sortable player stats table (goals, assists, rating, G+A/game, load-more) → Past match results with expandable goalscorers |
 | **Teams** | Per-team collapsible squad lists with position badges, availability status (CONFIRMED/PENDING), player avatars |
+
+## Home Dashboard UX Philosophy
+
+The Home tab is the primary screen for players. Its job is to answer three questions as fast as possible:
+
+1. **Is my team playing soon, and when?** — A personal status card at the top of the Home tab shows the next matchday where the logged-in user's team plays (skipping any matchday where their team sits out). It displays the matchday label, date, and the user's current RSVP status as a color badge.
+
+2. **Am I going?** — The RSVP control lives in `MatchdayAvailability`, visually separate from the match schedule. It offers three states with clear language:
+   - **Going** → writes `GOING` to the sheet
+   - **Undecided** → writes `UNDECIDED` to the sheet
+   - **Not going** → writes blank to the sheet
+
+3. **Who else is coming?** — Per-team attendance cards are **expanded by default** so the player count and pitch formation are immediately visible without any interaction. Users can still collapse individual team sections.
+
+**Separation of concerns in the Home tab:**
+- `NextMatchdayBanner` — pure match schedule: pill selector, match cards (scores/kickoffs), sitting-out team. No RSVP, no availability.
+- `MatchdayAvailability` — pure attendance: RSVP control + per-team attendance with formation view. Reacts to the same selected matchday as the banner.
+
+This separation keeps each component focused and makes it easy to iterate on RSVP UX without touching match display logic.
 
 ## Design Tokens
 
