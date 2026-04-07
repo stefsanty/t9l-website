@@ -67,7 +67,7 @@ function MatchdayVibesSection({ vibes }: { vibes: MatchdayVibes[] }) {
             <div key={v.matchdayId} className="px-5 py-4">
               <div className="flex items-center justify-between mb-3">
                 <span className="text-[11px] font-black uppercase tracking-[0.2em] text-white/60">{v.label}</span>
-                <span className="text-[9px] font-black uppercase tracking-widest text-white/20">
+                <span className="text-[9px] font-black uppercase tracking-widest text-white/40">
                   {v.responseCount} {v.responseCount === 1 ? 'response' : 'responses'}
                 </span>
               </div>
@@ -114,6 +114,7 @@ export default function Dashboard({
   playerPictures,
 }: DashboardProps) {
   const [activeTab, setActiveTab] = useState<Tab>('NEXT_GAME');
+  const [lang, setLang] = useState<'EN' | 'JP'>('EN');
   const [selectedMatchdayId, setSelectedMatchdayId] = useState(
     nextMd?.matchday.id ?? matchdays[0]?.id ?? ''
   );
@@ -124,15 +125,39 @@ export default function Dashboard({
   return (
     <div className="flex flex-col min-h-dvh pb-[88px] max-w-lg mx-auto bg-midnight selection:bg-vibrant-pink selection:text-white">
       <header className="fixed top-0 left-1/2 -translate-x-1/2 w-full max-w-lg z-50 bg-midnight/95 backdrop-blur-md border-b border-white/[0.12] shadow-[0_4px_20px_rgba(0,0,0,0.6)]">
-        <div className="flex items-center gap-3 px-5 h-12">
-          <h1 className="font-display font-black uppercase tracking-tight leading-none flex items-baseline gap-2">
+        <div className="flex items-center gap-3 px-4 h-12">
+          <h1 className="font-display font-black uppercase tracking-tight leading-none flex items-baseline gap-1.5 shrink-0">
             <span className="text-xl text-white/95">T9L &apos;26</span>
             <span className="text-xl text-vibrant-pink">SPRING</span>
           </h1>
-          <div className="h-[1px] w-6 bg-electric-green/60" />
-          <p className="text-[9px] font-black text-white/30 uppercase tracking-[0.35em] flex-1">
+          
+          <div className="hidden sm:block h-[1px] w-4 bg-white/10" />
+          
+          <p className="text-[9px] font-black text-white/20 uppercase tracking-[0.3em] flex-1 truncate hidden min-[400px]:block">
             Tennozu 9-Aside League
           </p>
+
+          <div className="flex-1 min-[400px]:flex-none flex justify-end">
+            <div className="flex items-center bg-white/5 rounded-full p-0.5 border border-white/10">
+              <button
+                onClick={() => setLang('EN')}
+                className={`px-2 py-1 rounded-full text-[9px] font-black transition-all ${
+                  lang === 'EN' ? 'bg-white/10 text-white' : 'text-white/20 hover:text-white/40'
+                }`}
+              >
+                EN
+              </button>
+              <button
+                onClick={() => setLang('JP')}
+                className={`px-2 py-1 rounded-full text-[9px] font-black transition-all ${
+                  lang === 'JP' ? 'bg-white/10 text-white' : 'text-white/20 hover:text-white/40'
+                }`}
+              >
+                JP
+              </button>
+            </div>
+          </div>
+
           <LineLoginButton />
         </div>
       </header>
@@ -165,7 +190,7 @@ export default function Dashboard({
               <div className="text-center py-24 bg-white/[0.05] rounded-3xl border border-white/10 relative overflow-hidden">
                 <div className="absolute inset-0 bg-diagonal-pattern opacity-5" />
                 <p className="font-display text-4xl font-black uppercase italic text-white/90 relative">Season Finished</p>
-                <p className="text-xs uppercase tracking-[0.5em] mt-4 text-white/20 font-black relative">See you in the Autumn!</p>
+                <p className="text-xs uppercase tracking-[0.5em] mt-4 text-white/40 font-black relative">See you in the Autumn!</p>
               </div>
             )}
           </div>
@@ -232,7 +257,7 @@ export default function Dashboard({
           <button
             onClick={() => setActiveTab('NEXT_GAME')}
             className={`flex flex-col items-center justify-center flex-1 h-full gap-1.5 transition-all duration-300 relative ${
-              activeTab === 'NEXT_GAME' ? 'text-vibrant-pink' : 'text-white/40 hover:text-white/60'
+              activeTab === 'NEXT_GAME' ? 'text-vibrant-pink' : 'text-white/60 hover:text-white/60'
             }`}
           >
             <div className={`p-1.5 rounded-xl transition-all duration-300 ${activeTab === 'NEXT_GAME' ? 'bg-vibrant-pink/10' : ''}`}>
@@ -249,7 +274,7 @@ export default function Dashboard({
           <button
             onClick={() => setActiveTab('STATS')}
             className={`flex flex-col items-center justify-center flex-1 h-full gap-1.5 transition-all duration-300 relative ${
-              activeTab === 'STATS' ? 'text-vibrant-pink' : 'text-white/40 hover:text-white/60'
+              activeTab === 'STATS' ? 'text-vibrant-pink' : 'text-white/60 hover:text-white/60'
             }`}
           >
             <div className={`p-1.5 rounded-xl transition-all duration-300 ${activeTab === 'STATS' ? 'bg-vibrant-pink/10' : ''}`}>
@@ -266,7 +291,7 @@ export default function Dashboard({
           <button
             onClick={() => setActiveTab('SQUADS')}
             className={`flex flex-col items-center justify-center flex-1 h-full gap-1.5 transition-all duration-300 relative ${
-              activeTab === 'SQUADS' ? 'text-vibrant-pink' : 'text-white/40 hover:text-white/60'
+              activeTab === 'SQUADS' ? 'text-vibrant-pink' : 'text-white/60 hover:text-white/60'
             }`}
           >
             <div className={`p-1.5 rounded-xl transition-all duration-300 ${activeTab === 'SQUADS' ? 'bg-vibrant-pink/10' : ''}`}>
