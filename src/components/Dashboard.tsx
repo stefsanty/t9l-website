@@ -58,11 +58,12 @@ export default function Dashboard({
           <div className="animate-in">
             {nextMd ? (
               <NextMatchdayBanner
-                matchday={nextMd.matchday}
-                isNext={nextMd.isNext}
+                matchdays={matchdays}
+                defaultMatchdayId={nextMd.matchday.id}
                 teams={teams}
                 players={players}
                 availability={availability}
+                goals={goals}
               />
             ) : (
               <div className="text-center py-24 bg-white/[0.02] rounded-3xl border border-white/5 relative overflow-hidden">
