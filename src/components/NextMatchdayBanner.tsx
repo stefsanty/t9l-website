@@ -226,6 +226,7 @@ export default function NextMatchdayBanner({
               const isPlayed = match.homeGoals !== null;
               const isUserHome = session?.teamId === match.homeTeamId;
               const isUserAway = session?.teamId === match.awayTeamId;
+              const isUserMatch = isUserHome || isUserAway;
 
               return (
                 <div key={match.id}>
@@ -241,19 +242,24 @@ export default function NextMatchdayBanner({
                           />
                         )}
                       </div>
-                      <span className={`font-display text-lg font-black uppercase tracking-tighter leading-none hidden sm:block ${isUserHome ? 'text-vibrant-pink' : ''}`} translate="no">
-                        {home?.name}
-                      </span>
-                      <span className={`font-display text-lg font-black uppercase tracking-tighter leading-none sm:hidden ${isUserHome ? 'text-vibrant-pink' : ''}`} translate="no">
-                        {home?.shortName || home?.name.slice(0, 3)}
-                      </span>
+                      <div className="flex flex-col gap-0.5 min-w-0">
+                        <span className={`font-display text-lg font-black uppercase tracking-tighter leading-none hidden sm:block ${isUserHome ? 'text-vibrant-pink' : ''}`} translate="no">
+                          {home?.name}
+                        </span>
+                        <span className={`font-display text-lg font-black uppercase tracking-tighter leading-none sm:hidden ${isUserHome ? 'text-vibrant-pink' : ''}`} translate="no">
+                          {home?.shortName || home?.name.slice(0, 3)}
+                        </span>
+                        {isUserHome && (
+                          <span className="text-[9px] font-black uppercase tracking-widest text-vibrant-pink/70 leading-none">your team</span>
+                        )}
+                      </div>
                     </div>
 
                     <div className="flex flex-col items-center px-4">
                       {!isPlayed ? (
                         <>
                           <span className="text-[8px] font-black uppercase tracking-widest text-white/65 mb-1.5">{"Kickoff Time"}</span>
-                          <span className="font-display text-xl font-black tracking-tighter text-white/90 bg-white/5 px-3 py-1 rounded-lg border border-white/10">
+                          <span className={`font-display text-xl font-black tracking-tighter px-3 py-1 rounded-lg border transition-all ${isUserMatch ? 'text-vibrant-pink bg-vibrant-pink/10 border-vibrant-pink/30' : 'text-white/90 bg-white/5 border-white/10'}`}>
                             {match.kickoff}
                           </span>
                         </>
@@ -274,12 +280,17 @@ export default function NextMatchdayBanner({
                     </div>
 
                     <div className="flex-1 flex items-center justify-end gap-3 text-right">
-                      <span className={`font-display text-lg font-black uppercase tracking-tighter leading-none hidden sm:block ${isUserAway ? 'text-vibrant-pink' : ''}`} translate="no">
-                        {away?.name}
-                      </span>
-                      <span className={`font-display text-lg font-black uppercase tracking-tighter leading-none sm:hidden ${isUserAway ? 'text-vibrant-pink' : ''}`} translate="no">
-                        {away?.shortName || away?.name.slice(0, 3)}
-                      </span>
+                      <div className="flex flex-col gap-0.5 items-end min-w-0">
+                        <span className={`font-display text-lg font-black uppercase tracking-tighter leading-none hidden sm:block ${isUserAway ? 'text-vibrant-pink' : ''}`} translate="no">
+                          {away?.name}
+                        </span>
+                        <span className={`font-display text-lg font-black uppercase tracking-tighter leading-none sm:hidden ${isUserAway ? 'text-vibrant-pink' : ''}`} translate="no">
+                          {away?.shortName || away?.name.slice(0, 3)}
+                        </span>
+                        {isUserAway && (
+                          <span className="text-[9px] font-black uppercase tracking-widest text-vibrant-pink/70 leading-none">your team</span>
+                        )}
+                      </div>
                       <div className={`relative w-9 h-9 shrink-0 rounded-lg p-1.5 border transition-all ${isUserAway ? 'bg-vibrant-pink/10 border-vibrant-pink/50 shadow-[0_0_10px_rgba(233,0,82,0.25)]' : 'bg-white/5 border-white/10'}`}>
                         {away?.logo && (
                           <Image
