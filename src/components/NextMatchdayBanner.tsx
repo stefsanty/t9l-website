@@ -125,7 +125,7 @@ export default function NextMatchdayBanner({
                 {isNext ? 'UPCOMING' : 'RESULTS'}
               </h2>
             </div>
-            <span className="text-[10px] font-black text-white/30 uppercase tracking-[0.2em] bg-white/[0.07] px-3 py-1 rounded-full border border-white/[0.10]">
+            <span className="text-[10px] font-black text-white/70 uppercase tracking-[0.2em] bg-white/[0.07] px-3 py-1 rounded-full border border-white/[0.10]">
               {matchday.date ? formatShortDate(matchday.date) : 'TBD'}
             </span>
           </div>
