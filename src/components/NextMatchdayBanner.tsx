@@ -51,11 +51,18 @@ function distributeToSlots<T>(items: T[], slots: number): T[][] {
 
 function formatShortDate(dateStr: string | null): string {
   if (!dateStr) return 'TBD';
-  const parts = dateStr.split('-');
-  const month = parseInt(parts[1], 10);
-  const day = parseInt(parts[2], 10);
-  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  return `${monthNames[month - 1]} ${day}`;
+  // Fast path: ISO YYYY-MM-DD (what we normalize to in data.ts)
+  const iso = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) {
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return `${monthNames[parseInt(iso[2], 10) - 1]} ${parseInt(iso[3], 10)}`;
+  }
+  // Fallback: let the browser parse other formats
+  const d = new Date(dateStr);
+  if (!isNaN(d.getTime())) {
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  }
+  return dateStr;
 }
 
 // ── TeamFormation sub-component ───────────────────────────────────────────────

@@ -10,6 +10,27 @@ import type {
 } from "@/types";
 import type { RawSheetData } from "./sheets";
 
+/**
+ * Normalize a date string from Google Sheets into "YYYY-MM-DD".
+ * Handles ISO "2026-04-03", US slash "4/3/2026", "Apr 3, 2026", etc.
+ * Returns null if the value can't be parsed.
+ */
+function normalizeDate(raw: string): string | null {
+  if (!raw) return null;
+  // Already ISO YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+  // Try native Date parsing (works for "4/3/2026", "Apr 3, 2026", etc.)
+  const d = new Date(raw);
+  if (!isNaN(d.getTime())) {
+    // Use UTC parts to avoid timezone offset shifting the day
+    const y = d.getUTCFullYear();
+    const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(d.getUTCDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }
+  return null;
+}
+
 function slugify(name: string): string {
   return name
     .toLowerCase()
@@ -129,14 +150,15 @@ export function parseSchedule(
   const teamNameToId = new Map(teams.map((t) => [t.name, t.id]));
   const matchdays = new Map<string, Matchday>();
 
-  // Parse MDScheduleRaw for dates
+  // Parse MDScheduleRaw for dates — normalize to YYYY-MM-DD regardless of sheet format
   const dates = new Map<string, string>();
   for (const row of mdScheduleRows.slice(1)) {
     const mdLabel = row[0]?.trim();
-    const date = row[1]?.trim();
-    if (mdLabel && date) {
+    const dateRaw = row[1]?.trim();
+    if (mdLabel && dateRaw) {
       const mdId = mdLabel.toLowerCase().replace(/\s/g, "");
-      dates.set(mdId, date);
+      const normalized = normalizeDate(dateRaw);
+      if (normalized) dates.set(mdId, normalized);
     }
   }
 
