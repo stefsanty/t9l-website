@@ -2,7 +2,9 @@
 
 import { useState } from 'react';
 import Image from 'next/image';
+import { useSession } from 'next-auth/react';
 import type { Matchday, Team, Player, Availability, Goal } from '@/types';
+import RsvpButton from './RsvpButton';
 
 // ── Formation helpers ─────────────────────────────────────────────────────────
 
@@ -297,9 +299,21 @@ export default function NextMatchdayBanner({
 }: NextMatchdayBannerProps) {
   const [selectedId, setSelectedId] = useState(defaultMatchdayId);
   const [expandedTeamId, setExpandedTeamId] = useState<string | null>(null);
+  const { data: session } = useSession();
 
   const matchday = matchdays.find((m) => m.id === selectedId) ?? matchdays[0];
   const isNext = matchday.matches[0].homeGoals === null;
+
+  // Determine if the logged-in user's team is playing this matchday (not sitting out)
+  const userTeamIsPlaying =
+    session?.teamId != null &&
+    session.teamId !== matchday.sittingOutTeamId;
+
+  // Initial RSVP state from sheet availability
+  const userInitialGoing =
+    session?.playerId != null &&
+    session?.teamId != null &&
+    (availability[matchday.id]?.[session.teamId] ?? []).includes(session.playerId);
 
   const getTeam = (id: string) => teams.find((t) => t.id === id);
 
@@ -467,6 +481,13 @@ export default function NextMatchdayBanner({
 
             {isNext && (
               <div className="space-y-3">
+                {userTeamIsPlaying && (
+                  <RsvpButton
+                    matchdayId={matchday.id}
+                    initialGoing={userInitialGoing}
+                  />
+                )}
+
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-[11px] font-black uppercase tracking-[0.2em] text-white/30">
                     PLAYER AVAILABILITY

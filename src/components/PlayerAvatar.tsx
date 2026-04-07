@@ -5,16 +5,20 @@ import Image from 'next/image';
 
 interface PlayerAvatarProps {
   playerName: string;
+  /** Override URL (e.g. LINE profile pic stored in Vercel Blob) */
+  pictureUrl?: string;
   size?: 'xs' | 'sm' | 'md' | 'lg';
   className?: string;
 }
 
 export default function PlayerAvatar({
   playerName,
+  pictureUrl,
   size = 'md',
   className = '',
 }: PlayerAvatarProps) {
-  const [src, setSrc] = useState(`/player_pics/${playerName}.png`);
+  const initialSrc = pictureUrl ?? `/player_pics/${playerName}.png`;
+  const [src, setSrc] = useState(initialSrc);
   const [hasError, setHasError] = useState(false);
 
   const sizeClasses = {
@@ -31,9 +35,15 @@ export default function PlayerAvatar({
         alt={playerName}
         fill
         className="object-cover transition-opacity duration-300"
+        unoptimized={!!pictureUrl}
         onError={() => {
           if (!hasError) {
-            setHasError(true);
+            if (src !== `/player_pics/${playerName}.png`) {
+              // Fallback: try the local player pic
+              setSrc(`/player_pics/${playerName}.png`);
+            } else {
+              setHasError(true);
+            }
           }
         }}
       />

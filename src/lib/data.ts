@@ -31,7 +31,7 @@ function normalizeDate(raw: string): string | null {
   return null;
 }
 
-function slugify(name: string): string {
+export function slugify(name: string): string {
   return name
     .toLowerCase()
     .normalize("NFD")

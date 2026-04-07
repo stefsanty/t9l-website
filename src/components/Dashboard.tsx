@@ -10,6 +10,7 @@ import LeagueTable from './LeagueTable';
 import TopPerformers from './TopPerformers';
 import MatchResults from './MatchResults';
 import SquadList from './SquadList';
+import LineLoginButton from './LineLoginButton';
 
 type Tab = 'NEXT_GAME' | 'STATS' | 'SQUADS';
 
@@ -23,6 +24,7 @@ interface DashboardProps {
   leagueTable: LeagueTableRow[];
   playerStats: PlayerStats[];
   nextMd: { matchday: Matchday; isNext: boolean } | null;
+  playerPictures: Record<string, string>;
 }
 
 export default function Dashboard({
@@ -35,6 +37,7 @@ export default function Dashboard({
   leagueTable,
   playerStats,
   nextMd,
+  playerPictures,
 }: DashboardProps) {
   const [activeTab, setActiveTab] = useState<Tab>('NEXT_GAME');
 
@@ -43,13 +46,14 @@ export default function Dashboard({
       <header className="fixed top-0 left-1/2 -translate-x-1/2 w-full max-w-lg z-50 bg-midnight/95 backdrop-blur-md border-b border-white/[0.06] shadow-[0_4px_20px_rgba(0,0,0,0.6)]">
         <div className="flex items-center gap-3 px-5 h-12">
           <h1 className="font-display font-black uppercase tracking-tight leading-none flex items-baseline gap-2">
-            <span className="text-xl text-white/95">T9L '26</span>
+            <span className="text-xl text-white/95">T9L &apos;26</span>
             <span className="text-xl text-vibrant-pink">SPRING</span>
           </h1>
           <div className="h-[1px] w-6 bg-electric-green/60" />
-          <p className="text-[9px] font-black text-white/30 uppercase tracking-[0.35em]">
+          <p className="text-[9px] font-black text-white/30 uppercase tracking-[0.35em] flex-1">
             Tennozu 9-Aside League
           </p>
+          <LineLoginButton />
         </div>
       </header>
 
@@ -114,6 +118,7 @@ export default function Dashboard({
               players={players}
               availability={availability}
               nextMatchdayId={nextMd?.matchday.id || "md1"}
+              playerPictures={playerPictures}
             />
           </div>
         )}

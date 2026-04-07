@@ -10,6 +10,7 @@ interface SquadListProps {
   players: Player[];
   availability: Availability;
   nextMatchdayId: string;
+  playerPictures: Record<string, string>;
 }
 
 const getPositionColor = (pos: string | null) => {
@@ -29,6 +30,7 @@ export default function SquadList({
   players,
   availability,
   nextMatchdayId,
+  playerPictures,
 }: SquadListProps) {
   const [expandedTeamId, setExpandedTeamId] = useState<string | null>(null);
 
@@ -128,7 +130,7 @@ export default function SquadList({
                         className="px-5 py-3 flex items-center justify-between group hover:bg-white/[0.02] transition-colors"
                       >
                         <div className="flex items-center gap-4">
-                          <PlayerAvatar playerName={player.name} size="md" className="ring-2 ring-white/5 group-hover:ring-electric-violet/20 transition-all" />
+                          <PlayerAvatar playerName={player.name} pictureUrl={playerPictures[player.id]} size="md" className="ring-2 ring-white/5 group-hover:ring-electric-violet/20 transition-all" />
                           <div className="flex flex-col items-start gap-1">
                             <span className="text-sm font-black uppercase tracking-tight text-white group-hover:text-electric-violet transition-colors">
                               {player.name}

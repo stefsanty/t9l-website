@@ -1,6 +1,20 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  images: {
+    remotePatterns: [
+      {
+        // LINE profile picture CDN
+        protocol: "https",
+        hostname: "profile.line-scdn.net",
+      },
+      {
+        // Vercel Blob storage (player profile pictures)
+        protocol: "https",
+        hostname: "*.public.blob.vercel-storage.com",
+      },
+    ],
+  },
   async redirects() {
     return [
       {
