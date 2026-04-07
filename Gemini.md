@@ -34,8 +34,8 @@ Google Sheets (source of truth)
   app/page.tsx (server component, ISR revalidate=300)
        ↓ props
   components/Dashboard.tsx (client, 3-tab UI)
-       ├── NextMatchdayBanner      (Home tab — match info only)
-       ├── MatchdayAvailability    (Home tab — RSVP + per-team attendance)
+       ├── NextMatchdayBanner      (Home tab — Hero Card)
+       ├── MatchdayAvailability    (Home tab — per-team attendance)
        ├── LeagueTable             (Stats tab)
        ├── TopPerformers           (Stats tab)
        ├── MatchResults            (Stats tab)
@@ -84,7 +84,7 @@ If `GOOGLE_SHEET_ID` or `GOOGLE_SERVICE_ACCOUNT_EMAIL` are absent, `fetchSheetDa
 | Tab | Range | Purpose |
 |-----|-------|---------|
 | `TeamRaw` | `A:B` | Team names and logos |
-| `RosterRaw` | `A:L` | Players: picture, name, team, position, MD1–MD8 availability (`Y` / `EXPECTED` / `PLAYED` / blank) |
+| `RosterRaw` | `A:L` | Players: picture, name, team, position, MD1–MD8 availability (`Y` / `GOING` / `EXPECTED` / `PLAYED` / blank) |
 | `ScheduleRaw` | `A:F` | 24 matches: matchday, match number, kickoff, full time, home team, away team |
 | `GoalsRaw` | `A:F` | Goals: matchday, timestamp, scoring team, conceding team, scorer, assister |
 | `RatingsRaw` | `A:BH` | Peer ratings: matchday, timestamp, respondent team, 53 player columns (1–5), 4 meta columns |
@@ -130,8 +130,8 @@ src/
 │   └── page.tsx                      # Server component: roster → AssignPlayerClient
 ├── components/
 │   ├── Dashboard.tsx                 # Client: 3-tab layout (Home / Stats / Teams) + header/nav
-│   ├── NextMatchdayBanner.tsx        # Matchday pill selector, match cards, sitting-out badge
-│   ├── MatchdayAvailability.tsx      # RSVP control + per-team attendance (expanded by default)
+│   ├── NextMatchdayBanner.tsx        # Unified Hero Card: RSVP, schedule, browse toggle
+│   ├── MatchdayAvailability.tsx      # Per-team attendance list (collapsed by default)
 │   ├── LeagueTable.tsx               # Standings table (responsive, highlights leader)
 │   ├── TopPerformers.tsx             # Sortable player stats table with load-more
 │   ├── MatchResults.tsx              # Past results, expandable goalscorers, most recent first
@@ -290,28 +290,23 @@ session.linePictureUrl: string
 
 | Tab | Contents |
 |-----|----------|
-| **Home** | Personal status card (your next playing matchday + your RSVP status) → NextMatchdayBanner (pill selector, match cards, sitting-out badge) → MatchdayAvailability (3-state RSVP + per-team attendance, expanded by default with pitch formation view) |
+| **Home** | Unified Hero Card (YOUR NEXT MATCHDAY/RESULTS/DETAILS, date, venue, RSVP controls, 3 matches, sitting-out info, browse toggle) → MatchdayAvailability (attendance per team, collapsed by default with pitch formation view) |
 | **Stats** | Standings table → Sortable player stats table (goals, assists, rating, G+A/game, load-more) → Past match results with expandable goalscorers |
 | **Teams** | Per-team collapsible squad lists with position badges, availability status (CONFIRMED/PENDING), player avatars |
 
 ## Home Dashboard UX Philosophy
 
-The Home tab is the primary screen for players. Its job is to answer three questions as fast as possible:
+The Home tab is the primary screen for players. Its job is to answer three questions in 10 seconds:
 
-1. **Is my team playing soon, and when?** — A personal status card at the top of the Home tab shows the next matchday where the logged-in user's team plays (skipping any matchday where their team sits out). It displays the matchday label, date, and the user's current RSVP status as a color badge.
+1. **What date am I playing next?** — The Hero Card prominently displays the matchday and date. When viewing the user's next playing matchday, it is labeled "YOUR NEXT MATCHDAY".
+2. **How do I RSVP?** — RSVP controls (Going / Undecided / Not going) are embedded directly in the Hero Card, immediately following the date and venue, for the user's actual next playing matchday.
+3. **What are the details of my next matchday?** — The 3 matches for the selected matchday are listed at the bottom of the same Hero Card.
 
-2. **Am I going?** — The RSVP control lives in `MatchdayAvailability`, visually separate from the match schedule. It offers three states with clear language:
-   - **Going** → writes `GOING` to the sheet
-   - **Undecided** → writes `UNDECIDED` to the sheet
-   - **Not going** → writes blank to the sheet
-
-3. **Who else is coming?** — Per-team attendance cards are **expanded by default** so the player count and pitch formation are immediately visible without any interaction. Users can still collapse individual team sections.
-
-**Separation of concerns in the Home tab:**
-- `NextMatchdayBanner` — pure match schedule: pill selector, match cards (scores/kickoffs), sitting-out team. No RSVP, no availability.
-- `MatchdayAvailability` — pure attendance: RSVP control + per-team attendance with formation view. Reacts to the same selected matchday as the banner.
-
-This separation keeps each component focused and makes it easy to iterate on RSVP UX without touching match display logic.
+**Key UI Simplifications:**
+- **One Unified Hero Card** replaces three separate cards (`MyMatchdayCard`, `NextMatchdayBanner`, and the RSVP block from `MatchdayAvailability`).
+- **Collapsible Browser**: The matchday pill selector is hidden by default behind a "[browse ▾]" toggle to reduce visual noise.
+- **Secondary Availability**: `MatchdayAvailability` now purely shows "who else is coming" and is collapsed by default. The pitch formation view is opt-in.
+- **Contextual Eyebrows**: The card's title label changes based on whether you are viewing your next game, past results, or browsing other future matchdays.
 
 ## Design Tokens
 

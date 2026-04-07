@@ -1,9 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { useSession } from 'next-auth/react';
 import type { Matchday, Team, Player, Availability, AvailabilityStatuses, PlayedStatus } from '@/types';
-import RsvpButton from './RsvpButton';
 
 // ── Formation helpers (moved from NextMatchdayBanner) ─────────────────────────
 
@@ -20,13 +18,6 @@ const FORMATIONS: Formation[] = [
   { label: '4-3-1', def: 4, mid: 3, fwd: 1 },
   { label: '4-2-2', def: 4, mid: 2, fwd: 2 },
 ];
-
-function categorizePosition(position: string | null | undefined): 'gk' | 'def' | 'mid' | 'fwd' {
-  if (position === 'GK') return 'gk';
-  if (position === 'DF' || position === 'DF/MF') return 'def';
-  if (position === 'FWD') return 'fwd';
-  return 'mid';
-}
 
 function pickFormation(defCount: number, midCount: number, fwdCount: number): Formation {
   let best = FORMATIONS[0];
@@ -227,14 +218,12 @@ export default function MatchdayAvailability({
   availabilityStatuses,
   played,
 }: MatchdayAvailabilityProps) {
-  const { data: session } = useSession();
-
   const isNext = matchday.matches[0].homeGoals === null;
   const playingTeams = teams.filter((t) => t.id !== matchday.sittingOutTeamId);
 
-  // All playing teams expanded by default
+  // All playing teams collapsed by default
   const [expandedTeams, setExpandedTeams] = useState<Set<string>>(
-    () => new Set(playingTeams.map((t) => t.id))
+    () => new Set()
   );
 
   function toggleTeam(teamId: string) {
@@ -248,16 +237,6 @@ export default function MatchdayAvailability({
 
   const mdAvailability = availability[matchday.id] || {};
   const mdPlayed = played[matchday.id] || {};
-
-  // User's current RSVP status for this matchday
-  const userRawStatus =
-    session?.playerId && session?.teamId
-      ? availabilityStatuses[matchday.id]?.[session.teamId]?.[session.playerId] ?? ''
-      : '';
-
-  const userTeamIsPlaying =
-    session?.teamId != null &&
-    session.teamId !== matchday.sittingOutTeamId;
 
   if (!isNext) {
     // Past matchday — show who played
@@ -320,19 +299,9 @@ export default function MatchdayAvailability({
     );
   }
 
-  // Upcoming matchday — show RSVP + availability
+  // Upcoming matchday — show availability
   return (
     <section className="mt-4 mb-12 animate-in">
-      {/* RSVP */}
-      {userTeamIsPlaying && session?.playerId && (
-        <div className="mb-6 pl-card rounded-2xl p-4 border border-white/10">
-          <RsvpButton
-            matchdayId={matchday.id}
-            initialStatus={userRawStatus as 'GOING' | 'UNDECIDED' | 'Y' | 'EXPECTED' | ''}
-          />
-        </div>
-      )}
-
       {/* Player availability */}
       <div className="flex items-center gap-3 mb-3">
         <h3 className="text-[11px] font-black uppercase tracking-[0.2em] text-white/30">
