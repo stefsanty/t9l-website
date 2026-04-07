@@ -3,7 +3,7 @@ import { Inter, Barlow_Condensed } from "next/font/google";
 import AuthProvider from "@/components/AuthProvider";
 import { I18nProvider } from "@/i18n/I18nProvider";
 import { getLocale } from "@/i18n/getLocale";
-import { translateDict } from "@/i18n/translate.ts";
+import { translateDict } from "@/i18n/translate";
 import { en } from "@/i18n/en";
 import "./globals.css";
 
