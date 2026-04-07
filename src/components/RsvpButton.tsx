@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 
 interface RsvpButtonProps {
@@ -11,6 +12,7 @@ interface RsvpButtonProps {
 
 export default function RsvpButton({ matchdayId, initialGoing }: RsvpButtonProps) {
   const { data: session } = useSession();
+  const router = useRouter();
   const [going, setGoing] = useState(initialGoing);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
@@ -30,6 +32,7 @@ export default function RsvpButton({ matchdayId, initialGoing }: RsvpButtonProps
         body: JSON.stringify({ matchdayId, going: next }),
       });
       if (!res.ok) throw new Error('RSVP failed');
+      router.refresh();
     } catch {
       setGoing(!next); // revert
       setError(true);

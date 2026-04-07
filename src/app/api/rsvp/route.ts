@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
+import { revalidatePath } from "next/cache";
 import { authOptions } from "@/lib/auth";
 import { writeRosterAvailability } from "@/lib/sheets";
 
@@ -29,6 +30,7 @@ export async function POST(req: Request) {
 
   try {
     await writeRosterAvailability(session.playerId, matchdayId.toLowerCase(), going);
+    revalidatePath('/');
     return NextResponse.json({ ok: true });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Write failed";
