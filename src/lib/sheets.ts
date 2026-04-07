@@ -1,5 +1,6 @@
 import { google } from "googleapis";
 import { getMockData } from "./mock-data";
+import { slugify } from "./data";
 
 const SHEET_ID = process.env.GOOGLE_SHEET_ID;
 
@@ -100,18 +101,9 @@ export async function writeRosterAvailability(
 
   const nameRows = (rosterRes.data.values as string[][]) || [];
 
-  function localSlugify(name: string): string {
-    return name
-      .toLowerCase()
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .replace(/\s+/g, "-")
-      .replace(/[^a-z0-9-]/g, "");
-  }
-
   // Row 0 is the header; find from row 1 onward
   const rowIndex = nameRows.findIndex(
-    (row, i) => i > 0 && localSlugify(row[0] ?? "") === playerId,
+    (row, i) => i > 0 && slugify(row[0] ?? "") === playerId,
   );
 
   if (rowIndex === -1) {
