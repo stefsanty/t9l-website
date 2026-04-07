@@ -296,6 +296,7 @@ export default function Dashboard({
               availability={availability}
               availabilityStatuses={availabilityStatuses}
               nextMatchdayId={nextMd?.matchday.id || "md1"}
+              nextMatchdayLabel={nextMd?.matchday.label || "MD1"}
               playerPictures={playerPictures}
             />
           </div>

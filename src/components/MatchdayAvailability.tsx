@@ -343,7 +343,18 @@ export default function MatchdayAvailability({
 
       <div className="grid gap-3">
         {playingTeams.map((team) => {
-          const confirmedIds = mdAvailability[team.id] || [];
+          const allAvailIds = mdAvailability[team.id] || [];
+          const teamStatuses = availabilityStatuses[matchday.id]?.[team.id] || {};
+
+          const goingIds = allAvailIds.filter((id) => {
+            const s = teamStatuses[id];
+            return s === 'GOING' || s === 'Y';
+          });
+          const undecidedIds = allAvailIds.filter((id) => {
+            const s = teamStatuses[id];
+            return s === 'UNDECIDED' || s === 'EXPECTED';
+          });
+
           const isExpanded = expandedTeams.has(team.id);
 
           return (
@@ -367,11 +378,21 @@ export default function MatchdayAvailability({
                   </span>
                 </div>
                 <div className="flex items-center gap-3">
-                  <span className={`text-[11px] font-black px-2 py-0.5 rounded ${
-                    confirmedIds.length > 0 ? 'bg-electric-green/10 text-electric-green' : 'bg-white/10 text-white/30'
-                  }`}>
-                    {confirmedIds.length} confirmed
-                  </span>
+                  {goingIds.length > 0 && (
+                    <span className="text-[11px] font-black px-2 py-0.5 rounded bg-electric-green/10 text-electric-green">
+                      {goingIds.length} going
+                    </span>
+                  )}
+                  {undecidedIds.length > 0 && (
+                    <span className="text-[11px] font-black px-2 py-0.5 rounded bg-yellow-400/10 text-yellow-400">
+                      {undecidedIds.length} undecided
+                    </span>
+                  )}
+                  {goingIds.length === 0 && undecidedIds.length === 0 && (
+                    <span className="text-[11px] font-black px-2 py-0.5 rounded bg-white/10 text-white/30">
+                      0 going
+                    </span>
+                  )}
                   <svg
                     className={`w-4 h-4 text-white/20 transition-transform duration-300 ${
                       isExpanded ? 'rotate-180' : ''
@@ -393,7 +414,7 @@ export default function MatchdayAvailability({
               {isExpanded && (
                 <div className="px-4 pb-4 pt-0 border-t border-white/10 animate-in">
                   <TeamFormation
-                    confirmedIds={confirmedIds}
+                    confirmedIds={goingIds}
                     players={players}
                     teamColor={team.color}
                   />
