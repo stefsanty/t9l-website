@@ -8,7 +8,6 @@ import type {
 } from '@/types';
 import type { MatchdayVibes } from '@/lib/stats';
 import NextMatchdayBanner from './NextMatchdayBanner';
-import MyMatchdayCard from './MyMatchdayCard';
 import GuestLoginBanner from './GuestLoginBanner';
 import MatchdayAvailability from './MatchdayAvailability';
 import LeagueTable from './LeagueTable';
@@ -83,7 +82,7 @@ function MatchdayVibesSection({ vibes }: { vibes: MatchdayVibes[] }) {
                   <VibesBar value={v.teamwork} />
                 </div>
                 <div>
-                  <div className="text-[9px] font-black uppercase tracking-widest text-white/25 mb-1">Closeness</div>
+                  <div className="text-[9px] font-black uppercase tracking-widest text-white/25 mb-1">Competitiveness</div>
                   <VibesBar value={v.gamesClose} />
                 </div>
                 <div>
@@ -145,16 +144,13 @@ export default function Dashboard({
             {nextMd ? (
               <>
                 <GuestLoginBanner />
-                <MyMatchdayCard
-                  matchdays={matchdays}
-                  availabilityStatuses={availabilityStatuses}
-                />
                 <NextMatchdayBanner
                   matchdays={matchdays}
                   selectedMatchdayId={selectedMatchdayId}
                   onMatchdayChange={setSelectedMatchdayId}
                   teams={teams}
                   goals={goals}
+                  availabilityStatuses={availabilityStatuses}
                 />
                 <MatchdayAvailability
                   key={selectedMatchdayId}
