@@ -194,6 +194,45 @@ export default function LineLoginButton() {
               </svg>
               Sign out
             </button>
+
+            {/* Dev Mode Switching (Local only) */}
+            {process.env.NODE_ENV === 'development' && (
+              <div className="border-t border-white/10 px-3 py-3 bg-white/[0.02]">
+                <p className="text-[9px] font-black uppercase tracking-[0.2em] text-white/20 mb-2 px-1">Dev Shortcuts</p>
+                <div className="grid grid-cols-1 gap-1">
+                  {[
+                    { id: 'ian-noseda', name: 'Ian Noseda', teamId: 'mariners-fc' },
+                    { id: 'ivo-rodrigues', name: 'Ivo Rodrigues', teamId: 'fenix-fc' },
+                    { id: 'ryohei-enomoto', name: 'Ryohei Enomoto', teamId: 'hygge-sc' },
+                    { id: 'riki-imai', name: 'Riki Imai', teamId: 'fc-torpedo' },
+                  ].map((p) => (
+                    <button
+                      key={p.id}
+                      onClick={() => signIn('dev-login', {
+                        playerId: p.id,
+                        playerName: p.name,
+                        teamId: p.teamId,
+                        callbackUrl: '/'
+                      })}
+                      className="text-left px-2 py-1.5 rounded-lg text-[10px] font-bold text-white/30 hover:text-electric-green hover:bg-electric-green/5 transition-all truncate"
+                    >
+                      Impersonate: {p.name}
+                    </button>
+                  ))}
+                  <button
+                    onClick={() => signIn('dev-login', {
+                      playerId: 'guest-dev',
+                      playerName: 'Guest Dev',
+                      teamId: '',
+                      callbackUrl: '/assign-player'
+                    })}
+                    className="text-left px-2 py-1.5 rounded-lg text-[10px] font-bold text-white/30 hover:text-vibrant-pink hover:bg-vibrant-pink/5 transition-all truncate"
+                  >
+                    Login as Guest (No Player)
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>

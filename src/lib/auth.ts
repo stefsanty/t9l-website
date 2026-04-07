@@ -1,5 +1,6 @@
 import type { AuthOptions } from "next-auth";
 import LineProvider from "next-auth/providers/line";
+import CredentialsProvider from "next-auth/providers/credentials";
 
 type PlayerMapping = {
   playerId: string;
@@ -30,10 +31,43 @@ export const authOptions: AuthOptions = {
       clientId: process.env.LINE_CLIENT_ID ?? "",
       clientSecret: process.env.LINE_CLIENT_SECRET ?? "",
     }),
+    // Dev-only credentials provider for easy account switching
+    ...(process.env.NODE_ENV === "development"
+      ? [
+          CredentialsProvider({
+            id: "dev-login",
+            name: "Dev Login",
+            credentials: {
+              playerId: { label: "Player ID", type: "text" },
+              playerName: { label: "Player Name", type: "text" },
+              teamId: { label: "Team ID", type: "text" },
+            },
+            async authorize(credentials) {
+              if (!credentials) return null;
+              return {
+                id: `dev-${credentials.playerId}`,
+                name: credentials.playerName,
+                playerId: credentials.playerId,
+                teamId: credentials.teamId,
+              };
+            },
+          }),
+        ]
+      : []),
   ],
   session: { strategy: "jwt" },
   callbacks: {
-    async jwt({ token, account, profile }) {
+    async jwt({ token, account, profile, user }) {
+      // Handle Dev Login
+      if (account?.provider === "dev-login" && user) {
+        token.lineId = user.id;
+        token.playerId = (user as any).playerId;
+        token.playerName = user.name;
+        token.teamId = (user as any).teamId;
+        token.linePictureUrl = "";
+        return token;
+      }
+
       // Set LINE-specific fields on initial sign-in
       if (account && profile) {
         token.lineId = profile.sub as string;
