@@ -21,7 +21,7 @@ const getPositionColor = (pos: string | null) => {
     case 'MF': return 'bg-emerald-600 text-white border-emerald-400/30';
     case 'MF/FWD': return 'bg-orange-600 text-white border-orange-400/30';
     case 'FWD': return 'bg-red-600 text-white border-red-400/30';
-    default: return 'bg-white/5 text-white/20 border-white/5';
+    default: return 'bg-white/10 text-white/20 border-white/10';
   }
 };
 
@@ -73,7 +73,7 @@ export default function SquadList({
             <div
               key={team.id}
               className={`pl-card pl-card-violet rounded-2xl overflow-hidden transition-all relative ${
-                isExpanded ? 'ring-1 ring-white/10' : 'hover:bg-white/[0.01]'
+                isExpanded ? 'ring-1 ring-white/10' : 'hover:bg-white/[0.03]'
               }`}
             >
               <div className="absolute inset-0 bg-diagonal-pattern opacity-5 pointer-events-none" />
@@ -82,7 +82,7 @@ export default function SquadList({
                 className="w-full flex items-center justify-between px-5 py-5 text-left transition-colors relative"
               >
                 <div className="flex items-center gap-4">
-                  <div className="relative w-12 h-12 bg-white/5 rounded-xl p-2 border border-white/5">
+                  <div className="relative w-12 h-12 bg-white/10 rounded-xl p-2 border border-white/10">
                     {team.logo ? (
                       <Image
                         src={team.logo}
@@ -106,7 +106,7 @@ export default function SquadList({
                     </div>
                   </div>
                 </div>
-                <div className={`p-2 rounded-full border border-white/5 bg-white/5 transition-transform duration-300 ${
+                <div className={`p-2 rounded-full border border-white/10 bg-white/10 transition-transform duration-300 ${
                   isExpanded ? 'rotate-180 bg-electric-violet/10 border-electric-violet/20' : ''
                 }`}>
                   <svg
@@ -121,13 +121,13 @@ export default function SquadList({
               </button>
 
               {isExpanded && (
-                <div className="border-t border-white/5 divide-y divide-white/5 bg-white/[0.01] relative animate-in">
+                <div className="border-t border-white/10 divide-y divide-white/10 bg-white/[0.03] relative animate-in">
                   {teamPlayers.map((player) => {
                     const available = isAvailable(player.id, team.id);
                     return (
                       <div
                         key={player.id}
-                        className="px-5 py-3 flex items-center justify-between group hover:bg-white/[0.02] transition-colors"
+                        className="px-5 py-3 flex items-center justify-between group hover:bg-white/[0.05] transition-colors"
                       >
                         <div className="flex items-center gap-4">
                           <PlayerAvatar playerName={player.name} pictureUrl={playerPictures[player.id]} size="md" className="ring-2 ring-white/5 group-hover:ring-electric-violet/20 transition-all" />
@@ -142,7 +142,7 @@ export default function SquadList({
                         </div>
                         {hasAvailabilityData && (
                           <div className={`flex items-center gap-2 px-3 py-1 rounded-full border transition-all ${
-                            available ? 'bg-electric-green/10 border-electric-green/20 text-electric-green' : 'bg-white/5 border-white/5 text-white/10'
+                            available ? 'bg-electric-green/10 border-electric-green/20 text-electric-green' : 'bg-white/10 border-white/10 text-white/10'
                           }`}>
                             <span className="text-[9px] font-black uppercase tracking-widest">
                               {available ? 'CONFIRMED' : 'PENDING'}

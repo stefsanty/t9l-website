@@ -12,7 +12,7 @@ export default function LeagueTable({ rows }: LeagueTableProps) {
       <div className="overflow-x-auto relative">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-white/10 bg-white/[0.03] text-white/40 text-[10px] font-black uppercase tracking-[0.2em]">
+            <tr className="border-b border-white/15 bg-white/[0.07] text-white/40 text-[10px] font-black uppercase tracking-[0.2em]">
               <th className="py-4 pl-4 pr-1 text-left w-8">POS</th>
               <th className="py-4 px-3 text-left">CLUB</th>
               <th className="py-4 px-2 text-center">MP</th>
@@ -25,11 +25,11 @@ export default function LeagueTable({ rows }: LeagueTableProps) {
               <th className="py-4 pr-4 pl-2 text-center font-black text-white">PTS</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-white/5">
+          <tbody className="divide-y divide-white/10">
             {rows.map((row, i) => (
               <tr
                 key={row.team.id}
-                className={`transition-colors hover:bg-white/[0.03] group ${
+                className={`transition-colors hover:bg-white/[0.07] group ${
                   i === 0 ? "bg-vibrant-pink/5" : ""
                 }`}
               >
@@ -40,7 +40,7 @@ export default function LeagueTable({ rows }: LeagueTableProps) {
                 </td>
                 <td className="py-4 px-3">
                   <div className="flex items-center gap-3">
-                    <div className="relative w-7 h-7 shrink-0 bg-white/5 rounded-md p-1 border border-white/5">
+                    <div className="relative w-7 h-7 shrink-0 bg-white/10 rounded-md p-1 border border-white/10">
                       {row.team.logo ? (
                         <Image
                           src={row.team.logo}

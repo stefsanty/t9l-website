@@ -43,7 +43,7 @@ export default function Dashboard({
 
   return (
     <div className="flex flex-col min-h-dvh pb-[88px] max-w-lg mx-auto bg-midnight selection:bg-vibrant-pink selection:text-white">
-      <header className="fixed top-0 left-1/2 -translate-x-1/2 w-full max-w-lg z-50 bg-midnight/95 backdrop-blur-md border-b border-white/[0.06] shadow-[0_4px_20px_rgba(0,0,0,0.6)]">
+      <header className="fixed top-0 left-1/2 -translate-x-1/2 w-full max-w-lg z-50 bg-midnight/95 backdrop-blur-md border-b border-white/[0.12] shadow-[0_4px_20px_rgba(0,0,0,0.6)]">
         <div className="flex items-center gap-3 px-5 h-12">
           <h1 className="font-display font-black uppercase tracking-tight leading-none flex items-baseline gap-2">
             <span className="text-xl text-white/95">T9L &apos;26</span>
@@ -70,7 +70,7 @@ export default function Dashboard({
                 goals={goals}
               />
             ) : (
-              <div className="text-center py-24 bg-white/[0.02] rounded-3xl border border-white/5 relative overflow-hidden">
+              <div className="text-center py-24 bg-white/[0.05] rounded-3xl border border-white/10 relative overflow-hidden">
                 <div className="absolute inset-0 bg-diagonal-pattern opacity-5" />
                 <p className="font-display text-4xl font-black uppercase italic text-white/90 relative">Season Finished</p>
                 <p className="text-xs uppercase tracking-[0.5em] mt-4 text-white/20 font-black relative">See you in the Autumn!</p>

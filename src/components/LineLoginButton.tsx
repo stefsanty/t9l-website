@@ -26,7 +26,7 @@ function AssignModal({ onDismiss }: { onDismiss: () => void }) {
       />
 
       {/* Card */}
-      <div className="relative w-full max-w-sm mx-auto bg-[#0F0311] border border-white/10 rounded-3xl overflow-hidden shadow-2xl animate-in">
+      <div className="relative w-full max-w-sm mx-auto bg-deep-purple border border-white/15 rounded-3xl overflow-hidden shadow-2xl animate-in">
 
         <div className="px-7 pt-5 pb-8">
           {/* Icon */}
@@ -148,14 +148,14 @@ export default function LineLoginButton() {
         </button>
 
         {open && (
-          <div className="absolute right-0 top-full mt-2 w-52 bg-[#0F0311] border border-white/10 rounded-2xl overflow-hidden z-50 shadow-2xl">
+          <div className="absolute right-0 top-full mt-2 w-52 bg-deep-purple border border-white/15 rounded-2xl overflow-hidden z-50 shadow-2xl">
             {needsSetup ? (
-              <div className="px-4 py-3 border-b border-white/5">
+              <div className="px-4 py-3 border-b border-white/10">
                 <p className="text-[10px] font-black uppercase tracking-widest text-white/30">Signed in as guest</p>
                 <p className="text-xs text-white/40 mt-0.5">No player assigned yet</p>
               </div>
             ) : (
-              <div className="px-4 py-3 border-b border-white/5">
+              <div className="px-4 py-3 border-b border-white/10">
                 <p className="text-[10px] font-black uppercase tracking-widest text-white/30">Playing as</p>
                 <p className="text-sm font-black text-white mt-0.5 truncate">{session.playerName}</p>
               </div>
@@ -176,7 +176,7 @@ export default function LineLoginButton() {
 
             <button
               onClick={() => { setOpen(false); signOut(); }}
-              className="w-full flex items-center gap-2 px-4 py-3 text-[12px] font-bold text-white/40 hover:text-white/70 hover:bg-white/5 transition-colors"
+              className="w-full flex items-center gap-2 px-4 py-3 text-[12px] font-bold text-white/40 hover:text-white/70 hover:bg-white/10 transition-colors"
             >
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />

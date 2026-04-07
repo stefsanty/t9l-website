@@ -1,14 +1,14 @@
 @import "tailwindcss";
 
 :root {
-  --background: #050106; /* Near-black Midnight Purple */
+  --background: #0D060E; /* Dark but distinct Midnight Purple */
   --foreground: #FFFFFF;
   --primary: #E90052;    /* Vibrant Pink/Magenta */
   --secondary: #963CFF;  /* Electric Violet */
   --success: #00FF85;    /* Electric Green */
-  --muted: #8E7091;      /* Muted Purple-Grey */
-  --border: #1F0724;     /* Dark Purple Border */
-  --card: #0F0311;       /* Deep Card Background */
+  --muted: #A68BA8;      /* Lightened Muted Purple-Grey */
+  --border: #2A152E;     /* More visible Dark Purple Border */
+  --card: #1A0F1F;       /* Noticeably lighter Card Background */
   --accent: #E90052;
 }
 
@@ -24,8 +24,8 @@
   --color-accent: var(--accent);
   
   /* Brand Specific */
-  --color-deep-purple: #0F0311;
-  --color-midnight: #050106;
+  --color-deep-purple: #1A0F1F;
+  --color-midnight: #0D060E;
   --color-vibrant-pink: #E90052;
   --color-electric-violet: #963CFF;
   --color-electric-green: #00FF85;
@@ -69,7 +69,7 @@ body {
 }
 
 .pl-gradient {
-  background: linear-gradient(135deg, #0F0311 0%, #360D3A 100%);
+  background: linear-gradient(135deg, var(--card) 0%, #3D1342 100%);
 }
 
 .pl-card {

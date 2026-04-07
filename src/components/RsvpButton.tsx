@@ -44,7 +44,7 @@ export default function RsvpButton({ matchdayId, initialGoing }: RsvpButtonProps
         <span className="text-[11px] font-black uppercase tracking-[0.2em] text-white/30">
           Your RSVP
         </span>
-        <div className="h-[1px] flex-1 bg-white/5" />
+        <div className="h-[1px] flex-1 bg-white/10" />
       </div>
 
       <div className="mt-3 flex items-center gap-3">
@@ -54,7 +54,7 @@ export default function RsvpButton({ matchdayId, initialGoing }: RsvpButtonProps
           className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-[12px] font-black uppercase tracking-wider transition-all disabled:opacity-50 active:scale-95 ${
             going
               ? 'bg-electric-green/15 border border-electric-green/40 text-electric-green'
-              : 'bg-white/[0.03] border border-white/10 text-white/40 hover:border-white/25 hover:text-white/60'
+              : 'bg-white/[0.07] border border-white/15 text-white/40 hover:border-white/25 hover:text-white/60'
           }`}
         >
           {loading ? (

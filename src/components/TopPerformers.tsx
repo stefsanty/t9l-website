@@ -54,43 +54,43 @@ export default function TopPerformers({
       <div className="overflow-x-auto relative">
         <table className="w-full text-left text-sm border-collapse">
           <thead>
-            <tr className="border-b border-white/10 bg-white/[0.03] text-white/40 text-[10px] font-black uppercase tracking-[0.1em]">
+            <tr className="border-b border-white/15 bg-white/[0.07] text-white/40 text-[10px] font-black uppercase tracking-[0.1em]">
               <th 
-                className="py-4 pl-4 pr-2 cursor-pointer hover:bg-white/[0.05] transition-colors"
+                className="py-4 pl-4 pr-2 cursor-pointer hover:bg-white/[0.10] transition-colors"
                 onClick={() => handleSort('playerName')}
               >
                 PLAYER <SortIcon field="playerName" />
               </th>
               <th 
-                className="py-4 px-1 text-center cursor-pointer hover:bg-white/[0.05] transition-colors whitespace-nowrap"
+                className="py-4 px-1 text-center cursor-pointer hover:bg-white/[0.10] transition-colors whitespace-nowrap"
                 onClick={() => handleSort('matchesPlayed')}
                 title="Matches Played"
               >
                 🅿️ <SortIcon field="matchesPlayed" />
               </th>
               <th 
-                className="py-4 px-1 text-center cursor-pointer hover:bg-white/[0.05] transition-colors whitespace-nowrap"
+                className="py-4 px-1 text-center cursor-pointer hover:bg-white/[0.10] transition-colors whitespace-nowrap"
                 onClick={() => handleSort('avgRating')}
                 title="Rating"
               >
                 ✨️ <SortIcon field="avgRating" />
               </th>
               <th 
-                className="py-4 px-1 text-center cursor-pointer hover:bg-white/[0.05] transition-colors whitespace-nowrap"
+                className="py-4 px-1 text-center cursor-pointer hover:bg-white/[0.10] transition-colors whitespace-nowrap"
                 onClick={() => handleSort('goals')}
                 title="Goals"
               >
                 ⚽️ <SortIcon field="goals" />
               </th>
               <th 
-                className="py-4 px-1 text-center cursor-pointer hover:bg-white/[0.05] transition-colors whitespace-nowrap"
+                className="py-4 px-1 text-center cursor-pointer hover:bg-white/[0.10] transition-colors whitespace-nowrap"
                 onClick={() => handleSort('assists')}
                 title="Assists"
               >
                 👟 <SortIcon field="assists" />
               </th>
               <th 
-                className="py-4 pl-1 pr-4 text-right cursor-pointer hover:bg-white/[0.05] transition-colors whitespace-nowrap"
+                className="py-4 pl-1 pr-4 text-right cursor-pointer hover:bg-white/[0.10] transition-colors whitespace-nowrap"
                 onClick={() => handleSort('gaPerGame')}
               >
                 G+A/G <SortIcon field="gaPerGame" />
@@ -100,7 +100,7 @@ export default function TopPerformers({
           <tbody className="divide-y divide-white/5">
             {visibleStats.map((stat) => {
               return (
-                <tr key={stat.playerId} className="hover:bg-white/[0.03] transition-colors group">
+                <tr key={stat.playerId} className="hover:bg-white/[0.07] transition-colors group">
                   <td className="py-4 pl-4 pr-2">
                     <div className="flex items-center gap-3">
                       <PlayerAvatar playerName={stat.playerName} size="md" className="ring-2 ring-white/5 group-hover:ring-electric-violet/30 transition-all" />
@@ -149,7 +149,7 @@ export default function TopPerformers({
       </div>
 
       {hasMore && (
-        <div className="p-4 bg-white/[0.02] border-t border-white/5">
+        <div className="p-4 bg-white/[0.05] border-t border-white/10">
           <button
             onClick={() => setVisibleCount((prev) => prev + 10)}
             className="w-full py-3 bg-electric-violet hover:bg-electric-violet/80 text-white rounded-xl text-[11px] font-black uppercase tracking-[0.2em] transition-all hover:-translate-y-0.5 active:translate-y-0"

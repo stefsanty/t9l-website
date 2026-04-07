@@ -340,8 +340,8 @@ export default function NextMatchdayBanner({
                 isSelected
                   ? 'bg-vibrant-pink text-white border-vibrant-pink shadow-[0_0_12px_rgba(233,0,82,0.35)]'
                   : isCompleted
-                  ? 'bg-white/[0.06] text-white/50 border-white/10 hover:border-white/20 hover:text-white/70'
-                  : 'bg-white/[0.03] text-white/40 border-white/[0.06] hover:border-white/15 hover:text-white/60'
+                  ? 'bg-white/[0.06] text-white/50 border-white/15 hover:border-white/20 hover:text-white/70'
+                  : 'bg-white/[0.07] text-white/40 border-white/[0.12] hover:border-white/15 hover:text-white/60'
               }`}
             >
               {md.label}
@@ -359,14 +359,14 @@ export default function NextMatchdayBanner({
         <div className="absolute inset-0 bg-diagonal-pattern opacity-[0.03] pointer-events-none group-hover:opacity-[0.05] transition-opacity duration-500" />
 
         {/* Card header */}
-        <div className="bg-white/[0.02] px-7 py-5 border-b border-white/[0.05] flex justify-between items-center relative">
+        <div className="bg-white/[0.05] px-7 py-5 border-b border-white/[0.10] flex justify-between items-center relative">
           <div className="flex items-center gap-4">
             <div className={`w-2.5 h-2.5 rounded-full ${isNext ? 'bg-vibrant-pink animate-pulse' : 'bg-white/10'}`} />
             <h2 className="font-display text-2xl font-black uppercase tracking-tight text-white/90">
               {isNext ? 'UPCOMING' : 'RESULTS'} — {matchday.label}
             </h2>
           </div>
-          <span className="text-[12px] font-black text-white/30 uppercase tracking-[0.2em] bg-white/[0.03] px-4 py-1.5 rounded-full border border-white/[0.05]">
+          <span className="text-[12px] font-black text-white/30 uppercase tracking-[0.2em] bg-white/[0.07] px-4 py-1.5 rounded-full border border-white/[0.10]">
             {matchday.date ? formatShortDate(matchday.date) : 'TBD'}
           </span>
         </div>
@@ -398,7 +398,7 @@ export default function NextMatchdayBanner({
                 <div key={match.id}>
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex-1 flex items-center gap-3">
-                      <div className="relative w-10 h-10 shrink-0 bg-white/5 rounded-lg p-1.5 border border-white/5">
+                      <div className="relative w-10 h-10 shrink-0 bg-white/10 rounded-lg p-1.5 border border-white/10">
                         {home?.logo && (
                           <Image
                             src={home.logo}
@@ -441,7 +441,7 @@ export default function NextMatchdayBanner({
                       <span className="font-display text-xl font-black uppercase tracking-tighter leading-none sm:hidden">
                         {away?.shortName || away?.name.slice(0, 3)}
                       </span>
-                      <div className="relative w-10 h-10 shrink-0 bg-white/5 rounded-lg p-1.5 border border-white/5">
+                      <div className="relative w-10 h-10 shrink-0 bg-white/10 rounded-lg p-1.5 border border-white/10">
                         {away?.logo && (
                           <Image
                             src={away.logo}
@@ -469,7 +469,7 @@ export default function NextMatchdayBanner({
             })}
           </div>
 
-          <div className="pt-6 border-t border-white/5 relative">
+          <div className="pt-6 border-t border-white/10 relative">
             <div className="flex items-center gap-3 mb-6 bg-electric-violet/5 p-3 rounded-xl border border-electric-violet/10">
               <div className="px-2 py-1 bg-electric-violet text-[10px] font-black uppercase tracking-widest rounded-md text-white">
                 RESTING
@@ -492,7 +492,7 @@ export default function NextMatchdayBanner({
                   <h3 className="text-[11px] font-black uppercase tracking-[0.2em] text-white/30">
                     PLAYER AVAILABILITY
                   </h3>
-                  <div className="h-[1px] flex-1 bg-white/5 ml-4" />
+                  <div className="h-[1px] flex-1 bg-white/10 ml-4" />
                 </div>
 
                 <div className="grid gap-3">
@@ -506,7 +506,7 @@ export default function NextMatchdayBanner({
                         <div
                           key={team.id}
                           className={`rounded-xl overflow-hidden transition-all duration-300 border ${
-                            isExpanded ? 'bg-white/5 border-white/10' : 'bg-white/[0.02] border-white/5 hover:border-white/10'
+                            isExpanded ? 'bg-white/10 border-white/15' : 'bg-white/[0.05] border-white/10 hover:border-white/15'
                           }`}
                         >
                           <button
@@ -526,7 +526,7 @@ export default function NextMatchdayBanner({
                             </div>
                             <div className="flex items-center gap-3">
                               <span className={`text-[11px] font-black px-2 py-0.5 rounded ${
-                                confirmedIds.length > 0 ? 'bg-electric-green/10 text-electric-green' : 'bg-white/5 text-white/30'
+                                confirmedIds.length > 0 ? 'bg-electric-green/10 text-electric-green' : 'bg-white/10 text-white/30'
                               }`}>
                                 {confirmedIds.length} CONFIRMED
                               </span>
@@ -549,7 +549,7 @@ export default function NextMatchdayBanner({
                           </button>
 
                           {isExpanded && (
-                            <div className="px-4 pb-4 pt-0 border-t border-white/5 animate-in">
+                            <div className="px-4 pb-4 pt-0 border-t border-white/10 animate-in">
                               <TeamFormation
                                 confirmedIds={confirmedIds}
                                 players={players}
