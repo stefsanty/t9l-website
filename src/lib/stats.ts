@@ -12,6 +12,52 @@ import type {
   PlayedStatus,
 } from "@/types";
 
+export interface MatchdayVibes {
+  matchdayId: string;
+  label: string;
+  refereeing: number;
+  gamesClose: number;
+  teamwork: number;
+  enjoyment: number;
+  responseCount: number;
+}
+
+export function computeMatchdayVibes(ratings: PlayerRating[], matchdays: Matchday[]): MatchdayVibes[] {
+  const mdLabelMap = new Map(matchdays.map(md => [md.id, md.label]));
+  const byMd = new Map<string, { refereeing: number[]; gamesClose: number[]; teamwork: number[]; enjoyment: number[] }>();
+
+  for (const r of ratings) {
+    if (!byMd.has(r.matchdayId)) {
+      byMd.set(r.matchdayId, { refereeing: [], gamesClose: [], teamwork: [], enjoyment: [] });
+    }
+    const md = byMd.get(r.matchdayId)!;
+    if (r.refereeing > 0) md.refereeing.push(r.refereeing);
+    if (r.gamesClose > 0) md.gamesClose.push(r.gamesClose);
+    if (r.teamwork > 0) md.teamwork.push(r.teamwork);
+    if (r.enjoyment > 0) md.enjoyment.push(r.enjoyment);
+  }
+
+  const avg = (arr: number[]) =>
+    arr.length > 0 ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
+
+  return Array.from(byMd.entries())
+    .map(([matchdayId, { refereeing, gamesClose, teamwork, enjoyment }]) => ({
+      matchdayId,
+      label: mdLabelMap.get(matchdayId) || matchdayId.toUpperCase(),
+      refereeing: avg(refereeing),
+      gamesClose: avg(gamesClose),
+      teamwork: avg(teamwork),
+      enjoyment: avg(enjoyment),
+      responseCount: enjoyment.length,
+    }))
+    .filter(v => v.responseCount > 0)
+    .sort((a, b) => {
+      const aNum = parseInt(a.matchdayId.replace('md', ''), 10);
+      const bNum = parseInt(b.matchdayId.replace('md', ''), 10);
+      return bNum - aNum;
+    });
+}
+
 export function computeLeagueTable(
   teams: Team[],
   matchdays: Matchday[]

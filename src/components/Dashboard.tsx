@@ -1,10 +1,11 @@
 'use client';
 
 import { useState } from 'react';
-import type { 
-  Team, Player, Matchday, Goal, PlayerRating, Availability, 
-  LeagueTableRow, PlayerStats 
+import type {
+  Team, Player, Matchday, Goal, Availability, AvailabilityStatuses,
+  LeagueTableRow, PlayerStats, PlayedStatus,
 } from '@/types';
+import type { MatchdayVibes } from '@/lib/stats';
 import NextMatchdayBanner from './NextMatchdayBanner';
 import LeagueTable from './LeagueTable';
 import TopPerformers from './TopPerformers';
@@ -19,12 +20,77 @@ interface DashboardProps {
   players: Player[];
   matchdays: Matchday[];
   goals: Goal[];
-  ratings: PlayerRating[];
   availability: Availability;
+  availabilityStatuses: AvailabilityStatuses;
+  played: PlayedStatus;
   leagueTable: LeagueTableRow[];
   playerStats: PlayerStats[];
+  matchdayVibes: MatchdayVibes[];
   nextMd: { matchday: Matchday; isNext: boolean } | null;
   playerPictures: Record<string, string>;
+}
+
+function VibesBar({ value }: { value: number }) {
+  const pct = Math.round((value / 5) * 100);
+  return (
+    <div className="flex items-center gap-2 min-w-0">
+      <div className="flex-1 h-1 bg-white/10 rounded-full overflow-hidden">
+        <div
+          className="h-full rounded-full bg-electric-green"
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+      <span className="text-[11px] font-black tabular-nums text-white/60 w-6 text-right">
+        {value.toFixed(1)}
+      </span>
+    </div>
+  );
+}
+
+function MatchdayVibesSection({ vibes }: { vibes: MatchdayVibes[] }) {
+  if (vibes.length === 0) return null;
+
+  return (
+    <div className="relative">
+      <div className="flex items-center gap-4 mb-8">
+        <div className="w-1.5 h-7 bg-electric-green rounded-full" />
+        <h2 className="font-display text-4xl font-black uppercase tracking-tight text-white/95">Vibes</h2>
+      </div>
+      <div className="pl-card pl-card-magenta rounded-2xl overflow-hidden relative">
+        <div className="absolute inset-0 bg-diagonal-pattern opacity-5 pointer-events-none" />
+        <div className="divide-y divide-white/5 relative">
+          {vibes.map((v) => (
+            <div key={v.matchdayId} className="px-5 py-4">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-[11px] font-black uppercase tracking-[0.2em] text-white/60">{v.label}</span>
+                <span className="text-[9px] font-black uppercase tracking-widest text-white/20">
+                  {v.responseCount} {v.responseCount === 1 ? 'response' : 'responses'}
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-x-6 gap-y-2">
+                <div>
+                  <div className="text-[9px] font-black uppercase tracking-widest text-white/25 mb-1">Enjoyment</div>
+                  <VibesBar value={v.enjoyment} />
+                </div>
+                <div>
+                  <div className="text-[9px] font-black uppercase tracking-widest text-white/25 mb-1">Teamwork</div>
+                  <VibesBar value={v.teamwork} />
+                </div>
+                <div>
+                  <div className="text-[9px] font-black uppercase tracking-widest text-white/25 mb-1">Closeness</div>
+                  <VibesBar value={v.gamesClose} />
+                </div>
+                <div>
+                  <div className="text-[9px] font-black uppercase tracking-widest text-white/25 mb-1">Refereeing</div>
+                  <VibesBar value={v.refereeing} />
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default function Dashboard({
@@ -32,10 +98,12 @@ export default function Dashboard({
   players,
   matchdays,
   goals,
-  ratings,
   availability,
+  availabilityStatuses,
+  played,
   leagueTable,
   playerStats,
+  matchdayVibes,
   nextMd,
   playerPictures,
 }: DashboardProps) {
@@ -67,6 +135,7 @@ export default function Dashboard({
                 teams={teams}
                 players={players}
                 availability={availability}
+                played={played}
                 goals={goals}
               />
             ) : (
@@ -88,7 +157,7 @@ export default function Dashboard({
               </div>
               <LeagueTable rows={leagueTable} />
             </div>
-            
+
             <div className="relative">
               <div className="flex items-center gap-4 mb-8">
                 <div className="w-1.5 h-7 bg-electric-violet rounded-full" />
@@ -104,6 +173,8 @@ export default function Dashboard({
               </div>
               <MatchResults matchdays={matchdays} teams={teams} goals={goals} />
             </div>
+
+            <MatchdayVibesSection vibes={matchdayVibes} />
           </div>
         )}
 
@@ -117,6 +188,7 @@ export default function Dashboard({
               teams={teams}
               players={players}
               availability={availability}
+              availabilityStatuses={availabilityStatuses}
               nextMatchdayId={nextMd?.matchday.id || "md1"}
               playerPictures={playerPictures}
             />

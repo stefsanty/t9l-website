@@ -4,6 +4,7 @@ import {
   computeLeagueTable,
   computePlayerStats,
   findNextMatchday,
+  computeMatchdayVibes,
 } from "@/lib/stats";
 import Dashboard from "@/components/Dashboard";
 
@@ -38,7 +39,20 @@ async function fetchPlayerPictures(
 }
 
 export default async function Home() {
-  const raw = await fetchSheetData();
+  let raw;
+  try {
+    raw = await fetchSheetData();
+  } catch {
+    return (
+      <div className="flex items-center justify-center min-h-dvh bg-midnight text-white px-6 text-center">
+        <div>
+          <p className="font-display text-3xl font-black uppercase text-white/80 mb-2">Data unavailable</p>
+          <p className="text-sm text-white/30 font-bold uppercase tracking-widest">Try again in a moment</p>
+        </div>
+      </div>
+    );
+  }
+
   const data = parseAllData(raw);
 
   const leagueTable = computeLeagueTable(data.teams, data.matchdays);
@@ -50,6 +64,7 @@ export default async function Home() {
     data.ratings,
     data.played,
   );
+  const matchdayVibes = computeMatchdayVibes(data.ratings, data.matchdays);
 
   const playerPictures = await fetchPlayerPictures(data.players.map((p) => p.id));
 
@@ -59,10 +74,12 @@ export default async function Home() {
       players={data.players}
       matchdays={data.matchdays}
       goals={data.goals}
-      ratings={data.ratings}
       availability={data.availability}
+      availabilityStatuses={data.availabilityStatuses}
+      played={data.played}
       leagueTable={leagueTable}
       playerStats={playerStats}
+      matchdayVibes={matchdayVibes}
       nextMd={nextMd}
       playerPictures={playerPictures}
     />

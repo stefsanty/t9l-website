@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Image from 'next/image';
 import { useSession } from 'next-auth/react';
-import type { Matchday, Team, Player, Availability, Goal } from '@/types';
+import type { Matchday, Team, Player, Availability, PlayedStatus, Goal } from '@/types';
 import RsvpButton from './RsvpButton';
 
 // ── Formation helpers ─────────────────────────────────────────────────────────
@@ -283,11 +283,12 @@ interface NextMatchdayBannerProps {
   teams: Team[];
   players: Player[];
   availability: Availability;
+  played: PlayedStatus;
   goals: Goal[];
 }
 
 const VENUE_NAME = 'Tennozu Park C';
-const VENUE_MAP_URL = 'https://www.google.com/maps/search/Tennozu+Isle+Park+Tokyo';
+const VENUE_MAP_URL = 'https://maps.google.com/maps?q=Tennozu+Park+C,+Shinagawa,+Tokyo,+Japan';
 
 export default function NextMatchdayBanner({
   matchdays,
@@ -295,6 +296,7 @@ export default function NextMatchdayBanner({
   teams,
   players,
   availability,
+  played,
   goals,
 }: NextMatchdayBannerProps) {
   const [selectedId, setSelectedId] = useState(defaultMatchdayId);
@@ -479,7 +481,7 @@ export default function NextMatchdayBanner({
               </span>
             </div>
 
-            {isNext && (
+            {isNext ? (
               <div className="space-y-3">
                 {userTeamIsPlaying && (
                   <RsvpButton
@@ -562,6 +564,66 @@ export default function NextMatchdayBanner({
                     })}
                 </div>
               </div>
+            ) : (
+              /* Past matchday — show who played with formations */
+              (() => {
+                const mdPlayed = played[matchday.id] || {};
+                const playingTeams = teams.filter((t) => t.id !== matchday.sittingOutTeamId);
+                const anyPlayed = playingTeams.some((t) => (mdPlayed[t.id] || []).length > 0);
+                if (!anyPlayed) return null;
+                return (
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-[11px] font-black uppercase tracking-[0.2em] text-white/30">
+                        WHO PLAYED
+                      </h3>
+                      <div className="h-[1px] flex-1 bg-white/10 ml-4" />
+                    </div>
+                    <div className="grid gap-3">
+                      {playingTeams.map((team) => {
+                        const playedIds = mdPlayed[team.id] || [];
+                        const isExpanded = expandedTeamId === team.id;
+                        return (
+                          <div
+                            key={team.id}
+                            className={`rounded-xl overflow-hidden transition-all duration-300 border ${
+                              isExpanded ? 'bg-white/10 border-white/15' : 'bg-white/[0.05] border-white/10 hover:border-white/15'
+                            }`}
+                          >
+                            <button
+                              onClick={() => setExpandedTeamId(isExpanded ? null : team.id)}
+                              className="w-full flex items-center justify-between px-4 py-3 text-left transition-colors"
+                            >
+                              <div className="flex items-center gap-3">
+                                <div className="w-3 h-3 rounded-full" style={{ backgroundColor: team.color }} />
+                                <span className="text-[15px] font-black tracking-tight uppercase">{team.name}</span>
+                              </div>
+                              <div className="flex items-center gap-3">
+                                <span className={`text-[11px] font-black px-2 py-0.5 rounded ${
+                                  playedIds.length > 0 ? 'bg-electric-violet/10 text-electric-violet' : 'bg-white/10 text-white/30'
+                                }`}>
+                                  {playedIds.length} PLAYED
+                                </span>
+                                <svg
+                                  className={`w-4 h-4 text-white/20 transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`}
+                                  fill="none" viewBox="0 0 24 24" stroke="currentColor"
+                                >
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M19 9l-7 7-7-7" />
+                                </svg>
+                              </div>
+                            </button>
+                            {isExpanded && (
+                              <div className="px-4 pb-4 pt-0 border-t border-white/10 animate-in">
+                                <TeamFormation confirmedIds={playedIds} players={players} teamColor={team.color} />
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })()
             )}
           </div>
         </div>

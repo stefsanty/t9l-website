@@ -5,6 +5,7 @@ import type {
   Goal,
   PlayerRating,
   Availability,
+  AvailabilityStatuses,
   PlayedStatus,
   LeagueData,
 } from "@/types";
@@ -87,9 +88,10 @@ export function parseTeams(rows: string[][]): Team[] {
 export function parsePlayers(
   rows: string[][],
   teams: Team[]
-): { players: Player[]; availability: Availability; played: PlayedStatus } {
+): { players: Player[]; availability: Availability; availabilityStatuses: AvailabilityStatuses; played: PlayedStatus } {
   const players: Player[] = [];
   const availability: Availability = {};
+  const availabilityStatuses: AvailabilityStatuses = {};
   const played: PlayedStatus = {};
   const teamNameToId = new Map(teams.map((t) => [t.name, t.id]));
 
@@ -128,6 +130,10 @@ export function parsePlayers(
         if (!availability[mdId]) availability[mdId] = {};
         if (!availability[mdId][teamId]) availability[mdId][teamId] = [];
         availability[mdId][teamId].push(playerId);
+
+        if (!availabilityStatuses[mdId]) availabilityStatuses[mdId] = {};
+        if (!availabilityStatuses[mdId][teamId]) availabilityStatuses[mdId][teamId] = {};
+        availabilityStatuses[mdId][teamId][playerId] = status as 'Y' | 'EXPECTED' | 'PLAYED';
       }
 
       if (status === "PLAYED") {
@@ -138,7 +144,7 @@ export function parsePlayers(
     }
   }
 
-  return { players, availability, played };
+  return { players, availability, availabilityStatuses, played };
 }
 
 export function parseSchedule(
@@ -369,11 +375,11 @@ export function parseRatings(
 
 export function parseAllData(raw: RawSheetData): LeagueData {
   const teams = parseTeams(raw.teams);
-  const { players, availability, played } = parsePlayers(raw.roster, teams);
+  const { players, availability, availabilityStatuses, played } = parsePlayers(raw.roster, teams);
   let matchdays = parseSchedule(raw.schedule, raw.scheduleFormula, raw.mdSchedule, teams);
   const goals = parseGoals(raw.goals, matchdays, teams);
   matchdays = computeMatchScores(matchdays, goals);
   const ratings = parseRatings(raw.ratings, matchdays, teams);
 
-  return { teams, players, matchdays, goals, ratings, availability, played };
+  return { teams, players, matchdays, goals, ratings, availability, availabilityStatuses, played };
 }

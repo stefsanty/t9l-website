@@ -59,6 +59,14 @@ export interface Availability {
   };
 }
 
+export interface AvailabilityStatuses {
+  [matchdayId: string]: {
+    [teamId: string]: {
+      [playerId: string]: 'Y' | 'EXPECTED' | 'PLAYED';
+    };
+  };
+}
+
 export interface PlayedStatus {
   [matchdayId: string]: {
     [teamId: string]: string[];
@@ -122,5 +130,6 @@ export interface LeagueData {
   goals: Goal[];
   ratings: PlayerRating[];
   availability: Availability;
+  availabilityStatuses: AvailabilityStatuses;
   played: PlayedStatus;
 }

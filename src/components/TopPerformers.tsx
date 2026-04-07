@@ -20,7 +20,10 @@ export default function TopPerformers({
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
 
   const sortedStats = useMemo(() => {
-    return [...playerStats].sort((a, b) => {
+    const activeStats = playerStats.filter(
+      (s) => s.matchesPlayed > 0 || s.goals > 0 || s.assists > 0 || s.avgRating > 0,
+    );
+    return [...activeStats].sort((a, b) => {
       let comparison = 0;
       if (sortField === 'playerName') {
         comparison = a.playerName.localeCompare(b.playerName);

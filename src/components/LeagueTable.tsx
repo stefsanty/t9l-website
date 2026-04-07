@@ -6,6 +6,7 @@ interface LeagueTableProps {
 }
 
 export default function LeagueTable({ rows }: LeagueTableProps) {
+  const leaderPoints = rows[0]?.points ?? 0;
   return (
     <div className="pl-card pl-card-magenta rounded-2xl overflow-hidden mb-10 relative">
       <div className="absolute inset-0 bg-diagonal-pattern opacity-5 pointer-events-none" />
@@ -82,6 +83,11 @@ export default function LeagueTable({ rows }: LeagueTableProps) {
                   <span className={`font-display text-xl font-black tabular-nums ${i === 0 ? "text-vibrant-pink" : "text-white"}`}>
                     {row.points}
                   </span>
+                  {i > 0 && row.points < leaderPoints && (
+                    <div className="text-[9px] font-black tabular-nums text-white/20 leading-none mt-0.5">
+                      -{leaderPoints - row.points}
+                    </div>
+                  )}
                 </td>
               </tr>
             ))}
