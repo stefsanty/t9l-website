@@ -119,6 +119,16 @@ export default function AssignPlayerClient({ playersByTeam }: Props) {
         <p className="text-[10px] text-white/20 text-center mt-4 uppercase tracking-widest">
           Your LINE profile photo will be used as your avatar
         </p>
+
+        {/* Guest exit */}
+        <div className="mt-6 text-center">
+          <button
+            onClick={() => router.push('/')}
+            className="text-[13px] text-white/25 hover:text-white/50 transition-colors"
+          >
+            Skip for now — keep browsing as guest
+          </button>
+        </div>
       </div>
     </div>
   );
