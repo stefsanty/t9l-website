@@ -105,5 +105,6 @@ export async function DELETE() {
     return NextResponse.json({ error: message }, { status: 500 });
   }
 
+  revalidatePath('/');
   return NextResponse.json({ ok: true });
 }
