@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from 'react';
 import Image from 'next/image';
+import { useSession } from 'next-auth/react';
 import PlayerAvatar from './PlayerAvatar';
 import type { PlayerStats } from '@/types';
 
@@ -28,7 +29,8 @@ function SortIcon({
 export default function TopPerformers({
   playerStats,
 }: TopPerformersProps) {
-    const [visibleCount, setVisibleCount] = useState(10);
+  const { data: session } = useSession();
+  const [visibleCount, setVisibleCount] = useState(10);
   const [sortField, setSortField] = useState<SortField>('goals');
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
 
@@ -110,15 +112,21 @@ export default function TopPerformers({
           </thead>
           <tbody className="divide-y divide-border-subtle">
             {visibleStats.map((stat) => {
+              const isUser = session?.playerId === stat.playerId;
               return (
-                <tr key={stat.playerId} className="hover:bg-surface transition-colors group">
+                <tr key={stat.playerId} className={`hover:bg-surface transition-colors group ${isUser ? 'bg-success/10' : ''}`}>
                   <td className="py-4 pl-4 pr-2">
                     <div className="flex items-center gap-3">
-                      <PlayerAvatar playerName={stat.playerName} size="md" className="ring-2 ring-border-subtle group-hover:ring-secondary/30 transition-all" />
+                      <PlayerAvatar playerName={stat.playerName} size="md" className={`ring-2 ring-border-subtle transition-all ${isUser ? 'ring-success/50' : 'group-hover:ring-secondary/30'}`} />
                       <div className="flex flex-col min-w-0">
-                        <span className="font-bold uppercase tracking-tight text-fg-high group-hover:text-secondary transition-colors leading-tight break-words" translate="no">
+                        <span className={`font-bold uppercase tracking-tight transition-colors leading-tight break-words ${isUser ? '' : 'text-fg-high group-hover:text-secondary'}`} translate="no">
                           {stat.playerName}
                         </span>
+                        {isUser && (
+                          <span className="text-[9px] font-black text-tertiary text-fg-mid tracking-widest uppercase mt-0.5">
+                            {"You"}
+                          </span>
+                        )}
                         <div className="flex items-center gap-1.5 mt-1">
                           <div className="relative w-3 h-3 shrink-0">
                             {stat.teamLogo ? (
@@ -140,7 +148,7 @@ export default function TopPerformers({
                   <td className="py-4 px-1 text-center font-display font-black text-base text-fg-high tabular-nums">
                     {stat.matchesPlayed}
                   </td>
-                  <td className="py-4 px-1 text-center font-display font-black text-base text-tertiary tabular-nums">
+                  <td className={`py-4 px-1 text-center font-display font-black text-base tabular-nums ${isUser ? 'text-tertiary' : 'text-primary'}`}>
                     {stat.avgRating > 0 ? stat.avgRating.toFixed(1) : '—'}
                   </td>
                   <td className="py-4 px-1 text-center font-display font-black text-lg text-fg-high tabular-nums">

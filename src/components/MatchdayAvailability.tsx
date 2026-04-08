@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import type { Matchday, Team, Player, Availability, AvailabilityStatuses, PlayedStatus } from '@/types';
 
-// ── Formation helpers (moved from NextMatchdayBanner) ─────────────────────────
+// -- Formation helpers --
 
 interface Formation {
   label: string;
@@ -41,7 +41,7 @@ function distributeToSlots<T>(items: T[], slots: number): T[][] {
   return result;
 }
 
-// ── TeamFormation sub-component ───────────────────────────────────────────────
+// -- TeamFormation sub-component --
 
 function TeamFormation({
   confirmedIds,
@@ -126,7 +126,7 @@ function TeamFormation({
               <button
                 key={f.label}
                 onClick={() => setFormation(f)}
-                className={`text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded transition-all ${isActive ? 'text-white' : 'text-fg-low bg-surface'}`}
+                className={`text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded transition-all ${isActive ? 'text-foreground' : 'text-fg-low bg-surface'}`}
                 style={isActive ? { backgroundColor: teamColor + '55' } : undefined}
               >
                 {f.label}
@@ -195,7 +195,7 @@ function TeamFormation({
   );
 }
 
-// ── Main component ────────────────────────────────────────────────────────────
+// -- Main component --
 
 interface MatchdayAvailabilityProps {
   matchday: Matchday;
@@ -303,7 +303,7 @@ export default function MatchdayAvailability({
         <h3 className="text-[11px] font-black uppercase tracking-[0.2em] text-fg-mid">
           {"Player Availability"}
         </h3>
-        <div className="h-[1px] flex-1 bg-white/10" />
+        <div className="h-[1px] flex-1 bg-border-subtle" />
       </div>
 
       <div className="grid gap-3">
@@ -348,18 +348,25 @@ export default function MatchdayAvailability({
                       {goingIds.length} {"going"}
                     </span>
                   )}
+                  {goingIds.length < 9 && (
+                    <span className={`text-[11px] font-black px-2 py-0.5 rounded ${
+                      goingIds.length === 0 ? 'bg-surface-md text-fg-mid' : 'bg-vibrant-pink/10 text-vibrant-pink'
+                    }`}>
+                      {9 - goingIds.length} {"more"}
+                    </span>
+                  )}
+                  {goingIds.length >= 10 && (
+                    <span className="text-[11px] font-black px-2 py-0.5 rounded bg-electric-violet/10 text-electric-violet">
+                      {goingIds.length - 9} {goingIds.length - 9 === 1 ? "sub" : "subs"}
+                    </span>
+                  )}
                   {undecidedIds.length > 0 && (
                     <span className="text-[11px] font-black px-2 py-0.5 rounded bg-warning/10 text-warning">
                       {undecidedIds.length} {"undecided"}
                     </span>
                   )}
-                  {goingIds.length === 0 && undecidedIds.length === 0 && (
-                    <span className="text-[11px] font-black px-2 py-0.5 rounded bg-surface-md text-fg-mid">
-                      0 {"going"}
-                    </span>
-                  )}
                   <svg
-                    className={`w-4 h-4 text-white/65 transition-transform duration-300 ${
+                    className={`w-4 h-4 text-fg-mid transition-transform duration-300 ${
                       isExpanded ? 'rotate-180' : ''
                     }`}
                     fill="none"

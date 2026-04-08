@@ -1,6 +1,7 @@
 'use client';
 
 import Image from "next/image";
+import { useSession } from "next-auth/react";
 import type { LeagueTableRow } from "@/types";
 
 interface LeagueTableProps {
@@ -8,7 +9,10 @@ interface LeagueTableProps {
 }
 
 export default function LeagueTable({ rows }: LeagueTableProps) {
-    const leaderPoints = rows[0]?.points ?? 0;
+  const { data: session } = useSession();
+  const userTeamId = session?.teamId;
+  const leaderPoints = rows[0]?.points ?? 0;
+
   return (
     <div className="pl-card pl-card-magenta rounded-2xl overflow-hidden mb-10 relative">
       <div className="absolute inset-0 bg-diagonal-pattern opacity-5 pointer-events-none" />
@@ -29,73 +33,84 @@ export default function LeagueTable({ rows }: LeagueTableProps) {
             </tr>
           </thead>
           <tbody className="divide-y divide-border-subtle">
-            {rows.map((row, i) => (
-              <tr
-                key={row.team.id}
-                className={`transition-colors hover:bg-surface group ${
-                  i === 0 ? "bg-primary/5" : ""
-                }`}
-              >
-                <td className="py-4 pl-4 pr-1">
-                  <span className={`font-display text-base font-black ${i === 0 ? "text-primary" : "text-fg-high"}`}>
-                    {i + 1}
-                  </span>
-                </td>
-                <td className="py-4 px-3">
-                  <div className="flex items-center gap-3">
-                    <div className="relative w-7 h-7 shrink-0 bg-surface-md rounded-md p-1 border border-border-subtle">
-                      {row.team.logo ? (
-                        <Image
-                          src={row.team.logo}
-                          alt={row.team.name}
-                          fill
-                          className="object-contain p-0.5"
-                        />
-                      ) : (
-                        <span
-                          className="inline-block h-full w-full rounded-sm"
-                          style={{ backgroundColor: row.team.color }}
-                        />
-                      )}
-                    </div>
-                    <span className="font-bold uppercase tracking-tight text-fg-high group-hover:text-primary transition-colors" translate="no">
-                      <span className="sm:hidden">{row.team.shortName}</span>
-                      <span className="hidden sm:inline">{row.team.name}</span>
+            {rows.map((row, i) => {
+              const isUserTeam = userTeamId === row.team.id;
+              return (
+                <tr
+                  key={row.team.id}
+                  className={`transition-colors hover:bg-surface group ${
+                    isUserTeam ? "bg-success/10" : ""
+                  }`}
+                >
+                  <td className="py-4 pl-4 pr-1">
+                    <span className={`font-display text-base font-black ${isUserTeam ? "text-success" : "text-fg-high"}`}>
+                      {i + 1}
                     </span>
-                  </div>
-                </td>
-                <td className="py-4 px-2 text-center font-bold text-fg-high tabular-nums">
-                  {row.played}
-                </td>
-                <td className="py-4 px-2 text-center font-bold text-fg-mid tabular-nums">{row.won}</td>
-                <td className="py-4 px-2 text-center font-bold text-fg-mid tabular-nums">{row.drawn}</td>
-                <td className="py-4 px-2 text-center font-bold text-fg-mid tabular-nums">{row.lost}</td>
-                <td className="py-4 px-2 text-center hidden sm:table-cell font-bold text-fg-high tabular-nums">
-                  {row.goalsFor}
-                </td>
-                <td className="py-4 px-2 text-center hidden sm:table-cell font-bold text-fg-high tabular-nums">
-                  {row.goalsAgainst}
-                </td>
-                <td className="py-4 px-2 text-center font-bold text-fg-high tabular-nums">
-                  {row.goalDifference > 0
-                    ? `+${row.goalDifference}`
-                    : row.goalDifference}
-                </td>
-                <td className="py-4 pr-4 pl-2 text-center">
-                  <span className={`font-display text-xl font-black tabular-nums ${i === 0 ? "text-primary" : "text-fg-high"}`}>
-                    {row.points}
-                  </span>
-                  {i > 0 && row.points < leaderPoints && (
-                    <div className="text-[9px] font-black tabular-nums text-fg-mid leading-none mt-0.5">
-                      -{leaderPoints - row.points}
+                  </td>
+                  <td className="py-4 px-3">
+                    <div className="flex items-center gap-3">
+                      <div className="relative w-7 h-7 shrink-0 bg-surface-md rounded-md p-1 border border-border-subtle">
+                        {row.team.logo ? (
+                          <Image
+                            src={row.team.logo}
+                            alt={row.team.name}
+                            fill
+                            className="object-contain p-0.5"
+                          />
+                        ) : (
+                          <span
+                            className="inline-block h-full w-full rounded-sm"
+                            style={{ backgroundColor: row.team.color }}
+                          />
+                        )}
+                      </div>
+                      <div className="flex flex-col">
+                        <span className="font-bold uppercase tracking-tight text-fg-high group-hover:text-primary transition-colors leading-tight" translate="no">
+                          <span className="sm:hidden">{row.team.shortName}</span>
+                          <span className="hidden sm:inline">{row.team.name}</span>
+                        </span>
+                        {isUserTeam && (
+                          <span className="text-[9px] font-black text-tertiary text-fg-mid tracking-widest uppercase mt-0.5">
+                            {"Your Team"}
+                          </span>
+                        )}
+                      </div>
                     </div>
-                  )}
-                </td>
-              </tr>
-            ))}
+                  </td>
+                  <td className="py-4 px-2 text-center font-bold text-fg-high tabular-nums">
+                    {row.played}
+                  </td>
+                  <td className="py-4 px-2 text-center font-bold text-fg-mid tabular-nums">{row.won}</td>
+                  <td className="py-4 px-2 text-center font-bold text-fg-mid tabular-nums">{row.drawn}</td>
+                  <td className="py-4 px-2 text-center font-bold text-fg-mid tabular-nums">{row.lost}</td>
+                  <td className="py-4 px-2 text-center hidden sm:table-cell font-bold text-fg-high tabular-nums">
+                    {row.goalsFor}
+                  </td>
+                  <td className="py-4 px-2 text-center hidden sm:table-cell font-bold text-fg-high tabular-nums">
+                    {row.goalsAgainst}
+                  </td>
+                  <td className="py-4 px-2 text-center font-bold text-fg-high tabular-nums">
+                    {row.goalDifference > 0
+                      ? `+${row.goalDifference}`
+                      : row.goalDifference}
+                  </td>
+                  <td className="py-4 pr-4 pl-2 text-center">
+                    <span className={`font-display text-xl font-black tabular-nums ${isUserTeam ? "text-tertiary" : "text-fg-high"}`}>
+                      {row.points}
+                    </span>
+                    {i > 0 && row.points < leaderPoints && (
+                      <div className="text-[9px] font-black tabular-nums text-fg-mid leading-none mt-0.5">
+                        -{leaderPoints - row.points}
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
     </div>
   );
 }
+

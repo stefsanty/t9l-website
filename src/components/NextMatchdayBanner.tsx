@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
@@ -33,7 +33,7 @@ function MatchScorers({
       <div className="space-y-0.5">
         {homeGoals.map((g, i) => (
           <div key={i} className="flex items-start gap-1 text-fg-high">
-            <span className="shrink-0 mt-px">⚽</span>
+            <span className="shrink-0 mt-px">⚽️</span>
             <span className="font-semibold truncate" translate="no">
               {g.scorer}
               {g.assister ? <span className="text-fg-low font-normal"> ({g.assister})</span> : null}
@@ -48,7 +48,7 @@ function MatchScorers({
               {g.scorer}
               {g.assister ? <span className="text-fg-low font-normal"> ({g.assister})</span> : null}
             </span>
-            <span className="shrink-0 mt-px">⚽</span>
+            <span className="shrink-0 mt-px">⚽️</span>
           </div>
         ))}
       </div>
@@ -56,7 +56,7 @@ function MatchScorers({
   );
 }
 
-// ── Main component ────────────────────────────────────────────────────────────
+// -- Main component --
 
 interface NextMatchdayBannerProps {
   matchdays: Matchday[];
@@ -144,17 +144,17 @@ export default function NextMatchdayBanner({
               onClick={() => setShowPills(!showPills)}
               className={`text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-lg transition-all ${
                 showPills
-                  ? 'bg-primary text-white'
+                  ? 'bg-surface text-fg-mid hover:bg-surface-md hover:text-fg-mid animate-in'
                   : 'bg-surface text-fg-mid hover:bg-surface-md hover:text-fg-mid'
               }`}
             >
-              {showPills ? "close" : "browse ▾"}
+              {showPills ? "close ✖" : "browse ▾"}
             </button>
           </div>
 
           <div className="mb-4">
             <h2 className="font-display text-4xl font-black uppercase tracking-tighter text-fg-high leading-tight">
-              {matchday.label} · {matchday.date ? formatMatchDate(matchday.date) : "TBD"}
+              {matchday.label} - {matchday.date ? formatMatchDate(matchday.date) : "TBD"}
             </h2>
             <div className="mt-1 mb-1">
               <MatchdayCountdown matchday={matchday} />
@@ -169,8 +169,7 @@ export default function NextMatchdayBanner({
                 <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
               </svg>
               <span className="underline underline-offset-4 decoration-vibrant-pink/30 group-hover/venue:decoration-vibrant-pink/60">
-                {VENUE_NAME} ↗
-              </span>
+                {VENUE_NAME} ↗              </span>
             </a>
           </div>
 
@@ -220,7 +219,7 @@ export default function NextMatchdayBanner({
 
           {/* Matches */}
           <div className="space-y-4">
-            {matchday.matches.map((match) => {
+            {matchday.matches.map((match, idx) => {
               const home = getTeam(match.homeTeamId);
               const away = getTeam(match.awayTeamId);
               const isPlayed = match.homeGoals !== null;
@@ -243,10 +242,10 @@ export default function NextMatchdayBanner({
                         )}
                       </div>
                       <div className="flex flex-col gap-0.5 min-w-0">
-                        <span className={`font-display text-lg font-black uppercase tracking-tighter leading-none hidden sm:block ${isUserHome ? 'text-tertiary' : ''}`} translate="no">
+                        <span className={`font-display text-lg font-black uppercase tracking-tighter leading-none hidden sm:block ${isUserHome ? '' : ''}`} translate="no">
                           {home?.name}
                         </span>
-                        <span className={`font-display text-lg font-black uppercase tracking-tighter leading-none sm:hidden ${isUserHome ? 'text-tertiary' : ''}`} translate="no">
+                        <span className={`font-display text-lg font-black uppercase tracking-tighter leading-none sm:hidden ${isUserHome ? '' : ''}`} translate="no">
                           {home?.shortName || home?.name.slice(0, 3)}
                         </span>
                         {isUserHome && (
@@ -258,14 +257,18 @@ export default function NextMatchdayBanner({
                     <div className="flex flex-col items-center px-4">
                       {!isPlayed ? (
                         <>
-                          <span className="text-[8px] font-black uppercase tracking-widest text-fg-mid mb-1.5">{"Kickoff Time"}</span>
+                          {idx === 0 && (
+                            <span className="text-[8px] font-black uppercase tracking-widest text-fg-mid mb-1.5">{"Kickoff Time"}</span>
+                          )}
                           <span className={`font-display text-xl font-black tracking-tighter px-3 py-1 rounded-lg border transition-all ${isUserMatch ? 'text-tertiary bg-tertiary/10 border-tertiary/30' : 'text-fg-high bg-surface border-border-subtle'}`}>
                             {match.kickoff}
                           </span>
                         </>
                       ) : (
                         <>
-                          <span className="text-[8px] font-black uppercase tracking-widest text-fg-mid mb-0.5">{"FT"}</span>
+                          {idx === 0 && (
+                            <span className="text-[8px] font-black uppercase tracking-widest text-fg-mid mb-0.5">{"FT"}</span>
+                          )}
                           <div className="flex items-center gap-3">
                             <span className={`font-display text-3xl font-black ${isUserHome ? 'text-tertiary' : 'text-fg-high'}`}>
                               {match.homeGoals}
@@ -281,10 +284,10 @@ export default function NextMatchdayBanner({
 
                     <div className="flex-1 flex items-center justify-end gap-3 text-right">
                       <div className="flex flex-col gap-0.5 items-end min-w-0">
-                        <span className={`font-display text-lg font-black uppercase tracking-tighter leading-none hidden sm:block ${isUserAway ? 'text-tertiary' : ''}`} translate="no">
+                        <span className={`font-display text-lg font-black uppercase tracking-tighter leading-none hidden sm:block ${isUserAway ? '' : ''}`} translate="no">
                           {away?.name}
                         </span>
-                        <span className={`font-display text-lg font-black uppercase tracking-tighter leading-none sm:hidden ${isUserAway ? 'text-tertiary' : ''}`} translate="no">
+                        <span className={`font-display text-lg font-black uppercase tracking-tighter leading-none sm:hidden ${isUserAway ? '' : ''}`} translate="no">
                           {away?.shortName || away?.name.slice(0, 3)}
                         </span>
                         {isUserAway && (
