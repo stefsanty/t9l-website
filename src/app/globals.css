@@ -33,7 +33,7 @@
 
 /* ── Light mode ───────────────────────────────────────────────────────────── */
 html.light {
-  --background: #F5EFF8;
+  --background: #EBE0F0;
   --foreground: #1a0f1e;
   --primary: #E0005A;
   --secondary: #7733CC;
@@ -41,8 +41,8 @@ html.light {
   --tertiary: #00A855;
   --warning: #B45309;
   --muted: #7A6885;
-  --border: #E5D8EE;
-  --card: #FFFFFF;
+  --border: #D9C8E6;
+  --card: #F5EEF9;
   --accent: #E0005A;
 
   /* Semantic opacity tokens — light */
@@ -65,7 +65,7 @@ html.light {
 /* ── System preference fallback (SSR / no-JS) ─────────────────────────────── */
 @media (prefers-color-scheme: light) {
   :root:not(.dark) {
-    --background: #F5EFF8;
+    --background: #EBE0F0;
     --foreground: #1a0f1e;
     --primary: #E0005A;
     --secondary: #7733CC;
@@ -73,8 +73,8 @@ html.light {
     --tertiary: #00A855;
     --warning: #B45309;
     --muted: #7A6885;
-    --border: #E5D8EE;
-    --card: #FFFFFF;
+    --border: #D9C8E6;
+    --card: #F5EEF9;
     --accent: #E0005A;
     --fg-high: rgba(26, 15, 30, 0.95);
     --fg-mid: rgba(26, 15, 30, 0.65);
