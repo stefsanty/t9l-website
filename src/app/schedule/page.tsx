@@ -323,7 +323,7 @@ export default async function SchedulePage() {
               matchday={md}
               teams={data.teams}
               goals={data.goals}
-              isNext={nextMd?.id === md.id}
+              isNext={nextMd?.matchday.id === md.id}
             />
           ))}
         </div>
