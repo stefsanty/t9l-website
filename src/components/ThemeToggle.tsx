@@ -12,7 +12,7 @@ export default function ThemeToggle() {
         aria-label="Switch to light mode"
         className={`px-2 py-1 rounded-full text-[9px] font-black transition-all ${
           theme === 'light'
-            ? 'bg-primary text-white shadow-[0_0_8px_rgba(224,0,90,0.4)]'
+            ? 'bg-primary text-white shadow-[var(--glow-primary)]'
             : 'text-fg-low hover:text-fg-mid'
         }`}
       >
@@ -27,7 +27,7 @@ export default function ThemeToggle() {
         aria-label="Switch to dark mode"
         className={`px-2 py-1 rounded-full text-[9px] font-black transition-all ${
           theme === 'dark'
-            ? 'bg-primary text-white shadow-[0_0_8px_rgba(255,26,107,0.4)]'
+            ? 'bg-primary text-white shadow-[var(--glow-primary)]'
             : 'text-fg-low hover:text-fg-mid'
         }`}
       >

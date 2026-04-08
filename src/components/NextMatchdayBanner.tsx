@@ -187,7 +187,7 @@ export default function NextMatchdayBanner({
                       onClick={() => onMatchdayChange(md.id)}
                       className={`shrink-0 px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider transition-all border ${
                         isSelected
-                          ? 'bg-primary text-white border-primary shadow-[0_0_12px_rgba(224,0,90,0.35)]'
+                          ? 'bg-primary text-white border-primary shadow-[var(--glow-primary-md)]'
                           : isCompletedMd
                           ? 'bg-surface text-fg-mid border-border-subtle hover:border-border-default hover:text-fg-mid'
                           : 'bg-surface text-fg-high border-border-default hover:border-border-default hover:text-fg-high'

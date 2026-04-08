@@ -50,7 +50,7 @@ export default function LanguageToggle() {
         onClick={() => toggle('en')}
         className={`px-2 py-1 rounded-full text-[9px] font-black transition-all ${
           locale === 'en'
-            ? 'bg-primary text-white shadow-[0_0_8px_rgba(224,0,90,0.4)]'
+            ? 'bg-primary text-white shadow-[var(--glow-primary)]'
             : 'text-fg-low hover:text-fg-mid'
         }`}
       >
@@ -60,7 +60,7 @@ export default function LanguageToggle() {
         onClick={() => toggle('ja')}
         className={`px-2 py-1 rounded-full text-[9px] font-black transition-all ${
           locale === 'ja'
-            ? 'bg-primary text-white shadow-[0_0_8px_rgba(224,0,90,0.4)]'
+            ? 'bg-primary text-white shadow-[var(--glow-primary)]'
             : 'text-fg-low hover:text-fg-mid'
         }`}
       >
