@@ -128,14 +128,11 @@ export default function Dashboard({
             <span className="text-xl text-primary">春</span>
           </h1>
 
-          <div className="hidden sm:block h-[1px] w-4 bg-surface-md" />
-
-          <div className="flex-1 min-[400px]:flex-none flex justify-end items-center gap-2">
+          <div className="flex-1 flex justify-end items-center gap-2">
             <ThemeToggle />
             <LanguageToggle />
+            <LineLoginButton />
           </div>
-
-          <LineLoginButton />
         </div>
       </header>
 
