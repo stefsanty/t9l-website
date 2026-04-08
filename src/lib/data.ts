@@ -18,15 +18,36 @@ import type { RawSheetData } from "./sheets";
  */
 function normalizeDate(raw: string): string | null {
   if (!raw) return null;
-  // Already ISO YYYY-MM-DD
-  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
-  // Try native Date parsing (works for "4/3/2026", "Apr 3, 2026", etc.)
-  const d = new Date(raw);
-  if (!isNaN(d.getTime())) {
-    // Use UTC parts to avoid timezone offset shifting the day
-    const y = d.getUTCFullYear();
-    const m = String(d.getUTCMonth() + 1).padStart(2, '0');
-    const day = String(d.getUTCDate()).padStart(2, '0');
+  
+  // Try to parse the date. If it's just a date string, we want to treat it as JST.
+  let d: Date;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    // ISO date-only is treated as UTC midnight by default.
+    // e.g., "2026-04-16" -> 2026-04-16T00:00:00Z
+    d = new Date(raw);
+  } else if (raw.includes('T') || raw.includes('Z') || / \d{2}:\d{2}/.test(raw)) {
+    // Already has time/timezone info
+    d = new Date(raw);
+  } else {
+    // Date only but not ISO, or other format, assume JST midnight
+    d = new Date(`${raw} 00:00:00+09:00`);
+  }
+
+  if (isNaN(d.getTime())) return null;
+
+  // Always extract parts in Asia/Tokyo to keep it consistent with the league location
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    timeZone: 'Asia/Tokyo',
+  }).formatToParts(d);
+
+  const y = parts.find((p) => p.type === 'year')?.value;
+  const m = parts.find((p) => p.type === 'month')?.value;
+  const day = parts.find((p) => p.type === 'day')?.value;
+
+  if (y && m && day) {
     return `${y}-${m}-${day}`;
   }
   return null;

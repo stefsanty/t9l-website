@@ -39,7 +39,7 @@ function VibesBar({ value }: { value: number }) {
     <div className="flex items-center gap-2 min-w-0">
       <div className="flex-1 h-1 bg-surface-md rounded-full overflow-hidden">
         <div
-          className="h-full rounded-full bg-electric-green"
+          className="h-full rounded-full bg-tertiary"
           style={{ width: `${pct}%` }}
         />
       </div>

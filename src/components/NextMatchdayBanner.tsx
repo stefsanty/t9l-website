@@ -7,8 +7,15 @@ import type { Matchday, Team, Goal, AvailabilityStatuses } from '@/types';
 import RsvpButton from './RsvpButton';
 import MatchdayCountdown from './MatchdayCountdown';
 function formatMatchDate(dateStr: string) {
+  // dateStr is "YYYY-MM-DD" (UTC-stable from normalizeDate)
+  // We treat it as UTC midnight and format it in JST.
+  // UTC 00:00 = JST 09:00, which keeps the date the same.
   const d = new Date(dateStr);
-  return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(d);
+  return new Intl.DateTimeFormat('en-US', { 
+    month: 'short', 
+    day: 'numeric',
+    timeZone: 'Asia/Tokyo' 
+  }).format(d);
 }
 
 function MatchScorers({
