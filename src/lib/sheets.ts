@@ -60,7 +60,7 @@ export async function fetchSheetData(): Promise<RawSheetData> {
       "GoalsRaw!A:F",
       "RatingsRaw!A:BH",
       "Schedule Formula!A:E",
-      "MDScheduleRaw!A:B",
+      "MDScheduleRaw!A:E",
     ],
   });
 

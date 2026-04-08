@@ -29,6 +29,9 @@ export interface Matchday {
   id: string;
   label: string;
   date: string | null;
+  venueName?: string;
+  venueUrl?: string;
+  venueCourtSize?: string;
   matches: Match[];
   sittingOutTeamId: string;
 }

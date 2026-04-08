@@ -178,15 +178,27 @@ export function parseSchedule(
   const teamNameToId = new Map(teams.map((t) => [t.name, t.id]));
   const matchdays = new Map<string, Matchday>();
 
-  // Parse MDScheduleRaw for dates — normalize to YYYY-MM-DD regardless of sheet format
-  const dates = new Map<string, string>();
+  // Parse MDScheduleRaw for dates and venue info
+  const mdInfo = new Map<string, { date: string | null; venueName?: string; venueUrl?: string; venueCourtSize?: string }>();
   for (const row of mdScheduleRows.slice(1)) {
     const mdLabel = row[0]?.trim();
     const dateRaw = row[1]?.trim();
-    if (mdLabel && dateRaw) {
+    const venueName = row[2]?.trim();
+    const venueUrl = row[3]?.trim();
+    const venueCourtSize = row[4]?.trim();
+
+    if (mdLabel) {
       const mdId = mdLabel.toLowerCase().replace(/\s/g, "");
-      const normalized = normalizeDate(dateRaw);
-      if (normalized) dates.set(mdId, normalized);
+      const normalized = dateRaw ? normalizeDate(dateRaw) : null;
+      
+      const info: { date: string | null; venueName?: string; venueUrl?: string; venueCourtSize?: string } = {
+        date: normalized
+      };
+      if (venueName) info.venueName = venueName;
+      if (venueUrl) info.venueUrl = venueUrl;
+      if (venueCourtSize) info.venueCourtSize = venueCourtSize;
+      
+      mdInfo.set(mdId, info);
     }
   }
 
@@ -208,10 +220,14 @@ export function parseSchedule(
 
     const mdId = mdLabel.toLowerCase().replace(/\s/g, "");
     if (!matchdays.has(mdId)) {
+      const info = mdInfo.get(mdId);
       matchdays.set(mdId, {
         id: mdId,
         label: mdLabel.toUpperCase(),
-        date: dates.get(mdId) || null,
+        date: info?.date || null,
+        venueName: info?.venueName,
+        venueUrl: info?.venueUrl,
+        venueCourtSize: info?.venueCourtSize,
         matches: [],
         sittingOutTeamId: sittingOut.get(mdId) || "",
       });

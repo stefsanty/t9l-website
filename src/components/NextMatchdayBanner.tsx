@@ -74,8 +74,8 @@ interface NextMatchdayBannerProps {
   availabilityStatuses: AvailabilityStatuses;
 }
 
-const VENUE_NAME = 'Tennozu Park C';
-const VENUE_MAP_URL = 'https://maps.google.com/maps?q=Tennozu+Park+C,+Shinagawa,+Tokyo,+Japan';
+const DEFAULT_VENUE_NAME = 'Tennozu Park C';
+const DEFAULT_VENUE_MAP_URL = 'https://maps.google.com/maps?q=Tennozu+Park+C,+Shinagawa,+Tokyo,+Japan';
 
 export default function NextMatchdayBanner({
   matchdays,
@@ -109,6 +109,9 @@ export default function NextMatchdayBanner({
 
   const matchday = matchdays.find((m) => m.id === selectedMatchdayId) ?? matchdays[0];
   const isCompleted = matchday.matches[0].homeGoals !== null;
+
+  const venueName = matchday.venueName ?? DEFAULT_VENUE_NAME;
+  const venueUrl = matchday.venueUrl ?? DEFAULT_VENUE_MAP_URL;
 
   // Find the user's actual next playing matchday
   const userNextPlayingMd = session?.teamId
@@ -166,18 +169,26 @@ export default function NextMatchdayBanner({
             <div className="mt-1 mb-1">
               <MatchdayCountdown matchday={matchday} />
             </div>
-            <a
-              href={VENUE_MAP_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 text-[12px] font-bold text-vibrant-pink/80 hover:text-vibrant-pink transition-colors mt-1 group/venue"
-            >
-              <svg className="w-3.5 h-3.5 shrink-0 text-vibrant-pink/70 group-hover/venue:text-vibrant-pink transition-colors" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
-              </svg>
-              <span className="underline underline-offset-4 decoration-vibrant-pink/30 group-hover/venue:decoration-vibrant-pink/60">
-                {VENUE_NAME} ↗              </span>
-            </a>
+            <div className="flex items-center gap-2 mt-1">
+              <a
+                href={venueUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 text-[12px] font-bold text-vibrant-pink/80 hover:text-vibrant-pink transition-colors group/venue"
+              >
+                <svg className="w-3.5 h-3.5 shrink-0 text-vibrant-pink/70 group-hover/venue:text-vibrant-pink transition-colors" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
+                </svg>
+                <span className="underline underline-offset-4 decoration-vibrant-pink/30 group-hover/venue:decoration-vibrant-pink/60">
+                  {venueName} ↗
+                </span>
+              </a>
+              {matchday.venueCourtSize && (
+                <span className="text-[11px] font-medium text-fg-low truncate">
+                  {matchday.venueCourtSize}
+                </span>
+              )}
+            </div>
           </div>
 
           {/* Matchday Selector (collapsible) */}
