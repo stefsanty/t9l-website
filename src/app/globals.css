@@ -23,6 +23,12 @@
   --border-subtle: rgba(255, 255, 255, 0.08);
   --border-default: rgba(255, 255, 255, 0.12);
   --header-bg: rgba(26, 15, 30, 0.95);
+
+  /* Pink glow shadows — dark */
+  --glow-primary: 0 0 8px rgba(224, 0, 90, 0.4);
+  --glow-primary-md: 0 0 12px rgba(224, 0, 90, 0.35);
+  --glow-primary-bar: 0 2px 10px rgba(233, 0, 82, 0.4);
+  --glow-primary-subtle: 0 0 15px rgba(233, 0, 82, 0.1);
 }
 
 /* ── Light mode ───────────────────────────────────────────────────────────── */
@@ -48,6 +54,12 @@ html.light {
   --border-subtle: rgba(26, 15, 30, 0.10);
   --border-default: rgba(26, 15, 30, 0.14);
   --header-bg: rgba(245, 239, 248, 0.95);
+
+  /* Pink glow shadows — light (suppressed) */
+  --glow-primary: none;
+  --glow-primary-md: none;
+  --glow-primary-bar: none;
+  --glow-primary-subtle: none;
 }
 
 /* ── System preference fallback (SSR / no-JS) ─────────────────────────────── */
@@ -72,6 +84,10 @@ html.light {
     --border-subtle: rgba(26, 15, 30, 0.10);
     --border-default: rgba(26, 15, 30, 0.14);
     --header-bg: rgba(245, 239, 248, 0.95);
+    --glow-primary: none;
+    --glow-primary-md: none;
+    --glow-primary-bar: none;
+    --glow-primary-subtle: none;
   }
 }
 

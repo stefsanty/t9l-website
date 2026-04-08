@@ -252,7 +252,7 @@ export default function Dashboard({
             </div>
             <span className={`text-[10px] font-black uppercase tracking-[0.15em] transition-opacity duration-300 ${activeTab === 'NEXT_GAME' ? 'opacity-100' : 'opacity-70'}`}>{"Home"}</span>
             {activeTab === 'NEXT_GAME' && (
-              <div className="absolute -top-[1px] left-1/2 -translate-x-1/2 w-12 h-[3px] bg-vibrant-pink rounded-b-full shadow-[0_2px_10px_rgba(233,0,82,0.4)]" />
+              <div className="absolute -top-[1px] left-1/2 -translate-x-1/2 w-12 h-[3px] bg-vibrant-pink rounded-b-full shadow-[var(--glow-primary-bar)]" />
             )}
           </button>
 
@@ -269,7 +269,7 @@ export default function Dashboard({
             </div>
             <span className={`text-[10px] font-black uppercase tracking-[0.15em] transition-opacity duration-300 ${activeTab === 'STATS' ? 'opacity-100' : 'opacity-70'}`}>{"Stats"}</span>
             {activeTab === 'STATS' && (
-              <div className="absolute -top-[1px] left-1/2 -translate-x-1/2 w-12 h-[3px] bg-vibrant-pink rounded-b-full shadow-[0_2px_10px_rgba(233,0,82,0.4)]" />
+              <div className="absolute -top-[1px] left-1/2 -translate-x-1/2 w-12 h-[3px] bg-vibrant-pink rounded-b-full shadow-[var(--glow-primary-bar)]" />
             )}
           </button>
 
@@ -286,7 +286,7 @@ export default function Dashboard({
             </div>
             <span className={`text-[10px] font-black uppercase tracking-[0.15em] transition-opacity duration-300 ${activeTab === 'SQUADS' ? 'opacity-100' : 'opacity-70'}`}>{"Teams"}</span>
             {activeTab === 'SQUADS' && (
-              <div className="absolute -top-[1px] left-1/2 -translate-x-1/2 w-12 h-[3px] bg-vibrant-pink rounded-b-full shadow-[0_2px_10px_rgba(233,0,82,0.4)]" />
+              <div className="absolute -top-[1px] left-1/2 -translate-x-1/2 w-12 h-[3px] bg-vibrant-pink rounded-b-full shadow-[var(--glow-primary-bar)]" />
             )}
           </button>
         </div>

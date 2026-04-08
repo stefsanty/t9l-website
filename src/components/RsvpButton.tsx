@@ -76,7 +76,7 @@ export default function RsvpButton({ matchdayId, initialStatus }: RsvpButtonProp
               ? 'bg-success/15 text-success border-success/40'
               : value === 'UNDECIDED'
               ? 'bg-warning/15 text-warning border-warning/40'
-              : 'bg-vibrant-pink/15 text-vibrant-pink border-vibrant-pink/30 shadow-[0_0_15px_rgba(233,0,82,0.1)]';
+              : 'bg-vibrant-pink/15 text-vibrant-pink border-vibrant-pink/30 shadow-[var(--glow-primary-subtle)]';
 
           return (
             <button
