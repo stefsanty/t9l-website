@@ -317,13 +317,13 @@ export default async function SchedulePage() {
         </div>
 
         <div className="space-y-5">
-          {data.matchdays.map((matchday) => (
+          {data.matchdays.map((md) => (
             <MatchdayCard
-              key={matchday.id}
-              matchday={matchday}
+              key={md.id}
+              matchday={md}
               teams={data.teams}
               goals={data.goals}
-              isNext={nextMd?.id === matchday.id}
+              isNext={nextMd?.id === md.id}
             />
           ))}
         </div>
