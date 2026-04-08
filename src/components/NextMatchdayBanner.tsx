@@ -32,21 +32,21 @@ function MatchScorers({
     <div className="mt-2 grid grid-cols-2 gap-x-3 text-[11px]">
       <div className="space-y-0.5">
         {homeGoals.map((g, i) => (
-          <div key={i} className="flex items-start gap-1 text-white/95">
+          <div key={i} className="flex items-start gap-1 text-fg-high">
             <span className="shrink-0 mt-px">⚽</span>
             <span className="font-semibold truncate" translate="no">
               {g.scorer}
-              {g.assister ? <span className="text-white/35 font-normal"> ({g.assister})</span> : null}
+              {g.assister ? <span className="text-fg-low font-normal"> ({g.assister})</span> : null}
             </span>
           </div>
         ))}
       </div>
       <div className="space-y-0.5 text-right">
         {awayGoals.map((g, i) => (
-          <div key={i} className="flex items-start justify-end gap-1 text-white/95">
+          <div key={i} className="flex items-start justify-end gap-1 text-fg-high">
             <span className="font-semibold truncate" translate="no">
               {g.scorer}
-              {g.assister ? <span className="text-white/35 font-normal"> ({g.assister})</span> : null}
+              {g.assister ? <span className="text-fg-low font-normal"> ({g.assister})</span> : null}
             </span>
             <span className="shrink-0 mt-px">⚽</span>
           </div>
@@ -137,15 +137,15 @@ export default function NextMatchdayBanner({
 
         <div className="p-7 pb-6 relative">
           <div className="flex justify-between items-start mb-1">
-            <span className="text-[10px] font-black uppercase tracking-[0.25em] text-white/95">
+            <span className="text-[10px] font-black uppercase tracking-[0.25em] text-fg-high">
               {eyebrow}
             </span>
             <button
               onClick={() => setShowPills(!showPills)}
               className={`text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-lg transition-all ${
                 showPills
-                  ? 'bg-vibrant-pink text-white'
-                  : 'bg-white/5 text-white/80 hover:bg-white/10 hover:text-white/80'
+                  ? 'bg-primary text-white'
+                  : 'bg-surface text-fg-mid hover:bg-surface-md hover:text-fg-mid'
               }`}
             >
               {showPills ? "close" : "browse ▾"}
@@ -153,7 +153,7 @@ export default function NextMatchdayBanner({
           </div>
 
           <div className="mb-4">
-            <h2 className="font-display text-4xl font-black uppercase tracking-tighter text-white leading-tight">
+            <h2 className="font-display text-4xl font-black uppercase tracking-tighter text-fg-high leading-tight">
               {matchday.label} · {matchday.date ? formatMatchDate(matchday.date) : "TBD"}
             </h2>
             <div className="mt-1 mb-1">
@@ -187,10 +187,10 @@ export default function NextMatchdayBanner({
                       onClick={() => onMatchdayChange(md.id)}
                       className={`shrink-0 px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider transition-all border ${
                         isSelected
-                          ? 'bg-vibrant-pink text-white border-vibrant-pink shadow-[0_0_12px_rgba(233,0,82,0.35)]'
+                          ? 'bg-primary text-white border-primary shadow-[0_0_12px_rgba(224,0,90,0.35)]'
                           : isCompletedMd
-                          ? 'bg-white/[0.06] text-white/80 border-white/15 hover:border-white/20 hover:text-white/70'
-                          : 'bg-white/[0.07] text-white/95 border-white/[0.12] hover:border-white/15 hover:text-white/95'
+                          ? 'bg-surface text-fg-mid border-border-subtle hover:border-border-default hover:text-fg-mid'
+                          : 'bg-surface text-fg-high border-border-default hover:border-border-default hover:text-fg-high'
                       }`}
                     >
                       {md.label}
@@ -216,7 +216,7 @@ export default function NextMatchdayBanner({
                     </p>
                   )}
 
-          <div className="h-[1px] w-full bg-white/10 my-6" />
+          <div className="h-[1px] w-full bg-surface-md my-6" />
 
           {/* Matches */}
           <div className="space-y-4">
@@ -232,7 +232,7 @@ export default function NextMatchdayBanner({
                 <div key={match.id}>
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex-1 flex items-center gap-3">
-                      <div className={`relative w-9 h-9 shrink-0 rounded-lg p-1.5 border transition-all ${isUserHome ? 'bg-tertiary/10 border-tertiary/50 shadow-[0_0_10px_rgba(0,255,133,0.25)]' : 'bg-white/5 border-white/10'}`}>
+                      <div className={`relative w-9 h-9 shrink-0 rounded-lg p-1.5 border transition-all ${isUserHome ? 'bg-tertiary/10 border-tertiary/50 shadow-[0_0_10px_rgba(0,255,133,0.25)]' : 'bg-surface border-border-subtle'}`}>
                         {home?.logo && (
                           <Image
                             src={home.logo}
@@ -258,20 +258,20 @@ export default function NextMatchdayBanner({
                     <div className="flex flex-col items-center px-4">
                       {!isPlayed ? (
                         <>
-                          <span className="text-[8px] font-black uppercase tracking-widest text-white/65 mb-1.5">{"Kickoff Time"}</span>
-                          <span className={`font-display text-xl font-black tracking-tighter px-3 py-1 rounded-lg border transition-all ${isUserMatch ? 'text-tertiary bg-tertiary/10 border-tertiary/30' : 'text-white/90 bg-white/5 border-white/10'}`}>
+                          <span className="text-[8px] font-black uppercase tracking-widest text-fg-mid mb-1.5">{"Kickoff Time"}</span>
+                          <span className={`font-display text-xl font-black tracking-tighter px-3 py-1 rounded-lg border transition-all ${isUserMatch ? 'text-tertiary bg-tertiary/10 border-tertiary/30' : 'text-fg-high bg-surface border-border-subtle'}`}>
                             {match.kickoff}
                           </span>
                         </>
                       ) : (
                         <>
-                          <span className="text-[8px] font-black uppercase tracking-widest text-white/65 mb-0.5">{"FT"}</span>
+                          <span className="text-[8px] font-black uppercase tracking-widest text-fg-mid mb-0.5">{"FT"}</span>
                           <div className="flex items-center gap-3">
-                            <span className={`font-display text-3xl font-black ${isUserHome ? 'text-tertiary' : 'text-white'}`}>
+                            <span className={`font-display text-3xl font-black ${isUserHome ? 'text-tertiary' : 'text-fg-high'}`}>
                               {match.homeGoals}
                             </span>
-                            <div className="w-4 h-[2px] bg-white/10" />
-                            <span className={`font-display text-3xl font-black ${isUserAway ? 'text-tertiary' : 'text-white'}`}>
+                            <div className="w-4 h-[2px] bg-surface-md" />
+                            <span className={`font-display text-3xl font-black ${isUserAway ? 'text-tertiary' : 'text-fg-high'}`}>
                               {match.awayGoals}
                             </span>
                           </div>
@@ -291,7 +291,7 @@ export default function NextMatchdayBanner({
                           <span className="text-[9px] font-black uppercase tracking-widest text-tertiary/70 leading-none">your team</span>
                         )}
                       </div>
-                      <div className={`relative w-9 h-9 shrink-0 rounded-lg p-1.5 border transition-all ${isUserAway ? 'bg-tertiary/10 border-tertiary/50 shadow-[0_0_10px_rgba(0,255,133,0.25)]' : 'bg-white/5 border-white/10'}`}>
+                      <div className={`relative w-9 h-9 shrink-0 rounded-lg p-1.5 border transition-all ${isUserAway ? 'bg-tertiary/10 border-tertiary/50 shadow-[0_0_10px_rgba(0,255,133,0.25)]' : 'bg-surface border-border-subtle'}`}>
                         {away?.logo && (
                           <Image
                             src={away.logo}
@@ -318,14 +318,14 @@ export default function NextMatchdayBanner({
 
             {sittingOutTeam && (
               <div className="pt-2 flex items-center gap-2">
-                <div className="h-[1px] flex-1 bg-white/5" />
+                <div className="h-[1px] flex-1 bg-surface" />
                 <div className="text-center">
-                  <span className="text-[10px] font-black uppercase tracking-widest text-white/65">
-                    {"Sitting out"}: <span className="text-white/95">{sittingOutTeam.name}</span>
+                  <span className="text-[10px] font-black uppercase tracking-widest text-fg-mid">
+                    {"Sitting out"}: <span className="text-fg-high">{sittingOutTeam.name}</span>
                   </span>
               
                 </div>
-                <div className="h-[1px] flex-1 bg-white/5" />
+                <div className="h-[1px] flex-1 bg-surface" />
               </div>
             )}
           </div>

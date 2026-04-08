@@ -15,6 +15,7 @@ import MatchResults from './MatchResults';
 import SquadList from './SquadList';
 import LineLoginButton from './LineLoginButton';
 import LanguageToggle from './LanguageToggle';
+import ThemeToggle from './ThemeToggle';
 
 type Tab = 'NEXT_GAME' | 'STATS' | 'SQUADS';
 
@@ -39,13 +40,13 @@ function VibesBar({ value }: { value: number }) {
   const pct = Math.round((value / 5) * 100);
   return (
     <div className="flex items-center gap-2 min-w-0">
-      <div className="flex-1 h-1 bg-white/10 rounded-full overflow-hidden">
+      <div className="flex-1 h-1 bg-surface-md rounded-full overflow-hidden">
         <div
           className="h-full rounded-full bg-electric-green"
           style={{ width: `${pct}%` }}
         />
       </div>
-      <span className="text-[11px] font-black tabular-nums text-white/95 w-6 text-right">
+      <span className="text-[11px] font-black tabular-nums text-fg-high w-6 text-right">
         {value.toFixed(1)}
       </span>
     </div>
@@ -59,34 +60,34 @@ function MatchdayVibesSection({ vibes }: { vibes: MatchdayVibes[] }) {
     <div className="relative">
       <div className="flex items-center gap-4 mb-8">
         <div className="w-1.5 h-7 bg-tertiary rounded-full shadow-[0_0_12px_rgba(0,255,133,0.3)]" />
-        <h2 className="font-display text-4xl font-black uppercase tracking-tight text-white/95">{"Vibes"}</h2>
+        <h2 className="font-display text-4xl font-black uppercase tracking-tight text-fg-high">{"Vibes"}</h2>
       </div>
       <div className="pl-card pl-card-tertiary rounded-2xl overflow-hidden relative">
         <div className="absolute inset-0 bg-diagonal-pattern opacity-5 pointer-events-none" />
-        <div className="divide-y divide-white/5 relative">
+        <div className="divide-y divide-border-subtle relative">
           {vibes.map((v) => (
             <div key={v.matchdayId} className="px-5 py-4">
               <div className="flex items-center justify-between mb-3">
-                <span className="text-[11px] font-black uppercase tracking-[0.2em] text-white/95">{v.label}</span>
-                <span className="text-[9px] font-black uppercase tracking-widest text-white/65">
+                <span className="text-[11px] font-black uppercase tracking-[0.2em] text-fg-high">{v.label}</span>
+                <span className="text-[9px] font-black uppercase tracking-widest text-fg-mid">
                   {v.responseCount} {v.responseCount === 1 ? "response" : "responses"}
                 </span>
               </div>
               <div className="grid grid-cols-2 gap-x-6 gap-y-2">
                 <div>
-                  <div className="text-[9px] font-black uppercase tracking-widest text-white/50 mb-1">{"Enjoyment"}</div>
+                  <div className="text-[9px] font-black uppercase tracking-widest text-fg-low mb-1">{"Enjoyment"}</div>
                   <VibesBar value={v.enjoyment} />
                 </div>
                 <div>
-                  <div className="text-[9px] font-black uppercase tracking-widest text-white/50 mb-1">{"Teamwork"}</div>
+                  <div className="text-[9px] font-black uppercase tracking-widest text-fg-low mb-1">{"Teamwork"}</div>
                   <VibesBar value={v.teamwork} />
                 </div>
                 <div>
-                  <div className="text-[9px] font-black uppercase tracking-widest text-white/50 mb-1">{"Competitiveness"}</div>
+                  <div className="text-[9px] font-black uppercase tracking-widest text-fg-low mb-1">{"Competitiveness"}</div>
                   <VibesBar value={v.gamesClose} />
                 </div>
                 <div>
-                  <div className="text-[9px] font-black uppercase tracking-widest text-white/50 mb-1">{"Refereeing"}</div>
+                  <div className="text-[9px] font-black uppercase tracking-widest text-fg-low mb-1">{"Refereeing"}</div>
                   <VibesBar value={v.refereeing} />
                 </div>
               </div>
@@ -123,21 +124,22 @@ export default function Dashboard({
     matchdays.find((m) => m.id === selectedMatchdayId) ?? matchdays[0];
 
   return (
-    <div className="flex flex-col min-h-dvh pb-[88px] max-w-lg mx-auto bg-midnight selection:bg-vibrant-pink selection:text-white">
-      <header className="fixed top-0 left-1/2 -translate-x-1/2 w-full max-w-lg z-50 bg-midnight/95 backdrop-blur-md border-b border-white/[0.12] shadow-[0_4px_20px_rgba(0,0,0,0.6)]">
-        <div className="flex items-center gap-3 px-4 h-12">
+    <div className="flex flex-col min-h-dvh pb-[88px] max-w-lg mx-auto bg-background selection:bg-vibrant-pink selection:text-white">
+      <header className="fixed top-0 left-1/2 -translate-x-1/2 w-full max-w-lg z-50 bg-header-bg backdrop-blur-md border-b border-border-default shadow-[0_4px_20px_rgba(0,0,0,0.15)]">
+        <div className="flex items-center gap-2 px-4 h-12">
           <h1 className="font-display font-black uppercase tracking-tight leading-none flex items-baseline gap-1.5 shrink-0">
-            <span className="text-xl text-white/95">T9L &apos;26</span>
-            <span className="text-xl text-vibrant-pink">SPRING</span>
+            <span className="text-xl text-fg-high">T9L &apos;26</span>
+            <span className="text-xl text-primary">SPRING</span>
           </h1>
-          
-          <div className="hidden sm:block h-[1px] w-4 bg-white/10" />
-          
-          <p className="text-[9px] font-black text-white/45 uppercase tracking-[0.3em] flex-1 truncate hidden min-[400px]:block">
+
+          <div className="hidden sm:block h-[1px] w-4 bg-surface-md" />
+
+          <p className="text-[9px] font-black text-fg-low uppercase tracking-[0.3em] flex-1 truncate hidden min-[400px]:block">
             Tennozu 9-Aside League
           </p>
 
-          <div className="flex-1 min-[400px]:flex-none flex justify-end">
+          <div className="flex-1 min-[400px]:flex-none flex justify-end items-center gap-2">
+            <ThemeToggle />
             <LanguageToggle />
           </div>
 
@@ -184,7 +186,7 @@ export default function Dashboard({
             <div className="relative">
               <div className="flex items-center gap-4 mb-8">
                 <div className="w-1.5 h-7 bg-vibrant-pink rounded-full" />
-                <h2 className="font-display text-4xl font-black uppercase tracking-tight text-white/95">{"Standings"}</h2>
+                <h2 className="font-display text-4xl font-black uppercase tracking-tight text-fg-high">{"Standings"}</h2>
               </div>
               <LeagueTable rows={leagueTable} />
             </div>
@@ -192,7 +194,7 @@ export default function Dashboard({
             <div className="relative">
               <div className="flex items-center gap-4 mb-8">
                 <div className="w-1.5 h-7 bg-electric-violet rounded-full" />
-                <h2 className="font-display text-4xl font-black uppercase tracking-tight text-white/95">{"Statistics"}</h2>
+                <h2 className="font-display text-4xl font-black uppercase tracking-tight text-fg-high">{"Statistics"}</h2>
               </div>
               <TopPerformers playerStats={playerStats} />
             </div>
@@ -200,7 +202,7 @@ export default function Dashboard({
             <div className="relative">
               <div className="flex items-center gap-4 mb-8">
                 <div className="w-1.5 h-7 bg-tertiary rounded-full shadow-[0_0_12px_rgba(0,255,133,0.3)]" />
-                <h2 className="font-display text-4xl font-black uppercase tracking-tight text-white/95">{"Results"}</h2>
+                <h2 className="font-display text-4xl font-black uppercase tracking-tight text-fg-high">{"Results"}</h2>
               </div>
               <MatchResults matchdays={matchdays} teams={teams} goals={goals} />
             </div>
@@ -213,7 +215,7 @@ export default function Dashboard({
           <div className="animate-in pb-12">
             <div className="flex items-center gap-4 mb-8">
               <div className="w-1.5 h-7 bg-vibrant-pink rounded-full" />
-              <h2 className="font-display text-4xl font-black uppercase tracking-tight text-white/95">{"Squads"}</h2>
+              <h2 className="font-display text-4xl font-black uppercase tracking-tight text-fg-high">{"Squads"}</h2>
             </div>
             <SquadList
               teams={teams}
@@ -229,18 +231,18 @@ export default function Dashboard({
       </main>
 
       <footer className="mt-8 mb-6 text-center px-4 pb-24">
-        <p className="text-[10px] font-black uppercase tracking-[0.3em] text-white/10">
+        <p className="text-[10px] font-black uppercase tracking-[0.3em] text-fg-low">
           © 2026 Tennozu 9-Aside League • Tokyo
         </p>
       </footer>
 
       {/* Bottom Navigation */}
-      <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-lg bg-midnight/98 border-t border-white/10 z-[100] shadow-[0_-10px_40px_rgba(0,0,0,0.9)] pb-[env(safe-area-inset-bottom)]">
+      <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-lg bg-header-bg border-t border-border-subtle z-[100] shadow-[0_-4px_20px_rgba(0,0,0,0.15)] pb-[env(safe-area-inset-bottom)]">
         <div className="flex justify-around items-center h-[72px] px-6">
           <button
             onClick={() => setActiveTab('NEXT_GAME')}
             className={`flex flex-col items-center justify-center flex-1 h-full gap-1.5 transition-all duration-300 relative ${
-              activeTab === 'NEXT_GAME' ? 'text-vibrant-pink' : 'text-white/95 hover:text-white/95'
+              activeTab === 'NEXT_GAME' ? 'text-primary' : 'text-fg-high hover:text-fg-high'
             }`}
           >
             <div className={`p-1.5 rounded-xl transition-all duration-300 ${activeTab === 'NEXT_GAME' ? 'bg-vibrant-pink/10' : ''}`}>
@@ -257,7 +259,7 @@ export default function Dashboard({
           <button
             onClick={() => setActiveTab('STATS')}
             className={`flex flex-col items-center justify-center flex-1 h-full gap-1.5 transition-all duration-300 relative ${
-              activeTab === 'STATS' ? 'text-vibrant-pink' : 'text-white/95 hover:text-white/95'
+              activeTab === 'STATS' ? 'text-primary' : 'text-fg-high hover:text-fg-high'
             }`}
           >
             <div className={`p-1.5 rounded-xl transition-all duration-300 ${activeTab === 'STATS' ? 'bg-vibrant-pink/10' : ''}`}>
@@ -274,7 +276,7 @@ export default function Dashboard({
           <button
             onClick={() => setActiveTab('SQUADS')}
             className={`flex flex-col items-center justify-center flex-1 h-full gap-1.5 transition-all duration-300 relative ${
-              activeTab === 'SQUADS' ? 'text-vibrant-pink' : 'text-white/95 hover:text-white/95'
+              activeTab === 'SQUADS' ? 'text-primary' : 'text-fg-high hover:text-fg-high'
             }`}
           >
             <div className={`p-1.5 rounded-xl transition-all duration-300 ${activeTab === 'SQUADS' ? 'bg-vibrant-pink/10' : ''}`}>

@@ -45,13 +45,13 @@ export default function LanguageToggle() {
   }
 
   return (
-    <div className="flex items-center bg-white/5 rounded-full p-0.5 border border-white/10">
+    <div className="flex items-center bg-surface rounded-full p-0.5 border border-border-subtle">
       <button
         onClick={() => toggle('en')}
         className={`px-2 py-1 rounded-full text-[9px] font-black transition-all ${
           locale === 'en'
-            ? 'bg-vibrant-pink text-white shadow-[0_0_8px_rgba(233,0,82,0.4)]'
-            : 'text-white/45 hover:text-white/65'
+            ? 'bg-primary text-white shadow-[0_0_8px_rgba(224,0,90,0.4)]'
+            : 'text-fg-low hover:text-fg-mid'
         }`}
       >
         EN
@@ -60,8 +60,8 @@ export default function LanguageToggle() {
         onClick={() => toggle('ja')}
         className={`px-2 py-1 rounded-full text-[9px] font-black transition-all ${
           locale === 'ja'
-            ? 'bg-vibrant-pink text-white shadow-[0_0_8px_rgba(233,0,82,0.4)]'
-            : 'text-white/45 hover:text-white/65'
+            ? 'bg-primary text-white shadow-[0_0_8px_rgba(224,0,90,0.4)]'
+            : 'text-fg-low hover:text-fg-mid'
         }`}
       >
         JP

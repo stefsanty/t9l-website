@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter, Barlow_Condensed } from "next/font/google";
 import Script from "next/script";
 import AuthProvider from "@/components/AuthProvider";
+import ThemeProvider from "@/components/ThemeProvider";
 import "./globals.css";
 
 const inter = Inter({
@@ -30,6 +31,9 @@ export default function RootLayout({
       lang="en"
       className={`${inter.variable} ${barlowCondensed.variable}`}
     >
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: `(function(){var s=localStorage.getItem('t9l-theme');var d=window.matchMedia('(prefers-color-scheme: dark)').matches;document.documentElement.classList.add(s||(d?'dark':'light'));})();` }} />
+      </head>
       <body className="min-h-dvh bg-background text-foreground">
         <style>{`
           .skiptranslate, iframe.skiptranslate, .goog-te-banner-frame { 
@@ -60,9 +64,11 @@ export default function RootLayout({
             }
           `}
         </Script>
-        <AuthProvider>
-          {children}
-        </AuthProvider>
+        <ThemeProvider>
+          <AuthProvider>
+            {children}
+          </AuthProvider>
+        </ThemeProvider>
       </body>
     </html>
   );

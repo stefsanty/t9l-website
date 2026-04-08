@@ -59,12 +59,12 @@ export default function RsvpButton({ matchdayId, initialStatus }: RsvpButtonProp
   return (
     <div>
       <div className="flex items-center gap-3 mb-3">
-        <span className="text-[11px] font-black uppercase tracking-[0.2em] text-white/80">
+        <span className="text-[11px] font-black uppercase tracking-[0.2em] text-fg-mid">
           Your RSVP
         </span>
-        <div className="h-[1px] flex-1 bg-white/10" />
+        <div className="h-[1px] flex-1 bg-surface-md" />
         {loading && (
-          <span className="w-3 h-3 border-2 border-white/30 border-t-transparent rounded-full animate-spin" />
+          <span className="w-3 h-3 border-2 border-border-default border-t-transparent rounded-full animate-spin" />
         )}
       </div>
 
@@ -86,7 +86,7 @@ export default function RsvpButton({ matchdayId, initialStatus }: RsvpButtonProp
               className={`flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all border disabled:opacity-50 active:scale-95 ${
                 isActive
                   ? activeStyles
-                  : 'bg-white/5 text-white/65 border-white/10 hover:bg-white/10 hover:text-white/80 hover:border-white/20'
+                  : 'bg-surface text-fg-mid border-border-subtle hover:bg-surface-md hover:text-fg-mid hover:border-border-default'
               }`}
             >
               {label}

@@ -65,58 +65,58 @@ export default function TopPerformers({
       <div className="overflow-x-auto relative">
         <table className="w-full text-left text-sm border-collapse">
           <thead>
-            <tr className="border-b border-white/15 bg-white/[0.07] text-white/95 text-[10px] font-black uppercase tracking-[0.1em]">
-              <th 
-                className="py-4 pl-4 pr-2 cursor-pointer hover:bg-white/[0.10] transition-colors"
+            <tr className="border-b border-border-default bg-surface text-fg-high text-[10px] font-black uppercase tracking-[0.1em]">
+              <th
+                className="py-4 pl-4 pr-2 cursor-pointer hover:bg-surface-md transition-colors"
                 onClick={() => handleSort('playerName')}
               >
                 {"PLAYER"} <SortIcon field="playerName" sortField={sortField} sortOrder={sortOrder} />
               </th>
               <th 
-                className="py-4 px-1 text-center cursor-pointer hover:bg-white/[0.10] transition-colors whitespace-nowrap"
+                className="py-4 px-1 text-center cursor-pointer hover:bg-surface-md transition-colors whitespace-nowrap"
                 onClick={() => handleSort('matchesPlayed')}
                 title={"Matches Played"}
               >
                 🅿️ <SortIcon field="matchesPlayed" sortField={sortField} sortOrder={sortOrder} />
               </th>
               <th 
-                className="py-4 px-1 text-center cursor-pointer hover:bg-white/[0.10] transition-colors whitespace-nowrap"
+                className="py-4 px-1 text-center cursor-pointer hover:bg-surface-md transition-colors whitespace-nowrap"
                 onClick={() => handleSort('avgRating')}
                 title={"Rating"}
               >
                 ✨️ <SortIcon field="avgRating" sortField={sortField} sortOrder={sortOrder} />
               </th>
               <th 
-                className="py-4 px-1 text-center cursor-pointer hover:bg-white/[0.10] transition-colors whitespace-nowrap"
+                className="py-4 px-1 text-center cursor-pointer hover:bg-surface-md transition-colors whitespace-nowrap"
                 onClick={() => handleSort('goals')}
                 title={"Goals"}
               >
                 ⚽️ <SortIcon field="goals" sortField={sortField} sortOrder={sortOrder} />
               </th>
               <th 
-                className="py-4 px-1 text-center cursor-pointer hover:bg-white/[0.10] transition-colors whitespace-nowrap"
+                className="py-4 px-1 text-center cursor-pointer hover:bg-surface-md transition-colors whitespace-nowrap"
                 onClick={() => handleSort('assists')}
                 title={"Assists"}
               >
                 👟 <SortIcon field="assists" sortField={sortField} sortOrder={sortOrder} />
               </th>
               <th 
-                className="py-4 pl-1 pr-4 text-right cursor-pointer hover:bg-white/[0.10] transition-colors whitespace-nowrap"
+                className="py-4 pl-1 pr-4 text-right cursor-pointer hover:bg-surface-md transition-colors whitespace-nowrap"
                 onClick={() => handleSort('gaPerGame')}
               >
                 G+A/G <SortIcon field="gaPerGame" sortField={sortField} sortOrder={sortOrder} />
               </th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-white/5">
+          <tbody className="divide-y divide-border-subtle">
             {visibleStats.map((stat) => {
               return (
-                <tr key={stat.playerId} className="hover:bg-white/[0.07] transition-colors group">
+                <tr key={stat.playerId} className="hover:bg-surface transition-colors group">
                   <td className="py-4 pl-4 pr-2">
                     <div className="flex items-center gap-3">
-                      <PlayerAvatar playerName={stat.playerName} size="md" className="ring-2 ring-white/5 group-hover:ring-electric-violet/30 transition-all" />
+                      <PlayerAvatar playerName={stat.playerName} size="md" className="ring-2 ring-border-subtle group-hover:ring-secondary/30 transition-all" />
                       <div className="flex flex-col min-w-0">
-                        <span className="font-bold uppercase tracking-tight text-white group-hover:text-electric-violet transition-colors leading-tight break-words" translate="no">
+                        <span className="font-bold uppercase tracking-tight text-fg-high group-hover:text-secondary transition-colors leading-tight break-words" translate="no">
                           {stat.playerName}
                         </span>
                         <div className="flex items-center gap-1.5 mt-1">
@@ -132,24 +132,24 @@ export default function TopPerformers({
                               <div className="w-full h-full rounded-full" style={{ backgroundColor: stat.teamColor }} />
                             )}
                           </div>
-                          <span className="text-[9px] font-black text-white/65 uppercase tracking-widest leading-none truncate" translate="no">{stat.teamName}</span>
+                          <span className="text-[9px] font-black text-fg-mid uppercase tracking-widest leading-none truncate" translate="no">{stat.teamName}</span>
                         </div>
                       </div>
                     </div>
                   </td>
-                  <td className="py-4 px-1 text-center font-display font-black text-base text-white/95 tabular-nums">
+                  <td className="py-4 px-1 text-center font-display font-black text-base text-fg-high tabular-nums">
                     {stat.matchesPlayed}
                   </td>
                   <td className="py-4 px-1 text-center font-display font-black text-base text-tertiary tabular-nums">
                     {stat.avgRating > 0 ? stat.avgRating.toFixed(1) : '—'}
                   </td>
-                  <td className="py-4 px-1 text-center font-display font-black text-lg text-white tabular-nums">
+                  <td className="py-4 px-1 text-center font-display font-black text-lg text-fg-high tabular-nums">
                     {stat.goals}
                   </td>
-                  <td className="py-4 px-1 text-center font-display font-black text-base text-white/95 tabular-nums">
+                  <td className="py-4 px-1 text-center font-display font-black text-base text-fg-high tabular-nums">
                     {stat.assists}
                   </td>
-                  <td className="py-4 pl-1 pr-4 text-right font-display font-black text-sm text-white/80 tabular-nums">
+                  <td className="py-4 pl-1 pr-4 text-right font-display font-black text-sm text-fg-mid tabular-nums">
                     {stat.gaPerGame.toFixed(2)}
                   </td>
                 </tr>
@@ -160,7 +160,7 @@ export default function TopPerformers({
       </div>
 
       {hasMore && (
-        <div className="p-4 bg-white/[0.05] border-t border-white/10">
+        <div className="p-4 bg-surface border-t border-border-subtle">
           <button
             onClick={() => setVisibleCount((prev) => prev + 10)}
             className="w-full py-3 bg-electric-violet hover:bg-electric-violet/80 text-white rounded-xl text-[11px] font-black uppercase tracking-[0.2em] transition-all hover:-translate-y-0.5 active:translate-y-0"

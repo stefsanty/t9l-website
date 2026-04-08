@@ -29,7 +29,7 @@ export default function PlayerAvatar({
   };
 
   return (
-    <div className={`relative ${sizeClasses[size]} shrink-0 overflow-hidden rounded-full border border-white/20 bg-white/10 ${className}`}>
+    <div className={`relative ${sizeClasses[size]} shrink-0 overflow-hidden rounded-full border border-border-default bg-surface-md ${className}`}>
       <Image
         src={hasError ? '/player_pics/default.png' : src}
         alt={playerName}

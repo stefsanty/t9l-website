@@ -1,16 +1,75 @@
 @import "tailwindcss";
 
+/* ── Dark mode (default) ──────────────────────────────────────────────────── */
 :root {
-  --background: #1a0f1e; /* Softer, lighter Dark Purple */
+  --background: #1a0f1e;
   --foreground: #FFFFFF;
-  --primary: #FF1A6B;    /* More vibrant Pink/Magenta */
-  --secondary: #AC66FF;  /* More vibrant Electric Violet */
-  --success: #00FF85;    /* Electric Green */
+  --primary: #FF1A6B;
+  --secondary: #AC66FF;
+  --success: #00FF85;
   --tertiary: #00FF85;
-  --muted: #DED3E0;      /* Lightened Muted Purple-Grey */
-  --border: #2A152E;     /* More visible Dark Purple Border */
-  --card: #251629;       /* Noticeably lighter Card Background */
+  --muted: #DED3E0;
+  --border: #2A152E;
+  --card: #251629;
   --accent: #FF1A6B;
+
+  /* Semantic opacity tokens — dark */
+  --fg-high: rgba(255, 255, 255, 0.95);
+  --fg-mid: rgba(255, 255, 255, 0.65);
+  --fg-low: rgba(255, 255, 255, 0.40);
+  --surface: rgba(255, 255, 255, 0.05);
+  --surface-md: rgba(255, 255, 255, 0.10);
+  --border-subtle: rgba(255, 255, 255, 0.08);
+  --border-default: rgba(255, 255, 255, 0.12);
+  --header-bg: rgba(26, 15, 30, 0.95);
+}
+
+/* ── Light mode ───────────────────────────────────────────────────────────── */
+html.light {
+  --background: #F5EFF8;
+  --foreground: #1a0f1e;
+  --primary: #E0005A;
+  --secondary: #7733CC;
+  --success: #00A855;
+  --tertiary: #00A855;
+  --muted: #7A6885;
+  --border: #E5D8EE;
+  --card: #FFFFFF;
+  --accent: #E0005A;
+
+  /* Semantic opacity tokens — light */
+  --fg-high: rgba(26, 15, 30, 0.95);
+  --fg-mid: rgba(26, 15, 30, 0.65);
+  --fg-low: rgba(26, 15, 30, 0.40);
+  --surface: rgba(26, 15, 30, 0.04);
+  --surface-md: rgba(26, 15, 30, 0.08);
+  --border-subtle: rgba(26, 15, 30, 0.10);
+  --border-default: rgba(26, 15, 30, 0.14);
+  --header-bg: rgba(245, 239, 248, 0.95);
+}
+
+/* ── System preference fallback (SSR / no-JS) ─────────────────────────────── */
+@media (prefers-color-scheme: light) {
+  :root:not(.dark) {
+    --background: #F5EFF8;
+    --foreground: #1a0f1e;
+    --primary: #E0005A;
+    --secondary: #7733CC;
+    --success: #00A855;
+    --tertiary: #00A855;
+    --muted: #7A6885;
+    --border: #E5D8EE;
+    --card: #FFFFFF;
+    --accent: #E0005A;
+    --fg-high: rgba(26, 15, 30, 0.95);
+    --fg-mid: rgba(26, 15, 30, 0.65);
+    --fg-low: rgba(26, 15, 30, 0.40);
+    --surface: rgba(26, 15, 30, 0.04);
+    --surface-md: rgba(26, 15, 30, 0.08);
+    --border-subtle: rgba(26, 15, 30, 0.10);
+    --border-default: rgba(26, 15, 30, 0.14);
+    --header-bg: rgba(245, 239, 248, 0.95);
+  }
 }
 
 @theme inline {
@@ -24,7 +83,17 @@
   --color-border: var(--border);
   --color-card: var(--card);
   --color-accent: var(--accent);
-  
+
+  /* Semantic opacity tokens */
+  --color-fg-high: var(--fg-high);
+  --color-fg-mid: var(--fg-mid);
+  --color-fg-low: var(--fg-low);
+  --color-surface: var(--surface);
+  --color-surface-md: var(--surface-md);
+  --color-border-subtle: var(--border-subtle);
+  --color-border-default: var(--border-default);
+  --color-header-bg: var(--header-bg);
+
   /* Brand Specific */
   --color-deep-purple: #251629;
   --color-midnight: #1a0f1e;
@@ -86,6 +155,10 @@ a:hover {
 
 .pl-gradient {
   background: linear-gradient(135deg, var(--card) 0%, #3D1342 100%);
+}
+
+html.light .pl-gradient {
+  background: linear-gradient(135deg, var(--card) 0%, #EDD8F5 100%);
 }
 
 .pl-card {
