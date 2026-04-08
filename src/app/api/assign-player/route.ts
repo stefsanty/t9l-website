@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
+import { revalidatePath } from "next/cache";
 import { authOptions } from "@/lib/auth";
 import { put } from "@vercel/blob";
 import { fetchSheetData } from "@/lib/sheets";
@@ -79,6 +80,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: message }, { status: 500 });
   }
 
+  revalidatePath('/');
   return NextResponse.json({ ok: true, playerId, playerName, teamId });
 }
 
