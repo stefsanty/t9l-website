@@ -2,10 +2,13 @@ import { fetchSheetData } from "@/lib/sheets";
 import { parseAllData } from "@/lib/data";
 import { findNextMatchday } from "@/lib/stats";
 import { unstable_cache } from "next/cache";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 import Image from "next/image";
 import Link from "next/link";
 import type { Matchday, Team, Goal } from "@/types";
 import MatchdayCountdown from "@/components/MatchdayCountdown";
+import Header from "@/components/Header";
 
 export const metadata = {
   title: "Schedule | T9L",
@@ -23,11 +26,15 @@ const DEFAULT_VENUE_MAP_URL =
 
 function formatMatchDate(dateStr: string) {
   const d = new Date(dateStr);
-  return new Intl.DateTimeFormat("en-US", {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    weekday: "short",
     month: "short",
     day: "numeric",
     timeZone: "Asia/Tokyo",
-  }).format(d);
+  }).formatToParts(d);
+  const get = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((p) => p.type === type)?.value ?? "";
+  return `${get("month")} ${get("day")} (${get("weekday")})`;
 }
 
 function MatchScorers({
@@ -87,31 +94,36 @@ function MatchdayCard({
   teams,
   goals,
   isNext,
+  userTeamId,
+  isUserNextMatchday,
 }: {
   matchday: Matchday;
   teams: Team[];
   goals: Goal[];
   isNext: boolean;
+  userTeamId?: string | null;
+  isUserNextMatchday: boolean;
 }) {
   const isCompleted = matchday.matches[0].homeGoals !== null;
   const venueName = matchday.venueName ?? DEFAULT_VENUE_NAME;
   const venueUrl = matchday.venueUrl ?? DEFAULT_VENUE_MAP_URL;
 
-  const eyebrow = isNext
-    ? "UPCOMING"
-    : isCompleted
-    ? "RESULTS"
-    : "MATCHDAY";
-
   const getTeam = (id: string) => teams.find((t) => t.id === id);
   const sittingOutTeam = getTeam(matchday.sittingOutTeamId);
+  const isUserSittingOut = userTeamId && matchday.sittingOutTeamId === userTeamId;
+
+  const eyebrow = isUserNextMatchday
+    ? "YOUR NEXT MATCHDAY"
+    : isCompleted
+    ? "MATCHDAY RESULTS"
+    : "MATCHDAY DETAILS";
 
   return (
-    <div className="pl-card pl-card-magenta rounded-3xl overflow-hidden relative group">
+    <div className={`pl-card pl-card-magenta rounded-3xl overflow-hidden relative group transition-colors ${isUserSittingOut ? 'bg-midnight/40' : ''}`}>
       <div className="absolute inset-0 bg-diagonal-pattern opacity-[0.03] pointer-events-none group-hover:opacity-[0.05] transition-opacity duration-500" />
 
       <div className="p-7 pb-6 relative">
-        <div className="mb-1">
+        <div className="flex justify-between items-start mb-1">
           <span className="text-[10px] font-black uppercase tracking-[0.25em] text-fg-high">
             {eyebrow}
           </span>
@@ -119,8 +131,7 @@ function MatchdayCard({
 
         <div className="mb-4">
           <h2 className="font-display text-4xl font-black uppercase tracking-tighter text-fg-high leading-tight">
-            {matchday.label}
-            {matchday.date ? ` — ${formatMatchDate(matchday.date)}` : " — TBD"}
+            {matchday.label} - {matchday.date ? formatMatchDate(matchday.date) : "TBD"}
           </h2>
           {isNext && (
             <div className="mt-1 mb-1">
@@ -153,19 +164,28 @@ function MatchdayCard({
           </div>
         </div>
 
+        {isUserSittingOut && (
+          <p className="text-[10px] font-bold text-vibrant-pink/90 uppercase tracking-tight mt-1">
+            {"You are not scheduled to play on this matchday"}
+          </p>
+        )}
+
         <div className="h-[1px] w-full bg-surface-md my-6" />
 
-        <div className="space-y-4">
+        <div className={`space-y-4 transition-opacity duration-500 ${isUserSittingOut ? 'opacity-40' : ''}`}>
           {matchday.matches.map((match, idx) => {
             const home = getTeam(match.homeTeamId);
             const away = getTeam(match.awayTeamId);
             const isPlayed = match.homeGoals !== null;
+            const isUserHome = userTeamId === match.homeTeamId;
+            const isUserAway = userTeamId === match.awayTeamId;
+            const isUserMatch = isUserHome || isUserAway;
 
             return (
               <div key={match.id}>
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex-1 flex items-center gap-3">
-                    <div className="relative w-9 h-9 shrink-0 rounded-lg p-1.5 border bg-surface border-border-subtle">
+                    <div className={`relative w-9 h-9 shrink-0 rounded-lg p-1.5 border transition-all ${isUserHome ? 'bg-tertiary/10 border-tertiary/50 shadow-[0_0_10px_rgba(0,255,133,0.25)]' : 'bg-surface border-border-subtle'}`}>
                       {home?.logo && (
                         <Image
                           src={home.logo}
@@ -188,6 +208,9 @@ function MatchdayCard({
                       >
                         {home?.shortName || home?.name.slice(0, 3)}
                       </span>
+                      {isUserHome && (
+                        <span className="text-[9px] font-black uppercase tracking-widest text-tertiary/70 leading-none">your team</span>
+                      )}
                     </div>
                   </div>
 
@@ -196,10 +219,10 @@ function MatchdayCard({
                       <>
                         {idx === 0 && (
                           <span className="text-[8px] font-black uppercase tracking-widest text-fg-mid mb-1.5">
-                            Kickoff
+                            Kickoff Time
                           </span>
                         )}
-                        <span className="font-display text-xl font-black tracking-tighter px-3 py-1 rounded-lg border text-fg-high bg-surface border-border-subtle">
+                        <span className={`font-display text-xl font-black tracking-tighter px-3 py-1 rounded-lg border transition-all ${isUserMatch ? 'text-tertiary bg-tertiary/10 border-tertiary/30' : 'text-fg-high bg-surface border-border-subtle'}`}>
                           {match.kickoff}
                         </span>
                       </>
@@ -211,11 +234,11 @@ function MatchdayCard({
                           </span>
                         )}
                         <div className="flex items-center gap-3">
-                          <span className="font-display text-3xl font-black text-fg-high">
+                          <span className={`font-display text-3xl font-black ${isUserHome ? 'text-tertiary' : 'text-fg-high'}`}>
                             {match.homeGoals}
                           </span>
                           <div className="w-4 h-[2px] bg-surface-md" />
-                          <span className="font-display text-3xl font-black text-fg-high">
+                          <span className={`font-display text-3xl font-black ${isUserAway ? 'text-tertiary' : 'text-fg-high'}`}>
                             {match.awayGoals}
                           </span>
                         </div>
@@ -237,8 +260,11 @@ function MatchdayCard({
                       >
                         {away?.shortName || away?.name.slice(0, 3)}
                       </span>
+                      {isUserAway && (
+                        <span className="text-[9px] font-black uppercase tracking-widest text-tertiary/70 leading-none">your team</span>
+                      )}
                     </div>
-                    <div className="relative w-9 h-9 shrink-0 rounded-lg p-1.5 border bg-surface border-border-subtle">
+                    <div className={`relative w-9 h-9 shrink-0 rounded-lg p-1.5 border transition-all ${isUserAway ? 'bg-tertiary/10 border-tertiary/50 shadow-[0_0_10px_rgba(0,255,133,0.25)]' : 'bg-surface border-border-subtle'}`}>
                       {away?.logo && (
                         <Image
                           src={away.logo}
@@ -266,10 +292,12 @@ function MatchdayCard({
           {sittingOutTeam && (
             <div className="pt-2 flex items-center gap-2">
               <div className="h-[1px] flex-1 bg-surface" />
-              <span className="text-[10px] font-black uppercase tracking-widest text-fg-mid">
-                Sitting out:{" "}
-                <span className="text-fg-high">{sittingOutTeam.name}</span>
-              </span>
+              <div className="text-center">
+                <span className="text-[10px] font-black uppercase tracking-widest text-fg-mid">
+                  Sitting out:{" "}
+                  <span className="text-fg-high">{sittingOutTeam.name}</span>
+                </span>
+              </div>
               <div className="h-[1px] flex-1 bg-surface" />
             </div>
           )}
@@ -280,6 +308,9 @@ function MatchdayCard({
 }
 
 export default async function SchedulePage() {
+  const session = await getServerSession(authOptions);
+  const userTeamId = session?.teamId;
+
   let raw;
   try {
     raw = await getCachedSheetData();
@@ -301,9 +332,19 @@ export default async function SchedulePage() {
   const data = parseAllData(raw);
   const nextMd = findNextMatchday(data.matchdays);
 
+  const userNextPlayingMdId = userTeamId
+    ? data.matchdays.find(
+        (md) =>
+          md.sittingOutTeamId !== userTeamId &&
+          md.matches[0].homeGoals === null
+      )?.id
+    : null;
+
   return (
-    <div className="min-h-dvh bg-background">
-      <div className="max-w-lg mx-auto px-4 py-8">
+    <div className="flex flex-col min-h-dvh bg-background">
+      <Header />
+      
+      <main className="flex-1 max-w-lg mx-auto px-4 pt-16 pb-12">
         <div className="flex items-center justify-between mb-8">
           <h1 className="font-display text-5xl font-black uppercase tracking-tighter text-fg-high">
             Schedule
@@ -324,10 +365,14 @@ export default async function SchedulePage() {
               teams={data.teams}
               goals={data.goals}
               isNext={nextMd?.matchday.id === md.id}
+              userTeamId={userTeamId}
+              isUserNextMatchday={userNextPlayingMdId === md.id}
             />
           ))}
         </div>
-      </div>
+      </main>
     </div>
   );
 }
+
+

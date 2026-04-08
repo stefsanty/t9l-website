@@ -12,9 +12,7 @@ import MatchdayAvailability from './MatchdayAvailability';
 import LeagueTable from './LeagueTable';
 import TopPerformers from './TopPerformers';
 import SquadList from './SquadList';
-import LineLoginButton from './LineLoginButton';
-import LanguageToggle from './LanguageToggle';
-import ThemeToggle from './ThemeToggle';
+import Header from './Header';
 
 interface DashboardProps {
   teams: Team[];
@@ -121,20 +119,7 @@ export default function Dashboard({
 
   return (
     <div className="flex flex-col min-h-dvh pb-0 max-w-lg mx-auto bg-background selection:bg-vibrant-pink selection:text-white">
-      <header className="fixed top-0 left-1/2 -translate-x-1/2 w-full max-w-lg z-50 bg-header-bg backdrop-blur-md border-b border-border-default shadow-[0_4px_20px_rgba(0,0,0,0.15)]">
-        <div className="flex items-center gap-2 px-4 h-12">
-          <h1 className="font-display font-black uppercase tracking-tight leading-none flex items-baseline gap-1.5 shrink-0">
-            <span className="text-xl text-fg-high">T9L &apos;26</span>
-            <span className="text-xl text-primary">春</span>
-          </h1>
-
-          <div className="flex-1 flex justify-end items-center gap-2">
-            <ThemeToggle />
-            <LanguageToggle />
-            <LineLoginButton />
-          </div>
-        </div>
-      </header>
+      <Header />
 
       <main className="flex-1 px-4 relative z-10 pt-16 space-y-16 pb-12">
         <div className="animate-in pt-4">

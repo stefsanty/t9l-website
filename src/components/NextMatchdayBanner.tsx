@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import Image from 'next/image';
+import Link from 'next/link';
 import type { Matchday, Team, Goal, AvailabilityStatuses } from '@/types';
 import RsvpButton from './RsvpButton';
 import MatchdayCountdown from './MatchdayCountdown';
@@ -144,9 +145,11 @@ export default function NextMatchdayBanner({
       ? availabilityStatuses[matchday.id]?.[session.teamId]?.[session.playerId] ?? ''
       : '';
 
+  const isSittingOut = session?.teamId && session.teamId === matchday.sittingOutTeamId;
+
   return (
     <section className="animate-in">
-      <div className="pl-card pl-card-magenta rounded-3xl overflow-hidden relative group">
+      <div className={`pl-card pl-card-magenta rounded-3xl overflow-hidden relative group transition-colors ${isSittingOut ? 'bg-midnight/40' : ''}`}>
         <div className="absolute inset-0 bg-diagonal-pattern opacity-[0.03] pointer-events-none group-hover:opacity-[0.05] transition-opacity duration-500" />
 
         <div className="p-7 pb-6 relative">
@@ -240,7 +243,7 @@ export default function NextMatchdayBanner({
           <div className="h-[1px] w-full bg-surface-md my-6" />
 
           {/* Matches */}
-          <div className="space-y-4">
+          <div className={`space-y-4 transition-opacity duration-500 ${session?.teamId && session.teamId === matchday.sittingOutTeamId ? 'opacity-40' : ''}`}>
             {matchday.matches.map((match, idx) => {
               const home = getTeam(match.homeTeamId);
               const away = getTeam(match.awayTeamId);
@@ -348,11 +351,22 @@ export default function NextMatchdayBanner({
                   <span className="text-[10px] font-black uppercase tracking-widest text-fg-mid">
                     {"Sitting out"}: <span className="text-fg-high">{sittingOutTeam.name}</span>
                   </span>
-              
                 </div>
                 <div className="h-[1px] flex-1 bg-surface" />
               </div>
             )}
+
+            <div className="mt-4 text-center">
+              <Link
+                href="/schedule"
+                className="text-[10px] font-black uppercase tracking-[0.2em] text-fg-mid hover:text-vibrant-pink transition-colors group/link flex items-center justify-center gap-1.5"
+              >
+                <span>{"See full schedule"}</span>
+                <svg className="w-3 h-3 transition-transform group-hover/link:translate-x-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M9 5l7 7-7 7" />
+                </svg>
+              </Link>
+            </div>
           </div>
         </div>
       </div>
