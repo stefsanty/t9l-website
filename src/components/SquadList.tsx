@@ -136,8 +136,8 @@ export default function SquadList({
                   {teamPlayers.map((player) => {
                     const status = getAvailabilityStatus(player.id, team.id);
                     const badgeProps = (() => {
-                      if (status === 'GOING' || status === 'Y') return { label: "GOING", cls: 'bg-electric-green/10 border-electric-green/20 text-electric-green', dotCls: 'bg-electric-green shadow-[0_0_8px_rgba(0,255,133,0.5)]' };
-                      if (status === 'UNDECIDED' || status === 'EXPECTED') return { label: "UNDECIDED", cls: 'bg-yellow-400/10 border-yellow-400/20 text-yellow-400', dotCls: 'bg-yellow-400' };
+                      if (status === 'GOING' || status === 'Y') return { label: "GOING", cls: 'bg-success/10 border-success/25 text-success', dotCls: 'bg-success' };
+                      if (status === 'UNDECIDED' || status === 'EXPECTED') return { label: "UNDECIDED", cls: 'bg-warning/10 border-warning/25 text-warning', dotCls: 'bg-warning' };
                       if (status === 'PLAYED') return { label: "PLAYED", cls: 'bg-secondary/10 border-secondary/20 text-secondary', dotCls: 'bg-secondary' };
                       return { label: "NOT GOING", cls: 'bg-surface border-border-subtle text-fg-mid', dotCls: 'bg-surface-md' };
                     })();

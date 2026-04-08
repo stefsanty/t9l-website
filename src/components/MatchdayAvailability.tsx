@@ -344,12 +344,12 @@ export default function MatchdayAvailability({
                 </div>
                 <div className="flex items-center gap-3">
                   {goingIds.length > 0 && (
-                    <span className="text-[11px] font-black px-2 py-0.5 rounded bg-electric-green/10 text-electric-green">
+                    <span className="text-[11px] font-black px-2 py-0.5 rounded bg-success/10 text-success">
                       {goingIds.length} {"going"}
                     </span>
                   )}
                   {undecidedIds.length > 0 && (
-                    <span className="text-[11px] font-black px-2 py-0.5 rounded bg-yellow-400/10 text-yellow-400">
+                    <span className="text-[11px] font-black px-2 py-0.5 rounded bg-warning/10 text-warning">
                       {undecidedIds.length} {"undecided"}
                     </span>
                   )}

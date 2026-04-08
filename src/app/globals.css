@@ -8,6 +8,7 @@
   --secondary: #AC66FF;
   --success: #00FF85;
   --tertiary: #00FF85;
+  --warning: #FACC15;
   --muted: #DED3E0;
   --border: #2A152E;
   --card: #251629;
@@ -32,6 +33,7 @@ html.light {
   --secondary: #7733CC;
   --success: #00A855;
   --tertiary: #00A855;
+  --warning: #B45309;
   --muted: #7A6885;
   --border: #E5D8EE;
   --card: #FFFFFF;
@@ -57,6 +59,7 @@ html.light {
     --secondary: #7733CC;
     --success: #00A855;
     --tertiary: #00A855;
+    --warning: #B45309;
     --muted: #7A6885;
     --border: #E5D8EE;
     --card: #FFFFFF;
@@ -79,6 +82,7 @@ html.light {
   --color-secondary: var(--secondary);
   --color-success: var(--success);
   --color-tertiary: var(--tertiary);
+  --color-warning: var(--warning);
   --color-muted: var(--muted);
   --color-border: var(--border);
   --color-card: var(--card);
