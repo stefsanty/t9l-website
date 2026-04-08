@@ -123,7 +123,7 @@ export default function TopPerformers({
                           {stat.playerName}
                         </span>
                         {isUser && (
-                          <span className="text-[9px] font-black text-fg-mid tracking-widest uppercase mt-0.5">
+                          <span className="text-[9px] font-black text-tertiary text-fg-mid tracking-widest uppercase mt-0.5">
                             {"You"}
                           </span>
                         )}
@@ -148,7 +148,7 @@ export default function TopPerformers({
                   <td className="py-4 px-1 text-center font-display font-black text-base text-fg-high tabular-nums">
                     {stat.matchesPlayed}
                   </td>
-                  <td className={`py-4 px-1 text-center font-display font-black text-base tabular-nums ${isUser ? 'text-success' : 'text-primary'}`}>
+                  <td className={`py-4 px-1 text-center font-display font-black text-base tabular-nums ${isUser ? 'text-tertiary' : 'text-primary'}`}>
                     {stat.avgRating > 0 ? stat.avgRating.toFixed(1) : '—'}
                   </td>
                   <td className="py-4 px-1 text-center font-display font-black text-lg text-fg-high tabular-nums">

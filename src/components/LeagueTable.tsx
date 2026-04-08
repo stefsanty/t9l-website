@@ -70,7 +70,7 @@ export default function LeagueTable({ rows }: LeagueTableProps) {
                           <span className="hidden sm:inline">{row.team.name}</span>
                         </span>
                         {isUserTeam && (
-                          <span className="text-[9px] font-black text-fg-mid tracking-widest uppercase mt-0.5">
+                          <span className="text-[9px] font-black text-tertiary text-fg-mid tracking-widest uppercase mt-0.5">
                             {"Your Team"}
                           </span>
                         )}
@@ -95,7 +95,7 @@ export default function LeagueTable({ rows }: LeagueTableProps) {
                       : row.goalDifference}
                   </td>
                   <td className="py-4 pr-4 pl-2 text-center">
-                    <span className={`font-display text-xl font-black tabular-nums ${isUserTeam ? "text-success" : "text-fg-high"}`}>
+                    <span className={`font-display text-xl font-black tabular-nums ${isUserTeam ? "text-tertiary" : "text-fg-high"}`}>
                       {row.points}
                     </span>
                     {i > 0 && row.points < leaderPoints && (

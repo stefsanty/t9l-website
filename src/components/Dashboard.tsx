@@ -11,7 +11,6 @@ import GuestLoginBanner from './GuestLoginBanner';
 import MatchdayAvailability from './MatchdayAvailability';
 import LeagueTable from './LeagueTable';
 import TopPerformers from './TopPerformers';
-import MatchResults from './MatchResults';
 import SquadList from './SquadList';
 import LineLoginButton from './LineLoginButton';
 import LanguageToggle from './LanguageToggle';
@@ -191,14 +190,6 @@ export default function Dashboard({
               <h2 className="font-display text-4xl font-black uppercase tracking-tight text-fg-high">{"Statistics"}</h2>
             </div>
             <TopPerformers playerStats={playerStats} />
-          </div>
-
-          <div className="relative">
-            <div className="flex items-center gap-4 mb-8">
-              <div className="w-1.5 h-7 bg-tertiary rounded-full shadow-[0_0_12px_rgba(0,255,133,0.3)]" />
-              <h2 className="font-display text-4xl font-black uppercase tracking-tight text-fg-high">{"Results"}</h2>
-            </div>
-            <MatchResults matchdays={matchdays} teams={teams} goals={goals} />
           </div>
 
           <MatchdayVibesSection vibes={matchdayVibes} />
