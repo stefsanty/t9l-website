@@ -11,11 +11,15 @@ function formatMatchDate(dateStr: string) {
   // We treat it as UTC midnight and format it in JST.
   // UTC 00:00 = JST 09:00, which keeps the date the same.
   const d = new Date(dateStr);
-  return new Intl.DateTimeFormat('en-US', { 
-    month: 'short', 
+  const parts = new Intl.DateTimeFormat('en-US', {
+    weekday: 'short',
+    month: 'short',
     day: 'numeric',
-    timeZone: 'Asia/Tokyo' 
-  }).format(d);
+    timeZone: 'Asia/Tokyo',
+  }).formatToParts(d);
+  const get = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((p) => p.type === type)?.value ?? '';
+  return `${get('month')} ${get('day')} (${get('weekday')})`;
 }
 
 function MatchScorers({
