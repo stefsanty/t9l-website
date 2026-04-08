@@ -130,10 +130,6 @@ export default function Dashboard({
 
           <div className="hidden sm:block h-[1px] w-4 bg-surface-md" />
 
-          <p className="text-[9px] font-black text-fg-low uppercase tracking-[0.3em] flex-1 truncate hidden min-[400px]:block">
-            Tennozu 9-Aside League
-          </p>
-
           <div className="flex-1 min-[400px]:flex-none flex justify-end items-center gap-2">
             <ThemeToggle />
             <LanguageToggle />

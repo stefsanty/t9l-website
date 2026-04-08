@@ -301,7 +301,7 @@ export default function MatchdayAvailability({
       {/* Player availability */}
       <div className="flex items-center gap-3 mb-3">
         <h3 className="text-[11px] font-black uppercase tracking-[0.2em] text-fg-mid">
-          {"Player Availability"}
+          {"Who else is coming?"}
         </h3>
         <div className="h-[1px] flex-1 bg-border-subtle" />
       </div>

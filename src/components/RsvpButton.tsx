@@ -60,7 +60,7 @@ export default function RsvpButton({ matchdayId, initialStatus }: RsvpButtonProp
     <div>
       <div className="flex items-center gap-3 mb-3">
         <span className="text-[11px] font-black uppercase tracking-[0.2em] text-fg-mid">
-          Your RSVP
+          {"Are you coming?"}
         </span>
         <div className="h-[1px] flex-1 bg-surface-md" />
         {loading && (
