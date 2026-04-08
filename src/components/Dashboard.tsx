@@ -17,8 +17,6 @@ import LineLoginButton from './LineLoginButton';
 import LanguageToggle from './LanguageToggle';
 import ThemeToggle from './ThemeToggle';
 
-type Tab = 'NEXT_GAME' | 'STATS' | 'SQUADS';
-
 interface DashboardProps {
   teams: Team[];
   players: Player[];
@@ -115,7 +113,6 @@ export default function Dashboard({
   nextMd,
   playerPictures,
 }: DashboardProps) {
-    const [activeTab, setActiveTab] = useState<Tab>('NEXT_GAME');
   const [selectedMatchdayId, setSelectedMatchdayId] = useState(
     nextMd?.matchday.id ?? matchdays[0]?.id ?? ''
   );
@@ -124,12 +121,12 @@ export default function Dashboard({
     matchdays.find((m) => m.id === selectedMatchdayId) ?? matchdays[0];
 
   return (
-    <div className="flex flex-col min-h-dvh pb-[88px] max-w-lg mx-auto bg-background selection:bg-vibrant-pink selection:text-white">
+    <div className="flex flex-col min-h-dvh pb-0 max-w-lg mx-auto bg-background selection:bg-vibrant-pink selection:text-white">
       <header className="fixed top-0 left-1/2 -translate-x-1/2 w-full max-w-lg z-50 bg-header-bg backdrop-blur-md border-b border-border-default shadow-[0_4px_20px_rgba(0,0,0,0.15)]">
         <div className="flex items-center gap-2 px-4 h-12">
           <h1 className="font-display font-black uppercase tracking-tight leading-none flex items-baseline gap-1.5 shrink-0">
             <span className="text-xl text-fg-high">T9L &apos;26</span>
-            <span className="text-xl text-primary">SPRING</span>
+            <span className="text-xl text-primary">春</span>
           </h1>
 
           <div className="hidden sm:block h-[1px] w-4 bg-surface-md" />
@@ -147,150 +144,88 @@ export default function Dashboard({
         </div>
       </header>
 
-      <main className="flex-1 px-4 relative z-10 pt-16">
-        {activeTab === 'NEXT_GAME' && (
-          <div className="animate-in pt-4">
-            {nextMd ? (
-              <>
-                <GuestLoginBanner />
-                <NextMatchdayBanner
-                  matchdays={matchdays}
-                  selectedMatchdayId={selectedMatchdayId}
-                  onMatchdayChange={setSelectedMatchdayId}
-                  teams={teams}
-                  goals={goals}
-                  availabilityStatuses={availabilityStatuses}
-                />
-                <MatchdayAvailability
-                  key={selectedMatchdayId}
-                  matchday={selectedMatchday}
-                  teams={teams}
-                  players={players}
-                  availability={availability}
-                  availabilityStatuses={availabilityStatuses}
-                  played={played}
-                />
-              </>
-            ) : (
-              <div className="text-center py-24 bg-white/[0.05] rounded-3xl border border-white/10 relative overflow-hidden">
-                <div className="absolute inset-0 bg-diagonal-pattern opacity-5" />
-                <p className="font-display text-4xl font-black uppercase italic text-white/90 relative">{"Season Finished"}</p>
-                <p className="text-xs uppercase tracking-[0.5em] mt-4 text-white/65 font-black relative">{"See you in the Autumn!"}</p>
-              </div>
-            )}
-          </div>
-        )}
-
-        {activeTab === 'STATS' && (
-          <div className="space-y-16 animate-in pb-12">
-            <div className="relative">
-              <div className="flex items-center gap-4 mb-8">
-                <div className="w-1.5 h-7 bg-vibrant-pink rounded-full" />
-                <h2 className="font-display text-4xl font-black uppercase tracking-tight text-fg-high">{"Standings"}</h2>
-              </div>
-              <LeagueTable rows={leagueTable} />
+      <main className="flex-1 px-4 relative z-10 pt-16 space-y-16 pb-12">
+        <div className="animate-in pt-4">
+          {nextMd ? (
+            <>
+              <GuestLoginBanner />
+              <NextMatchdayBanner
+                matchdays={matchdays}
+                selectedMatchdayId={selectedMatchdayId}
+                onMatchdayChange={setSelectedMatchdayId}
+                teams={teams}
+                goals={goals}
+                availabilityStatuses={availabilityStatuses}
+              />
+              <MatchdayAvailability
+                key={selectedMatchdayId}
+                matchday={selectedMatchday}
+                teams={teams}
+                players={players}
+                availability={availability}
+                availabilityStatuses={availabilityStatuses}
+                played={played}
+              />
+            </>
+          ) : (
+            <div className="text-center py-24 bg-white/[0.05] rounded-3xl border border-white/10 relative overflow-hidden">
+              <div className="absolute inset-0 bg-diagonal-pattern opacity-5" />
+              <p className="font-display text-4xl font-black uppercase italic text-white/90 relative">{"Season Finished"}</p>
+              <p className="text-xs uppercase tracking-[0.5em] mt-4 text-white/65 font-black relative">{"See you in the Autumn!"}</p>
             </div>
+          )}
+        </div>
 
-            <div className="relative">
-              <div className="flex items-center gap-4 mb-8">
-                <div className="w-1.5 h-7 bg-electric-violet rounded-full" />
-                <h2 className="font-display text-4xl font-black uppercase tracking-tight text-fg-high">{"Statistics"}</h2>
-              </div>
-              <TopPerformers playerStats={playerStats} />
-            </div>
-
-            <div className="relative">
-              <div className="flex items-center gap-4 mb-8">
-                <div className="w-1.5 h-7 bg-tertiary rounded-full shadow-[0_0_12px_rgba(0,255,133,0.3)]" />
-                <h2 className="font-display text-4xl font-black uppercase tracking-tight text-fg-high">{"Results"}</h2>
-              </div>
-              <MatchResults matchdays={matchdays} teams={teams} goals={goals} />
-            </div>
-
-            <MatchdayVibesSection vibes={matchdayVibes} />
-          </div>
-        )}
-
-        {activeTab === 'SQUADS' && (
-          <div className="animate-in pb-12">
+        <div className="space-y-16 animate-in">
+          <div className="relative">
             <div className="flex items-center gap-4 mb-8">
               <div className="w-1.5 h-7 bg-vibrant-pink rounded-full" />
-              <h2 className="font-display text-4xl font-black uppercase tracking-tight text-fg-high">{"Squads"}</h2>
+              <h2 className="font-display text-4xl font-black uppercase tracking-tight text-fg-high">{"Standings"}</h2>
             </div>
-            <SquadList
-              teams={teams}
-              players={players}
-              availability={availability}
-              availabilityStatuses={availabilityStatuses}
-              nextMatchdayId={nextMd?.matchday.id || "md1"}
-              nextMatchdayLabel={nextMd?.matchday.label || "MD1"}
-              playerPictures={playerPictures}
-            />
+            <LeagueTable rows={leagueTable} />
           </div>
-        )}
+
+          <div className="relative">
+            <div className="flex items-center gap-4 mb-8">
+              <div className="w-1.5 h-7 bg-electric-violet rounded-full" />
+              <h2 className="font-display text-4xl font-black uppercase tracking-tight text-fg-high">{"Statistics"}</h2>
+            </div>
+            <TopPerformers playerStats={playerStats} />
+          </div>
+
+          <div className="relative">
+            <div className="flex items-center gap-4 mb-8">
+              <div className="w-1.5 h-7 bg-tertiary rounded-full shadow-[0_0_12px_rgba(0,255,133,0.3)]" />
+              <h2 className="font-display text-4xl font-black uppercase tracking-tight text-fg-high">{"Results"}</h2>
+            </div>
+            <MatchResults matchdays={matchdays} teams={teams} goals={goals} />
+          </div>
+
+          <MatchdayVibesSection vibes={matchdayVibes} />
+        </div>
+
+        <div className="animate-in">
+          <div className="flex items-center gap-4 mb-8">
+            <div className="w-1.5 h-7 bg-vibrant-pink rounded-full" />
+            <h2 className="font-display text-4xl font-black uppercase tracking-tight text-fg-high">{"Squads"}</h2>
+          </div>
+          <SquadList
+            teams={teams}
+            players={players}
+            availability={availability}
+            availabilityStatuses={availabilityStatuses}
+            nextMatchdayId={nextMd?.matchday.id || "md1"}
+            nextMatchdayLabel={nextMd?.matchday.label || "MD1"}
+            playerPictures={playerPictures}
+          />
+        </div>
       </main>
 
-      <footer className="mt-8 mb-6 text-center px-4 pb-24">
+      <footer className="mt-8 mb-6 text-center px-4 pb-8">
         <p className="text-[10px] font-black uppercase tracking-[0.3em] text-fg-low">
           © 2026 Tennozu 9-Aside League • Tokyo
         </p>
       </footer>
-
-      {/* Bottom Navigation */}
-      <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-lg bg-header-bg border-t border-border-subtle z-[100] shadow-[0_-4px_20px_rgba(0,0,0,0.15)] pb-[env(safe-area-inset-bottom)]">
-        <div className="flex justify-around items-center h-[72px] px-6">
-          <button
-            onClick={() => setActiveTab('NEXT_GAME')}
-            className={`flex flex-col items-center justify-center flex-1 h-full gap-1.5 transition-all duration-300 relative ${
-              activeTab === 'NEXT_GAME' ? 'text-primary' : 'text-fg-high hover:text-fg-high'
-            }`}
-          >
-            <div className={`p-1.5 rounded-xl transition-all duration-300 ${activeTab === 'NEXT_GAME' ? 'bg-vibrant-pink/10' : ''}`}>
-              <svg className="w-6 h-6" fill={activeTab === 'NEXT_GAME' ? "currentColor" : "none"} viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-              </svg>
-            </div>
-            <span className={`text-[10px] font-black uppercase tracking-[0.15em] transition-opacity duration-300 ${activeTab === 'NEXT_GAME' ? 'opacity-100' : 'opacity-70'}`}>{"Home"}</span>
-            {activeTab === 'NEXT_GAME' && (
-              <div className="absolute -top-[1px] left-1/2 -translate-x-1/2 w-12 h-[3px] bg-vibrant-pink rounded-b-full shadow-[var(--glow-primary-bar)]" />
-            )}
-          </button>
-
-          <button
-            onClick={() => setActiveTab('STATS')}
-            className={`flex flex-col items-center justify-center flex-1 h-full gap-1.5 transition-all duration-300 relative ${
-              activeTab === 'STATS' ? 'text-primary' : 'text-fg-high hover:text-fg-high'
-            }`}
-          >
-            <div className={`p-1.5 rounded-xl transition-all duration-300 ${activeTab === 'STATS' ? 'bg-vibrant-pink/10' : ''}`}>
-              <svg className="w-6 h-6" fill={activeTab === 'STATS' ? "currentColor" : "none"} viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-              </svg>
-            </div>
-            <span className={`text-[10px] font-black uppercase tracking-[0.15em] transition-opacity duration-300 ${activeTab === 'STATS' ? 'opacity-100' : 'opacity-70'}`}>{"Stats"}</span>
-            {activeTab === 'STATS' && (
-              <div className="absolute -top-[1px] left-1/2 -translate-x-1/2 w-12 h-[3px] bg-vibrant-pink rounded-b-full shadow-[var(--glow-primary-bar)]" />
-            )}
-          </button>
-
-          <button
-            onClick={() => setActiveTab('SQUADS')}
-            className={`flex flex-col items-center justify-center flex-1 h-full gap-1.5 transition-all duration-300 relative ${
-              activeTab === 'SQUADS' ? 'text-primary' : 'text-fg-high hover:text-fg-high'
-            }`}
-          >
-            <div className={`p-1.5 rounded-xl transition-all duration-300 ${activeTab === 'SQUADS' ? 'bg-vibrant-pink/10' : ''}`}>
-              <svg className="w-6 h-6" fill={activeTab === 'SQUADS' ? "currentColor" : "none"} viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-              </svg>
-            </div>
-            <span className={`text-[10px] font-black uppercase tracking-[0.15em] transition-opacity duration-300 ${activeTab === 'SQUADS' ? 'opacity-100' : 'opacity-70'}`}>{"Teams"}</span>
-            {activeTab === 'SQUADS' && (
-              <div className="absolute -top-[1px] left-1/2 -translate-x-1/2 w-12 h-[3px] bg-vibrant-pink rounded-b-full shadow-[var(--glow-primary-bar)]" />
-            )}
-          </button>
-        </div>
-      </nav>
     </div>
   );
 }
