@@ -11,7 +11,6 @@ interface LeagueTableProps {
 export default function LeagueTable({ rows }: LeagueTableProps) {
   const { data: session } = useSession();
   const userTeamId = session?.teamId;
-  const leaderPoints = rows[0]?.points ?? 0;
 
   return (
     <div className="pl-card pl-card-magenta rounded-2xl overflow-hidden mb-10 relative">
@@ -65,9 +64,8 @@ export default function LeagueTable({ rows }: LeagueTableProps) {
                         )}
                       </div>
                       <div className="flex flex-col">
-                        <span className="font-display text-lg font-black uppercase leading-none hidden sm:block" translate="no">
-                          <span className="sm:hidden">{row.team.shortName}</span>
-                          <span className="hidden sm:inline">{row.team.name}</span>
+                        <span className="font-display text-lg font-black uppercase leading-none" translate="no">
+                          {row.team.name}
                         </span>
                         {isUserTeam && (
                           <span className="text-[9px] font-black text-tertiary text-fg-mid tracking-widest uppercase mt-0.5">
