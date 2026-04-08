@@ -26,6 +26,9 @@ async function getPlayerMapping(lineId: string): Promise<PlayerMapping | null> {
 }
 
 export const authOptions: AuthOptions = {
+  pages: {
+    error: '/auth-error',
+  },
   providers: [
     LineProvider({
       clientId: process.env.LINE_CLIENT_ID ?? "",
@@ -70,6 +73,7 @@ export const authOptions: AuthOptions = {
 
       // Set LINE-specific fields on initial sign-in
       if (account && profile) {
+        console.log('[auth] LINE sign-in: provider=%s sub=%s', account.provider, profile.sub);
         token.lineId = profile.sub as string;
         token.linePictureUrl =
           ((profile as Record<string, unknown>).picture as string) ?? "";
@@ -80,16 +84,20 @@ export const authOptions: AuthOptions = {
 
       // Always check KV to sync with the database, allowing for unassignment
       if (token.lineId) {
-        const mapping = await getPlayerMapping(token.lineId as string);
-        if (mapping) {
-          token.playerId = mapping.playerId;
-          token.playerName = mapping.playerName;
-          token.teamId = mapping.teamId;
-        } else {
-          // If no mapping exists in KV, clear it from the token
-          token.playerId = null;
-          token.playerName = null;
-          token.teamId = null;
+        try {
+          const mapping = await getPlayerMapping(token.lineId as string);
+          if (mapping) {
+            token.playerId = mapping.playerId;
+            token.playerName = mapping.playerName;
+            token.teamId = mapping.teamId;
+          } else {
+            // If no mapping exists in KV, clear it from the token
+            token.playerId = null;
+            token.playerName = null;
+            token.teamId = null;
+          }
+        } catch (err) {
+          console.error('[auth] getPlayerMapping failed for lineId=%s: %o', token.lineId, err);
         }
       }
 
