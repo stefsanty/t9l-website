@@ -351,8 +351,8 @@ export default function MatchdayAvailability({
                   {goingIds.length < 9 && (
                     <span className={`text-[11px] font-black px-2 py-0.5 rounded ${
                       goingIds.length === 0 ? 'bg-surface-md text-fg-mid' : 'bg-vibrant-pink/10 text-vibrant-pink'
-                    }`}>
-                      {9 - goingIds.length} {"more"}
+                    }`}>  
+                       {"need "} {9 - goingIds.length} {"more"}
                     </span>
                   )}
                   {goingIds.length >= 10 && (

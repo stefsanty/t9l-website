@@ -21,7 +21,7 @@ export default function LeagueTable({ rows }: LeagueTableProps) {
             <tr className="border-b border-border-default bg-surface text-fg-high text-[10px] font-black uppercase tracking-[0.2em]">
               <th className="py-4 pl-4 pr-1 text-left w-8">{"POS"}</th>
               <th className="py-4 px-3 text-left">{"CLUB"}</th>
-              <th className="py-4 px-2 text-center">{"MP"}</th>
+              <th className="py-4 px-2 text-center" translate="no">{"MP"}</th>
               <th className="py-4 px-2 text-center">{"W"}</th>
               <th className="py-4 px-2 text-center">{"D"}</th>
               <th className="py-4 px-2 text-center">{"L"}</th>

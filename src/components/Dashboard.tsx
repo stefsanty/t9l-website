@@ -189,7 +189,7 @@ export default function Dashboard({
               <div className="w-1.5 h-7 bg-electric-violet rounded-full" />
               <h2 className="font-display text-4xl font-black uppercase tracking-tight text-fg-high">{"Statistics"}</h2>
             </div>
-            <TopPerformers playerStats={playerStats} />
+            <TopPerformers playerStats={playerStats} playerPictures={playerPictures} />
           </div>
 
           <MatchdayVibesSection vibes={matchdayVibes} />

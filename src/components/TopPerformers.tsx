@@ -8,6 +8,7 @@ import type { PlayerStats } from '@/types';
 
 interface TopPerformersProps {
   playerStats: PlayerStats[];
+  playerPictures: Record<string, string>;
 }
 
 type SortField = 'playerName' | 'matchesPlayed' | 'goals' | 'assists' | 'avgRating' | 'gaPerGame';
@@ -28,6 +29,7 @@ function SortIcon({
 
 export default function TopPerformers({
   playerStats,
+  playerPictures,
 }: TopPerformersProps) {
   const { data: session } = useSession();
   const [visibleCount, setVisibleCount] = useState(10);
@@ -117,7 +119,12 @@ export default function TopPerformers({
                 <tr key={stat.playerId} className={`hover:bg-surface transition-colors group ${isUser ? 'bg-success/10' : ''}`}>
                   <td className="py-4 pl-4 pr-2">
                     <div className="flex items-center gap-3">
-                      <PlayerAvatar playerName={stat.playerName} size="md" className={`ring-2 ring-border-subtle transition-all ${isUser ? 'ring-success/50' : 'group-hover:ring-secondary/30'}`} />
+                      <PlayerAvatar 
+                        playerName={stat.playerName} 
+                        pictureUrl={playerPictures[stat.playerId]} 
+                        size="md" 
+                        className={`ring-2 ring-border-subtle transition-all ${isUser ? 'ring-success/50' : 'group-hover:ring-secondary/30'}`} 
+                      />
                       <div className="flex flex-col min-w-0">
                         <span className={`font-bold uppercase tracking-tight transition-colors leading-tight break-words ${isUser ? '' : 'text-fg-high group-hover:text-secondary'}`} translate="no">
                           {stat.playerName}
