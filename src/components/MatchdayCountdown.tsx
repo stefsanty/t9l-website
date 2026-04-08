@@ -10,27 +10,30 @@ function toJSTDate(dateStr: string, timeStr: string): Date | null {
 }
 
 function formatCountdown(ms: number): string {
-  const totalMinutes = Math.floor(ms / 60000);
+  const totalSeconds = Math.floor(ms / 1000);
+  const totalMinutes = Math.floor(totalSeconds / 60);
   const weeks = Math.floor(totalMinutes / (7 * 24 * 60));
   const days = Math.floor((totalMinutes % (7 * 24 * 60)) / (24 * 60));
   const hours = Math.floor((totalMinutes % (24 * 60)) / 60);
   const mins = totalMinutes % 60;
+  const secs = totalSeconds % 60;
 
   const parts: string[] = [];
   if (weeks) parts.push(`${weeks}w`);
   if (days) parts.push(`${days}d`);
   if (hours) parts.push(`${hours}h`);
-  if (mins && parts.length < 3) parts.push(`${mins}m`);
+  if (mins) parts.push(`${mins}m`);
+  if (secs && parts.length < 4) parts.push(`${secs}s`);
 
   if (parts.length === 0) return 'Starting soon';
-  return parts.slice(0, 3).join(' ') + ' from now';
+  return parts.slice(0, 4).join(' ') + ' from now';
 }
 
 export default function MatchdayCountdown({ matchday }: { matchday: Matchday }) {
   const [now, setNow] = useState(() => new Date());
 
   useEffect(() => {
-    const id = setInterval(() => setNow(new Date()), 30_000);
+    const id = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(id);
   }, []);
 
@@ -56,7 +59,7 @@ export default function MatchdayCountdown({ matchday }: { matchday: Matchday }) 
   }
 
   return (
-    <span className="text-[11px] font-bold text-white/55 tabular-nums">
+    <span className="text-[11px] font-bold tabular-nums">
       {formatCountdown(startDT.getTime() - now.getTime())}
     </span>
   );

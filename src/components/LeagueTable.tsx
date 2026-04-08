@@ -65,7 +65,7 @@ export default function LeagueTable({ rows }: LeagueTableProps) {
                         )}
                       </div>
                       <div className="flex flex-col">
-                        <span className="font-bold uppercase tracking-tight text-fg-high group-hover:text-primary transition-colors leading-tight" translate="no">
+                        <span className="font-display text-lg font-black uppercase leading-none hidden sm:block" translate="no">
                           <span className="sm:hidden">{row.team.shortName}</span>
                           <span className="hidden sm:inline">{row.team.name}</span>
                         </span>
@@ -98,11 +98,6 @@ export default function LeagueTable({ rows }: LeagueTableProps) {
                     <span className={`font-display text-xl font-black tabular-nums ${isUserTeam ? "text-tertiary" : "text-fg-high"}`}>
                       {row.points}
                     </span>
-                    {i > 0 && row.points < leaderPoints && (
-                      <div className="text-[9px] font-black tabular-nums text-fg-mid leading-none mt-0.5">
-                        -{leaderPoints - row.points}
-                      </div>
-                    )}
                   </td>
                 </tr>
               );
