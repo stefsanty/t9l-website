@@ -73,9 +73,9 @@ export default function RsvpButton({ matchdayId, initialStatus }: RsvpButtonProp
           const isActive = status === value;
           const activeStyles =
             value === 'GOING'
-              ? 'bg-electric-green/20 text-electric-green border-electric-green/50 shadow-[0_0_15px_rgba(0,255,133,0.15)]'
+              ? 'bg-success/15 text-success border-success/40'
               : value === 'UNDECIDED'
-              ? 'bg-yellow-400/15 text-yellow-400 border-yellow-400/40 shadow-[0_0_15px_rgba(250,204,21,0.1)]'
+              ? 'bg-warning/15 text-warning border-warning/40'
               : 'bg-vibrant-pink/15 text-vibrant-pink border-vibrant-pink/30 shadow-[0_0_15px_rgba(233,0,82,0.1)]';
 
           return (
