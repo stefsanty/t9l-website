@@ -7,6 +7,12 @@ import Image from 'next/image';
 import Link from 'next/link';
 
 const GUEST_DISMISSED_KEY = 't9l-guest-dismissed';
+const INSTALL_DISMISSED_KEY = 't9l-install-dismissed';
+
+interface BeforeInstallPromptEvent extends Event {
+  prompt(): Promise<void>;
+  userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
+}
 
 function LineIcon({ className = 'w-4 h-4' }: { className?: string }) {
   return (
@@ -65,11 +71,130 @@ function AssignModal({ onDismiss }: { onDismiss: () => void }) {
   );
 }
 
+function InstallModal({
+  isIOS,
+  deferredPrompt,
+  onDismiss,
+}: {
+  isIOS: boolean;
+  deferredPrompt: BeforeInstallPromptEvent | null;
+  onDismiss: (dontShowAgain: boolean) => void;
+}) {
+  const [dontShowAgain, setDontShowAgain] = useState(false);
+
+  async function handleInstall() {
+    if (deferredPrompt) {
+      await deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      if (outcome === 'accepted') {
+        onDismiss(true);
+        return;
+      }
+    }
+    onDismiss(dontShowAgain);
+  }
+
+  return (
+    <div className="fixed inset-0 z-[200] flex items-center justify-center px-5">
+      {/* Backdrop */}
+      <div
+        className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+        onClick={() => onDismiss(dontShowAgain)}
+      />
+
+      {/* Card */}
+      <div className="relative w-full max-w-sm mx-auto bg-card border border-border-default rounded-3xl overflow-hidden shadow-2xl animate-in">
+        <div className="px-7 pt-5 pb-8">
+          {/* Icon */}
+          <div className="w-14 h-14 rounded-2xl bg-electric-green/10 border border-electric-green/20 flex items-center justify-center mb-5">
+            <svg className="w-7 h-7 text-electric-green" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+            </svg>
+          </div>
+
+          <h2 className="font-display text-3xl font-black uppercase tracking-tight text-fg-high leading-tight">
+            {"Add to Home Screen"}
+          </h2>
+          <p className="text-sm text-fg-mid mt-2 leading-relaxed">
+            {"Install T9L on your phone for quick access to match info, RSVP, and standings — no browser needed."}
+          </p>
+
+          {isIOS ? (
+            /* iOS instructions */
+            <div className="mt-6 bg-surface rounded-2xl px-4 py-4 text-sm text-fg-mid space-y-2">
+              <p className="font-bold text-fg-high text-[13px]">{"To install on iPhone / iPad:"}</p>
+              <div className="flex items-start gap-2">
+                <span className="text-electric-green font-black shrink-0">1.</span>
+                <span>{"Tap the "}<span className="font-bold text-fg-high">{"Share"}</span>{" button "}<span className="inline-block">{"⎙"}</span>{" at the bottom of Safari"}</span>
+              </div>
+              <div className="flex items-start gap-2">
+                <span className="text-electric-green font-black shrink-0">2.</span>
+                <span>{"Scroll down and tap "}<span className="font-bold text-fg-high">{"Add to Home Screen"}</span></span>
+              </div>
+              <div className="flex items-start gap-2">
+                <span className="text-electric-green font-black shrink-0">3.</span>
+                <span>{"Tap "}<span className="font-bold text-fg-high">{"Add"}</span>{" to confirm"}</span>
+              </div>
+            </div>
+          ) : (
+            /* Android / Desktop install button */
+            <button
+              onClick={handleInstall}
+              className="flex items-center justify-center gap-2 w-full mt-6 py-4 rounded-2xl bg-electric-green text-black font-display text-lg font-black uppercase tracking-wider hover:bg-electric-green/90 active:scale-[0.98] transition-all"
+            >
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+              {"Install App"}
+            </button>
+          )}
+
+          {/* Don't show again */}
+          <label className="flex items-center gap-2 mt-5 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={dontShowAgain}
+              onChange={(e) => setDontShowAgain(e.target.checked)}
+              className="w-4 h-4 rounded accent-electric-green"
+            />
+            <span className="text-[13px] text-fg-mid">{"Don't show this again"}</span>
+          </label>
+
+          {/* Dismiss */}
+          <button
+            onClick={() => onDismiss(dontShowAgain)}
+            className="w-full mt-3 text-[13px] text-fg-mid hover:text-fg-high transition-colors py-2"
+          >
+            {"Maybe later"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function LineLoginButton() {
     const { data: session, status } = useSession();
   const [open, setOpen] = useState(false);
   const [showAssignModal, setShowAssignModal] = useState(false);
+  const [showInstallModal, setShowInstallModal] = useState(false);
+  const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
+  const [isIOS, setIsIOS] = useState(false);
+  const [isStandalone, setIsStandalone] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+
+  // Detect platform and capture install prompt
+  useEffect(() => {
+    setIsStandalone(window.matchMedia('(display-mode: standalone)').matches);
+    setIsIOS(/iphone|ipad|ipod/i.test(navigator.userAgent));
+
+    const handler = (e: Event) => {
+      e.preventDefault();
+      setDeferredPrompt(e as BeforeInstallPromptEvent);
+    };
+    window.addEventListener('beforeinstallprompt', handler);
+    return () => window.removeEventListener('beforeinstallprompt', handler);
+  }, []);
 
   // Show the assign modal on first login (no player assigned, not previously dismissed)
   useEffect(() => {
@@ -80,6 +205,22 @@ export default function LineLoginButton() {
       }
     }
   }, [status, session?.playerId]);
+
+  // Show install modal for authenticated users who haven't dismissed it
+  useEffect(() => {
+    if (status !== 'authenticated') return;
+    if (isStandalone) return;
+    if (localStorage.getItem(INSTALL_DISMISSED_KEY)) return;
+    if (deferredPrompt || isIOS) {
+      setShowInstallModal(true);
+    }
+  }, [status, deferredPrompt, isIOS, isStandalone]);
+
+  function handleInstallDismiss(dontShowAgain: boolean) {
+    if (dontShowAgain) localStorage.setItem(INSTALL_DISMISSED_KEY, '1');
+    setShowInstallModal(false);
+    setDeferredPrompt(null);
+  }
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -183,6 +324,16 @@ export default function LineLoginButton() {
         document.body,
       )}
 
+      {/* Install app modal */}
+      {showInstallModal && !showAssignModal && createPortal(
+        <InstallModal
+          isIOS={isIOS}
+          deferredPrompt={deferredPrompt}
+          onDismiss={handleInstallDismiss}
+        />,
+        document.body,
+      )}
+
       <div className="relative" ref={ref}>
         <button
           onClick={() => setOpen(!open)}
@@ -243,6 +394,18 @@ export default function LineLoginButton() {
                 </svg>
                 {"Change/Unassign player"}
               </Link>
+            )}
+
+            {!isStandalone && (deferredPrompt || isIOS) && (
+              <button
+                onClick={() => { setOpen(false); setShowInstallModal(true); }}
+                className="w-full flex items-center gap-2 px-4 py-3 text-[12px] font-bold text-fg-high hover:text-fg-mid hover:bg-surface transition-colors"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+                </svg>
+                {"Add to Home Screen"}
+              </button>
             )}
 
             <button
