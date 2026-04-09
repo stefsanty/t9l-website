@@ -47,6 +47,7 @@ export default function RsvpBar({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
+  const [hasInteracted, setHasInteracted] = useState(false);
 
   if (!session?.playerId || !session?.teamId || !userTeamIsPlaying || isCompleted || !userTeam) {
     return null;
@@ -56,6 +57,7 @@ export default function RsvpBar({
     if (next === status || loading) return;
     const prev = status;
     setStatus(next);
+    setHasInteracted(true);
     setLoading(true);
     setError(false);
 
@@ -76,7 +78,7 @@ export default function RsvpBar({
     }
   }
 
-  const isUnanswered = status === '';
+  const isUnanswered = status === '' && !hasInteracted;
   const colorName = COLOR_NAMES[userTeam.id] ?? userTeam.color;
 
   const userFirstMatch = matchday.matches
@@ -97,11 +99,11 @@ export default function RsvpBar({
           {/* Header */}
           <div className="flex items-center gap-3 mb-3">
             <div className="flex items-center gap-2 min-w-0">
-              <span className="text-xs font-black uppercase tracking-[0.2em] text-fg-high whitespace-nowrap">
+              <span className="text-sm font-black uppercase tracking-[0.2em] text-fg-high whitespace-nowrap">
                 {matchday.label}
               </span>
-              <span className="text-xs font-black text-fg-low">·</span>
-              <span className="text-xs font-black uppercase tracking-[0.15em] text-fg-high">
+              <span className="text-sm font-black text-fg-low">·</span>
+              <span className="text-sm font-black uppercase tracking-[0.15em] text-fg-high">
                 Are you coming?
               </span>
             </div>
@@ -127,7 +129,7 @@ export default function RsvpBar({
                   key={value}
                   onClick={() => select(value)}
                   disabled={loading}
-                  className={`flex-1 py-4 rounded-2xl text-sm font-black uppercase tracking-wider transition-all border disabled:opacity-50 active:scale-95 ${
+                  className={`flex-1 py-4 rounded-2xl text-base font-black uppercase tracking-wider transition-all border disabled:opacity-50 active:scale-95 ${
                     isActive
                       ? activeStyles
                       : 'bg-surface-md text-fg-high border-border-default hover:bg-surface-md hover:border-border-default'
