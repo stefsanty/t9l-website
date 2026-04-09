@@ -41,8 +41,8 @@ export default function Dashboard({
     <div className="flex flex-col min-h-dvh pb-0 max-w-lg mx-auto bg-background selection:bg-vibrant-pink selection:text-white">
       <Header />
 
-      <main className="flex-1 px-4 relative z-10 pt-16 pb-12">
-        <div className="animate-in pt-4">
+      <main className="flex-1 px-4 relative z-10 pt-12 pb-2">
+        <div className="animate-in pt-2">
           {nextMd ? (
             <>
               <GuestLoginBanner />
@@ -74,7 +74,7 @@ export default function Dashboard({
         </div>
       </main>
 
-      <footer className="mt-8 mb-6 text-center px-4 pb-8">
+      <footer className="mt-3 mb-0 text-center px-4 pb-2">
         <p className="text-[10px] font-black uppercase tracking-[0.3em] text-fg-low">
           © 2026 Tennozu 9-Aside League • Tokyo
         </p>

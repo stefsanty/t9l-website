@@ -167,7 +167,7 @@ export default function NextMatchdayBanner({
       </div>
 
       {/* Dot indicators */}
-      <div className="flex justify-center items-center gap-1.5 mt-3">
+      <div className="flex justify-center items-center gap-1.5 mt-1.5">
         {matchdays.map((md, i) => (
           <button
             key={md.id}
@@ -183,7 +183,7 @@ export default function NextMatchdayBanner({
       </div>
 
       {/* See full schedule */}
-      <div className="mt-3 text-center">
+      <div className="mt-1 text-center">
         <Link
           href="/schedule"
           className="text-[10px] font-black uppercase tracking-[0.2em] text-fg-mid hover:text-vibrant-pink transition-colors group/link inline-flex items-center justify-center gap-1.5"

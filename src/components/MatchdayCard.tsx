@@ -129,7 +129,7 @@ export default function MatchdayCard({
         <div className="absolute inset-0 bg-gradient-to-b from-black/60 to-black/15 pointer-events-none z-10" />
       )}
 
-      <div className="p-7 pb-6 relative">
+      <div className="p-5 pb-4 relative">
         <div className={`transition-opacity duration-500 ${isSittingOut ? 'opacity-40' : ''}`}>
           <div className="flex justify-between items-start mb-1">
             <span className="text-[10px] font-black uppercase tracking-[0.25em] text-fg-high">
@@ -137,16 +137,16 @@ export default function MatchdayCard({
             </span>
           </div>
 
-          <div className="mb-4">
+          <div className="mb-2">
             <h2 className="font-display text-4xl font-black uppercase tracking-tighter text-fg-high leading-tight">
               {matchday.label} - {matchday.date ? formatMatchDate(matchday.date) : 'TBD'}
             </h2>
             {showCountdown && (
-              <div className="mt-1 mb-1">
+              <div className="mt-0.5">
                 <MatchdayCountdown matchday={matchday} />
               </div>
             )}
-            <div className="flex items-center gap-2 mt-1">
+            <div className="flex items-center gap-2 mt-0.5">
               <a
                 href={venueUrl}
                 target="_blank"
@@ -171,7 +171,7 @@ export default function MatchdayCard({
 
         {/* RSVP button */}
         {showRsvp && userTeamIsPlaying && userPlayerId && !isCompleted && (
-          <div className="mt-6 mb-2 relative z-20">
+          <div className="mt-3 mb-1 relative z-20">
             <RsvpButton
               key={matchday.id}
               matchdayId={matchday.id}
@@ -189,10 +189,10 @@ export default function MatchdayCard({
           </div>
         )}
 
-        <div className={`h-[1px] w-full bg-surface-md my-6 ${isSittingOut ? 'opacity-40' : ''}`} />
+        <div className={`h-[1px] w-full bg-surface-md my-3 ${isSittingOut ? 'opacity-40' : ''}`} />
 
         {/* Matches */}
-        <div className={`space-y-4 transition-opacity duration-500 ${isSittingOut ? 'opacity-40' : ''}`}>
+        <div className={`space-y-2 transition-opacity duration-500 ${isSittingOut ? 'opacity-40' : ''}`}>
           {matchday.matches.map((match, idx) => {
             const home = getTeam(match.homeTeamId);
             const away = getTeam(match.awayTeamId);

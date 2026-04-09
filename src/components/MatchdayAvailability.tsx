@@ -116,8 +116,8 @@ function TeamFormation({
   ];
 
   return (
-    <div className="mt-3">
-      <div className="flex justify-between items-center mb-2">
+    <div className="mt-2">
+      <div className="flex justify-between items-center mb-1">
         <span className="text-[9px] font-black uppercase tracking-widest text-fg-low">{"LINEUP"}</span>
         <div className="flex gap-1">
           {FORMATIONS.map((f) => {
@@ -240,15 +240,15 @@ export default function MatchdayAvailability({
     if (!anyPlayed) return null;
 
     return (
-      <section className="mt-4 mb-12 animate-in">
-        <div className="flex items-center gap-3 mb-3">
+      <section className="mt-3 mb-3 animate-in">
+        <div className="flex items-center gap-3 mb-2">
           <h3 className="text-[11px] font-black uppercase tracking-[0.2em] text-fg-mid">
             {"Who Played"}
           </h3>
           <div className="h-[1px] flex-1 bg-surface-md" />
         </div>
 
-        <div className="grid gap-3">
+        <div className="grid gap-2">
           {playingTeams.map((team) => {
             const playedIds = mdPlayed[team.id] || [];
             const isExpanded = expandedTeams.has(team.id);
@@ -262,7 +262,7 @@ export default function MatchdayAvailability({
               >
                 <button
                   onClick={() => toggleTeam(team.id)}
-                  className="w-full flex items-center justify-between px-4 py-3 text-left"
+                  className="w-full flex items-center justify-between px-4 py-2 text-left"
                 >
                   <div className="flex items-center gap-3">
                     <div className="w-3 h-3 rounded-full" style={{ backgroundColor: team.color }} />
