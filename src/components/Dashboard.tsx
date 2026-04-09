@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useSession } from 'next-auth/react';
 import type {
   Team, Player, Matchday, Goal, Availability, AvailabilityStatuses, PlayedStatus,
 } from '@/types';
@@ -8,6 +9,7 @@ import NextMatchdayBanner from './NextMatchdayBanner';
 import GuestLoginBanner from './GuestLoginBanner';
 import MatchdayAvailability from './MatchdayAvailability';
 import Header from './Header';
+import RsvpBar from './RsvpBar';
 
 interface DashboardProps {
   teams: Team[];
@@ -30,6 +32,7 @@ export default function Dashboard({
   played,
   nextMd,
 }: DashboardProps) {
+  const { data: session } = useSession();
   const [selectedMatchdayId, setSelectedMatchdayId] = useState(
     nextMd?.matchday.id ?? matchdays[0]?.id ?? ''
   );
@@ -37,11 +40,23 @@ export default function Dashboard({
   const selectedMatchday =
     matchdays.find((m) => m.id === selectedMatchdayId) ?? matchdays[0];
 
+  const userTeamId = session?.teamId ?? null;
+  const userPlayerId = session?.playerId ?? null;
+  const userTeam = userTeamId ? (teams.find((t) => t.id === userTeamId) ?? null) : null;
+  const userTeamIsPlaying = !!(userTeamId && selectedMatchday && selectedMatchday.sittingOutTeamId !== userTeamId);
+  const isCompleted = !!(selectedMatchday && selectedMatchday.matches[0].homeGoals !== null);
+  const userRsvpStatus: 'GOING' | 'UNDECIDED' | 'Y' | 'EXPECTED' | '' =
+    (userPlayerId && userTeamId && selectedMatchday
+      ? availabilityStatuses?.[selectedMatchday.id]?.[userTeamId]?.[userPlayerId] ?? ''
+      : '') as 'GOING' | 'UNDECIDED' | 'Y' | 'EXPECTED' | '';
+
+  const showRsvpBar = !!(session?.playerId && userTeamIsPlaying && !isCompleted);
+
   return (
     <div className="flex flex-col min-h-dvh pb-0 max-w-lg mx-auto bg-background selection:bg-vibrant-pink selection:text-white">
       <Header />
 
-      <main className="flex-1 px-4 relative z-10 pt-12 pb-2">
+      <main className={`flex-1 px-4 relative z-10 pt-12 ${showRsvpBar ? 'pb-32' : 'pb-2'}`}>
         <div className="animate-in pt-2">
           {nextMd ? (
             <>
@@ -52,7 +67,6 @@ export default function Dashboard({
                 onMatchdayChange={setSelectedMatchdayId}
                 teams={teams}
                 goals={goals}
-                availabilityStatuses={availabilityStatuses}
               />
               <MatchdayAvailability
                 key={selectedMatchdayId}
@@ -79,6 +93,16 @@ export default function Dashboard({
           © 2026 Tennozu 9-Aside League • Tokyo
         </p>
       </footer>
+
+      {selectedMatchday && (
+        <RsvpBar
+          matchday={selectedMatchday}
+          initialStatus={userRsvpStatus}
+          userTeam={userTeam}
+          userTeamIsPlaying={userTeamIsPlaying}
+          isCompleted={isCompleted}
+        />
+      )}
     </div>
   );
 }

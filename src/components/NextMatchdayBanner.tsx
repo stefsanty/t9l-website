@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import Link from 'next/link';
-import type { Matchday, Team, Goal, AvailabilityStatuses } from '@/types';
+import type { Matchday, Team, Goal } from '@/types';
 import MatchdayCard from './MatchdayCard';
 
 interface NextMatchdayBannerProps {
@@ -12,7 +12,6 @@ interface NextMatchdayBannerProps {
   onMatchdayChange: (id: string) => void;
   teams: Team[];
   goals: Goal[];
-  availabilityStatuses: AvailabilityStatuses;
 }
 
 export default function NextMatchdayBanner({
@@ -21,7 +20,6 @@ export default function NextMatchdayBanner({
   onMatchdayChange,
   teams,
   goals,
-  availabilityStatuses,
 }: NextMatchdayBannerProps) {
   const { data: session, status } = useSession();
   const [hasDefaulted, setHasDefaulted] = useState(false);
@@ -144,11 +142,8 @@ export default function NextMatchdayBanner({
             teams={teams}
             goals={goals}
             userTeamId={session?.teamId}
-            userPlayerId={session?.playerId}
             isUserNextMatchday={isUserNextMatchday}
             showCountdown
-            showRsvp
-            availabilityStatuses={availabilityStatuses}
           />
         </div>
 

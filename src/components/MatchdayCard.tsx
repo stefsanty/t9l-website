@@ -1,7 +1,6 @@
 import Image from 'next/image';
 import Link from 'next/link';
-import type { Matchday, Team, Goal, AvailabilityStatuses } from '@/types';
-import RsvpButton from './RsvpButton';
+import type { Matchday, Team, Goal } from '@/types';
 import MatchdayCountdown from './MatchdayCountdown';
 
 const DEFAULT_VENUE_NAME = 'Tennozu Park C';
@@ -73,15 +72,11 @@ export interface MatchdayCardProps {
   teams: Team[];
   goals: Goal[];
   userTeamId?: string | null;
-  userPlayerId?: string | null;
   isUserNextMatchday?: boolean;
   /** Show live countdown timer in the header. Default: false */
   showCountdown?: boolean;
-  /** Show RSVP button when the user's team is playing and the match isn't played. Default: false */
-  showRsvp?: boolean;
   /** Show "See full schedule" link at the bottom of the card. Default: false */
   showScheduleLink?: boolean;
-  availabilityStatuses?: AvailabilityStatuses;
 }
 
 export default function MatchdayCard({
@@ -89,12 +84,9 @@ export default function MatchdayCard({
   teams,
   goals,
   userTeamId,
-  userPlayerId,
   isUserNextMatchday = false,
   showCountdown = false,
-  showRsvp = false,
   showScheduleLink = false,
-  availabilityStatuses,
 }: MatchdayCardProps) {
   const isCompleted = matchday.matches[0].homeGoals !== null;
   const venueName = matchday.venueName ?? DEFAULT_VENUE_NAME;
@@ -103,18 +95,12 @@ export default function MatchdayCard({
   const getTeam = (id: string) => teams.find((t) => t.id === id);
   const sittingOutTeam = getTeam(matchday.sittingOutTeamId);
   const isSittingOut = userTeamId && userTeamId === matchday.sittingOutTeamId;
-  const userTeamIsPlaying = userTeamId && matchday.sittingOutTeamId !== userTeamId;
 
   const eyebrow = isUserNextMatchday
     ? 'YOUR NEXT MATCHDAY'
     : isCompleted
     ? 'MATCHDAY RESULTS'
     : 'MATCHDAY DETAILS';
-
-  const userRawStatus =
-    userPlayerId && userTeamId
-      ? availabilityStatuses?.[matchday.id]?.[userTeamId]?.[userPlayerId] ?? ''
-      : '';
 
   return (
     <div className={`pl-card rounded-3xl overflow-hidden relative group transition-all duration-500 ${
@@ -168,17 +154,6 @@ export default function MatchdayCard({
             </div>
           </div>
         </div>
-
-        {/* RSVP button */}
-        {showRsvp && userTeamIsPlaying && userPlayerId && !isCompleted && (
-          <div className="mt-3 mb-1 relative z-20">
-            <RsvpButton
-              key={matchday.id}
-              matchdayId={matchday.id}
-              initialStatus={userRawStatus as 'GOING' | 'UNDECIDED' | 'Y' | 'EXPECTED' | ''}
-            />
-          </div>
-        )}
 
         {/* Sitting out notice badge */}
         {isSittingOut && (
