@@ -167,7 +167,15 @@ export default function MatchdayCard({
         <div className={`h-[1px] w-full bg-surface-md my-3 ${isSittingOut ? 'opacity-40' : ''}`} />
 
         {/* Matches */}
-        <div className={`space-y-2 transition-opacity duration-500 ${isSittingOut ? 'opacity-40' : ''}`}>
+        <div className={`transition-opacity duration-500 ${isSittingOut ? 'opacity-40' : ''}`}>
+          {/* Column header */}
+          <div className="flex justify-center mb-1.5">
+            <span className="text-[8px] font-black uppercase tracking-widest text-fg-mid">
+              {isCompleted ? 'FT' : 'Kickoff Time'}
+            </span>
+          </div>
+
+          <div className="space-y-2">
           {matchday.matches.map((match, idx) => {
             const home = getTeam(match.homeTeamId);
             const away = getTeam(match.awayTeamId);
@@ -198,31 +206,21 @@ export default function MatchdayCard({
                     </div>
                   </div>
 
-                  <div className="flex flex-col items-center px-4">
+                  <div className="flex items-center px-4">
                     {!isPlayed ? (
-                      <>
-                        {idx === 0 && (
-                          <span className="text-[8px] font-black uppercase tracking-widest text-fg-mid mb-1.5">{'Kickoff Time'}</span>
-                        )}
-                        <span className={`font-display text-xl font-black tracking-tighter px-3 py-1 rounded-lg border transition-all ${isUserMatch ? 'text-tertiary bg-tertiary/10 border-tertiary/30' : 'text-fg-high bg-surface border-border-subtle'}`}>
-                          {match.kickoff}
-                        </span>
-                      </>
+                      <span className={`font-display text-xl font-black tracking-tighter px-3 py-1 rounded-lg border transition-all ${isUserMatch ? 'text-tertiary bg-tertiary/10 border-tertiary/30' : 'text-fg-high bg-surface border-border-subtle'}`}>
+                        {match.kickoff}
+                      </span>
                     ) : (
-                      <>
-                        {idx === 0 && (
-                          <span className="text-[8px] font-black uppercase tracking-widest text-fg-mid mb-0.5">{'FT'}</span>
-                        )}
-                        <div className="flex items-center gap-3">
-                          <span className={`font-display text-3xl font-black ${isUserHome ? 'text-tertiary' : 'text-fg-high'}`}>
-                            {match.homeGoals}
-                          </span>
-                          <div className="w-4 h-[2px] bg-surface-md" />
-                          <span className={`font-display text-3xl font-black ${isUserAway ? 'text-tertiary' : 'text-fg-high'}`}>
-                            {match.awayGoals}
-                          </span>
-                        </div>
-                      </>
+                      <div className="flex items-center gap-3">
+                        <span className={`font-display text-3xl font-black ${isUserHome ? 'text-tertiary' : 'text-fg-high'}`}>
+                          {match.homeGoals}
+                        </span>
+                        <div className="w-4 h-[2px] bg-surface-md" />
+                        <span className={`font-display text-3xl font-black ${isUserAway ? 'text-tertiary' : 'text-fg-high'}`}>
+                          {match.awayGoals}
+                        </span>
+                      </div>
                     )}
                   </div>
 
@@ -257,6 +255,7 @@ export default function MatchdayCard({
               </div>
             );
           })}
+          </div>
 
           {sittingOutTeam && (
             <div className="pt-2 flex items-center gap-2">
