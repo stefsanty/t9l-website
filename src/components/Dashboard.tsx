@@ -96,7 +96,7 @@ export default function Dashboard({
 
       {selectedMatchday && (
         <RsvpBar
-          key={selectedMatchday.id}
+          key={`${selectedMatchday.id}-${session?.playerId ?? 'anon'}`}
           matchday={selectedMatchday}
           initialStatus={userRsvpStatus}
           userTeam={userTeam}
