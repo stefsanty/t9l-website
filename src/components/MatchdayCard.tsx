@@ -158,7 +158,7 @@ export default function MatchdayCard({
         {/* Sitting out notice badge */}
         {isSittingOut && (
           <div className="relative z-20 mb-4">
-            <p className="text-[10px] font-black text-vibrant-pink uppercase tracking-widest bg-vibrant-pink/10 px-3 py-2 rounded-xl border border-vibrant-pink/20 inline-block">
+            <p className="text-[10px] font-black text-primary uppercase tracking-widest bg-vibrant-pink/10 px-3 py-2 rounded-xl border border-vibrant-pink/20 inline-block">
               {'You are not scheduled to play on this matchday'}
             </p>
           </div>
