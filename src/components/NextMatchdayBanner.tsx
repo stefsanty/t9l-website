@@ -171,7 +171,7 @@ export default function NextMatchdayBanner({
             className={`rounded-full transition-all duration-200 ${
               i === currentIndex
                 ? 'w-4 h-1.5 bg-primary'
-                : 'w-1.5 h-1.5 bg-white/20 hover:bg-white/40'
+                : 'w-1.5 h-1.5 bg-fg-low hover:bg-fg-mid'
             }`}
           />
         ))}
