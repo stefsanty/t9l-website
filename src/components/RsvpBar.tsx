@@ -47,7 +47,7 @@ export default function RsvpBar({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
-  const [hasInteracted, setHasInteracted] = useState(false);
+  const [showOptions, setShowOptions] = useState(false);
 
   if (!session?.playerId || !session?.teamId || !userTeamIsPlaying || isCompleted || !userTeam) {
     return null;
@@ -57,7 +57,7 @@ export default function RsvpBar({
     if (next === status || loading) return;
     const prev = status;
     setStatus(next);
-    setHasInteracted(true);
+    setShowOptions(false);
     setLoading(true);
     setError(false);
 
@@ -78,68 +78,107 @@ export default function RsvpBar({
     }
   }
 
-  const isUnanswered = status === '' && !hasInteracted;
   const colorName = COLOR_NAMES[userTeam.id] ?? userTeam.color;
-
   const userFirstMatch = matchday.matches
     .filter((m) => m.homeTeamId === session.teamId || m.awayTeamId === session.teamId)
     .sort((a, b) => a.kickoff.localeCompare(b.kickoff))[0];
 
-  const options: { value: RsvpStatus; label: string }[] = [
-    { value: 'GOING', label: 'Going' },
-    { value: 'UNDECIDED', label: 'Undecided' },
-    { value: '', label: 'Not going' },
-  ];
+  const isGoing = status === 'GOING';
 
   return (
     <>
       {/* Sticky bottom bar */}
-      <div className={`fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-lg z-40 ${isUnanswered ? 'animate-pulse' : ''}`}>
-        <div className="mx-0 px-4 pt-3 pb-5 bg-background border-t-2 border-primary/60">
-          {/* Header */}
-          <div className="flex items-center gap-3 mb-3">
-            <div className="flex items-center gap-2 min-w-0">
-              <span className="text-sm font-black uppercase tracking-[0.2em] text-fg-high whitespace-nowrap">
-                {matchday.label}
-              </span>
-              <span className="text-sm font-black text-fg-low">·</span>
-              <span className="text-sm font-black uppercase tracking-[0.15em] text-fg-high">
-                Are you coming?
-              </span>
+      <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-lg z-40">
+        <div className="px-4 pt-3 pb-5 bg-background border-t-2 border-primary/60">
+
+          {isGoing && !showOptions ? (
+            /* ── You're Going state ── */
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2 min-w-0">
+                <svg className="w-5 h-5 text-success shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                </svg>
+                <span className="text-base font-black text-success uppercase tracking-wide">You're Going</span>
+                <span className="text-sm font-black text-fg-low">·</span>
+                <span className="text-sm font-black text-fg-mid uppercase tracking-wide truncate">{matchday.label}</span>
+              </div>
+              <button
+                onClick={() => setShowOptions(true)}
+                className="text-xs font-bold text-fg-mid underline underline-offset-2 decoration-fg-low hover:text-fg-high transition-colors shrink-0 whitespace-nowrap"
+              >
+                edit attendance
+              </button>
             </div>
-            <div className="h-[1px] flex-1 bg-surface-md" />
-            {loading && (
-              <span className="w-3.5 h-3.5 border-2 border-border-default border-t-fg-mid rounded-full animate-spin shrink-0" />
-            )}
-          </div>
+          ) : (
+            /* ── Join state (or editing) ── */
+            <>
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-sm font-black uppercase tracking-[0.15em] text-fg-high">
+                  {matchday.label}
+                </span>
+                <span className="text-sm font-black text-fg-low">·</span>
+                <span className="text-sm font-black uppercase tracking-[0.1em] text-fg-mid">
+                  {isGoing ? 'Change attendance' : 'Are you coming?'}
+                </span>
+                <div className="h-[1px] flex-1 bg-surface-md" />
+                {loading && (
+                  <span className="w-3.5 h-3.5 border-2 border-border-default border-t-fg-mid rounded-full animate-spin shrink-0" />
+                )}
+              </div>
 
-          {/* Buttons */}
-          <div className="flex gap-2">
-            {options.map(({ value, label }) => {
-              const isActive = status === value;
-              const activeStyles =
-                value === 'GOING'
-                  ? 'bg-success/20 text-success border-success/60'
-                  : value === 'UNDECIDED'
-                  ? 'bg-warning/20 text-warning border-warning/60'
-                  : 'bg-vibrant-pink/20 text-vibrant-pink border-vibrant-pink/50';
-
-              return (
+              {/* Join + dropdown toggle */}
+              <div className="flex gap-1">
                 <button
-                  key={value}
-                  onClick={() => select(value)}
+                  onClick={() => select('GOING')}
                   disabled={loading}
-                  className={`flex-1 py-4 rounded-2xl text-base font-black uppercase tracking-wider transition-all border disabled:opacity-50 active:scale-95 ${
-                    isActive
-                      ? activeStyles
-                      : 'bg-surface-md text-fg-high border-border-default hover:bg-surface-md hover:border-border-default'
-                  }`}
+                  className="flex-1 py-4 rounded-2xl text-base font-black uppercase tracking-wider bg-primary text-white border border-primary transition-all disabled:opacity-50 active:scale-95 hover:bg-primary/90"
                 >
-                  {label}
+                  Join
                 </button>
-              );
-            })}
-          </div>
+                <button
+                  onClick={() => setShowOptions((v) => !v)}
+                  disabled={loading}
+                  className="w-14 rounded-2xl bg-surface-md border border-border-default text-fg-mid transition-all disabled:opacity-50 active:scale-95 hover:bg-surface hover:text-fg-high flex items-center justify-center"
+                  aria-label="More options"
+                >
+                  <svg
+                    className={`w-4 h-4 transition-transform duration-200 ${showOptions ? 'rotate-180' : ''}`}
+                    fill="none" viewBox="0 0 24 24" stroke="currentColor"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+              </div>
+            </>
+          )}
+
+          {/* Dropdown options (Undecided / Not going) */}
+          {showOptions && (
+            <div className="flex gap-2 mt-2">
+              <button
+                onClick={() => select('UNDECIDED')}
+                disabled={loading}
+                className={`flex-1 py-3 rounded-2xl text-sm font-black uppercase tracking-wider border transition-all disabled:opacity-50 active:scale-95 ${
+                  status === 'UNDECIDED'
+                    ? 'bg-warning/20 text-warning border-warning/60'
+                    : 'bg-surface-md text-fg-high border-border-default hover:border-warning/40 hover:text-warning'
+                }`}
+              >
+                Undecided
+              </button>
+              <button
+                onClick={() => select('')}
+                disabled={loading}
+                className={`flex-1 py-3 rounded-2xl text-sm font-black uppercase tracking-wider border transition-all disabled:opacity-50 active:scale-95 ${
+                  status === '' && !isGoing
+                    ? 'bg-vibrant-pink/20 text-vibrant-pink border-vibrant-pink/50'
+                    : 'bg-surface-md text-fg-high border-border-default hover:border-vibrant-pink/40 hover:text-vibrant-pink'
+                }`}
+              >
+                Not going
+              </button>
+            </div>
+          )}
 
           {error && (
             <p className="text-vibrant-pink text-[11px] mt-2 text-center">
@@ -159,7 +198,6 @@ export default function RsvpBar({
             className="bg-card rounded-3xl p-6 w-full max-w-xs mt-[20vh] shadow-xl border border-border-default"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Check icon */}
             <div className="flex justify-center mb-4">
               <div className="w-14 h-14 rounded-full bg-success/15 border border-success/40 flex items-center justify-center">
                 <svg className="w-7 h-7 text-success" fill="none" viewBox="0 0 24 24" stroke="currentColor">
