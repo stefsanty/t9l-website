@@ -95,7 +95,7 @@ function InstallBanner({
   }
 
   return (
-    <div className="fixed top-0 inset-x-0 z-[200] flex justify-center px-3 pt-3">
+    <div className="fixed top-0 inset-x-0 z-[200] flex justify-center px-3 pt-3 sm:hidden">
       <div className="w-full max-w-sm bg-card border border-border-default rounded-2xl shadow-2xl overflow-hidden">
         <div className="px-4 pt-4 pb-3">
           {/* Header row */}
