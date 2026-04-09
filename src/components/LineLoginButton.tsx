@@ -71,7 +71,7 @@ function AssignModal({ onDismiss }: { onDismiss: () => void }) {
   );
 }
 
-function InstallModal({
+function InstallBanner({
   isIOS,
   deferredPrompt,
   onDismiss,
@@ -95,54 +95,46 @@ function InstallModal({
   }
 
   return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center px-5">
-      {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-black/70 backdrop-blur-sm"
-        onClick={() => onDismiss(dontShowAgain)}
-      />
-
-      {/* Card */}
-      <div className="relative w-full max-w-sm mx-auto bg-card border border-border-default rounded-3xl overflow-hidden shadow-2xl animate-in">
-        <div className="px-7 pt-5 pb-8">
-          {/* Icon */}
-          <div className="w-14 h-14 rounded-2xl bg-electric-green/10 border border-electric-green/20 flex items-center justify-center mb-5">
-            <svg className="w-7 h-7 text-electric-green" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-            </svg>
+    <div className="fixed top-0 inset-x-0 z-[200] flex justify-center px-3 pt-3">
+      <div className="w-full max-w-sm bg-card border border-border-default rounded-2xl shadow-2xl overflow-hidden">
+        <div className="px-4 pt-4 pb-3">
+          {/* Header row */}
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-xl bg-electric-green/10 border border-electric-green/20 flex items-center justify-center shrink-0">
+              <svg className="w-4 h-4 text-electric-green" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+              </svg>
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="font-display text-sm font-black uppercase tracking-tight text-fg-high leading-none">{"Add to Home Screen"}</p>
+              <p className="text-[11px] text-fg-mid mt-0.5 leading-tight">{"Install T9L for quick access — no browser needed."}</p>
+            </div>
+            <button
+              onClick={() => onDismiss(dontShowAgain)}
+              className="shrink-0 w-6 h-6 flex items-center justify-center rounded-full text-fg-mid hover:text-fg-high hover:bg-surface transition-colors"
+              aria-label="Dismiss"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
           </div>
 
-          <h2 className="font-display text-3xl font-black uppercase tracking-tight text-fg-high leading-tight">
-            {"Add to Home Screen"}
-          </h2>
-          <p className="text-sm text-fg-mid mt-2 leading-relaxed">
-            {"Install T9L on your phone for quick access to match info, RSVP, and standings — no browser needed."}
-          </p>
-
+          {/* iOS instructions or install button */}
           {isIOS ? (
-            /* iOS instructions */
-            <div className="mt-6 bg-surface rounded-2xl px-4 py-4 text-sm text-fg-mid space-y-2">
-              <p className="font-bold text-fg-high text-[13px]">{"To install on iPhone / iPad:"}</p>
-              <div className="flex items-start gap-2">
-                <span className="text-electric-green font-black shrink-0">1.</span>
-                <span>{"Tap the "}<span className="font-bold text-fg-high">{"Share"}</span>{" button "}<span className="inline-block">{"⎙"}</span>{" at the bottom of Safari"}</span>
-              </div>
-              <div className="flex items-start gap-2">
-                <span className="text-electric-green font-black shrink-0">2.</span>
-                <span>{"Scroll down and tap "}<span className="font-bold text-fg-high">{"Add to Home Screen"}</span></span>
-              </div>
-              <div className="flex items-start gap-2">
-                <span className="text-electric-green font-black shrink-0">3.</span>
-                <span>{"Tap "}<span className="font-bold text-fg-high">{"Add"}</span>{" to confirm"}</span>
-              </div>
-            </div>
+            <p className="text-[11px] text-fg-mid mt-3 leading-relaxed">
+              {"Tap "}
+              <span className="font-bold text-fg-high">{"Share ⎙"}</span>
+              {" at the bottom of Safari, then "}
+              <span className="font-bold text-fg-high">{"Add to Home Screen"}</span>
+              {"."}
+            </p>
           ) : (
-            /* Android / Desktop install button */
             <button
               onClick={handleInstall}
-              className="flex items-center justify-center gap-2 w-full mt-6 py-4 rounded-2xl bg-electric-green text-black font-display text-lg font-black uppercase tracking-wider hover:bg-electric-green/90 active:scale-[0.98] transition-all"
+              className="flex items-center justify-center gap-1.5 w-full mt-3 py-2.5 rounded-xl bg-electric-green text-black font-display text-[13px] font-black uppercase tracking-wider hover:bg-electric-green/90 active:scale-[0.98] transition-all"
             >
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
               </svg>
               {"Install App"}
@@ -150,23 +142,15 @@ function InstallModal({
           )}
 
           {/* Don't show again */}
-          <label className="flex items-center gap-2 mt-5 cursor-pointer select-none">
+          <label className="flex items-center gap-2 mt-3 cursor-pointer select-none">
             <input
               type="checkbox"
               checked={dontShowAgain}
               onChange={(e) => setDontShowAgain(e.target.checked)}
-              className="w-4 h-4 rounded accent-electric-green"
+              className="w-3.5 h-3.5 rounded accent-electric-green"
             />
-            <span className="text-[13px] text-fg-mid">{"Don't show this again"}</span>
+            <span className="text-[11px] text-fg-mid">{"Don't show this again"}</span>
           </label>
-
-          {/* Dismiss */}
-          <button
-            onClick={() => onDismiss(dontShowAgain)}
-            className="w-full mt-3 text-[13px] text-fg-mid hover:text-fg-high transition-colors py-2"
-          >
-            {"Maybe later"}
-          </button>
         </div>
       </div>
     </div>
@@ -324,9 +308,9 @@ export default function LineLoginButton() {
         document.body,
       )}
 
-      {/* Install app modal */}
+      {/* Install app banner (top of screen, no backdrop) */}
       {showInstallModal && !showAssignModal && createPortal(
-        <InstallModal
+        <InstallBanner
           isIOS={isIOS}
           deferredPrompt={deferredPrompt}
           onDismiss={handleInstallDismiss}
