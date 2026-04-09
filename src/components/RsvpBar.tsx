@@ -80,6 +80,8 @@ export default function RsvpBar({
   }
 
   const colorName = COLOR_NAMES[userTeam.id] ?? userTeam.color;
+  const venueName = matchday.venueName ?? 'Tennozu Park C';
+  const venueUrl = matchday.venueUrl ?? 'https://maps.google.com/maps?q=Tennozu+Park+C,+Shinagawa,+Tokyo,+Japan';
   const userFirstMatch = matchday.matches
     .filter((m) => m.homeTeamId === session.teamId || m.awayTeamId === session.teamId)
     .sort((a, b) => a.kickoff.localeCompare(b.kickoff))[0];
@@ -224,6 +226,21 @@ export default function RsvpBar({
                   Your team will be wearing{' '}
                   <span className="text-fg-high font-bold">{colorName}</span> — bring a shirt of the same colour if possible{' '}
                   <span className="text-fg-low">(bibs will be provided)</span>.
+                </p>
+              </div>
+
+              <div className="flex items-start gap-3 bg-surface rounded-2xl px-4 py-3">
+                <span className="text-lg shrink-0">📍</span>
+                <p className="text-[13px] text-fg-mid leading-snug">
+                  Venue:{' '}
+                  <a
+                    href={venueUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-fg-high font-bold underline underline-offset-2 decoration-fg-low hover:decoration-fg-high transition-colors"
+                  >
+                    {venueName} ↗
+                  </a>
                 </p>
               </div>
 
