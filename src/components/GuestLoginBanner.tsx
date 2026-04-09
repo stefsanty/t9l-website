@@ -1,6 +1,10 @@
 'use client';
 
 import { useSession, signIn } from 'next-auth/react';
+import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
+
+const LOGIN_LIGHTBOX_DISMISSED_KEY = 't9l-login-lightbox-dismissed';
 
 function LineIcon({ className = 'w-4 h-4' }: { className?: string }) {
   return (
@@ -12,29 +16,63 @@ function LineIcon({ className = 'w-4 h-4' }: { className?: string }) {
 
 export default function GuestLoginBanner() {
   const { data: session, status } = useSession();
+  const [visible, setVisible] = useState(false);
 
-  if (status === 'loading' || session) return null;
+  useEffect(() => {
+    if (status === 'loading' || session) return;
+    const dismissed = sessionStorage.getItem(LOGIN_LIGHTBOX_DISMISSED_KEY);
+    if (!dismissed) setVisible(true);
+  }, [status, session]);
 
-  return (
-    <div className="mb-4 bg-[#06C755]/10 border border-[#06C755]/20 rounded-2xl overflow-hidden relative group">
-      <div className="absolute inset-0 bg-diagonal-pattern opacity-[0.03] pointer-events-none" />
-      <div className="px-5 py-4 relative flex items-center justify-between gap-4">
-        <div className="min-w-0">
-          <h3 className="font-display text-lg font-black uppercase tracking-tight text-fg-high leading-none mb-1">
-            RSVP to your matchdays
-          </h3>
-          <p className="text-[11px] font-bold text-fg-mid leading-tight">
-            Login with LINE to confirm attendance.
+  function dismiss() {
+    sessionStorage.setItem(LOGIN_LIGHTBOX_DISMISSED_KEY, '1');
+    setVisible(false);
+  }
+
+  if (!visible) return null;
+
+  return createPortal(
+    <div className="fixed inset-0 z-[200] flex items-center justify-center px-5">
+      {/* Backdrop */}
+      <div
+        className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+        onClick={dismiss}
+      />
+
+      {/* Card */}
+      <div className="relative w-full max-w-sm mx-auto bg-card border border-border-default rounded-3xl overflow-hidden shadow-2xl animate-in">
+        <div className="px-7 pt-5 pb-8">
+          {/* Icon */}
+          <div className="w-14 h-14 rounded-2xl bg-[#06C755]/10 border border-[#06C755]/20 flex items-center justify-center mb-5">
+            <LineIcon className="w-7 h-7 text-[#06C755]" />
+          </div>
+
+          <h2 className="font-display text-3xl font-black uppercase tracking-tight text-fg-high leading-tight">
+            {"Sign in to RSVP"}
+          </h2>
+          <p className="text-sm text-fg-mid mt-2 leading-relaxed">
+            {"Login with LINE to confirm your attendance for upcoming matchdays and show your photo in the squad list."}
           </p>
+
+          {/* CTA */}
+          <button
+            onClick={() => signIn('line')}
+            className="flex items-center justify-center gap-2 w-full mt-6 py-4 rounded-2xl bg-[#06C755] text-white font-display text-lg font-black uppercase tracking-wider hover:bg-[#05b34c] active:scale-[0.98] transition-all shadow-[0_4px_16px_rgba(6,199,85,0.25)]"
+          >
+            <LineIcon className="w-5 h-5" />
+            {"Login with LINE"}
+          </button>
+
+          {/* Dismiss */}
+          <button
+            onClick={dismiss}
+            className="w-full mt-4 text-[13px] text-fg-mid hover:text-fg-high transition-colors py-2"
+          >
+            {"Not now"}
+          </button>
         </div>
-        <button
-          onClick={() => signIn('line')}
-          className="shrink-0 flex items-center gap-2 bg-[#06C755] hover:bg-[#05b34c] active:scale-95 text-white text-[12px] font-black uppercase tracking-wider px-4 py-2 rounded-xl transition-all shadow-[0_4px_12px_rgba(6,199,85,0.2)]"
-        >
-          <LineIcon className="w-4 h-4" />
-          Login
-        </button>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
