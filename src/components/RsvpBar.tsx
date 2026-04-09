@@ -93,7 +93,7 @@ export default function RsvpBar({
     <>
       {/* Sticky bottom bar */}
       <div className={`fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-lg z-40 ${isUnanswered ? 'animate-pulse' : ''}`}>
-        <div className="mx-0 px-4 pt-3 pb-5 bg-card/95 backdrop-blur-md border-t border-border-default shadow-[0_-8px_32px_rgba(0,0,0,0.5)]">
+        <div className="mx-0 px-4 pt-3 pb-5 bg-background border-t-2 border-primary/60">
           {/* Header */}
           <div className="flex items-center gap-3 mb-3">
             <div className="flex items-center gap-2 min-w-0">
@@ -101,7 +101,7 @@ export default function RsvpBar({
                 {matchday.label}
               </span>
               <span className="text-xs font-black text-fg-low">·</span>
-              <span className="text-xs font-black uppercase tracking-[0.15em] text-fg-mid">
+              <span className="text-xs font-black uppercase tracking-[0.15em] text-fg-high">
                 Are you coming?
               </span>
             </div>
@@ -117,10 +117,10 @@ export default function RsvpBar({
               const isActive = status === value;
               const activeStyles =
                 value === 'GOING'
-                  ? 'bg-success/15 text-success border-success/40'
+                  ? 'bg-success/20 text-success border-success/60'
                   : value === 'UNDECIDED'
-                  ? 'bg-warning/15 text-warning border-warning/40'
-                  : 'bg-vibrant-pink/15 text-vibrant-pink border-vibrant-pink/30 shadow-[var(--glow-primary-subtle)]';
+                  ? 'bg-warning/20 text-warning border-warning/60'
+                  : 'bg-vibrant-pink/20 text-vibrant-pink border-vibrant-pink/50';
 
               return (
                 <button
@@ -130,7 +130,7 @@ export default function RsvpBar({
                   className={`flex-1 py-4 rounded-2xl text-sm font-black uppercase tracking-wider transition-all border disabled:opacity-50 active:scale-95 ${
                     isActive
                       ? activeStyles
-                      : 'bg-surface text-fg-mid border-border-subtle hover:bg-surface-md hover:text-fg-high hover:border-border-default'
+                      : 'bg-surface-md text-fg-high border-border-default hover:bg-surface-md hover:border-border-default'
                   }`}
                 >
                   {label}

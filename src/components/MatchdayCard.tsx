@@ -106,7 +106,7 @@ export default function MatchdayCard({
     <div className={`pl-card rounded-3xl overflow-hidden relative group transition-all duration-500 ${
       isSittingOut
         ? 'bg-black/40 border-t-2 border-t-white/10 shadow-none'
-        : 'pl-card-magenta bg-card shadow-lg'
+        : 'pl-card-magenta bg-card'
     }`}>
       <div className="absolute inset-0 bg-diagonal-pattern opacity-[0.03] pointer-events-none group-hover:opacity-[0.05] transition-opacity duration-500" />
 
@@ -180,7 +180,7 @@ export default function MatchdayCard({
               <div key={match.id}>
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex-1 flex items-center gap-3">
-                    <div className={`relative w-9 h-9 shrink-0 rounded-lg p-1.5 border transition-all ${isUserHome ? 'bg-tertiary/10 border-tertiary/50 shadow-[0_0_10px_rgba(0,255,133,0.25)]' : 'bg-surface border-border-subtle'}`}>
+                    <div className={`relative w-9 h-9 shrink-0 rounded-lg p-1.5 border transition-all ${isUserHome ? 'bg-tertiary/10 border-tertiary/50 ' : 'bg-surface border-border-subtle'}`}>
                       {home?.logo && (
                         <Image src={home.logo} alt={home.name} fill className="object-contain p-1" />
                       )}
@@ -238,7 +238,7 @@ export default function MatchdayCard({
                         <span className="text-[9px] font-black uppercase tracking-widest text-tertiary/70 leading-none">your team</span>
                       )}
                     </div>
-                    <div className={`relative w-9 h-9 shrink-0 rounded-lg p-1.5 border transition-all ${isUserAway ? 'bg-tertiary/10 border-tertiary/50 shadow-[0_0_10px_rgba(0,255,133,0.25)]' : 'bg-surface border-border-subtle'}`}>
+                    <div className={`relative w-9 h-9 shrink-0 rounded-lg p-1.5 border transition-all ${isUserAway ? 'bg-tertiary/10 border-tertiary/50 ' : 'bg-surface border-border-subtle'}`}>
                       {away?.logo && (
                         <Image src={away.logo} alt={away.name} fill className="object-contain p-1" />
                       )}
