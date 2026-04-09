@@ -173,6 +173,7 @@ export default function MatchdayCard({
         {showRsvp && userTeamIsPlaying && userPlayerId && !isCompleted && (
           <div className="mt-6 mb-2 relative z-20">
             <RsvpButton
+              key={matchday.id}
               matchdayId={matchday.id}
               initialStatus={userRawStatus as 'GOING' | 'UNDECIDED' | 'Y' | 'EXPECTED' | ''}
             />
