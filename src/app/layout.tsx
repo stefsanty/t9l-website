@@ -53,6 +53,7 @@ export default function RootLayout({
           .goog-tooltip, .goog-tooltip:hover { display: none !important; }
           .goog-text-highlight { background-color: transparent !important; box-shadow: none !important; }
         `}</style>
+        <script dangerouslySetInnerHTML={{ __html: `(function(){try{var l=localStorage.getItem('t9l-lang');if(l==='ja'){document.cookie='googtrans=/en/ja; path=/; SameSite=Lax';}else if(l==='en'){document.cookie='googtrans=/en/en; path=/; SameSite=Lax';}}catch(e){}})();` }} />
         <div id="google_translate_element" style={{ display: 'none' }}></div>
         <Script
           src="https://translate.google.com/translate_a/element.js?cb=googleTranslateElementInit"
@@ -66,6 +67,9 @@ export default function RootLayout({
                 autoDisplay: false,
               }, 'google_translate_element');
             }
+            window.addEventListener('pageshow', function(e) {
+              if (e.persisted) { window.location.reload(); }
+            });
           `}
         </Script>
         <ThemeProvider>
