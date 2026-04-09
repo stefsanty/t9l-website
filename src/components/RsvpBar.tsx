@@ -58,6 +58,7 @@ export default function RsvpBar({
     const prev = status;
     setStatus(next);
     setShowOptions(false);
+    if (next === 'GOING') setShowConfirm(true);
     setLoading(true);
     setError(false);
 
@@ -68,10 +69,10 @@ export default function RsvpBar({
         body: JSON.stringify({ matchdayId: matchday.id, status: next }),
       });
       if (!res.ok) throw new Error('RSVP failed');
-      if (next === 'GOING') setShowConfirm(true);
       router.refresh();
     } catch {
       setStatus(prev);
+      setShowConfirm(false);
       setError(true);
     } finally {
       setLoading(false);
