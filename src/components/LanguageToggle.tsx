@@ -6,14 +6,21 @@ export default function LanguageToggle() {
   const [locale, setLocale] = useState<'en' | 'ja'>('en');
 
   useEffect(() => {
-    // Check if googtrans cookie is set to /en/ja
-    if (typeof document !== 'undefined') {
-      if (document.cookie.includes('googtrans=/en/ja')) {
+    // Check localStorage first (more reliable on iOS Safari), fall back to cookie
+    try {
+      const stored = localStorage.getItem('t9l-lang');
+      if (stored === 'ja' || document.cookie.includes('googtrans=/en/ja')) {
         // eslint-disable-next-line react-hooks/set-state-in-effect
         setLocale('ja');
       } else {
         // eslint-disable-next-line react-hooks/set-state-in-effect
         setLocale('en');
+      }
+    } catch {
+      // localStorage blocked (e.g. Safari private mode with storage disabled)
+      if (document.cookie.includes('googtrans=/en/ja')) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setLocale('ja');
       }
     }
   }, []);
@@ -35,10 +42,12 @@ export default function LanguageToggle() {
     };
 
     if (newLocale === 'ja') {
-      document.cookie = 'googtrans=/en/ja; path=/;';
+      try { localStorage.setItem('t9l-lang', 'ja'); } catch { /* ignore */ }
+      document.cookie = 'googtrans=/en/ja; path=/; SameSite=Lax';
     } else {
+      try { localStorage.setItem('t9l-lang', 'en'); } catch { /* ignore */ }
       clearTransCookie();
-      document.cookie = 'googtrans=/en/en; path=/;';
+      document.cookie = 'googtrans=/en/en; path=/; SameSite=Lax';
     }
     
     window.location.reload();
