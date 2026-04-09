@@ -315,11 +315,6 @@ export default function MatchdayAvailability({
             const s = teamStatuses[id];
             return s === 'GOING' || s === 'Y';
           });
-          const undecidedIds = allAvailIds.filter((id) => {
-            const s = teamStatuses[id];
-            return s === 'UNDECIDED' || s === 'EXPECTED';
-          });
-
           const isExpanded = expandedTeams.has(team.id);
 
           return (
@@ -343,28 +338,9 @@ export default function MatchdayAvailability({
                   </span>
                 </div>
                 <div className="flex items-center gap-3">
-                  {goingIds.length > 0 && (
-                    <span className="text-[11px] font-black px-2 py-0.5 rounded bg-success/10 text-success">
-                      {goingIds.length} {"going"}
-                    </span>
-                  )}
-                  {goingIds.length < 9 && (
-                    <span className={`text-[11px] font-black px-2 py-0.5 rounded ${
-                      goingIds.length === 0 ? 'bg-surface-md text-fg-mid' : 'bg-vibrant-pink/10 text-vibrant-pink'
-                    }`}>  
-                       {"need "} {9 - goingIds.length} {"more"}
-                    </span>
-                  )}
-                  {goingIds.length >= 10 && (
-                    <span className="text-[11px] font-black px-2 py-0.5 rounded bg-electric-violet/10 text-electric-violet">
-                      {goingIds.length - 9} {goingIds.length - 9 === 1 ? "sub" : "subs"}
-                    </span>
-                  )}
-                  {undecidedIds.length > 0 && (
-                    <span className="text-[11px] font-black px-2 py-0.5 rounded bg-warning/10 text-warning">
-                      {undecidedIds.length} {"undecided"}
-                    </span>
-                  )}
+                  <span className="text-[11px] font-semibold text-fg-mid">
+                    {goingIds.length} {"going"}
+                  </span>
                   <svg
                     className={`w-4 h-4 text-fg-mid transition-transform duration-300 ${
                       isExpanded ? 'rotate-180' : ''
