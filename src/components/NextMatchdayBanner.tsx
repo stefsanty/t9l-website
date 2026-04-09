@@ -1,6 +1,6 @@
 ﻿'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -92,7 +92,15 @@ export default function NextMatchdayBanner({
 }: NextMatchdayBannerProps) {
     const { data: session, status } = useSession();
   const [hasDefaulted, setHasDefaulted] = useState(false);
-  const [showPills, setShowPills] = useState(false);
+  const carouselRef = useRef<HTMLDivElement>(null);
+  const itemRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+
+  useEffect(() => {
+    const el = itemRefs.current[selectedMatchdayId];
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+    }
+  }, [selectedMatchdayId]);
 
   useEffect(() => {
     if (status === 'loading' || hasDefaulted) return;
@@ -198,46 +206,6 @@ export default function NextMatchdayBanner({
               </div>
             </div>
           </div>
-
-          <div className="absolute top-7 right-7 z-20">
-            <button
-              onClick={() => setShowPills(!showPills)}
-              className={`text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-lg transition-all ${
-                showPills
-                  ? 'bg-surface text-fg-mid hover:bg-surface-md hover:text-fg-mid animate-in'
-                  : 'bg-surface text-fg-mid hover:bg-surface-md hover:text-fg-mid'
-              }`}
-            >
-              {showPills ? "close ✖" : "browse ▾"}
-            </button>
-          </div>
-
-          {/* Matchday Selector (collapsible) */}
-          {showPills && (
-            <div className="animate-in relative z-20 mb-6">
-              <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
-                {matchdays.map((md) => {
-                  const isSelected = md.id === selectedMatchdayId;
-                  const isCompletedMd = md.matches[0].homeGoals !== null;
-                  return (
-                    <button
-                      key={md.id}
-                      onClick={() => onMatchdayChange(md.id)}
-                      className={`shrink-0 px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider transition-all border ${
-                        isSelected
-                          ? 'bg-primary text-white border-primary shadow-[var(--glow-primary-md)]'
-                          : isCompletedMd
-                          ? 'bg-surface text-fg-mid border-border-subtle hover:border-border-default hover:text-fg-mid'
-                          : 'bg-surface text-fg-high border-border-default hover:border-border-default hover:text-fg-high'
-                      }`}
-                    >
-                      {md.label}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
 
           {/* RSVP Button embedded directly in hero */}
           {userTeamIsPlaying && session?.playerId && !isCompleted && (
@@ -371,6 +339,53 @@ export default function NextMatchdayBanner({
                 <div className="h-[1px] flex-1 bg-surface" />
               </div>
             )}
+          </div>
+
+          {/* Matchday carousel (always interactive, even when sitting out) */}
+          <div className="mt-6 relative z-20">
+            <div
+              ref={carouselRef}
+              className="flex gap-2 overflow-x-auto pb-3 scrollbar-hide snap-x"
+            >
+              {matchdays.map((md) => {
+                const isSelected = md.id === selectedMatchdayId;
+                const isPlayed = md.matches[0].homeGoals !== null;
+                return (
+                  <button
+                    key={md.id}
+                    ref={(el) => {
+                      itemRefs.current[md.id] = el;
+                    }}
+                    onClick={() => onMatchdayChange(md.id)}
+                    className={`shrink-0 snap-center flex flex-col items-start gap-0.5 px-3 py-2 rounded-xl border transition-all min-w-[104px] ${
+                      isSelected
+                        ? 'bg-primary text-white border-primary shadow-[var(--glow-primary-md)]'
+                        : isPlayed
+                        ? 'bg-surface text-fg-mid border-border-subtle hover:border-border-default'
+                        : 'bg-surface text-fg-high border-border-default hover:border-border-default'
+                    }`}
+                  >
+                    <span className="text-[10px] font-black uppercase tracking-widest">
+                      {md.label}
+                    </span>
+                    <span className="text-[9px] font-bold opacity-80">
+                      {md.date ? formatMatchDate(md.date) : 'TBD'}
+                    </span>
+                    <span
+                      className={`text-[8px] font-black uppercase tracking-wider mt-0.5 ${
+                        isSelected
+                          ? 'opacity-90'
+                          : isPlayed
+                          ? 'text-fg-low'
+                          : 'text-vibrant-pink'
+                      }`}
+                    >
+                      {isPlayed ? 'Played' : 'Upcoming'}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
 
             <div className="mt-4 text-center">
               <Link
