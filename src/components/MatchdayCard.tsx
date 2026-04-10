@@ -233,11 +233,8 @@ export default function MatchdayCard({
                       )}
                     </div>
                     <div className="flex flex-col gap-0.5 min-w-0">
-                      <span className="font-display text-lg font-black uppercase tracking-tighter leading-none hidden sm:block" translate="no">
+                      <span className="font-display text-sm sm:text-lg font-black uppercase tracking-tighter leading-none" translate="no">
                         {home?.name}
-                      </span>
-                      <span className="font-display text-lg font-black uppercase tracking-tighter leading-none sm:hidden" translate="no">
-                        {home?.shortName || home?.name.slice(0, 3)}
                       </span>
                       {isUserHome && (
                         <span className="text-[9px] font-black uppercase tracking-widest text-tertiary/70 leading-none">{s.yourTeam}</span>
@@ -265,11 +262,8 @@ export default function MatchdayCard({
 
                   <div className="flex-1 flex items-center justify-end gap-3 text-right">
                     <div className="flex flex-col gap-0.5 items-end min-w-0">
-                      <span className="font-display text-lg font-black uppercase tracking-tighter leading-none hidden sm:block" translate="no">
+                      <span className="font-display text-sm sm:text-lg font-black uppercase tracking-tighter leading-none" translate="no">
                         {away?.name}
-                      </span>
-                      <span className="font-display text-lg font-black uppercase tracking-tighter leading-none sm:hidden" translate="no">
-                        {away?.shortName || away?.name.slice(0, 3)}
                       </span>
                       {isUserAway && (
                         <span className="text-[9px] font-black uppercase tracking-widest text-tertiary/70 leading-none">{s.yourTeam}</span>
