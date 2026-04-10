@@ -14,6 +14,13 @@ const COLOR_NAMES: Record<string, string> = {
   'fc-torpedo':  'Gray',
 };
 
+const COLOR_EMOJIS: Record<string, string> = {
+  'Blue':   '🔵',
+  'Yellow': '🟡',
+  'Red':    '🔴',
+  'Gray':   '⚫',
+};
+
 function normalizeStatus(s: string): RsvpStatus {
   if (s === 'GOING' || s === 'Y') return 'GOING';
   if (s === 'UNDECIDED' || s === 'EXPECTED') return 'UNDECIDED';
@@ -114,7 +121,7 @@ export default function RsvpBar({
                 </button>
               </div>
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-[11px] font-bold text-black/75">👕 {colorName}</span>
+                <span className="text-[11px] font-bold text-black/75">👚{COLOR_EMOJIS[colorName] ?? ''} Bring {colorName} shirt</span>
                 {userFirstMatch && (
                   <>
                     <span className="text-black/30 text-[10px]">·</span>
