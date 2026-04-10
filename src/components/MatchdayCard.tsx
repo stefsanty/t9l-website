@@ -156,15 +156,17 @@ export default function MatchdayCard({
 
       <div className="p-5 pb-4 relative">
         <div className={`transition-opacity duration-500 ${isSittingOut ? 'opacity-40' : ''}`}>
-          <div className="flex justify-between items-start mb-1">
-            <span className="text-[10px] font-black uppercase tracking-[0.25em] text-fg-high">
+          <div className="mb-2">
+            <div className="inline-flex items-center px-2.5 py-1 rounded-full bg-fg-low/20 border border-fg-low/30 mb-2">
+              <span className="text-[10px] font-black uppercase tracking-[0.15em] text-fg-mid">
+                {matchday.label}
+              </span>
+            </div>
+            <span className="text-[10px] font-black uppercase tracking-[0.25em] text-fg-high block mb-1">
               {eyebrow}
             </span>
-          </div>
-
-          <div className="mb-2">
             <h2 className="font-display text-4xl font-black uppercase tracking-tighter text-fg-high leading-tight">
-              {matchday.label} - {matchday.date ? formatMatchDate(matchday.date, locale) : 'TBD'}
+              {matchday.date ? formatMatchDate(matchday.date, locale) : 'TBD'}
             </h2>
             {showCountdown && (
               <div className="mt-0.5">
@@ -289,18 +291,6 @@ export default function MatchdayCard({
             );
           })}
           </div>
-
-          {sittingOutTeam && (
-            <div className="pt-2 flex items-center gap-2">
-              <div className="h-[1px] flex-1 bg-surface" />
-              <div className="text-center">
-                <span className="text-[10px] font-black uppercase tracking-widest text-fg-mid">
-                  {s.sittingOut}: <span className="text-fg-high" translate="no">{sittingOutTeam.name}</span>
-                </span>
-              </div>
-              <div className="h-[1px] flex-1 bg-surface" />
-            </div>
-          )}
 
           {showScheduleLink && (
             <div className="mt-4 text-center">
