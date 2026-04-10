@@ -157,14 +157,16 @@ export default function MatchdayCard({
       <div className="p-5 pb-4 relative">
         <div className={`transition-opacity duration-500 ${isSittingOut ? 'opacity-40' : ''}`}>
           <div className="mb-2">
-            <div className="inline-flex items-center px-2.5 py-1 rounded-full bg-fg-low/20 border border-fg-low/30 mb-2">
-              <span className="text-[10px] font-black uppercase tracking-[0.15em] text-fg-mid">
-                {matchday.label}
+            <div className="flex items-center gap-2 mb-1">
+              <div className="inline-flex items-center px-2.5 py-1 rounded-full bg-fg-low/20 border border-fg-low/30">
+                <span className="text-[10px] font-black uppercase tracking-[0.15em] text-fg-mid">
+                  {matchday.label}
+                </span>
+              </div>
+              <span className="text-[10px] font-black uppercase tracking-[0.25em] text-fg-high">
+                {eyebrow}
               </span>
             </div>
-            <span className="text-[10px] font-black uppercase tracking-[0.25em] text-fg-high block mb-1">
-              {eyebrow}
-            </span>
             <h2 className="font-display text-4xl font-black uppercase tracking-tighter text-fg-high leading-tight">
               {matchday.date ? formatMatchDate(matchday.date, locale) : 'TBD'}
             </h2>
