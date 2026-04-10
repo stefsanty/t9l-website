@@ -56,8 +56,23 @@ export default function RsvpBar({
   const [showConfirm, setShowConfirm] = useState(false);
   const [showOptions, setShowOptions] = useState(false);
 
-  if (!session?.playerId || !session?.teamId || !userTeamIsPlaying || isCompleted || !userTeam) {
+  if (!session?.playerId || !session?.teamId || !userTeam || isCompleted) {
     return null;
+  }
+
+  if (!userTeamIsPlaying) {
+    return (
+      <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-lg z-40">
+        <div className="px-4 pt-3 pb-5 bg-background border-t-2 border-border-default">
+          <div className="flex items-center gap-2">
+            <svg className="w-4 h-4 text-fg-low shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+            </svg>
+            <span className="text-sm font-bold text-fg-low uppercase tracking-wide">Not scheduled to play this matchday</span>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   async function select(next: RsvpStatus) {
