@@ -7,12 +7,16 @@ import type { Matchday, Team, Goal } from '@/types';
 import MatchdayCard from './MatchdayCard';
 
 function useLocale(): 'en' | 'ja' {
-  const [locale, setLocale] = useState<'en' | 'ja'>('en');
-  useEffect(() => {
+  // Eager init from localStorage so the very first client render uses the correct
+  // locale — avoids an English→Japanese flash that confuses Google Translate.
+  const [locale] = useState<'en' | 'ja'>(() => {
+    if (typeof window === 'undefined') return 'en';
     try {
-      if (localStorage.getItem('t9l-lang') === 'ja') setLocale('ja');
-    } catch { /* ignore */ }
-  }, []);
+      return localStorage.getItem('t9l-lang') === 'ja' ? 'ja' : 'en';
+    } catch {
+      return 'en';
+    }
+  });
   return locale;
 }
 

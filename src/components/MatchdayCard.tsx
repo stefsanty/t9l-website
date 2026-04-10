@@ -12,15 +12,14 @@ function formatMatchDate(dateStr: string, locale: 'en' | 'ja' = 'en') {
   // UTC 00:00 = JST 09:00, which keeps the date the same.
   const d = new Date(dateStr);
   if (locale === 'ja') {
-    const parts = new Intl.DateTimeFormat('ja-JP', {
-      weekday: 'short',
-      month: 'long',
-      day: 'numeric',
-      timeZone: 'Asia/Tokyo',
-    }).formatToParts(d);
-    const get = (type: Intl.DateTimeFormatPartTypes) =>
-      parts.find((p) => p.type === type)?.value ?? '';
-    return `${get('month')}${get('day')}（${get('weekday')}）`;
+    // Use separate format() calls — formatToParts returns bare numbers in ja-JP
+    // (month: "4", day: "16") with 月/日 as separate literals, causing "416" if concatenated.
+    const fmt = (opts: Intl.DateTimeFormatOptions) =>
+      new Intl.DateTimeFormat('ja-JP', { ...opts, timeZone: 'Asia/Tokyo' }).format(d);
+    const month = fmt({ month: 'numeric' });   // "4"
+    const day = fmt({ day: 'numeric' });       // "16"
+    const weekday = fmt({ weekday: 'short' }); // "木"
+    return `${month}月${day}日（${weekday}）`;
   }
   const parts = new Intl.DateTimeFormat('en-US', {
     weekday: 'short',
