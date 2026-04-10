@@ -12,13 +12,15 @@ function formatMatchDate(dateStr: string, locale: 'en' | 'ja' = 'en') {
   // UTC 00:00 = JST 09:00, which keeps the date the same.
   const d = new Date(dateStr);
   if (locale === 'ja') {
-    // Use separate format() calls — formatToParts returns bare numbers in ja-JP
-    // (month: "4", day: "16") with 月/日 as separate literals, causing "416" if concatenated.
-    const fmt = (opts: Intl.DateTimeFormatOptions) =>
-      new Intl.DateTimeFormat('ja-JP', { ...opts, timeZone: 'Asia/Tokyo' }).format(d);
-    const month = fmt({ month: 'numeric' });   // "4"
-    const day = fmt({ day: 'numeric' });       // "16"
-    const weekday = fmt({ weekday: 'short' }); // "木"
+    // ja-JP numeric format already appends 月/日 (e.g. "4月", "16日"), so use
+    // getUTC* to get plain numbers and append the suffixes ourselves.
+    // dateStr is "YYYY-MM-DD" UTC midnight = JST 09:00, same calendar date.
+    const month = d.getUTCMonth() + 1;
+    const day = d.getUTCDate();
+    const weekday = new Intl.DateTimeFormat('ja-JP', {
+      weekday: 'short',
+      timeZone: 'Asia/Tokyo',
+    }).format(d); // "木" etc.
     return `${month}月${day}日（${weekday}）`;
   }
   const parts = new Intl.DateTimeFormat('en-US', {
