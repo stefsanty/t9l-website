@@ -21,6 +21,13 @@ export default function LanguageToggle() {
       if (document.cookie.includes('googtrans=/en/ja')) {
         // eslint-disable-next-line react-hooks/set-state-in-effect
         setLocale('ja');
+      } else {
+        try {
+          if ((navigator.language || '').toLowerCase().startsWith('ja')) {
+            // eslint-disable-next-line react-hooks/set-state-in-effect
+            setLocale('ja');
+          }
+        } catch { /* ignore */ }
       }
     }
   }, []);
