@@ -53,7 +53,7 @@ export default function RootLayout({
           .goog-tooltip, .goog-tooltip:hover { display: none !important; }
           .goog-text-highlight { background-color: transparent !important; box-shadow: none !important; }
         `}</style>
-        <script dangerouslySetInnerHTML={{ __html: `(function(){try{var l=localStorage.getItem('t9l-lang');if(l==='ja'){document.cookie='googtrans=/en/ja; path=/; SameSite=Lax';}else if(l==='en'){document.cookie='googtrans=/en/en; path=/; SameSite=Lax';}}catch(e){}})();` }} />
+        <script dangerouslySetInnerHTML={{ __html: `(function(){try{var l=localStorage.getItem('t9l-lang');if(l==='ja'){document.cookie='googtrans=/en/ja; path=/; SameSite=Lax';}else if(l==='en'){document.cookie='googtrans=/en/en; path=/; SameSite=Lax';}else{var j=(navigator.language||'').toLowerCase().startsWith('ja');localStorage.setItem('t9l-lang',j?'ja':'en');document.cookie=j?'googtrans=/en/ja; path=/; SameSite=Lax':'googtrans=/en/en; path=/; SameSite=Lax';}}catch(e){try{var j2=(navigator.language||'').toLowerCase().startsWith('ja');document.cookie=j2?'googtrans=/en/ja; path=/; SameSite=Lax':'googtrans=/en/en; path=/; SameSite=Lax';}catch(e2){}}})();` }} />
         <div id="google_translate_element" style={{ display: 'none' }}></div>
         <Script
           src="https://translate.google.com/translate_a/element.js?cb=googleTranslateElementInit"
