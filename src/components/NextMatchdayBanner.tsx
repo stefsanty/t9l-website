@@ -6,6 +6,16 @@ import Link from 'next/link';
 import type { Matchday, Team, Goal } from '@/types';
 import MatchdayCard from './MatchdayCard';
 
+function useLocale(): 'en' | 'ja' {
+  const [locale, setLocale] = useState<'en' | 'ja'>('en');
+  useEffect(() => {
+    try {
+      if (localStorage.getItem('t9l-lang') === 'ja') setLocale('ja');
+    } catch { /* ignore */ }
+  }, []);
+  return locale;
+}
+
 interface NextMatchdayBannerProps {
   matchdays: Matchday[];
   selectedMatchdayId: string;
@@ -22,6 +32,7 @@ export default function NextMatchdayBanner({
   goals,
 }: NextMatchdayBannerProps) {
   const { data: session, status } = useSession();
+  const locale = useLocale();
   const [hasDefaulted, setHasDefaulted] = useState(false);
   const [animDir, setAnimDir] = useState<'left' | 'right' | null>(null);
   const touchStartX = useRef<number>(0);
@@ -144,6 +155,7 @@ export default function NextMatchdayBanner({
             userTeamId={session?.teamId}
             isUserNextMatchday={isUserNextMatchday}
             showCountdown
+            locale={locale}
           />
         </div>
 
@@ -183,7 +195,7 @@ export default function NextMatchdayBanner({
           href="/schedule"
           className="text-[10px] font-black uppercase tracking-[0.2em] text-fg-mid hover:text-vibrant-pink transition-colors group/link inline-flex items-center justify-center gap-1.5"
         >
-          <span>See full schedule</span>
+          <span>{locale === 'ja' ? 'スケジュール' : 'See full schedule'}</span>
           <svg className="w-3 h-3 transition-transform group-hover/link:translate-x-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M9 5l7 7-7 7" />
           </svg>

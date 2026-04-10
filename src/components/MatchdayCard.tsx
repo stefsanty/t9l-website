@@ -6,11 +6,22 @@ import MatchdayCountdown from './MatchdayCountdown';
 const DEFAULT_VENUE_NAME = 'Tennozu Park C';
 const DEFAULT_VENUE_MAP_URL = 'https://maps.google.com/maps?q=Tennozu+Park+C,+Shinagawa,+Tokyo,+Japan';
 
-function formatMatchDate(dateStr: string) {
+function formatMatchDate(dateStr: string, locale: 'en' | 'ja' = 'en') {
   // dateStr is "YYYY-MM-DD" (UTC-stable from normalizeDate)
   // We treat it as UTC midnight and format it in JST.
   // UTC 00:00 = JST 09:00, which keeps the date the same.
   const d = new Date(dateStr);
+  if (locale === 'ja') {
+    const parts = new Intl.DateTimeFormat('ja-JP', {
+      weekday: 'short',
+      month: 'long',
+      day: 'numeric',
+      timeZone: 'Asia/Tokyo',
+    }).formatToParts(d);
+    const get = (type: Intl.DateTimeFormatPartTypes) =>
+      parts.find((p) => p.type === type)?.value ?? '';
+    return `${get('month')}${get('day')}（${get('weekday')}）`;
+  }
   const parts = new Intl.DateTimeFormat('en-US', {
     weekday: 'short',
     month: 'short',
@@ -77,7 +88,34 @@ export interface MatchdayCardProps {
   showCountdown?: boolean;
   /** Show "See full schedule" link at the bottom of the card. Default: false */
   showScheduleLink?: boolean;
+  /** Locale for rendering translated strings. Default: 'en' */
+  locale?: 'en' | 'ja';
 }
+
+const STRINGS = {
+  en: {
+    yourNextMatchday: 'YOUR NEXT MATCHDAY',
+    matchdayResults: 'MATCHDAY RESULTS',
+    matchdayDetails: 'MATCHDAY DETAILS',
+    ft: 'FT',
+    kickoffTime: 'Kickoff Time',
+    sittingOut: 'Sitting out',
+    notScheduled: 'You are not scheduled to play on this matchday',
+    yourTeam: 'your team',
+    seeFullSchedule: 'See full schedule',
+  },
+  ja: {
+    yourNextMatchday: '次の試合日',
+    matchdayResults: '試合結果',
+    matchdayDetails: '試合日程',
+    ft: '試合終了',
+    kickoffTime: 'キックオフ',
+    sittingOut: '休み',
+    notScheduled: 'この試合日はあなたのチームは休みです',
+    yourTeam: '自チーム',
+    seeFullSchedule: 'スケジュール',
+  },
+} as const;
 
 export default function MatchdayCard({
   matchday,
@@ -87,7 +125,9 @@ export default function MatchdayCard({
   isUserNextMatchday = false,
   showCountdown = false,
   showScheduleLink = false,
+  locale = 'en',
 }: MatchdayCardProps) {
+  const s = STRINGS[locale];
   const isCompleted = matchday.matches[0].homeGoals !== null;
   const venueName = matchday.venueName ?? DEFAULT_VENUE_NAME;
   const venueUrl = matchday.venueUrl ?? DEFAULT_VENUE_MAP_URL;
@@ -97,10 +137,10 @@ export default function MatchdayCard({
   const isSittingOut = userTeamId && userTeamId === matchday.sittingOutTeamId;
 
   const eyebrow = isUserNextMatchday
-    ? 'YOUR NEXT MATCHDAY'
+    ? s.yourNextMatchday
     : isCompleted
-    ? 'MATCHDAY RESULTS'
-    : 'MATCHDAY DETAILS';
+    ? s.matchdayResults
+    : s.matchdayDetails;
 
   return (
     <div className={`pl-card rounded-3xl overflow-hidden relative group transition-all duration-500 ${
@@ -125,7 +165,7 @@ export default function MatchdayCard({
 
           <div className="mb-2">
             <h2 className="font-display text-4xl font-black uppercase tracking-tighter text-fg-high leading-tight">
-              {matchday.label} - {matchday.date ? formatMatchDate(matchday.date) : 'TBD'}
+              {matchday.label} - {matchday.date ? formatMatchDate(matchday.date, locale) : 'TBD'}
             </h2>
             {showCountdown && (
               <div className="mt-0.5">
@@ -159,7 +199,7 @@ export default function MatchdayCard({
         {isSittingOut && (
           <div className="relative z-20 mb-4">
             <p className="text-[10px] font-black text-primary uppercase tracking-widest bg-vibrant-pink/10 px-3 py-2 rounded-xl border border-vibrant-pink/20 inline-block">
-              {'You are not scheduled to play on this matchday'}
+              {s.notScheduled}
             </p>
           </div>
         )}
@@ -171,7 +211,7 @@ export default function MatchdayCard({
           {/* Column header */}
           <div className="flex justify-center mb-1.5">
             <span className="text-[8px] font-black uppercase tracking-widest text-fg-mid">
-              {isCompleted ? 'FT' : 'Kickoff Time'}
+              {isCompleted ? s.ft : s.kickoffTime}
             </span>
           </div>
 
@@ -201,7 +241,7 @@ export default function MatchdayCard({
                         {home?.shortName || home?.name.slice(0, 3)}
                       </span>
                       {isUserHome && (
-                        <span className="text-[9px] font-black uppercase tracking-widest text-tertiary/70 leading-none">your team</span>
+                        <span className="text-[9px] font-black uppercase tracking-widest text-tertiary/70 leading-none">{s.yourTeam}</span>
                       )}
                     </div>
                   </div>
@@ -233,7 +273,7 @@ export default function MatchdayCard({
                         {away?.shortName || away?.name.slice(0, 3)}
                       </span>
                       {isUserAway && (
-                        <span className="text-[9px] font-black uppercase tracking-widest text-tertiary/70 leading-none">your team</span>
+                        <span className="text-[9px] font-black uppercase tracking-widest text-tertiary/70 leading-none">{s.yourTeam}</span>
                       )}
                     </div>
                     <div className={`relative w-9 h-9 shrink-0 rounded-lg p-1.5 border transition-all ${isUserAway ? 'bg-tertiary/10 border-tertiary/50 ' : 'bg-surface border-border-subtle'}`}>
@@ -262,7 +302,7 @@ export default function MatchdayCard({
               <div className="h-[1px] flex-1 bg-surface" />
               <div className="text-center">
                 <span className="text-[10px] font-black uppercase tracking-widest text-fg-mid">
-                  {'Sitting out'}: <span className="text-fg-high">{sittingOutTeam.name}</span>
+                  {s.sittingOut}: <span className="text-fg-high" translate="no">{sittingOutTeam.name}</span>
                 </span>
               </div>
               <div className="h-[1px] flex-1 bg-surface" />
@@ -275,7 +315,7 @@ export default function MatchdayCard({
                 href="/schedule"
                 className="text-[10px] font-black uppercase tracking-[0.2em] text-fg-mid hover:text-vibrant-pink transition-colors group/link flex items-center justify-center gap-1.5"
               >
-                <span>{'See full schedule'}</span>
+                <span>{s.seeFullSchedule}</span>
                 <svg className="w-3 h-3 transition-transform group-hover/link:translate-x-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M9 5l7 7-7 7" />
                 </svg>
