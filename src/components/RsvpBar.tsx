@@ -140,7 +140,7 @@ export default function RsvpBar({
                 {userFirstMatch && (
                   <>
                     <span className="text-black/30 text-[10px]">·</span>
-                    <span className="text-[11px] font-bold text-black/75">⏰ by {arrivalTime(userFirstMatch.kickoff)}</span>
+                    <span className="text-[11px] font-bold text-black/75">⏰ Arrive by {arrivalTime(userFirstMatch.kickoff)}</span>
                   </>
                 )}
                 <span className="text-black/30 text-[10px]">·</span>
