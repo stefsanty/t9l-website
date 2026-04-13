@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+
 import { fetchSheetData } from '@/lib/sheets';
 import { parseAllData } from '@/lib/data';
 import AssignPlayerClient from '@/components/AssignPlayerClient';
