@@ -14,6 +14,7 @@ interface Formation {
 
 const FORMATIONS: Formation[] = [
   { label: '3-4-1', def: 3, mid: 4, fwd: 1 },
+  { label: '3-3-2', def: 3, mid: 3, fwd: 2 },
   { label: '3-2-3', def: 3, mid: 2, fwd: 3 },
   { label: '4-3-1', def: 4, mid: 3, fwd: 1 },
   { label: '4-2-2', def: 4, mid: 2, fwd: 2 },
