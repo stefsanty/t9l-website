@@ -11,7 +11,7 @@ interface TopPerformersProps {
   playerPictures: Record<string, string>;
 }
 
-type SortField = 'playerName' | 'matchesPlayed' | 'goals' | 'assists' | 'avgRating' | 'gaPerGame';
+type SortField = 'playerName' | 'matchesPlayed' | 'goals' | 'assists' | 'gaPerGame';
 type SortOrder = 'asc' | 'desc';
 
 function SortIcon({ 
@@ -38,7 +38,7 @@ export default function TopPerformers({
 
   const sortedStats = useMemo(() => {
     const activeStats = playerStats.filter(
-      (s) => s.matchesPlayed > 0 || s.goals > 0 || s.assists > 0 || s.avgRating > 0,
+      (s) => s.matchesPlayed > 0 || s.goals > 0 || s.assists > 0,
     );
     return [...activeStats].sort((a, b) => {
       let comparison = 0;
@@ -83,14 +83,7 @@ export default function TopPerformers({
               >
                 🅿️ <SortIcon field="matchesPlayed" sortField={sortField} sortOrder={sortOrder} />
               </th>
-              <th 
-                className="py-4 px-1 text-center cursor-pointer hover:bg-surface-md transition-colors whitespace-nowrap"
-                onClick={() => handleSort('avgRating')}
-                title={"Rating"}
-              >
-                ✨️ <SortIcon field="avgRating" sortField={sortField} sortOrder={sortOrder} />
-              </th>
-              <th 
+              <th
                 className="py-4 px-1 text-center cursor-pointer hover:bg-surface-md transition-colors whitespace-nowrap"
                 onClick={() => handleSort('goals')}
                 title={"Goals"}
@@ -154,9 +147,6 @@ export default function TopPerformers({
                   </td>
                   <td className="py-4 px-1 text-center font-display font-black text-base text-fg-high tabular-nums">
                     {stat.matchesPlayed}
-                  </td>
-                  <td className={`py-4 px-1 text-center font-display font-black text-base tabular-nums ${isUser ? 'text-tertiary' : 'text-primary'}`}>
-                    {stat.avgRating > 0 ? stat.avgRating.toFixed(1) : '—'}
                   </td>
                   <td className="py-4 px-1 text-center font-display font-black text-lg text-fg-high tabular-nums">
                     {stat.goals}
