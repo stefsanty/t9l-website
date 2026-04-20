@@ -23,6 +23,12 @@ const nextConfig: NextConfig = {
           "https://www.appsheet.com/start/e93876c1-61c8-42a4-aadb-e83ce9f606a5",
         permanent: false,
       },
+      {
+        source: "/shinagawa",
+        destination:
+          "https://www.appsheet.com/start/1879dbe2-b025-488c-86a9-87eb9b6bcd0c",
+        permanent: false,
+      },
     ];
   },
 };
