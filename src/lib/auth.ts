@@ -101,6 +101,9 @@ export const authOptions: AuthOptions = {
         }
       }
 
+      const adminIds = (process.env.ADMIN_LINE_IDS || '').split(',').map(s => s.trim()).filter(Boolean);
+      token.isAdmin = adminIds.includes(token.lineId as string);
+
       return token;
     },
 
@@ -110,6 +113,7 @@ export const authOptions: AuthOptions = {
       session.playerName = (token.playerName as string | null) ?? null;
       session.teamId = (token.teamId as string | null) ?? null;
       session.linePictureUrl = (token.linePictureUrl as string) ?? "";
+      session.isAdmin = (token.isAdmin as boolean) ?? false;
       return session;
     },
   },
