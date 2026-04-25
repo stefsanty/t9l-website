@@ -2,11 +2,11 @@ import { notFound } from 'next/navigation'
 import { getMatch, getAllPlayers } from '@/lib/admin-data'
 import { updateMatchScore, addGoal, deleteGoal } from '@/app/admin/actions'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Select } from '@/components/ui/select'
+import { Separator } from '@/components/ui/separator'
 
 type Props = { params: Promise<{ id: string }> }
 
@@ -22,21 +22,21 @@ export default async function EditMatchPage({ params }: Props) {
   )
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6 max-w-xl">
       <div>
-        <h1 className="text-2xl font-bold text-white">
+        <h1 className="text-2xl font-bold tracking-tight">
           {match.homeTeam.name} vs {match.awayTeam.name}
         </h1>
-        <p className="text-gray-400 text-sm mt-1">Matchday {match.matchday}</p>
+        <p className="text-muted-foreground text-sm mt-1">Matchday {match.matchday}</p>
       </div>
 
       {/* Score */}
-      <Card className="max-w-sm">
+      <Card>
         <CardHeader>
-          <CardTitle className="text-sm">Score</CardTitle>
+          <CardTitle className="text-base">Score</CardTitle>
         </CardHeader>
         <CardContent>
-          <form action={updateMatchScore} className="flex items-end gap-3 flex-wrap">
+          <form action={updateMatchScore} className="flex items-end gap-3">
             <input type="hidden" name="matchId" value={match.id} />
             <div className="space-y-1.5">
               <Label>{match.homeTeam.name}</Label>
@@ -48,7 +48,7 @@ export default async function EditMatchPage({ params }: Props) {
                 className="w-20 text-center"
               />
             </div>
-            <span className="text-gray-500 pb-2.5 text-lg">–</span>
+            <span className="text-muted-foreground pb-2 text-lg">–</span>
             <div className="space-y-1.5">
               <Label>{match.awayTeam.name}</Label>
               <Input
@@ -59,101 +59,110 @@ export default async function EditMatchPage({ params }: Props) {
                 className="w-20 text-center"
               />
             </div>
-            <Button type="submit" className="mb-0.5">Save</Button>
+            <Button type="submit" size="sm" className="mb-0.5">Save</Button>
           </form>
         </CardContent>
       </Card>
 
       {/* Goals */}
-      <div className="space-y-4">
-        <h2 className="text-sm font-semibold text-gray-300">Goals</h2>
-        <Card>
-          <CardContent className="p-0">
-            {match.goals.length === 0 ? (
-              <p className="text-gray-500 text-sm px-4 py-3">No goals recorded.</p>
-            ) : (
-              <div className="divide-y divide-gray-800">
-                {match.goals.map((goal) => (
-                  <div key={goal.id} className="flex items-center justify-between px-4 py-3 text-sm gap-2">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className="text-white font-medium truncate">{goal.scorer.name}</span>
-                      {goal.assister && (
-                        <span className="text-gray-400 text-xs truncate">
-                          assist: {goal.assister.name}
-                        </span>
-                      )}
-                    </div>
-                    <form action={deleteGoal}>
-                      <input type="hidden" name="goalId" value={goal.id} />
-                      <input type="hidden" name="matchId" value={match.id} />
-                      <Button type="submit" variant="destructive" size="sm">Delete</Button>
-                    </form>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Goals</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* Existing goals list */}
+          {match.goals.length === 0 ? (
+            <p className="text-muted-foreground text-sm">No goals recorded.</p>
+          ) : (
+            <div className="divide-y divide-border rounded-md border border-border">
+              {match.goals.map((goal) => (
+                <div key={goal.id} className="flex items-center justify-between px-4 py-2.5 text-sm">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="font-medium">{goal.scorer.name}</span>
+                    {goal.assister && (
+                      <span className="text-muted-foreground text-xs">
+                        assist: {goal.assister.name}
+                      </span>
+                    )}
                   </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+                  <form action={deleteGoal}>
+                    <input type="hidden" name="goalId" value={goal.id} />
+                    <input type="hidden" name="matchId" value={match.id} />
+                    <Button type="submit" variant="ghost" size="sm" className="text-destructive hover:text-destructive">
+                      Delete
+                    </Button>
+                  </form>
+                </div>
+              ))}
+            </div>
+          )}
 
-        {/* Add goal */}
-        <Card className="max-w-md">
-          <CardHeader>
-            <CardTitle className="text-sm">Add Goal</CardTitle>
-          </CardHeader>
-          <CardContent>
+          <Separator />
+
+          {/* Add goal form */}
+          <div>
+            <p className="text-sm font-medium mb-3">Add Goal</p>
             <form action={addGoal} className="space-y-3">
               <input type="hidden" name="matchId" value={match.id} />
               <div className="space-y-1.5">
-                <Label>Scorer *</Label>
-                <Select name="scorerId" required>
+                <Label htmlFor="scorerId">Scorer *</Label>
+                <select
+                  id="scorerId"
+                  name="scorerId"
+                  required
+                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                >
                   <option value="">— Select scorer —</option>
                   {rosterPlayers.map((p) => (
                     <option key={p.id} value={p.id}>{p.name}</option>
                   ))}
-                </Select>
+                </select>
               </div>
               <div className="space-y-1.5">
-                <Label>Assister</Label>
-                <Select name="assisterId">
+                <Label htmlFor="assisterId">Assister</Label>
+                <select
+                  id="assisterId"
+                  name="assisterId"
+                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                >
                   <option value="">— No assist —</option>
                   {rosterPlayers.map((p) => (
                     <option key={p.id} value={p.id}>{p.name}</option>
                   ))}
-                </Select>
+                </select>
               </div>
-              <Button type="submit" variant="success">Add Goal</Button>
+              <Button type="submit" variant="secondary" size="sm">Add Goal</Button>
             </form>
-          </CardContent>
-        </Card>
-      </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Availability */}
       {match.availability.length > 0 && (
-        <div className="space-y-3">
-          <h2 className="text-sm font-semibold text-gray-300">Availability</h2>
-          <Card>
-            <CardContent className="p-0">
-              <div className="divide-y divide-gray-800">
-                {match.availability.map((av) => (
-                  <div key={av.id} className="flex items-center justify-between px-4 py-2 text-sm">
-                    <span className="text-white">{av.player.name}</span>
-                    <Badge
-                      variant={
-                        av.status === 'GOING'
-                          ? 'success'
-                          : av.status === 'PLAYED'
-                          ? 'default'
-                          : 'secondary'
-                      }
-                    >
-                      {av.status}
-                    </Badge>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Availability</CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="divide-y divide-border">
+              {match.availability.map((av) => (
+                <div key={av.id} className="flex items-center justify-between px-6 py-2.5 text-sm">
+                  <span className="font-medium">{av.player.name}</span>
+                  <Badge
+                    variant={
+                      av.status === 'GOING' ? 'success'
+                      : av.status === 'PLAYED' ? 'info'
+                      : 'outline'
+                    }
+                    className="text-xs"
+                  >
+                    {av.status}
+                  </Badge>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
       )}
     </div>
   )

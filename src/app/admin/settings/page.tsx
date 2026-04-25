@@ -4,18 +4,17 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Select } from '@/components/ui/select'
 
 export default async function SettingsPage() {
   const league = await getLeague()
-  if (!league) return <p className="text-gray-400">No league found.</p>
+  if (!league) return <p className="text-muted-foreground">No league found.</p>
 
   return (
-    <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-white">League Settings</h1>
-      <Card className="max-w-lg">
+    <div className="space-y-6 max-w-lg">
+      <h1 className="text-2xl font-bold tracking-tight">League Settings</h1>
+      <Card>
         <CardHeader>
-          <CardTitle>Configuration</CardTitle>
+          <CardTitle className="text-base">League Details</CardTitle>
         </CardHeader>
         <CardContent>
           <form action={updateLeague} className="space-y-4">
@@ -43,11 +42,16 @@ export default async function SettingsPage() {
 
             <div className="space-y-1.5">
               <Label htmlFor="status">Status</Label>
-              <Select id="status" name="status" defaultValue={league.status}>
+              <select
+                id="status"
+                name="status"
+                defaultValue={league.status}
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              >
                 <option value="active">active</option>
                 <option value="completed">completed</option>
                 <option value="draft">draft</option>
-              </Select>
+              </select>
             </div>
 
             <div className="space-y-1.5">

@@ -1,8 +1,8 @@
 import Link from 'next/link'
 import { getAllPlayers } from '@/lib/admin-data'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 
 export default async function PlayersPage() {
@@ -11,8 +11,8 @@ export default async function PlayersPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-white">Players</h1>
-        <Button asChild>
+        <h1 className="text-2xl font-bold tracking-tight">Players</h1>
+        <Button asChild size="sm">
           <Link href="/admin/players/new">+ New Player</Link>
         </Button>
       </div>
@@ -23,10 +23,10 @@ export default async function PlayersPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>Name</TableHead>
-                <TableHead>Team</TableHead>
-                <TableHead>Role</TableHead>
-                <TableHead className="hidden sm:table-cell">LINE ID</TableHead>
-                <TableHead className="w-16" />
+                <TableHead className="hidden sm:table-cell">Team</TableHead>
+                <TableHead className="hidden md:table-cell">Role</TableHead>
+                <TableHead className="hidden lg:table-cell">LINE ID</TableHead>
+                <TableHead className="w-12" />
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -34,22 +34,21 @@ export default async function PlayersPage() {
                 const team = player.playerTeams[0]?.team
                 return (
                   <TableRow key={player.id}>
-                    <TableCell className="text-white font-medium">{player.name}</TableCell>
-                    <TableCell className="text-gray-400">{team?.name ?? '—'}</TableCell>
-                    <TableCell>
-                      <Badge
-                        variant={
-                          player.role === 'admin'
-                            ? 'warning'
-                            : player.role === 'guest'
-                            ? 'outline'
-                            : 'default'
-                        }
-                      >
-                        {player.role}
-                      </Badge>
+                    <TableCell className="font-medium">
+                      <div>
+                        {player.name}
+                        <div className="sm:hidden text-xs text-muted-foreground mt-0.5">
+                          {team?.name ?? '—'} · {player.role}
+                        </div>
+                      </div>
                     </TableCell>
-                    <TableCell className="hidden sm:table-cell text-gray-500 font-mono text-xs">
+                    <TableCell className="hidden sm:table-cell text-muted-foreground">
+                      {team?.name ?? '—'}
+                    </TableCell>
+                    <TableCell className="hidden md:table-cell">
+                      <Badge variant="secondary" className="text-xs">{player.role}</Badge>
+                    </TableCell>
+                    <TableCell className="hidden lg:table-cell font-mono text-xs text-muted-foreground">
                       {player.lineId ?? '—'}
                     </TableCell>
                     <TableCell className="text-right">

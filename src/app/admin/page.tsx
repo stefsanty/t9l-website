@@ -1,5 +1,5 @@
 import { getDashboardStats } from '@/lib/admin-data'
-import { Card, CardContent } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 
 export default async function AdminDashboard() {
@@ -14,15 +14,13 @@ export default async function AdminDashboard() {
   ]
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-white">Dashboard</h1>
+        <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
         {league && (
-          <p className="text-gray-400 text-sm mt-1 flex items-center gap-2 flex-wrap">
+          <p className="text-muted-foreground text-sm mt-1">
             {league.name} · {league.season ?? 'Season TBD'} ·{' '}
-            <Badge variant={league.status === 'active' ? 'success' : league.status === 'draft' ? 'warning' : 'default'}>
-              {league.status}
-            </Badge>
+            <Badge variant="outline" className="text-xs ml-1">{league.status}</Badge>
           </p>
         )}
       </div>
@@ -30,35 +28,37 @@ export default async function AdminDashboard() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {stats.map(({ label, value }) => (
           <Card key={label}>
-            <CardContent className="p-5">
-              <p className="text-gray-400 text-xs uppercase tracking-wider mb-1">{label}</p>
-              <p className="text-3xl font-bold text-white">{value}</p>
+            <CardHeader className="pb-2 pt-4 px-4">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{label}</p>
+            </CardHeader>
+            <CardContent className="px-4 pb-4 pt-0">
+              <p className="text-3xl font-bold">{value}</p>
             </CardContent>
           </Card>
         ))}
       </div>
 
-      <div>
-        <h2 className="text-lg font-semibold text-white mb-3">Recent Goals</h2>
-        <Card>
-          <CardContent className="p-0">
-            {recentGoals.length === 0 ? (
-              <p className="text-gray-500 text-sm p-4">No goals recorded yet.</p>
-            ) : (
-              <div className="divide-y divide-gray-800">
-                {recentGoals.map((goal) => (
-                  <div key={goal.id} className="flex items-center gap-3 px-4 py-3 text-sm">
-                    <span className="text-white font-medium">{goal.scorer.name}</span>
-                    <span className="text-gray-500 truncate">
-                      {goal.match.homeTeam.name} vs {goal.match.awayTeam.name}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Recent Goals</CardTitle>
+        </CardHeader>
+        <CardContent className="p-0">
+          {recentGoals.length === 0 ? (
+            <p className="text-muted-foreground text-sm px-6 pb-6">No goals recorded yet.</p>
+          ) : (
+            <div className="divide-y divide-border">
+              {recentGoals.map((goal) => (
+                <div key={goal.id} className="flex items-center gap-3 px-6 py-3 text-sm">
+                  <span className="font-medium">{goal.scorer.name}</span>
+                  <span className="text-muted-foreground">
+                    {goal.match.homeTeam.name} vs {goal.match.awayTeam.name}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   )
 }

@@ -4,17 +4,16 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Select } from '@/components/ui/select'
 
 export default async function NewPlayerPage() {
   const teams = await getAllTeams()
 
   return (
-    <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-white">New Player</h1>
-      <Card className="max-w-lg">
+    <div className="space-y-6 max-w-lg">
+      <h1 className="text-2xl font-bold tracking-tight">New Player</h1>
+      <Card>
         <CardHeader>
-          <CardTitle>Player Details</CardTitle>
+          <CardTitle className="text-base">Player Details</CardTitle>
         </CardHeader>
         <CardContent>
           <form action={createPlayer} className="space-y-4">
@@ -30,21 +29,30 @@ export default async function NewPlayerPage() {
 
             <div className="space-y-1.5">
               <Label htmlFor="role">Role</Label>
-              <Select id="role" name="role" defaultValue="player">
+              <select
+                id="role"
+                name="role"
+                defaultValue="player"
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              >
                 <option value="player">player</option>
                 <option value="admin">admin</option>
                 <option value="guest">guest</option>
-              </Select>
+              </select>
             </div>
 
             <div className="space-y-1.5">
               <Label htmlFor="teamId">Team</Label>
-              <Select id="teamId" name="teamId">
+              <select
+                id="teamId"
+                name="teamId"
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              >
                 <option value="">— No team —</option>
                 {teams.map((team) => (
                   <option key={team.id} value={team.id}>{team.name}</option>
                 ))}
-              </Select>
+              </select>
             </div>
 
             <Button type="submit">Create Player</Button>
