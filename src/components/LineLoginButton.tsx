@@ -227,27 +227,31 @@ export default function LineLoginButton() {
   }
 
   if (!session) {
-    return (
-      <div className="relative" ref={ref}>
-        <button
-          onClick={() => {
-            if (process.env.NODE_ENV === 'development') {
-              setOpen(!open);
-            } else {
-              signIn('line');
-            }
-          }}
-          className="flex items-center gap-1.5 bg-[#06C755] hover:bg-[#05b34c] active:scale-95 text-white text-[11px] font-black uppercase tracking-wider px-3 py-1.5 rounded-full transition-all"
-        >
-          <LineIcon className="w-3.5 h-3.5" />
-          {"Login"} {process.env.NODE_ENV === 'development' && (
-            <svg className={`w-3 h-3 transition-transform ${open ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M19 9l-7 7-7-7" />
-            </svg>
-          )}
-        </button>
+    const isLocalDev = process.env.NODE_ENV === 'development';
+    const isDevMode = process.env.NEXT_PUBLIC_DEV_MODE === 'true';
 
-        {open && process.env.NODE_ENV === 'development' && (
+    return (
+      <div className="flex items-center gap-2">
+        <div className="relative" ref={ref}>
+          <button
+            onClick={() => {
+              if (isLocalDev) {
+                setOpen(!open);
+              } else {
+                signIn('line');
+              }
+            }}
+            className="flex items-center gap-1.5 bg-[#06C755] hover:bg-[#05b34c] active:scale-95 text-white text-[11px] font-black uppercase tracking-wider px-3 py-1.5 rounded-full transition-all"
+          >
+            <LineIcon className="w-3.5 h-3.5" />
+            {"Login"} {isLocalDev && (
+              <svg className={`w-3 h-3 transition-transform ${open ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M19 9l-7 7-7-7" />
+              </svg>
+            )}
+          </button>
+
+          {open && isLocalDev && (
           <div className="absolute right-0 top-full mt-2 w-52 bg-card border border-border-default rounded-2xl overflow-hidden z-50 shadow-2xl">
             <button
               onClick={() => signIn('line')}
@@ -293,6 +297,16 @@ export default function LineLoginButton() {
               </div>
             </div>
           </div>
+        )}
+        </div>
+
+        {isDevMode && !isLocalDev && (
+          <Link
+            href="/dev-login"
+            className="text-[10px] font-black uppercase tracking-wider text-yellow-400 border border-yellow-400/30 hover:border-yellow-400/60 hover:text-yellow-300 px-2.5 py-1.5 rounded-full transition-all"
+          >
+            Dev
+          </Link>
         )}
       </div>
     );

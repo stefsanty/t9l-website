@@ -57,6 +57,28 @@ export const authOptions: AuthOptions = {
           }),
         ]
       : []),
+    // LINE ID mock provider — active only when NEXTAUTH_DEV_MODE=true (Vercel Preview dev branch)
+    ...(process.env.NEXTAUTH_DEV_MODE === "true"
+      ? [
+          CredentialsProvider({
+            id: "line-mock",
+            name: "LINE ID Mock",
+            credentials: {
+              lineId: { label: "LINE ID", type: "text" },
+            },
+            async authorize(credentials) {
+              if (!credentials?.lineId) return null;
+              const { lineId } = credentials;
+              return {
+                id: lineId,
+                name: `Dev User (${lineId})`,
+                email: null,
+                image: null,
+              };
+            },
+          }),
+        ]
+      : []),
   ],
   session: { strategy: "jwt" },
   callbacks: {
@@ -69,6 +91,12 @@ export const authOptions: AuthOptions = {
         token.teamId = (user as any).teamId;
         token.linePictureUrl = "";
         return token;
+      }
+
+      // Handle line-mock: set lineId and fall through to Redis lookup + isAdmin
+      if (account?.provider === "line-mock" && user) {
+        token.lineId = user.id;
+        token.linePictureUrl = "";
       }
 
       // Set LINE-specific fields on initial sign-in
