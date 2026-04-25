@@ -1,219 +1,276 @@
-/**
- * importFromSheets.ts
- * One-time (idempotent) migration: Google Sheets → Neon Postgres
- *
- * Run with:
- *   npx ts-node --project tsconfig.scripts.json scripts/importFromSheets.ts
- *
- * Requires env vars: GOOGLE_SHEETS_ID, GOOGLE_SERVICE_ACCOUNT_EMAIL,
- * GOOGLE_PRIVATE_KEY, DATABASE_URL
- */
-
-import { PrismaClient } from '@prisma/client'
 import { google } from 'googleapis'
+import { prisma } from '../src/lib/prisma'
 
-const prisma = new PrismaClient()
+// ── Config from env ────────────────────────────────────────────────────────────
+const LEAGUE_SLUG = process.env.IMPORT_LEAGUE_SLUG ?? 't9l'
+const LEAGUE_NAME = process.env.IMPORT_LEAGUE_NAME ?? 'Tennozu 9-Aside League'
+const SHEET_ID    = process.env.GOOGLE_SHEETS_ID ?? process.env.GOOGLE_SHEET_ID ?? ''
 
-const SPREADSHEET_ID = process.env.GOOGLE_SHEETS_ID!
-const LEAGUE_SLUG = process.env.IMPORT_LEAGUE_SLUG || 'minato-2025'
-const LEAGUE_NAME = process.env.IMPORT_LEAGUE_NAME || 'T9L Minato 2025'
+if (!process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || !process.env.GOOGLE_PRIVATE_KEY) {
+  console.error('Missing GOOGLE_SERVICE_ACCOUNT_EMAIL or GOOGLE_PRIVATE_KEY')
+  process.exit(1)
+}
+if (!SHEET_ID) {
+  console.error('Missing GOOGLE_SHEETS_ID (or GOOGLE_SHEET_ID)')
+  process.exit(1)
+}
 
-async function getSheetsClient() {
-  const auth = new google.auth.GoogleAuth({
-    credentials: {
-      client_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-      private_key: process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
-    },
-    scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'],
+// ── Sheets auth ────────────────────────────────────────────────────────────────
+const auth = new google.auth.GoogleAuth({
+  credentials: {
+    client_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+    private_key:  (process.env.GOOGLE_PRIVATE_KEY ?? '').replace(/\\n/g, '\n'),
+  },
+  scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'],
+})
+const sheets = google.sheets({ version: 'v4', auth })
+
+// ── Deterministic IDs ──────────────────────────────────────────────────────────
+// Using these keeps re-runs idempotent — same inputs always produce same IDs.
+function mkLeagueId(slug: string)                            { return `lg-${slug}` }
+function mkTeamId(leagueSlug: string, sheetId: string)      { return `t-${leagueSlug}-${slugify(sheetId)}` }
+function mkPlayerId(sheetId: string)                         { return `p-${slugify(sheetId)}` }
+function mkMatchId(ls: string, md: number, h: string, a: string) {
+  return `m-${ls}-md${md}-${slugify(h)}-vs-${slugify(a)}`
+}
+function mkGoalId(matchId: string, scorerSheet: string, n: number) {
+  return `g-${matchId}-${slugify(scorerSheet)}-${n}`
+}
+
+function slugify(s: string) {
+  return String(s)
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+}
+
+// ── Date normalisation ─────────────────────────────────────────────────────────
+function parseDate(raw: string | undefined): Date | null {
+  if (!raw?.trim()) return null
+  if (/^\d{4}-\d{2}-\d{2}/.test(raw)) {
+    const d = new Date(raw)
+    return isNaN(d.getTime()) ? null : d
+  }
+  const mdy = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
+  if (mdy) {
+    const d = new Date(`${mdy[3]}-${mdy[1].padStart(2,'0')}-${mdy[2].padStart(2,'0')}T12:00:00Z`)
+    return isNaN(d.getTime()) ? null : d
+  }
+  const d = new Date(raw)
+  return isNaN(d.getTime()) ? null : d
+}
+
+// ── Fetch all ranges in one batchGet ──────────────────────────────────────────
+async function batchFetch(ranges: string[]): Promise<Map<string, string[][]>> {
+  const res = await sheets.spreadsheets.values.batchGet({ spreadsheetId: SHEET_ID, ranges })
+  const map = new Map<string, string[][]>()
+  ranges.forEach((r, i) => {
+    map.set(r, (res.data.valueRanges?.[i]?.values ?? []) as string[][])
   })
-  return google.sheets({ version: 'v4', auth })
+  return map
 }
 
-async function fetchRange(sheets: any, range: string): Promise<string[][]> {
-  const res = await sheets.spreadsheets.values.get({
-    spreadsheetId: SPREADSHEET_ID,
-    range,
-  })
-  return res.data.values || []
-}
-
-function normalizeDate(raw: string | undefined): Date | null {
-  if (!raw) return null
-  const iso = new Date(raw)
-  if (!isNaN(iso.getTime())) return iso
-  const slash = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
-  if (slash) return new Date(`${slash[3]}-${slash[1].padStart(2,'0')}-${slash[2].padStart(2,'0')}T12:00:00+09:00`)
-  return null
-}
-
+// ── Main ───────────────────────────────────────────────────────────────────────
 async function main() {
-  console.log('Starting import...')
-  const sheets = await getSheetsClient()
+  console.log(`\n🏟  Import: ${LEAGUE_NAME} (${LEAGUE_SLUG})`)
+  console.log(`📊  Sheet: ${SHEET_ID}\n`)
 
-  // ── 1. Upsert League ──────────────────────────────────────────────────────
-  console.log('Upserting league...')
-  const league = await prisma.league.upsert({
-    where: { slug: LEAGUE_SLUG },
-    create: { name: LEAGUE_NAME, slug: LEAGUE_SLUG, status: 'active' },
+  console.log('Fetching all ranges via batchGet…')
+  const data = await batchFetch(['Teams', 'Roster', 'Schedule', 'Goals', 'Ratings'])
+
+  const teamRows     = data.get('Teams')?.slice(1)    ?? []
+  const rosterRows   = data.get('Roster')?.slice(1)   ?? []
+  const scheduleRows = data.get('Schedule')?.slice(1) ?? []
+  const goalRows     = data.get('Goals')?.slice(1)    ?? []
+  const ratingData   = data.get('Ratings')            ?? []
+
+  // ── 1. Upsert League ───────────────────────────────────────────────────────
+  const lgId = mkLeagueId(LEAGUE_SLUG)
+  console.log('Upserting league…')
+  await prisma.league.upsert({
+    where:  { slug: LEAGUE_SLUG },
+    create: { id: lgId, name: LEAGUE_NAME, slug: LEAGUE_SLUG },
     update: { name: LEAGUE_NAME },
   })
-  console.log(`  League: ${league.name} (${league.id})`)
+  console.log(`  ✓ ${LEAGUE_NAME} (id: ${lgId})`)
 
-  // ── 2. Teams ──────────────────────────────────────────────────────────────
-  console.log('Importing teams...')
-  const teamsRows = await fetchRange(sheets, 'Teams')
+  // ── 2. Upsert Teams ────────────────────────────────────────────────────────
+  // Teams cols: [0] sheetId, [1] name, [2] shortName, [3] color, [4] logoUrl
+  console.log(`\nUpserting ${teamRows.length} team(s)…`)
   const teamMap = new Map<string, string>() // sheetId → DB id
 
-  for (const row of teamsRows.slice(1)) {
+  for (const row of teamRows) {
     const [sheetId, name, shortName, color, logoUrl] = row
     if (!sheetId || !name) continue
-    const team = await prisma.team.upsert({
-      where: { id: `t-${LEAGUE_SLUG}-${sheetId}` },
-      create: { id: `t-${LEAGUE_SLUG}-${sheetId}`, leagueId: league.id, name, shortName: shortName || null, color: color || null, logoUrl: logoUrl || null },
-      update: { name, shortName: shortName || null, color: color || null },
+    const tId = mkTeamId(LEAGUE_SLUG, sheetId)
+    teamMap.set(sheetId, tId)
+    await prisma.team.upsert({
+      where:  { id: tId },
+      create: { id: tId, leagueId: lgId, name, shortName: shortName || null, color: color || null, logoUrl: logoUrl || null },
+      update: { name, shortName: shortName || null, color: color || null, logoUrl: logoUrl || null },
     })
-    teamMap.set(sheetId, team.id)
-    console.log(`  Team: ${name}`)
+    console.log(`  ✓ Team: ${name} (${sheetId})`)
   }
 
-  // ── 3. Players ────────────────────────────────────────────────────────────
-  console.log('Importing players...')
-  const rosterRows = await fetchRange(sheets, 'Roster')
+  // ── 3. Upsert Players + PlayerTeam links ───────────────────────────────────
+  // Roster cols: [0] sheetPlayerId, [1] name, [2] sheetTeamId, [3] position
+  console.log(`\nUpserting ${rosterRows.length} player(s)…`)
   const playerMap = new Map<string, string>() // sheetPlayerId → DB id
 
-  for (const row of rosterRows.slice(1)) {
-    const [playerId, playerName, teamId, position] = row
-    if (!playerId || !playerName) continue
+  for (const row of rosterRows) {
+    const [sheetPlayerId, playerName, sheetTeamId, position] = row
+    if (!sheetPlayerId || !playerName) continue
 
-    const player = await prisma.player.upsert({
-      where: { id: `p-${playerId}` },
-      create: { id: `p-${playerId}`, name: playerName },
+    const pId = mkPlayerId(sheetPlayerId)
+    playerMap.set(sheetPlayerId, pId)
+
+    await prisma.player.upsert({
+      where:  { id: pId },
+      create: { id: pId, name: playerName },
       update: { name: playerName },
     })
-    playerMap.set(playerId, player.id)
 
-    const dbTeamId = teamMap.get(teamId)
-    if (dbTeamId) {
+    const tId = teamMap.get(sheetTeamId)
+    if (tId) {
+      const ptId = `pt-${pId}-${tId}`
       await prisma.playerTeam.upsert({
-        where: { playerId_teamId: { playerId: player.id, teamId: dbTeamId } },
-        create: { playerId: player.id, teamId: dbTeamId, position: position || null },
+        where:  { id: ptId },
+        create: { id: ptId, playerId: pId, teamId: tId, position: position || null, isActive: true },
         update: { position: position || null },
       })
     }
-    console.log(`  Player: ${playerName}`)
+    console.log(`  ✓ Player: ${playerName}`)
   }
 
-  // ── 4. Matches ────────────────────────────────────────────────────────────
-  console.log('Importing matches...')
-  const scheduleRows = await fetchRange(sheets, 'Schedule')
-  const matchMap = new Map<string, string>() // matchday+home+away → DB id
+  // ── 4. Upsert Matches ──────────────────────────────────────────────────────
+  // Schedule cols: [0] matchday, [1] date, [2] venue, [3] homeSheetId, [4] awaySheetId,
+  //                [5] homeScore, [6] awayScore
+  console.log(`\nUpserting ${scheduleRows.length} match(es)…`)
+  const matchMap = new Map<string, string>() // sheetKey → DB id
 
-  for (const row of scheduleRows.slice(1)) {
-    const [matchdayRaw, dateRaw, venue, homeId, awayId, homeScoreRaw, awayScoreRaw] = row
-    if (!matchdayRaw || !homeId || !awayId) continue
+  for (const row of scheduleRows) {
+    const [mdRaw, dateRaw, venue, homeSheetId, awaySheetId, homeScoreRaw, awayScoreRaw] = row
+    if (!mdRaw || !homeSheetId || !awaySheetId) continue
 
-    const matchday = parseInt(matchdayRaw.replace(/\D/g, ''), 10)
-    const homeTeamId = teamMap.get(homeId)
-    const awayTeamId = teamMap.get(awayId)
-    if (!homeTeamId || !awayTeamId) continue
+    const md       = parseInt(mdRaw.replace(/\D/g, ''), 10)
+    const homeTId  = teamMap.get(homeSheetId)
+    const awayTId  = teamMap.get(awaySheetId)
+    if (!homeTId || !awayTId) {
+      console.warn(`  ⚠ Match MD${md}: unknown team(s) ${homeSheetId} / ${awaySheetId}`)
+      continue
+    }
 
-    const matchKey = `m-${LEAGUE_SLUG}-md${matchday}-${homeId}-${awayId}`
-    const homeScore = homeScoreRaw ? parseInt(homeScoreRaw, 10) : null
-    const awayScore = awayScoreRaw ? parseInt(awayScoreRaw, 10) : null
-    const status = homeScore !== null && awayScore !== null ? 'played' : 'scheduled'
+    const homeScore = homeScoreRaw !== undefined && homeScoreRaw !== '' ? parseInt(homeScoreRaw, 10) : null
+    const awayScore = awayScoreRaw !== undefined && awayScoreRaw !== '' ? parseInt(awayScoreRaw, 10) : null
+    const status    = homeScore !== null && awayScore !== null ? 'played' : 'scheduled'
 
-    const match = await prisma.match.upsert({
-      where: { id: matchKey },
+    const mId  = mkMatchId(LEAGUE_SLUG, md, homeSheetId, awaySheetId)
+    const mKey = `${md}-${homeSheetId}-${awaySheetId}`
+    matchMap.set(mKey, mId)
+
+    await prisma.match.upsert({
+      where:  { id: mId },
       create: {
-        id: matchKey,
-        leagueId: league.id,
-        homeTeamId,
-        awayTeamId,
-        matchday,
-        date: normalizeDate(dateRaw),
-        venue: venue || null,
-        homeScore,
-        awayScore,
-        status,
+        id: mId, leagueId: lgId, matchday: md,
+        homeTeamId: homeTId, awayTeamId: awayTId,
+        date: parseDate(dateRaw), venue: venue || null,
+        homeScore, awayScore, status,
       },
-      update: { date: normalizeDate(dateRaw), homeScore, awayScore, status },
+      update: { date: parseDate(dateRaw), homeScore, awayScore, status },
     })
-    matchMap.set(matchKey, match.id)
-    console.log(`  Match MD${matchday}: ${homeId} vs ${awayId}`)
+    console.log(`  ✓ Match MD${md}: ${homeSheetId} vs ${awaySheetId}`)
   }
 
-  // ── 5. Goals ──────────────────────────────────────────────────────────────
-  console.log('Importing goals...')
-  const goalsRows = await fetchRange(sheets, 'Goals')
+  // ── 5. Upsert Goals ────────────────────────────────────────────────────────
+  // Goals cols: [0] matchday, [1] timestamp, [2] homeSheetId, [3] awaySheetId,
+  //             [4] scorerSheetId, [5] assisterSheetId
+  console.log(`\nUpserting ${goalRows.length} goal(s)…`)
+  let goalsOk = 0
+  const goalCounters = new Map<string, number>()
 
-  for (const row of goalsRows.slice(1)) {
-    const [matchdayRaw, , scorerId, assisterId] = row
-    if (!scorerId) continue
+  for (const row of goalRows) {
+    const [mdRaw, , homeSheetId, awaySheetId, scorerSheetId, assisterSheetId] = row
+    if (!scorerSheetId) continue
 
-    const scorerDbId = playerMap.get(scorerId)
-    if (!scorerDbId) continue
+    const md = parseInt((mdRaw ?? '').replace(/\D/g, ''), 10)
+    if (!md) continue
 
-    const matchday = parseInt(matchdayRaw?.replace(/\D/g, '') || '0', 10)
-    const matchesForMd = await prisma.match.findMany({
-      where: { leagueId: league.id, matchday },
+    // Try both orderings to find the match
+    const mKey    = `${md}-${homeSheetId}-${awaySheetId}`
+    const mKeyAlt = `${md}-${awaySheetId}-${homeSheetId}`
+    const mId     = matchMap.get(mKey) ?? matchMap.get(mKeyAlt)
+
+    if (!mId) {
+      console.warn(`  ⚠ Goal MD${md}: match not found (${homeSheetId} vs ${awaySheetId})`)
+      continue
+    }
+
+    const sId = playerMap.get(scorerSheetId)
+    if (!sId) {
+      console.warn(`  ⚠ Goal MD${md}: scorer not found (${scorerSheetId})`)
+      continue
+    }
+    const aId = assisterSheetId ? playerMap.get(assisterSheetId) : undefined
+
+    const n   = (goalCounters.get(mId) ?? 0) + 1
+    goalCounters.set(mId, n)
+    const gId = mkGoalId(mId, scorerSheetId, n)
+
+    await prisma.goal.upsert({
+      where:  { id: gId },
+      create: { id: gId, matchId: mId, scorerId: sId, assisterId: aId ?? null },
+      update: { assisterId: aId ?? null },
     })
-
-    if (matchesForMd.length === 0) continue
-    const matchId = matchesForMd[0].id
-
-    await prisma.goal.create({
-      data: {
-        matchId,
-        scorerId: scorerDbId,
-        assisterId: assisterId ? playerMap.get(assisterId) || null : null,
-      },
-    })
-    console.log(`  Goal: ${scorerId} (MD${matchday})`)
+    goalsOk++
   }
+  console.log(`  ✓ ${goalsOk} goal(s) upserted`)
 
-  // ── 6. Ratings ────────────────────────────────────────────────────────────
-  console.log('Importing ratings...')
-  const ratingsRows = await fetchRange(sheets, 'Ratings')
+  // ── 6. Upsert Ratings ─────────────────────────────────────────────────────
+  // Ratings cols: [0] matchday, [1] sheetPlayerId, [2] refScore, [3] teamwork,
+  //               [4] enjoyment, [5] gameCloseness
+  const ratingRows = ratingData.slice(1)
+  console.log(`\nUpserting ${ratingRows.length} rating row(s)…`)
+  let ratingsOk = 0
 
-  for (const row of ratingsRows.slice(1)) {
-    const [matchdayRaw, playerId, refScore, teamwork, enjoyment, gameCloseness] = row
-    if (!playerId) continue
+  for (const row of ratingRows) {
+    const [mdRaw, sheetPlayerId, refScoreRaw, teamworkRaw, enjoymentRaw, gameClosenessRaw] = row
+    if (!sheetPlayerId) continue
 
-    const playerDbId = playerMap.get(playerId)
-    if (!playerDbId) continue
+    const md      = parseInt((mdRaw ?? '').replace(/\D/g, ''), 10)
+    const pId     = playerMap.get(sheetPlayerId)
+    if (!md || !pId) continue
 
-    const matchday = parseInt(matchdayRaw?.replace(/\D/g, '') || '0', 10)
-    const matchesForMd = await prisma.match.findMany({
-      where: { leagueId: league.id, matchday },
-    })
-    if (matchesForMd.length === 0) continue
-    const matchId = matchesForMd[0].id
+    // Find any match in this matchday for this league
+    const mId = [...matchMap.entries()]
+      .find(([k]) => k.startsWith(`${md}-`))?.[1]
+    if (!mId) continue
+
+    const toInt = (v: string | undefined) => (v ? parseInt(v, 10) || null : null)
 
     await prisma.rating.upsert({
-      where: { matchId_playerId: { matchId, playerId: playerDbId } },
+      where:  { matchId_playerId: { matchId: mId, playerId: pId } },
       create: {
-        matchId,
-        playerId: playerDbId,
-        refScore: refScore ? parseInt(refScore, 10) : null,
-        teamwork: teamwork ? parseInt(teamwork, 10) : null,
-        enjoyment: enjoyment ? parseInt(enjoyment, 10) : null,
-        gameCloseness: gameCloseness ? parseInt(gameCloseness, 10) : null,
+        matchId: mId, playerId: pId,
+        refScore: toInt(refScoreRaw), teamwork: toInt(teamworkRaw),
+        enjoyment: toInt(enjoymentRaw), gameCloseness: toInt(gameClosenessRaw),
       },
       update: {
-        refScore: refScore ? parseInt(refScore, 10) : null,
-        teamwork: teamwork ? parseInt(teamwork, 10) : null,
-        enjoyment: enjoyment ? parseInt(enjoyment, 10) : null,
-        gameCloseness: gameCloseness ? parseInt(gameCloseness, 10) : null,
+        refScore: toInt(refScoreRaw), teamwork: toInt(teamworkRaw),
+        enjoyment: toInt(enjoymentRaw), gameCloseness: toInt(gameClosenessRaw),
       },
     })
+    ratingsOk++
   }
+  console.log(`  ✓ ${ratingsOk} rating record(s) upserted`)
 
-  console.log('\n✅ Import complete!')
+  console.log('\n✅  Import complete.\n')
   await prisma.$disconnect()
 }
 
-main().catch(async (e) => {
-  console.error(e)
+main().catch(async err => {
+  console.error('Import failed:', err)
   await prisma.$disconnect()
   process.exit(1)
 })
