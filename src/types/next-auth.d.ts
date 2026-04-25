@@ -7,6 +7,7 @@ declare module "next-auth" {
     playerName: string | null;
     teamId: string | null;
     linePictureUrl: string;
+    isAdmin: boolean;
   }
 }
 
@@ -17,5 +18,6 @@ declare module "next-auth/jwt" {
     playerName?: string | null;
     teamId?: string | null;
     linePictureUrl?: string;
+    isAdmin?: boolean;
   }
 }
