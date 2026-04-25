@@ -45,7 +45,6 @@ model Player {
   playerTeams   PlayerTeam[]
   scoredGoals   Goal[]         @relation("Scorer")
   assistedGoals Goal[]         @relation("Assister")
-  ratings       Rating[]
   availability  Availability[]
 }
 
@@ -75,7 +74,6 @@ model Match {
   homeTeam     Team           @relation("HomeTeam", fields: [homeTeamId], references: [id])
   awayTeam     Team           @relation("AwayTeam", fields: [awayTeamId], references: [id])
   goals        Goal[]
-  ratings      Rating[]
   availability Availability[]
 }
 
@@ -88,19 +86,6 @@ model Goal {
   match      Match   @relation(fields: [matchId], references: [id])
   scorer     Player  @relation("Scorer", fields: [scorerId], references: [id])
   assister   Player? @relation("Assister", fields: [assisterId], references: [id])
-}
-
-model Rating {
-  id            String @id @default(cuid())
-  matchId       String
-  playerId      String
-  refScore      Int?
-  teamwork      Int?
-  enjoyment     Int?
-  gameCloseness Int?
-  match         Match  @relation(fields: [matchId], references: [id])
-  player        Player @relation(fields: [playerId], references: [id])
-  @@unique([matchId, playerId])
 }
 
 model Availability {

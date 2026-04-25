@@ -65,7 +65,7 @@ async function main() {
   dotenv.config()
 
   const LEAGUE_SLUG    = process.env.IMPORT_LEAGUE_SLUG    ?? 't9l'
-  const LEAGUE_NAME    = process.env.IMPORT_LEAGUE_NAME    ?? 'Tennozu 9-Aside League'
+  const LEAGUE_NAME    = process.env.IMPORT_LEAGUE_NAME    ?? 'T9L 2026 Spring'
   const SHEET_ID       = process.env.GOOGLE_SHEETS_ID      ?? process.env.GOOGLE_SHEET_ID ?? ''
   const SERVICE_EMAIL  = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL ?? ''
   const PRIVATE_KEY    = (process.env.GOOGLE_PRIVATE_KEY   ?? '').replace(/\\n/g, '\n')
@@ -116,6 +116,15 @@ async function main() {
       update: { name: LEAGUE_NAME },
     })
     console.log(`✓ League: ${league.name} (${league.id})`)
+
+    // ── Guest player — catch-all for non-rostered scorers ──────────────────────
+    const GUEST_ID = 'p-guest'
+    await prisma.player.upsert({
+      where:  { id: GUEST_ID },
+      create: { id: GUEST_ID, name: 'Guest' },
+      update: { name: 'Guest' },
+    })
+    console.log(`✓ Guest player ensured (${GUEST_ID})`)
 
     // ── 2. Matchday date map (MDScheduleRaw) ───────────────────────────────────
     const mdDateMap = new Map<number, Date | null>()
@@ -249,12 +258,11 @@ async function main() {
         continue
       }
 
-      const scorerId = playerIdMap.get(scorerName)
-      if (!scorerId) {
-        console.log(`  ℹ Guest scorer skipped: ${scorerName}`)
-        continue
+      const scorerId = playerIdMap.get(scorerName) ?? GUEST_ID
+      if (!playerIdMap.has(scorerName)) {
+        console.log(`  ℹ Non-roster scorer mapped to Guest: ${scorerName}`)
       }
-      const assisterId = assisterName ? (playerIdMap.get(assisterName) ?? null) : null
+      const assisterId = assisterName ? (playerIdMap.get(assisterName) ?? GUEST_ID) : null
 
       const gId = `g-${mId}-${i}`
       await prisma.goal.upsert({
@@ -327,11 +335,7 @@ async function main() {
     }
     console.log(`✓ Availability: ${availCount}`)
 
-    // ── 10. Ratings ───────────────────────────────────────────────────────────
-    // RatingsRaw is wide: [matchday, timestamp, respondentTeam, …53 player cols…, ref, gamesClose, teamwork, enjoyment]
-    // The respondent player is not identified in the raw data (only their team is),
-    // so we cannot reliably populate Rating.playerId. Skipping ratings import.
-    console.log('⚠  Ratings import skipped — respondent player not identifiable from RatingsRaw')
+    // Ratings model removed — no ratings import.
 
     console.log('\n✅  Import complete.\n')
   } finally {
