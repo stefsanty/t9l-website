@@ -16,7 +16,7 @@ export default async function AdminDashboard() {
       <h1 className="text-2xl font-bold text-white mb-1">Dashboard</h1>
       {league && (
         <p className="text-gray-400 text-sm mb-6">
-          {league.name} · {league.season ?? 'Season TBD'} · status: {league.status}
+          {league.name} · {league.location}
         </p>
       )}
 
@@ -36,9 +36,9 @@ export default async function AdminDashboard() {
         )}
         {recentGoals.map((goal) => (
           <div key={goal.id} className="flex items-center gap-3 px-4 py-3 text-sm">
-            <span className="text-white font-medium">{goal.scorer.name}</span>
+            <span className="text-white font-medium">{goal.player.name}</span>
             <span className="text-gray-500">
-              {goal.match.homeTeam.name} vs {goal.match.awayTeam.name}
+              {goal.match.homeTeam.team.name} vs {goal.match.awayTeam.team.name}
             </span>
           </div>
         ))}

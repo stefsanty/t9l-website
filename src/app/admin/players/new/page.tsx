@@ -1,9 +1,6 @@
-import { getAllTeams } from '@/lib/admin-data'
 import { createPlayer } from '@/app/admin/actions'
 
 export default async function NewPlayerPage() {
-  const teams = await getAllTeams()
-
   return (
     <div>
       <h1 className="text-2xl font-bold text-white mb-6">New Player</h1>
@@ -26,31 +23,7 @@ export default async function NewPlayerPage() {
             />
           </div>
 
-          <div>
-            <label className="block text-xs text-gray-400 mb-1">Role</label>
-            <select
-              name="role"
-              defaultValue="player"
-              className="w-full bg-gray-700 text-white rounded px-3 py-2 text-sm"
-            >
-              <option value="player">player</option>
-              <option value="admin">admin</option>
-              <option value="guest">guest</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-xs text-gray-400 mb-1">Team</label>
-            <select
-              name="teamId"
-              className="w-full bg-gray-700 text-white rounded px-3 py-2 text-sm"
-            >
-              <option value="">— No team —</option>
-              {teams.map((team) => (
-                <option key={team.id} value={team.id}>{team.name}</option>
-              ))}
-            </select>
-          </div>
+          {/* TODO: team assignment requires selecting a LeagueTeam, not a bare Team */}
 
           <button
             type="submit"

@@ -10,8 +10,8 @@ export default async function EditMatchPage({ params }: Props) {
   if (!match) notFound()
 
   const rosterPlayers = players.filter((p) =>
-    p.playerTeams.some(
-      (pt) => pt.teamId === match.homeTeamId || pt.teamId === match.awayTeamId
+    p.leagueAssignments.some(
+      (la) => la.leagueTeamId === match.homeTeamId || la.leagueTeamId === match.awayTeamId
     )
   )
 
@@ -19,9 +19,9 @@ export default async function EditMatchPage({ params }: Props) {
     <div className="space-y-8">
       <div>
         <h1 className="text-2xl font-bold text-white">
-          {match.homeTeam.name} vs {match.awayTeam.name}
+          {match.homeTeam.team.name} vs {match.awayTeam.team.name}
         </h1>
-        <p className="text-gray-400 text-sm">Matchday {match.matchday}</p>
+        <p className="text-gray-400 text-sm">Week {match.gameWeek.weekNumber}</p>
       </div>
 
       {/* Score */}
@@ -30,23 +30,23 @@ export default async function EditMatchPage({ params }: Props) {
         <form action={updateMatchScore} className="flex items-end gap-3">
           <input type="hidden" name="matchId" value={match.id} />
           <div>
-            <label className="block text-xs text-gray-400 mb-1">{match.homeTeam.name}</label>
+            <label className="block text-xs text-gray-400 mb-1">{match.homeTeam.team.name}</label>
             <input
               name="homeScore"
               type="number"
               min="0"
-              defaultValue={match.homeScore ?? ''}
+              defaultValue={match.homeScore}
               className="w-20 bg-gray-700 text-white text-center rounded px-3 py-2 text-sm"
             />
           </div>
           <span className="text-gray-500 pb-2">–</span>
           <div>
-            <label className="block text-xs text-gray-400 mb-1">{match.awayTeam.name}</label>
+            <label className="block text-xs text-gray-400 mb-1">{match.awayTeam.team.name}</label>
             <input
               name="awayScore"
               type="number"
               min="0"
-              defaultValue={match.awayScore ?? ''}
+              defaultValue={match.awayScore}
               className="w-20 bg-gray-700 text-white text-center rounded px-3 py-2 text-sm"
             />
           </div>
@@ -68,9 +68,9 @@ export default async function EditMatchPage({ params }: Props) {
           )}
           {match.goals.map((goal) => (
             <div key={goal.id} className="flex items-center justify-between px-4 py-3 text-sm">
-              <span className="text-white">{goal.scorer.name}</span>
-              {goal.assister && (
-                <span className="text-gray-400 text-xs">assist: {goal.assister.name}</span>
+              <span className="text-white">{goal.player.name}</span>
+              {goal.assist && (
+                <span className="text-gray-400 text-xs">assist: {goal.assist.player.name}</span>
               )}
               <form action={deleteGoal}>
                 <input type="hidden" name="goalId" value={goal.id} />
@@ -92,9 +92,21 @@ export default async function EditMatchPage({ params }: Props) {
           <form action={addGoal} className="space-y-3">
             <input type="hidden" name="matchId" value={match.id} />
             <div>
+              <label className="block text-xs text-gray-400 mb-1">Scoring Team *</label>
+              <select
+                name="scoringTeamId"
+                required
+                className="w-full bg-gray-700 text-white rounded px-3 py-2 text-sm"
+              >
+                <option value="">— Select team —</option>
+                <option value={match.homeTeamId}>{match.homeTeam.team.name}</option>
+                <option value={match.awayTeamId}>{match.awayTeam.team.name}</option>
+              </select>
+            </div>
+            <div>
               <label className="block text-xs text-gray-400 mb-1">Scorer *</label>
               <select
-                name="scorerId"
+                name="playerId"
                 required
                 className="w-full bg-gray-700 text-white rounded px-3 py-2 text-sm"
               >
@@ -125,31 +137,6 @@ export default async function EditMatchPage({ params }: Props) {
           </form>
         </div>
       </section>
-
-      {/* Availability */}
-      {match.availability.length > 0 && (
-        <section>
-          <h2 className="text-sm font-semibold text-gray-300 mb-3">Availability</h2>
-          <div className="bg-gray-800 rounded-lg divide-y divide-gray-700">
-            {match.availability.map((av) => (
-              <div key={av.id} className="flex items-center justify-between px-4 py-2 text-sm">
-                <span className="text-white">{av.player.name}</span>
-                <span
-                  className={`text-xs ${
-                    av.status === 'GOING'
-                      ? 'text-green-400'
-                      : av.status === 'PLAYED'
-                      ? 'text-blue-400'
-                      : 'text-gray-400'
-                  }`}
-                >
-                  {av.status}
-                </span>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
     </div>
   )
 }

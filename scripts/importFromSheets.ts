@@ -14,61 +14,62 @@ function slugify(s: string): string {
     .replace(/^-|-$/g, '')
 }
 
-// Strip color prefix added by the spreadsheet (RatingsRaw and sometimes GoalsRaw)
 function normalizeTeamName(name: string): string {
   return name.replace(/^(?:Blue|Yellow|Red|Green|White|Black)\s+/i, '').trim()
 }
 
-function parseMatchdayNum(val: string): number | null {
+function parseWeekNum(val: string): number | null {
   const m = val.match(/(\d+)/)
   return m ? parseInt(m[1], 10) : null
 }
 
-function parseAvailStatus(val: string): string | null {
-  const v = val.trim().toUpperCase()
-  if (v === 'Y' || v === 'GOING') return 'GOING'
-  if (v === 'EXPECTED' || v === 'UNDECIDED') return 'UNDECIDED'
-  if (v === 'PLAYED') return 'PLAYED'
-  return null // blank / not going → skip
-}
-
-function inferMatchdayFromTimestamp(
+function inferWeekFromTimestamp(
   timestamp: string,
-  mdDateMap: Map<number, Date | null>,
+  dateMap: Map<number, Date | null>,
 ): number | null {
   if (!timestamp) return null
   const d = new Date(timestamp)
   if (isNaN(d.getTime())) return null
-  for (const [md, mdDate] of mdDateMap) {
-    if (!mdDate) continue
+  for (const [wk, wkDate] of dateMap) {
+    if (!wkDate) continue
     if (
-      d.getFullYear() === mdDate.getFullYear() &&
-      d.getMonth() === mdDate.getMonth() &&
-      d.getDate() === mdDate.getDate()
-    ) return md
+      d.getFullYear() === wkDate.getFullYear() &&
+      d.getMonth() === wkDate.getMonth() &&
+      d.getDate() === wkDate.getDate()
+    ) return wk
   }
   return null
 }
 
+// Placeholder date for game weeks not yet scheduled
+const TBD_DATE = new Date('2099-01-01')
+
 // Stable, deterministic IDs keep re-runs idempotent
-function mkTeamId(leagueSlug: string, name: string) { return `t-${leagueSlug}-${slugify(name)}` }
-function mkPlayerId(name: string)                   { return `p-${slugify(name)}` }
-function mkMatchId(ls: string, md: number, h: string, a: string) {
-  return `m-${ls}-md${md}-${slugify(h)}-vs-${slugify(a)}`
+function mkLeagueId(slug: string)                              { return `l-${slug}` }
+function mkTeamId(name: string)                                { return `t-${slugify(name)}` }
+function mkLeagueTeamId(leagueSlug: string, name: string)     { return `lt-${leagueSlug}-${slugify(name)}` }
+function mkGameWeekId(leagueSlug: string, wk: number)         { return `gw-${leagueSlug}-${wk}` }
+function mkPlayerId(name: string)                              { return `p-${slugify(name)}` }
+function mkPlaId(pId: string, ltId: string)                   { return `pla-${pId}-${ltId}` }
+function mkMatchId(ls: string, wk: number, h: string, a: string) {
+  return `m-${ls}-wk${wk}-${slugify(h)}-vs-${slugify(a)}`
 }
+function mkGoalId(mId: string, i: number)  { return `g-${mId}-${i}` }
+function mkAssistId(goalId: string)        { return `a-${goalId}` }
 
 // ── Main ───────────────────────────────────────────────────────────────────────
 
 async function main() {
-  // Load .env.local before reading any env vars (Prisma URL, Google creds, etc.)
   dotenv.config({ path: path.resolve(process.cwd(), '.env.local') })
   dotenv.config()
 
-  const LEAGUE_SLUG    = process.env.IMPORT_LEAGUE_SLUG    ?? 't9l'
-  const LEAGUE_NAME    = process.env.IMPORT_LEAGUE_NAME    ?? 'T9L 2026 Spring'
-  const SHEET_ID       = process.env.GOOGLE_SHEETS_ID      ?? process.env.GOOGLE_SHEET_ID ?? ''
+  const LEAGUE_SLUG    = process.env.IMPORT_LEAGUE_SLUG     ?? 't9l'
+  const LEAGUE_NAME    = process.env.IMPORT_LEAGUE_NAME     ?? 'T9L 2026 Spring'
+  const LEAGUE_LOC     = process.env.IMPORT_LEAGUE_LOCATION ?? 'Tokyo, Japan'
+  const START_DATE_STR = process.env.IMPORT_START_DATE      ?? '2026-01-01'
+  const SHEET_ID       = process.env.GOOGLE_SHEETS_ID       ?? process.env.GOOGLE_SHEET_ID ?? ''
   const SERVICE_EMAIL  = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL ?? ''
-  const PRIVATE_KEY    = (process.env.GOOGLE_PRIVATE_KEY   ?? '').replace(/\\n/g, '\n')
+  const PRIVATE_KEY    = (process.env.GOOGLE_PRIVATE_KEY    ?? '').replace(/\\n/g, '\n')
 
   if (!SHEET_ID)      throw new Error('Missing GOOGLE_SHEETS_ID (or GOOGLE_SHEET_ID)')
   if (!SERVICE_EMAIL) throw new Error('Missing GOOGLE_SERVICE_ACCOUNT_EMAIL')
@@ -95,7 +96,7 @@ async function main() {
         'RosterRaw!A:L',      // [picUrl, name, team, position, MD1-MD8]
         'ScheduleRaw!A:F',    // [matchday, matchNum, kickoff, fullTime, homeTeam, awayTeam]
         'GoalsRaw!A:F',       // [matchday, timestamp, scoringTeam, concedingTeam, scorer, assister]
-        'RatingsRaw!A:BH',    // wide: [matchday, timestamp, respondentTeam, …playerCols…, ref, gamesClose, teamwork, enjoyment]
+        'RatingsRaw!A:A',     // fetched but not imported (ratings model removed)
         'MDScheduleRaw!A:B',  // [label, YYYY-MM-DD]
       ],
     })
@@ -103,17 +104,23 @@ async function main() {
     const rows = (data.valueRanges ?? []).map(vr => (vr.values as string[][]) ?? [])
     const [teamRaw, rosterRaw, scheduleRaw, goalsRaw, , mdScheduleRaw] = rows
 
-    const teamRows     = (teamRaw     ?? []).slice(1).filter(r => r[0]?.trim())
-    const rosterRows   = (rosterRaw   ?? []).slice(1).filter(r => r[1]?.trim())
-    const scheduleRows = (scheduleRaw ?? []).slice(1).filter(r => r[0]?.trim())
-    const goalRows     = (goalsRaw    ?? []).slice(1)
+    const teamRows     = (teamRaw       ?? []).slice(1).filter(r => r[0]?.trim())
+    const rosterRows   = (rosterRaw     ?? []).slice(1).filter(r => r[1]?.trim())
+    const scheduleRows = (scheduleRaw   ?? []).slice(1).filter(r => r[0]?.trim())
+    const goalRows     = (goalsRaw      ?? []).slice(1)
     const mdDateRows   = (mdScheduleRaw ?? []).slice(1)
 
     // ── 1. League ──────────────────────────────────────────────────────────────
+    const LEAGUE_ID = mkLeagueId(LEAGUE_SLUG)
     const league = await prisma.league.upsert({
-      where:  { slug: LEAGUE_SLUG },
-      create: { name: LEAGUE_NAME, slug: LEAGUE_SLUG },
-      update: { name: LEAGUE_NAME },
+      where:  { id: LEAGUE_ID },
+      create: {
+        id: LEAGUE_ID,
+        name: LEAGUE_NAME,
+        location: LEAGUE_LOC,
+        startDate: new Date(START_DATE_STR),
+      },
+      update: { name: LEAGUE_NAME, location: LEAGUE_LOC },
     })
     console.log(`✓ League: ${league.name} (${league.id})`)
 
@@ -126,34 +133,42 @@ async function main() {
     })
     console.log(`✓ Guest player ensured (${GUEST_ID})`)
 
-    // ── 2. Matchday date map (MDScheduleRaw) ───────────────────────────────────
-    const mdDateMap = new Map<number, Date | null>()
+    // ── 2. Week/matchday date map (MDScheduleRaw) ──────────────────────────────
+    const wkDateMap = new Map<number, Date | null>()
     for (const row of mdDateRows) {
-      const md = parseMatchdayNum(row[0] ?? '')
-      if (md === null) continue
+      const wk = parseWeekNum(row[0] ?? '')
+      if (wk === null) continue
       const d = row[1] ? new Date(row[1]) : null
-      mdDateMap.set(md, d && !isNaN(d.getTime()) ? d : null)
+      wkDateMap.set(wk, d && !isNaN(d.getTime()) ? d : null)
     }
 
-    // ── 3. Teams (TeamRaw A:B) ─────────────────────────────────────────────────
-    // Cols: [name, logoUrl]
-    const teamIdMap = new Map<string, string>() // normalized name → stable DB id
+    // ── 3. Teams + LeagueTeams ─────────────────────────────────────────────────
+    // Team is now standalone (no leagueId). LeagueTeam is the league↔team junction.
+    const leagueTeamIdMap = new Map<string, string>() // team name → LeagueTeam.id
     for (const row of teamRows) {
       const name    = row[0].trim()
       const logoUrl = row[1]?.trim() || null
-      const id      = mkTeamId(LEAGUE_SLUG, name)
+      const tId     = mkTeamId(name)
+      const ltId    = mkLeagueTeamId(LEAGUE_SLUG, name)
+
       await prisma.team.upsert({
-        where:  { id },
-        create: { id, leagueId: league.id, name, logoUrl },
+        where:  { id: tId },
+        create: { id: tId, name, logoUrl },
         update: { name, logoUrl },
       })
-      teamIdMap.set(name, id)
+
+      await prisma.leagueTeam.upsert({
+        where:  { leagueId_teamId: { leagueId: league.id, teamId: tId } },
+        create: { id: ltId, leagueId: league.id, teamId: tId },
+        update: {},
+      })
+
+      leagueTeamIdMap.set(name, ltId)
     }
-    console.log(`✓ Teams: ${teamIdMap.size}`)
+    console.log(`✓ Teams + LeagueTeams: ${leagueTeamIdMap.size}`)
 
     // ── 4. Players (RosterRaw A:L) ─────────────────────────────────────────────
-    // Cols: [picUrl, name, team, position, MD1-MD8]
-    const playerIdMap = new Map<string, string>() // player name → stable DB id
+    const playerIdMap = new Map<string, string>() // player name → Player.id
     for (const row of rosterRows) {
       const pictureUrl = row[0]?.trim() || null
       const name       = row[1].trim()
@@ -167,94 +182,123 @@ async function main() {
     }
     console.log(`✓ Players: ${playerIdMap.size}`)
 
-    // ── 5. PlayerTeams ─────────────────────────────────────────────────────────
-    let ptCount = 0
+    // ── 5. PlayerLeagueAssignments ─────────────────────────────────────────────
+    // Replaces the old PlayerTeam model. fromGameWeek=1 (assigned from the start).
+    let plaCount = 0
     for (const row of rosterRows) {
       const name     = row[1].trim()
       const teamName = row[2]?.trim() ?? ''
-      const position = row[3]?.trim() || null
       const pId      = playerIdMap.get(name)
-      const tId      = teamIdMap.get(teamName)
-      if (!pId || !tId) continue
-      await prisma.playerTeam.upsert({
-        where:  { playerId_teamId: { playerId: pId, teamId: tId } },
-        create: { playerId: pId, teamId: tId, position, isActive: true },
-        update: { position, isActive: true },
+      const ltId     = leagueTeamIdMap.get(teamName)
+      if (!pId || !ltId) continue
+      const plaId = mkPlaId(pId, ltId)
+      await prisma.playerLeagueAssignment.upsert({
+        where:  { id: plaId },
+        create: { id: plaId, playerId: pId, leagueTeamId: ltId, fromGameWeek: 1 },
+        update: {},
       })
-      ptCount++
+      plaCount++
     }
-    console.log(`✓ PlayerTeams: ${ptCount}`)
+    console.log(`✓ PlayerLeagueAssignments: ${plaCount}`)
 
-    // ── 6. Matches (ScheduleRaw A:F + MDScheduleRaw) ──────────────────────────
-    // ScheduleRaw cols: [matchday, matchNum, kickoff, fullTime, homeTeam, awayTeam]
-    const matchIdMap    = new Map<string, string>() // `${md}-${homeId}-${awayId}` → stable match id (both orderings)
-    const matchTeamInfo = new Map<string, { homeTeamId: string; awayTeamId: string }>()
-    const mdToMatchIds  = new Map<number, string[]>()
+    // ── 6. GameWeeks ──────────────────────────────────────────────────────────
+    const weekNumbers = new Set<number>()
+    for (const row of scheduleRows) {
+      const wk = parseWeekNum(row[0] ?? '')
+      if (wk !== null) weekNumbers.add(wk)
+    }
+
+    const gameWeekIdMap = new Map<number, string>() // weekNumber → GameWeek.id
+    for (const wk of weekNumbers) {
+      const gwId = mkGameWeekId(LEAGUE_SLUG, wk)
+      const d    = wkDateMap.get(wk) ?? TBD_DATE
+      await prisma.gameWeek.upsert({
+        where:  { leagueId_weekNumber: { leagueId: league.id, weekNumber: wk } },
+        create: { id: gwId, leagueId: league.id, weekNumber: wk, startDate: d, endDate: d },
+        update: { startDate: d, endDate: d },
+      })
+      gameWeekIdMap.set(wk, gwId)
+    }
+    console.log(`✓ GameWeeks: ${gameWeekIdMap.size}`)
+
+    // ── 7. Matches (ScheduleRaw A:F) ───────────────────────────────────────────
+    // homeTeamId/awayTeamId reference LeagueTeam.id (not Team.id)
+    const matchIdMap    = new Map<string, string>() // `${wk}-${ltHomeId}-${ltAwayId}` → match id
+    const matchTeamInfo = new Map<string, { homeLeagueTeamId: string; awayLeagueTeamId: string }>()
+    const wkToMatchIds  = new Map<number, string[]>()
 
     for (const row of scheduleRows) {
-      const md       = parseMatchdayNum(row[0] ?? '')
-      if (md === null) continue
+      const wk       = parseWeekNum(row[0] ?? '')
+      if (wk === null) continue
       const homeName = row[4]?.trim() ?? ''
       const awayName = row[5]?.trim() ?? ''
-      const homeId   = teamIdMap.get(homeName)
-      const awayId   = teamIdMap.get(awayName)
-      if (!homeId || !awayId) {
-        console.warn(`  ⚠ Match MD${md}: unknown team "${homeName}" or "${awayName}"`)
+      const ltHomeId = leagueTeamIdMap.get(homeName)
+      const ltAwayId = leagueTeamIdMap.get(awayName)
+      const gwId     = gameWeekIdMap.get(wk)
+      if (!ltHomeId || !ltAwayId || !gwId) {
+        console.warn(`  ⚠ Match Wk${wk}: unknown team "${homeName}" or "${awayName}"`)
         continue
       }
 
-      const mId  = mkMatchId(LEAGUE_SLUG, md, homeName, awayName)
-      const date = mdDateMap.get(md) ?? null
+      const mId    = mkMatchId(LEAGUE_SLUG, wk, homeName, awayName)
+      const playAt = wkDateMap.get(wk) ?? TBD_DATE
 
       await prisma.match.upsert({
         where:  { id: mId },
-        create: { id: mId, leagueId: league.id, homeTeamId: homeId, awayTeamId: awayId, matchday: md, date, status: 'scheduled' },
-        update: { date },
+        create: {
+          id: mId,
+          leagueId: league.id,
+          gameWeekId: gwId,
+          homeTeamId: ltHomeId,
+          awayTeamId: ltAwayId,
+          playedAt: playAt,
+          status: 'SCHEDULED',
+        },
+        update: { playedAt: playAt },
       })
 
-      matchIdMap.set(`${md}-${homeId}-${awayId}`, mId)
-      matchIdMap.set(`${md}-${awayId}-${homeId}`, mId)
-      matchTeamInfo.set(mId, { homeTeamId: homeId, awayTeamId: awayId })
-      if (!mdToMatchIds.has(md)) mdToMatchIds.set(md, [])
-      mdToMatchIds.get(md)!.push(mId)
+      matchIdMap.set(`${wk}-${ltHomeId}-${ltAwayId}`, mId)
+      matchIdMap.set(`${wk}-${ltAwayId}-${ltHomeId}`, mId)
+      matchTeamInfo.set(mId, { homeLeagueTeamId: ltHomeId, awayLeagueTeamId: ltAwayId })
+      if (!wkToMatchIds.has(wk)) wkToMatchIds.set(wk, [])
+      wkToMatchIds.get(wk)!.push(mId)
     }
-    const totalMatches = [...mdToMatchIds.values()].flat().length
-    console.log(`✓ Matches: ${totalMatches} across ${mdToMatchIds.size} matchday(s)`)
+    const totalMatches = [...wkToMatchIds.values()].flat().length
+    console.log(`✓ Matches: ${totalMatches} across ${wkToMatchIds.size} week(s)`)
 
-    // ── 7. Goals (GoalsRaw A:F) ────────────────────────────────────────────────
-    // Cols: [matchday, timestamp, scoringTeam, concedingTeam, scorer, assister]
-    // Note: col 0 may be "#REF!" — fall back to inferring from timestamp vs MDScheduleRaw
+    // ── 8. Goals + Assists (GoalsRaw A:F) ─────────────────────────────────────
+    // scoringTeamId references LeagueTeam.id; assists are a separate model
     const matchScores = new Map<string, { home: number; away: number }>()
     let goalCount = 0
 
     for (let i = 0; i < goalRows.length; i++) {
-      const row       = goalRows[i]
-      const mdRaw     = row[0]?.trim() ?? ''
-      const timestamp = row[1]?.trim() ?? ''
+      const row          = goalRows[i]
+      const mdRaw        = row[0]?.trim() ?? ''
+      const timestamp    = row[1]?.trim() ?? ''
       const scorerName   = row[4]?.trim() ?? ''
       const assisterName = row[5]?.trim() ?? ''
 
       if (!scorerName) continue
 
-      const md: number | null = /MD?\d+/i.test(mdRaw)
-        ? parseMatchdayNum(mdRaw)
-        : inferMatchdayFromTimestamp(timestamp, mdDateMap)
-      if (md === null) continue
+      const wk: number | null = /MD?\d+/i.test(mdRaw)
+        ? parseWeekNum(mdRaw)
+        : inferWeekFromTimestamp(timestamp, wkDateMap)
+      if (wk === null) continue
 
       const scoringTeam   = normalizeTeamName(row[2]?.trim() ?? '')
       const concedingTeam = normalizeTeamName(row[3]?.trim() ?? '')
-      const scoringTId    = teamIdMap.get(scoringTeam)
-      const concedingTId  = teamIdMap.get(concedingTeam)
-      if (!scoringTId || !concedingTId) {
+      const ltScoringId   = leagueTeamIdMap.get(scoringTeam)
+      const ltConcedingId = leagueTeamIdMap.get(concedingTeam)
+      if (!ltScoringId || !ltConcedingId) {
         console.warn(`  ⚠ Goal row ${i + 2}: unknown team "${scoringTeam}" or "${concedingTeam}"`)
         continue
       }
 
       const mId =
-        matchIdMap.get(`${md}-${scoringTId}-${concedingTId}`) ??
-        matchIdMap.get(`${md}-${concedingTId}-${scoringTId}`)
+        matchIdMap.get(`${wk}-${ltScoringId}-${ltConcedingId}`) ??
+        matchIdMap.get(`${wk}-${ltConcedingId}-${ltScoringId}`)
       if (!mId) {
-        console.warn(`  ⚠ Goal row ${i + 2}: no match for MD${md} ${scoringTeam} vs ${concedingTeam}`)
+        console.warn(`  ⚠ Goal row ${i + 2}: no match for Wk${wk} ${scoringTeam} vs ${concedingTeam}`)
         continue
       }
 
@@ -264,78 +308,63 @@ async function main() {
       }
       const assisterId = assisterName ? (playerIdMap.get(assisterName) ?? GUEST_ID) : null
 
-      const gId = `g-${mId}-${i}`
+      const gId = mkGoalId(mId, i)
       await prisma.goal.upsert({
         where:  { id: gId },
-        create: { id: gId, matchId: mId, scorerId, assisterId },
-        update: { assisterId },
+        create: { id: gId, matchId: mId, playerId: scorerId, scoringTeamId: ltScoringId },
+        update: {},
       })
+
+      if (assisterId) {
+        const aId = mkAssistId(gId)
+        await prisma.assist.upsert({
+          where:  { goalId: gId },
+          create: { id: aId, matchId: mId, playerId: assisterId, goalId: gId },
+          update: { playerId: assisterId },
+        })
+      }
+
       goalCount++
 
       if (!matchScores.has(mId)) matchScores.set(mId, { home: 0, away: 0 })
-      const scores    = matchScores.get(mId)!
-      const teamInfo  = matchTeamInfo.get(mId)!
-      if (teamInfo.homeTeamId === scoringTId) scores.home++
+      const scores   = matchScores.get(mId)!
+      const teamInfo = matchTeamInfo.get(mId)!
+      if (teamInfo.homeLeagueTeamId === ltScoringId) scores.home++
       else scores.away++
     }
     console.log(`✓ Goals: ${goalCount}`)
 
-    // ── 8. Match scores + finished status ─────────────────────────────────────
-    // Per CLAUDE.md: if a matchday has any goals, all 3 matches are treated as finished
-    const finishedMds = new Set<number>()
+    // ── 9. Match scores + COMPLETED status ────────────────────────────────────
+    // Per CLAUDE.md: if a week has any goals, all 3 matches are treated as completed
+    const completedWks = new Set<number>()
     for (const mId of matchScores.keys()) {
-      const m = await prisma.match.findUnique({ where: { id: mId }, select: { matchday: true } })
-      if (m) finishedMds.add(m.matchday)
+      const m = await prisma.match.findUnique({
+        where: { id: mId },
+        select: { gameWeek: { select: { weekNumber: true } } },
+      })
+      if (m) completedWks.add(m.gameWeek.weekNumber)
     }
 
     for (const [mId, s] of matchScores) {
       await prisma.match.update({
         where: { id: mId },
-        data:  { homeScore: s.home, awayScore: s.away, status: 'finished' },
+        data:  { homeScore: s.home, awayScore: s.away, status: 'COMPLETED' },
       })
     }
-    for (const md of finishedMds) {
-      for (const mId of mdToMatchIds.get(md) ?? []) {
+    for (const wk of completedWks) {
+      for (const mId of wkToMatchIds.get(wk) ?? []) {
         if (!matchScores.has(mId)) {
           await prisma.match.update({
             where: { id: mId },
-            data:  { homeScore: 0, awayScore: 0, status: 'finished' },
+            data:  { homeScore: 0, awayScore: 0, status: 'COMPLETED' },
           })
         }
       }
     }
-    console.log(`✓ Scores updated (${finishedMds.size} finished matchday(s))`)
-
-    // ── 9. Availability (RosterRaw cols E-L = MD1-MD8) ────────────────────────
-    // RosterRaw: [picUrl, name, team, position, MD1(4), MD2(5), ..., MD8(11)]
-    let availCount = 0
-    for (const row of rosterRows) {
-      const name     = row[1].trim()
-      const teamName = row[2]?.trim() ?? ''
-      const pId      = playerIdMap.get(name)
-      const tId      = teamIdMap.get(teamName)
-      if (!pId || !tId) continue
-
-      for (let md = 1; md <= 8; md++) {
-        const val    = row[3 + md]?.trim() ?? '' // index 4=MD1 … 11=MD8
-        const status = parseAvailStatus(val)
-        if (!status) continue
-
-        for (const mId of mdToMatchIds.get(md) ?? []) {
-          const info = matchTeamInfo.get(mId)
-          if (!info || (info.homeTeamId !== tId && info.awayTeamId !== tId)) continue
-          await prisma.availability.upsert({
-            where:  { matchId_playerId: { matchId: mId, playerId: pId } },
-            create: { matchId: mId, playerId: pId, status },
-            update: { status },
-          })
-          availCount++
-        }
-      }
-    }
-    console.log(`✓ Availability: ${availCount}`)
+    console.log(`✓ Scores updated (${completedWks.size} completed week(s))`)
 
     // Ratings model removed — no ratings import.
+    // Availability model removed — no availability import.
 
     console.log('\n✅  Import complete.\n')
   } finally {

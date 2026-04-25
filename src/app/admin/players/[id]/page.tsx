@@ -10,6 +10,8 @@ export default async function EditPlayerPage({ params }: Props) {
   const player = players.find((p) => p.id === id)
   if (!player) notFound()
 
+  const team = player.leagueAssignments[0]?.leagueTeam.team
+
   return (
     <div>
       <h1 className="text-2xl font-bold text-white mb-6">Edit Player</h1>
@@ -37,19 +39,6 @@ export default async function EditPlayerPage({ params }: Props) {
           </div>
 
           <div>
-            <label className="block text-xs text-gray-400 mb-1">Role</label>
-            <select
-              name="role"
-              defaultValue={player.role}
-              className="w-full bg-gray-700 text-white rounded px-3 py-2 text-sm"
-            >
-              <option value="player">player</option>
-              <option value="admin">admin</option>
-              <option value="guest">guest</option>
-            </select>
-          </div>
-
-          <div>
             <label className="block text-xs text-gray-400 mb-1">Picture URL</label>
             <input
               name="pictureUrl"
@@ -59,7 +48,7 @@ export default async function EditPlayerPage({ params }: Props) {
           </div>
 
           <div className="text-xs text-gray-500">
-            Team: {player.playerTeams[0]?.team?.name ?? '—'}
+            Team: {team?.name ?? '—'}
           </div>
 
           <button

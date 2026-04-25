@@ -22,50 +22,30 @@ export default async function SettingsPage() {
           </div>
 
           <div>
-            <label className="block text-xs text-gray-400 mb-1">Season</label>
+            <label className="block text-xs text-gray-400 mb-1">Location</label>
             <input
-              name="season"
-              defaultValue={league.season ?? ''}
+              name="location"
+              defaultValue={league.location}
               className="w-full bg-gray-700 text-white rounded px-3 py-2 text-sm"
             />
           </div>
 
           <div>
-            <label className="block text-xs text-gray-400 mb-1">Court / Venue</label>
+            <label className="block text-xs text-gray-400 mb-1">Start Date</label>
             <input
-              name="court"
-              defaultValue={league.court ?? ''}
+              type="date"
+              name="startDate"
+              defaultValue={league.startDate.toISOString().split('T')[0]}
               className="w-full bg-gray-700 text-white rounded px-3 py-2 text-sm"
             />
           </div>
 
           <div>
-            <label className="block text-xs text-gray-400 mb-1">Day of Week</label>
+            <label className="block text-xs text-gray-400 mb-1">End Date</label>
             <input
-              name="dayOfWeek"
-              defaultValue={league.dayOfWeek ?? ''}
-              className="w-full bg-gray-700 text-white rounded px-3 py-2 text-sm"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs text-gray-400 mb-1">Status</label>
-            <select
-              name="status"
-              defaultValue={league.status}
-              className="w-full bg-gray-700 text-white rounded px-3 py-2 text-sm"
-            >
-              <option value="active">active</option>
-              <option value="completed">completed</option>
-              <option value="draft">draft</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-xs text-gray-400 mb-1">Logo URL</label>
-            <input
-              name="logoUrl"
-              defaultValue={league.logoUrl ?? ''}
+              type="date"
+              name="endDate"
+              defaultValue={league.endDate?.toISOString().split('T')[0] ?? ''}
               className="w-full bg-gray-700 text-white rounded px-3 py-2 text-sm"
             />
           </div>

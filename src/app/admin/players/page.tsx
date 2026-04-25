@@ -22,19 +22,17 @@ export default async function PlayersPage() {
             <tr className="border-b border-gray-700">
               <th className="text-left text-gray-400 font-medium px-4 py-3">Name</th>
               <th className="text-left text-gray-400 font-medium px-4 py-3">Team</th>
-              <th className="text-left text-gray-400 font-medium px-4 py-3">Role</th>
               <th className="text-left text-gray-400 font-medium px-4 py-3">LINE ID</th>
               <th className="px-4 py-3"></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-700">
             {players.map((player) => {
-              const team = player.playerTeams[0]?.team
+              const team = player.leagueAssignments[0]?.leagueTeam.team
               return (
                 <tr key={player.id} className="hover:bg-gray-750">
                   <td className="px-4 py-3 text-white">{player.name}</td>
                   <td className="px-4 py-3 text-gray-400">{team?.name ?? '—'}</td>
-                  <td className="px-4 py-3 text-gray-400">{player.role}</td>
                   <td className="px-4 py-3 text-gray-500 font-mono text-xs">
                     {player.lineId ?? '—'}
                   </td>

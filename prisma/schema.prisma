@@ -8,92 +8,182 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
-model League {
+enum Role {
+  ADMIN
+  VIEWER
+}
+
+model User {
+  id         String   @id @default(cuid())
+  lineId     String?  @unique
+  name       String?
+  pictureUrl String?
+  role       Role     @default(VIEWER)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model Venue {
   id        String   @id @default(cuid())
   name      String
-  slug      String   @unique
-  court     String?
-  dayOfWeek String?
-  season    String?
-  status    String   @default("active")
-  logoUrl   String?
+  address   String?
+  city      String?
+  notes     String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  teams     Team[]
+
+  gameWeeks GameWeek[]
   matches   Match[]
 }
 
+model League {
+  id        String    @id @default(cuid())
+  name      String
+  location  String
+  startDate DateTime
+  endDate   DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  leagueTeams LeagueTeam[]
+  gameWeeks   GameWeek[]
+  matches     Match[]
+}
+
 model Team {
-  id          String       @id @default(cuid())
-  leagueId    String
-  name        String
-  shortName   String?
-  color       String?
-  logoUrl     String?
-  league      League       @relation(fields: [leagueId], references: [id])
-  playerTeams PlayerTeam[]
-  homeMatches Match[]      @relation("HomeTeam")
-  awayMatches Match[]      @relation("AwayTeam")
+  id        String   @id @default(cuid())
+  name      String
+  logoUrl   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  leagueTeams LeagueTeam[]
+}
+
+model LeagueTeam {
+  id        String   @id @default(cuid())
+  leagueId  String
+  teamId    String
+  createdAt DateTime @default(now())
+
+  league            League                   @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+  team              Team                     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  playerAssignments PlayerLeagueAssignment[]
+  homeMatches       Match[]                  @relation("HomeTeam")
+  awayMatches       Match[]                  @relation("AwayTeam")
+  goals             Goal[]
+
+  @@unique([leagueId, teamId])
 }
 
 model Player {
-  id            String         @id @default(cuid())
-  name          String
-  lineId        String?        @unique
-  pictureUrl    String?
-  role          String         @default("player")
-  playerTeams   PlayerTeam[]
-  scoredGoals   Goal[]         @relation("Scorer")
-  assistedGoals Goal[]         @relation("Assister")
-  availability  Availability[]
+  id         String   @id @default(cuid())
+  name       String
+  lineId     String?  @unique
+  pictureUrl String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  leagueAssignments PlayerLeagueAssignment[]
+  goals             Goal[]
+  assists           Assist[]
 }
 
-model PlayerTeam {
-  id       String  @id @default(cuid())
-  playerId String
-  teamId   String
-  position String?
-  isActive Boolean @default(true)
-  player   Player  @relation(fields: [playerId], references: [id])
-  team     Team    @relation(fields: [teamId], references: [id])
-  @@unique([playerId, teamId])
+model PlayerLeagueAssignment {
+  id           String   @id @default(cuid())
+  playerId     String
+  leagueTeamId String
+  fromGameWeek Int
+  toGameWeek   Int?
+  createdAt    DateTime @default(now())
+
+  player     Player     @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  leagueTeam LeagueTeam @relation(fields: [leagueTeamId], references: [id], onDelete: Cascade)
+
+  @@index([playerId])
+  @@index([leagueTeamId])
+}
+
+model GameWeek {
+  id         String   @id @default(cuid())
+  leagueId   String
+  weekNumber Int
+  startDate  DateTime
+  endDate    DateTime
+  venueId    String?
+
+  league  League   @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+  venue   Venue?   @relation(fields: [venueId], references: [id])
+  matches Match[]
+
+  @@unique([leagueId, weekNumber])
+  @@index([leagueId])
 }
 
 model Match {
-  id           String         @id @default(cuid())
-  leagueId     String
-  homeTeamId   String
-  awayTeamId   String
-  matchday     Int
-  date         DateTime?
-  venue        String?
-  homeScore    Int?
-  awayScore    Int?
-  status       String         @default("scheduled")
-  league       League         @relation(fields: [leagueId], references: [id])
-  homeTeam     Team           @relation("HomeTeam", fields: [homeTeamId], references: [id])
-  awayTeam     Team           @relation("AwayTeam", fields: [awayTeamId], references: [id])
-  goals        Goal[]
-  availability Availability[]
+  id         String      @id @default(cuid())
+  leagueId   String
+  gameWeekId String
+  homeTeamId String
+  awayTeamId String
+  homeScore  Int         @default(0)
+  awayScore  Int         @default(0)
+  venueId    String?
+  playedAt   DateTime
+  status     MatchStatus @default(SCHEDULED)
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+
+  league   League     @relation(fields: [leagueId], references: [id])
+  gameWeek GameWeek   @relation(fields: [gameWeekId], references: [id])
+  homeTeam LeagueTeam @relation("HomeTeam", fields: [homeTeamId], references: [id])
+  awayTeam LeagueTeam @relation("AwayTeam", fields: [awayTeamId], references: [id])
+  venue    Venue?     @relation(fields: [venueId], references: [id])
+  goals    Goal[]
+  assists  Assist[]
+
+  @@index([leagueId])
+  @@index([gameWeekId])
+}
+
+enum MatchStatus {
+  SCHEDULED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  POSTPONED
 }
 
 model Goal {
-  id         String  @id @default(cuid())
-  matchId    String
-  scorerId   String
-  assisterId String?
-  minute     Int?
-  match      Match   @relation(fields: [matchId], references: [id])
-  scorer     Player  @relation("Scorer", fields: [scorerId], references: [id])
-  assister   Player? @relation("Assister", fields: [assisterId], references: [id])
+  id            String   @id @default(cuid())
+  matchId       String
+  playerId      String
+  scoringTeamId String
+  minute        Int?
+  isOwnGoal     Boolean  @default(false)
+  createdAt     DateTime @default(now())
+
+  match       Match      @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  player      Player     @relation(fields: [playerId], references: [id])
+  scoringTeam LeagueTeam @relation(fields: [scoringTeamId], references: [id])
+  assist      Assist?
+
+  @@index([matchId])
+  @@index([playerId])
+  @@index([scoringTeamId])
 }
 
-model Availability {
-  id       String @id @default(cuid())
-  matchId  String
-  playerId String
-  status   String @default("UNDECIDED")
-  match    Match  @relation(fields: [matchId], references: [id])
-  player   Player @relation(fields: [playerId], references: [id])
-  @@unique([matchId, playerId])
+model Assist {
+  id        String   @id @default(cuid())
+  matchId   String
+  playerId  String
+  goalId    String   @unique
+  createdAt DateTime @default(now())
+
+  match  Match  @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  player Player @relation(fields: [playerId], references: [id])
+  goal   Goal   @relation(fields: [goalId], references: [id])
+
+  @@index([matchId])
+  @@index([playerId])
 }

@@ -10,7 +10,11 @@ export async function getAllTeams() {
 
 export async function getAllPlayers() {
   return prisma.player.findMany({
-    include: { playerTeams: { include: { team: true } } },
+    include: {
+      leagueAssignments: {
+        include: { leagueTeam: { include: { team: true } } },
+      },
+    },
     orderBy: { name: 'asc' },
   })
 }
@@ -18,11 +22,12 @@ export async function getAllPlayers() {
 export async function getMatchesWithGoals() {
   return prisma.match.findMany({
     include: {
-      homeTeam: true,
-      awayTeam: true,
-      goals: { include: { scorer: true, assister: true } },
+      gameWeek: true,
+      homeTeam: { include: { team: true } },
+      awayTeam: { include: { team: true } },
+      goals: { include: { player: true, assist: { include: { player: true } } } },
     },
-    orderBy: [{ matchday: 'asc' }, { id: 'asc' }],
+    orderBy: [{ gameWeek: { weekNumber: 'asc' } }, { id: 'asc' }],
   })
 }
 
@@ -30,10 +35,10 @@ export async function getMatch(id: string) {
   return prisma.match.findUnique({
     where: { id },
     include: {
-      homeTeam: true,
-      awayTeam: true,
-      goals: { include: { scorer: true, assister: true } },
-      availability: { include: { player: true } },
+      gameWeek: true,
+      homeTeam: { include: { team: true } },
+      awayTeam: { include: { team: true } },
+      goals: { include: { player: true, assist: { include: { player: true } } } },
     },
   })
 }
@@ -50,8 +55,13 @@ export async function getDashboardStats() {
         take: 10,
         orderBy: { id: 'desc' },
         include: {
-          scorer: true,
-          match: { include: { homeTeam: true, awayTeam: true } },
+          player: true,
+          match: {
+            include: {
+              homeTeam: { include: { team: true } },
+              awayTeam: { include: { team: true } },
+            },
+          },
         },
       }),
     ])

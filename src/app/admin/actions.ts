@@ -15,16 +15,16 @@ async function assertAdmin() {
 
 export async function updateLeague(formData: FormData) {
   await assertAdmin()
-  const id = formData.get('id') as string
+  const id           = formData.get('id')        as string
+  const startDateStr = formData.get('startDate') as string
+  const endDateStr   = formData.get('endDate')   as string
   await prisma.league.update({
     where: { id },
     data: {
-      name:      (formData.get('name')      as string) || undefined,
-      court:     (formData.get('court')     as string) || null,
-      dayOfWeek: (formData.get('dayOfWeek') as string) || null,
-      season:    (formData.get('season')    as string) || null,
-      status:    (formData.get('status')    as string) || 'active',
-      logoUrl:   (formData.get('logoUrl')   as string) || null,
+      name:      (formData.get('name')     as string) || undefined,
+      location:  (formData.get('location') as string) || '',
+      startDate: startDateStr ? new Date(startDateStr) : undefined,
+      endDate:   endDateStr   ? new Date(endDateStr)   : null,
     },
   })
   revalidatePath('/admin/settings')
@@ -35,15 +35,14 @@ export async function updateLeague(formData: FormData) {
 
 export async function updatePlayer(formData: FormData) {
   await assertAdmin()
-  const id      = formData.get('id')         as string
-  const lineId  = (formData.get('lineId')    as string).trim() || null
-  const picUrl  = (formData.get('pictureUrl') as string).trim() || null
+  const id     = formData.get('id')          as string
+  const lineId = (formData.get('lineId')     as string).trim() || null
+  const picUrl = (formData.get('pictureUrl') as string).trim() || null
   await prisma.player.update({
     where: { id },
     data: {
-      name:       formData.get('name')       as string,
+      name:       formData.get('name') as string,
       lineId,
-      role:       formData.get('role')       as string,
       pictureUrl: picUrl,
     },
   })
@@ -53,17 +52,12 @@ export async function updatePlayer(formData: FormData) {
 
 export async function createPlayer(formData: FormData) {
   await assertAdmin()
-  const name   = formData.get('name')   as string
+  const name   = formData.get('name')    as string
   const lineId = (formData.get('lineId') as string).trim() || null
-  const role   = (formData.get('role')   as string) || 'player'
-  const teamId = (formData.get('teamId') as string) || null
 
-  const player = await prisma.player.create({ data: { name, lineId, role } })
-  if (teamId) {
-    await prisma.playerTeam.create({
-      data: { playerId: player.id, teamId, isActive: true },
-    })
-  }
+  // TODO: team assignment requires selecting a LeagueTeam (not a bare Team)
+  await prisma.player.create({ data: { name, lineId } })
+
   revalidatePath('/admin/players')
   redirect('/admin/players')
 }
@@ -78,9 +72,9 @@ export async function updateMatchScore(formData: FormData) {
   await prisma.match.update({
     where: { id },
     data: {
-      homeScore: isNaN(homeScore) ? null : homeScore,
-      awayScore: isNaN(awayScore) ? null : awayScore,
-      status: 'finished',
+      homeScore: isNaN(homeScore) ? 0 : homeScore,
+      awayScore: isNaN(awayScore) ? 0 : awayScore,
+      status: 'COMPLETED',
     },
   })
   revalidatePath('/admin/matches')
@@ -89,12 +83,21 @@ export async function updateMatchScore(formData: FormData) {
 
 export async function addGoal(formData: FormData) {
   await assertAdmin()
-  const matchId    = formData.get('matchId')    as string
-  const scorerId   = formData.get('scorerId')   as string
-  const assisterId = (formData.get('assisterId') as string) || null
-  await prisma.goal.create({
-    data: { matchId, scorerId, assisterId: assisterId || null },
+  const matchId       = formData.get('matchId')       as string
+  const playerId      = formData.get('playerId')      as string
+  const scoringTeamId = formData.get('scoringTeamId') as string
+  const assisterId    = (formData.get('assisterId')   as string) || null
+
+  const goal = await prisma.goal.create({
+    data: { matchId, playerId, scoringTeamId },
   })
+
+  if (assisterId) {
+    await prisma.assist.create({
+      data: { matchId, playerId: assisterId, goalId: goal.id },
+    })
+  }
+
   revalidatePath(`/admin/matches/${matchId}`)
   revalidatePath('/admin/matches')
 }
@@ -103,6 +106,8 @@ export async function deleteGoal(formData: FormData) {
   await assertAdmin()
   const goalId  = formData.get('goalId')  as string
   const matchId = formData.get('matchId') as string
+  // Goal→Assist has no cascade; delete assist first to satisfy the FK constraint
+  await prisma.assist.deleteMany({ where: { goalId } })
   await prisma.goal.delete({ where: { id: goalId } })
   revalidatePath(`/admin/matches/${matchId}`)
   revalidatePath('/admin/matches')
