@@ -1,276 +1,345 @@
+import * as dotenv from 'dotenv'
+import * as path from 'path'
 import { google } from 'googleapis'
-import { prisma } from '../src/lib/prisma'
+import { PrismaClient } from '@prisma/client'
 
-// ── Config from env ────────────────────────────────────────────────────────────
-const LEAGUE_SLUG = process.env.IMPORT_LEAGUE_SLUG ?? 't9l'
-const LEAGUE_NAME = process.env.IMPORT_LEAGUE_NAME ?? 'Tennozu 9-Aside League'
-const SHEET_ID    = process.env.GOOGLE_SHEETS_ID ?? process.env.GOOGLE_SHEET_ID ?? ''
+// ── Helpers ────────────────────────────────────────────────────────────────────
 
-if (!process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || !process.env.GOOGLE_PRIVATE_KEY) {
-  console.error('Missing GOOGLE_SERVICE_ACCOUNT_EMAIL or GOOGLE_PRIVATE_KEY')
-  process.exit(1)
-}
-if (!SHEET_ID) {
-  console.error('Missing GOOGLE_SHEETS_ID (or GOOGLE_SHEET_ID)')
-  process.exit(1)
-}
-
-// ── Sheets auth ────────────────────────────────────────────────────────────────
-const auth = new google.auth.GoogleAuth({
-  credentials: {
-    client_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-    private_key:  (process.env.GOOGLE_PRIVATE_KEY ?? '').replace(/\\n/g, '\n'),
-  },
-  scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'],
-})
-const sheets = google.sheets({ version: 'v4', auth })
-
-// ── Deterministic IDs ──────────────────────────────────────────────────────────
-// Using these keeps re-runs idempotent — same inputs always produce same IDs.
-function mkLeagueId(slug: string)                            { return `lg-${slug}` }
-function mkTeamId(leagueSlug: string, sheetId: string)      { return `t-${leagueSlug}-${slugify(sheetId)}` }
-function mkPlayerId(sheetId: string)                         { return `p-${slugify(sheetId)}` }
-function mkMatchId(ls: string, md: number, h: string, a: string) {
-  return `m-${ls}-md${md}-${slugify(h)}-vs-${slugify(a)}`
-}
-function mkGoalId(matchId: string, scorerSheet: string, n: number) {
-  return `g-${matchId}-${slugify(scorerSheet)}-${n}`
-}
-
-function slugify(s: string) {
+function slugify(s: string): string {
   return String(s)
-    .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-|-$/g, '')
 }
 
-// ── Date normalisation ─────────────────────────────────────────────────────────
-function parseDate(raw: string | undefined): Date | null {
-  if (!raw?.trim()) return null
-  if (/^\d{4}-\d{2}-\d{2}/.test(raw)) {
-    const d = new Date(raw)
-    return isNaN(d.getTime()) ? null : d
-  }
-  const mdy = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
-  if (mdy) {
-    const d = new Date(`${mdy[3]}-${mdy[1].padStart(2,'0')}-${mdy[2].padStart(2,'0')}T12:00:00Z`)
-    return isNaN(d.getTime()) ? null : d
-  }
-  const d = new Date(raw)
-  return isNaN(d.getTime()) ? null : d
+// Strip color prefix added by the spreadsheet (RatingsRaw and sometimes GoalsRaw)
+function normalizeTeamName(name: string): string {
+  return name.replace(/^(?:Blue|Yellow|Red|Green|White|Black)\s+/i, '').trim()
 }
 
-// ── Fetch all ranges in one batchGet ──────────────────────────────────────────
-async function batchFetch(ranges: string[]): Promise<Map<string, string[][]>> {
-  const res = await sheets.spreadsheets.values.batchGet({ spreadsheetId: SHEET_ID, ranges })
-  const map = new Map<string, string[][]>()
-  ranges.forEach((r, i) => {
-    map.set(r, (res.data.valueRanges?.[i]?.values ?? []) as string[][])
-  })
-  return map
+function parseMatchdayNum(val: string): number | null {
+  const m = val.match(/(\d+)/)
+  return m ? parseInt(m[1], 10) : null
+}
+
+function parseAvailStatus(val: string): string | null {
+  const v = val.trim().toUpperCase()
+  if (v === 'Y' || v === 'GOING') return 'GOING'
+  if (v === 'EXPECTED' || v === 'UNDECIDED') return 'UNDECIDED'
+  if (v === 'PLAYED') return 'PLAYED'
+  return null // blank / not going → skip
+}
+
+function inferMatchdayFromTimestamp(
+  timestamp: string,
+  mdDateMap: Map<number, Date | null>,
+): number | null {
+  if (!timestamp) return null
+  const d = new Date(timestamp)
+  if (isNaN(d.getTime())) return null
+  for (const [md, mdDate] of mdDateMap) {
+    if (!mdDate) continue
+    if (
+      d.getFullYear() === mdDate.getFullYear() &&
+      d.getMonth() === mdDate.getMonth() &&
+      d.getDate() === mdDate.getDate()
+    ) return md
+  }
+  return null
+}
+
+// Stable, deterministic IDs keep re-runs idempotent
+function mkTeamId(leagueSlug: string, name: string) { return `t-${leagueSlug}-${slugify(name)}` }
+function mkPlayerId(name: string)                   { return `p-${slugify(name)}` }
+function mkMatchId(ls: string, md: number, h: string, a: string) {
+  return `m-${ls}-md${md}-${slugify(h)}-vs-${slugify(a)}`
 }
 
 // ── Main ───────────────────────────────────────────────────────────────────────
+
 async function main() {
-  console.log(`\n🏟  Import: ${LEAGUE_NAME} (${LEAGUE_SLUG})`)
-  console.log(`📊  Sheet: ${SHEET_ID}\n`)
+  // Load .env.local before reading any env vars (Prisma URL, Google creds, etc.)
+  dotenv.config({ path: path.resolve(process.cwd(), '.env.local') })
+  dotenv.config()
 
-  console.log('Fetching all ranges via batchGet…')
-  const data = await batchFetch(['Teams', 'Roster', 'Schedule', 'Goals', 'Ratings'])
+  const LEAGUE_SLUG    = process.env.IMPORT_LEAGUE_SLUG    ?? 't9l'
+  const LEAGUE_NAME    = process.env.IMPORT_LEAGUE_NAME    ?? 'Tennozu 9-Aside League'
+  const SHEET_ID       = process.env.GOOGLE_SHEETS_ID      ?? process.env.GOOGLE_SHEET_ID ?? ''
+  const SERVICE_EMAIL  = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL ?? ''
+  const PRIVATE_KEY    = (process.env.GOOGLE_PRIVATE_KEY   ?? '').replace(/\\n/g, '\n')
 
-  const teamRows     = data.get('Teams')?.slice(1)    ?? []
-  const rosterRows   = data.get('Roster')?.slice(1)   ?? []
-  const scheduleRows = data.get('Schedule')?.slice(1) ?? []
-  const goalRows     = data.get('Goals')?.slice(1)    ?? []
-  const ratingData   = data.get('Ratings')            ?? []
+  if (!SHEET_ID)      throw new Error('Missing GOOGLE_SHEETS_ID (or GOOGLE_SHEET_ID)')
+  if (!SERVICE_EMAIL) throw new Error('Missing GOOGLE_SERVICE_ACCOUNT_EMAIL')
+  if (!PRIVATE_KEY)   throw new Error('Missing GOOGLE_PRIVATE_KEY')
 
-  // ── 1. Upsert League ───────────────────────────────────────────────────────
-  const lgId = mkLeagueId(LEAGUE_SLUG)
-  console.log('Upserting league…')
-  await prisma.league.upsert({
-    where:  { slug: LEAGUE_SLUG },
-    create: { id: lgId, name: LEAGUE_NAME, slug: LEAGUE_SLUG },
-    update: { name: LEAGUE_NAME },
-  })
-  console.log(`  ✓ ${LEAGUE_NAME} (id: ${lgId})`)
+  const prisma = new PrismaClient({ log: ['error'] })
 
-  // ── 2. Upsert Teams ────────────────────────────────────────────────────────
-  // Teams cols: [0] sheetId, [1] name, [2] shortName, [3] color, [4] logoUrl
-  console.log(`\nUpserting ${teamRows.length} team(s)…`)
-  const teamMap = new Map<string, string>() // sheetId → DB id
+  try {
+    console.log(`\n🏟  Import: ${LEAGUE_NAME} (${LEAGUE_SLUG})`)
+    console.log(`📊  Sheet : ${SHEET_ID}\n`)
 
-  for (const row of teamRows) {
-    const [sheetId, name, shortName, color, logoUrl] = row
-    if (!sheetId || !name) continue
-    const tId = mkTeamId(LEAGUE_SLUG, sheetId)
-    teamMap.set(sheetId, tId)
-    await prisma.team.upsert({
-      where:  { id: tId },
-      create: { id: tId, leagueId: lgId, name, shortName: shortName || null, color: color || null, logoUrl: logoUrl || null },
-      update: { name, shortName: shortName || null, color: color || null, logoUrl: logoUrl || null },
+    // ── Fetch all ranges in one round-trip ─────────────────────────────────────
+    const auth = new google.auth.GoogleAuth({
+      credentials: { client_email: SERVICE_EMAIL, private_key: PRIVATE_KEY },
+      scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'],
     })
-    console.log(`  ✓ Team: ${name} (${sheetId})`)
-  }
+    const sheets = google.sheets({ version: 'v4', auth })
 
-  // ── 3. Upsert Players + PlayerTeam links ───────────────────────────────────
-  // Roster cols: [0] sheetPlayerId, [1] name, [2] sheetTeamId, [3] position
-  console.log(`\nUpserting ${rosterRows.length} player(s)…`)
-  const playerMap = new Map<string, string>() // sheetPlayerId → DB id
-
-  for (const row of rosterRows) {
-    const [sheetPlayerId, playerName, sheetTeamId, position] = row
-    if (!sheetPlayerId || !playerName) continue
-
-    const pId = mkPlayerId(sheetPlayerId)
-    playerMap.set(sheetPlayerId, pId)
-
-    await prisma.player.upsert({
-      where:  { id: pId },
-      create: { id: pId, name: playerName },
-      update: { name: playerName },
+    console.log('Fetching all sheet ranges…')
+    const { data } = await sheets.spreadsheets.values.batchGet({
+      spreadsheetId: SHEET_ID,
+      ranges: [
+        'TeamRaw!A:B',        // [name, logoUrl]
+        'RosterRaw!A:L',      // [picUrl, name, team, position, MD1-MD8]
+        'ScheduleRaw!A:F',    // [matchday, matchNum, kickoff, fullTime, homeTeam, awayTeam]
+        'GoalsRaw!A:F',       // [matchday, timestamp, scoringTeam, concedingTeam, scorer, assister]
+        'RatingsRaw!A:BH',    // wide: [matchday, timestamp, respondentTeam, …playerCols…, ref, gamesClose, teamwork, enjoyment]
+        'MDScheduleRaw!A:B',  // [label, YYYY-MM-DD]
+      ],
     })
 
-    const tId = teamMap.get(sheetTeamId)
-    if (tId) {
-      const ptId = `pt-${pId}-${tId}`
+    const rows = (data.valueRanges ?? []).map(vr => (vr.values as string[][]) ?? [])
+    const [teamRaw, rosterRaw, scheduleRaw, goalsRaw, , mdScheduleRaw] = rows
+
+    const teamRows     = (teamRaw     ?? []).slice(1).filter(r => r[0]?.trim())
+    const rosterRows   = (rosterRaw   ?? []).slice(1).filter(r => r[1]?.trim())
+    const scheduleRows = (scheduleRaw ?? []).slice(1).filter(r => r[0]?.trim())
+    const goalRows     = (goalsRaw    ?? []).slice(1)
+    const mdDateRows   = (mdScheduleRaw ?? []).slice(1)
+
+    // ── 1. League ──────────────────────────────────────────────────────────────
+    const league = await prisma.league.upsert({
+      where:  { slug: LEAGUE_SLUG },
+      create: { name: LEAGUE_NAME, slug: LEAGUE_SLUG },
+      update: { name: LEAGUE_NAME },
+    })
+    console.log(`✓ League: ${league.name} (${league.id})`)
+
+    // ── 2. Matchday date map (MDScheduleRaw) ───────────────────────────────────
+    const mdDateMap = new Map<number, Date | null>()
+    for (const row of mdDateRows) {
+      const md = parseMatchdayNum(row[0] ?? '')
+      if (md === null) continue
+      const d = row[1] ? new Date(row[1]) : null
+      mdDateMap.set(md, d && !isNaN(d.getTime()) ? d : null)
+    }
+
+    // ── 3. Teams (TeamRaw A:B) ─────────────────────────────────────────────────
+    // Cols: [name, logoUrl]
+    const teamIdMap = new Map<string, string>() // normalized name → stable DB id
+    for (const row of teamRows) {
+      const name    = row[0].trim()
+      const logoUrl = row[1]?.trim() || null
+      const id      = mkTeamId(LEAGUE_SLUG, name)
+      await prisma.team.upsert({
+        where:  { id },
+        create: { id, leagueId: league.id, name, logoUrl },
+        update: { name, logoUrl },
+      })
+      teamIdMap.set(name, id)
+    }
+    console.log(`✓ Teams: ${teamIdMap.size}`)
+
+    // ── 4. Players (RosterRaw A:L) ─────────────────────────────────────────────
+    // Cols: [picUrl, name, team, position, MD1-MD8]
+    const playerIdMap = new Map<string, string>() // player name → stable DB id
+    for (const row of rosterRows) {
+      const pictureUrl = row[0]?.trim() || null
+      const name       = row[1].trim()
+      const id         = mkPlayerId(name)
+      await prisma.player.upsert({
+        where:  { id },
+        create: { id, name, pictureUrl },
+        update: { name, pictureUrl },
+      })
+      playerIdMap.set(name, id)
+    }
+    console.log(`✓ Players: ${playerIdMap.size}`)
+
+    // ── 5. PlayerTeams ─────────────────────────────────────────────────────────
+    let ptCount = 0
+    for (const row of rosterRows) {
+      const name     = row[1].trim()
+      const teamName = row[2]?.trim() ?? ''
+      const position = row[3]?.trim() || null
+      const pId      = playerIdMap.get(name)
+      const tId      = teamIdMap.get(teamName)
+      if (!pId || !tId) continue
       await prisma.playerTeam.upsert({
-        where:  { id: ptId },
-        create: { id: ptId, playerId: pId, teamId: tId, position: position || null, isActive: true },
-        update: { position: position || null },
+        where:  { playerId_teamId: { playerId: pId, teamId: tId } },
+        create: { playerId: pId, teamId: tId, position, isActive: true },
+        update: { position, isActive: true },
+      })
+      ptCount++
+    }
+    console.log(`✓ PlayerTeams: ${ptCount}`)
+
+    // ── 6. Matches (ScheduleRaw A:F + MDScheduleRaw) ──────────────────────────
+    // ScheduleRaw cols: [matchday, matchNum, kickoff, fullTime, homeTeam, awayTeam]
+    const matchIdMap    = new Map<string, string>() // `${md}-${homeId}-${awayId}` → stable match id (both orderings)
+    const matchTeamInfo = new Map<string, { homeTeamId: string; awayTeamId: string }>()
+    const mdToMatchIds  = new Map<number, string[]>()
+
+    for (const row of scheduleRows) {
+      const md       = parseMatchdayNum(row[0] ?? '')
+      if (md === null) continue
+      const homeName = row[4]?.trim() ?? ''
+      const awayName = row[5]?.trim() ?? ''
+      const homeId   = teamIdMap.get(homeName)
+      const awayId   = teamIdMap.get(awayName)
+      if (!homeId || !awayId) {
+        console.warn(`  ⚠ Match MD${md}: unknown team "${homeName}" or "${awayName}"`)
+        continue
+      }
+
+      const mId  = mkMatchId(LEAGUE_SLUG, md, homeName, awayName)
+      const date = mdDateMap.get(md) ?? null
+
+      await prisma.match.upsert({
+        where:  { id: mId },
+        create: { id: mId, leagueId: league.id, homeTeamId: homeId, awayTeamId: awayId, matchday: md, date, status: 'scheduled' },
+        update: { date },
+      })
+
+      matchIdMap.set(`${md}-${homeId}-${awayId}`, mId)
+      matchIdMap.set(`${md}-${awayId}-${homeId}`, mId)
+      matchTeamInfo.set(mId, { homeTeamId: homeId, awayTeamId: awayId })
+      if (!mdToMatchIds.has(md)) mdToMatchIds.set(md, [])
+      mdToMatchIds.get(md)!.push(mId)
+    }
+    const totalMatches = [...mdToMatchIds.values()].flat().length
+    console.log(`✓ Matches: ${totalMatches} across ${mdToMatchIds.size} matchday(s)`)
+
+    // ── 7. Goals (GoalsRaw A:F) ────────────────────────────────────────────────
+    // Cols: [matchday, timestamp, scoringTeam, concedingTeam, scorer, assister]
+    // Note: col 0 may be "#REF!" — fall back to inferring from timestamp vs MDScheduleRaw
+    const matchScores = new Map<string, { home: number; away: number }>()
+    let goalCount = 0
+
+    for (let i = 0; i < goalRows.length; i++) {
+      const row       = goalRows[i]
+      const mdRaw     = row[0]?.trim() ?? ''
+      const timestamp = row[1]?.trim() ?? ''
+      const scorerName   = row[4]?.trim() ?? ''
+      const assisterName = row[5]?.trim() ?? ''
+
+      if (!scorerName) continue
+
+      const md: number | null = /MD?\d+/i.test(mdRaw)
+        ? parseMatchdayNum(mdRaw)
+        : inferMatchdayFromTimestamp(timestamp, mdDateMap)
+      if (md === null) continue
+
+      const scoringTeam   = normalizeTeamName(row[2]?.trim() ?? '')
+      const concedingTeam = normalizeTeamName(row[3]?.trim() ?? '')
+      const scoringTId    = teamIdMap.get(scoringTeam)
+      const concedingTId  = teamIdMap.get(concedingTeam)
+      if (!scoringTId || !concedingTId) {
+        console.warn(`  ⚠ Goal row ${i + 2}: unknown team "${scoringTeam}" or "${concedingTeam}"`)
+        continue
+      }
+
+      const mId =
+        matchIdMap.get(`${md}-${scoringTId}-${concedingTId}`) ??
+        matchIdMap.get(`${md}-${concedingTId}-${scoringTId}`)
+      if (!mId) {
+        console.warn(`  ⚠ Goal row ${i + 2}: no match for MD${md} ${scoringTeam} vs ${concedingTeam}`)
+        continue
+      }
+
+      const scorerId = playerIdMap.get(scorerName)
+      if (!scorerId) {
+        console.log(`  ℹ Guest scorer skipped: ${scorerName}`)
+        continue
+      }
+      const assisterId = assisterName ? (playerIdMap.get(assisterName) ?? null) : null
+
+      const gId = `g-${mId}-${i}`
+      await prisma.goal.upsert({
+        where:  { id: gId },
+        create: { id: gId, matchId: mId, scorerId, assisterId },
+        update: { assisterId },
+      })
+      goalCount++
+
+      if (!matchScores.has(mId)) matchScores.set(mId, { home: 0, away: 0 })
+      const scores    = matchScores.get(mId)!
+      const teamInfo  = matchTeamInfo.get(mId)!
+      if (teamInfo.homeTeamId === scoringTId) scores.home++
+      else scores.away++
+    }
+    console.log(`✓ Goals: ${goalCount}`)
+
+    // ── 8. Match scores + finished status ─────────────────────────────────────
+    // Per CLAUDE.md: if a matchday has any goals, all 3 matches are treated as finished
+    const finishedMds = new Set<number>()
+    for (const mId of matchScores.keys()) {
+      const m = await prisma.match.findUnique({ where: { id: mId }, select: { matchday: true } })
+      if (m) finishedMds.add(m.matchday)
+    }
+
+    for (const [mId, s] of matchScores) {
+      await prisma.match.update({
+        where: { id: mId },
+        data:  { homeScore: s.home, awayScore: s.away, status: 'finished' },
       })
     }
-    console.log(`  ✓ Player: ${playerName}`)
-  }
-
-  // ── 4. Upsert Matches ──────────────────────────────────────────────────────
-  // Schedule cols: [0] matchday, [1] date, [2] venue, [3] homeSheetId, [4] awaySheetId,
-  //                [5] homeScore, [6] awayScore
-  console.log(`\nUpserting ${scheduleRows.length} match(es)…`)
-  const matchMap = new Map<string, string>() // sheetKey → DB id
-
-  for (const row of scheduleRows) {
-    const [mdRaw, dateRaw, venue, homeSheetId, awaySheetId, homeScoreRaw, awayScoreRaw] = row
-    if (!mdRaw || !homeSheetId || !awaySheetId) continue
-
-    const md       = parseInt(mdRaw.replace(/\D/g, ''), 10)
-    const homeTId  = teamMap.get(homeSheetId)
-    const awayTId  = teamMap.get(awaySheetId)
-    if (!homeTId || !awayTId) {
-      console.warn(`  ⚠ Match MD${md}: unknown team(s) ${homeSheetId} / ${awaySheetId}`)
-      continue
+    for (const md of finishedMds) {
+      for (const mId of mdToMatchIds.get(md) ?? []) {
+        if (!matchScores.has(mId)) {
+          await prisma.match.update({
+            where: { id: mId },
+            data:  { homeScore: 0, awayScore: 0, status: 'finished' },
+          })
+        }
+      }
     }
+    console.log(`✓ Scores updated (${finishedMds.size} finished matchday(s))`)
 
-    const homeScore = homeScoreRaw !== undefined && homeScoreRaw !== '' ? parseInt(homeScoreRaw, 10) : null
-    const awayScore = awayScoreRaw !== undefined && awayScoreRaw !== '' ? parseInt(awayScoreRaw, 10) : null
-    const status    = homeScore !== null && awayScore !== null ? 'played' : 'scheduled'
+    // ── 9. Availability (RosterRaw cols E-L = MD1-MD8) ────────────────────────
+    // RosterRaw: [picUrl, name, team, position, MD1(4), MD2(5), ..., MD8(11)]
+    let availCount = 0
+    for (const row of rosterRows) {
+      const name     = row[1].trim()
+      const teamName = row[2]?.trim() ?? ''
+      const pId      = playerIdMap.get(name)
+      const tId      = teamIdMap.get(teamName)
+      if (!pId || !tId) continue
 
-    const mId  = mkMatchId(LEAGUE_SLUG, md, homeSheetId, awaySheetId)
-    const mKey = `${md}-${homeSheetId}-${awaySheetId}`
-    matchMap.set(mKey, mId)
+      for (let md = 1; md <= 8; md++) {
+        const val    = row[3 + md]?.trim() ?? '' // index 4=MD1 … 11=MD8
+        const status = parseAvailStatus(val)
+        if (!status) continue
 
-    await prisma.match.upsert({
-      where:  { id: mId },
-      create: {
-        id: mId, leagueId: lgId, matchday: md,
-        homeTeamId: homeTId, awayTeamId: awayTId,
-        date: parseDate(dateRaw), venue: venue || null,
-        homeScore, awayScore, status,
-      },
-      update: { date: parseDate(dateRaw), homeScore, awayScore, status },
-    })
-    console.log(`  ✓ Match MD${md}: ${homeSheetId} vs ${awaySheetId}`)
-  }
-
-  // ── 5. Upsert Goals ────────────────────────────────────────────────────────
-  // Goals cols: [0] matchday, [1] timestamp, [2] homeSheetId, [3] awaySheetId,
-  //             [4] scorerSheetId, [5] assisterSheetId
-  console.log(`\nUpserting ${goalRows.length} goal(s)…`)
-  let goalsOk = 0
-  const goalCounters = new Map<string, number>()
-
-  for (const row of goalRows) {
-    const [mdRaw, , homeSheetId, awaySheetId, scorerSheetId, assisterSheetId] = row
-    if (!scorerSheetId) continue
-
-    const md = parseInt((mdRaw ?? '').replace(/\D/g, ''), 10)
-    if (!md) continue
-
-    // Try both orderings to find the match
-    const mKey    = `${md}-${homeSheetId}-${awaySheetId}`
-    const mKeyAlt = `${md}-${awaySheetId}-${homeSheetId}`
-    const mId     = matchMap.get(mKey) ?? matchMap.get(mKeyAlt)
-
-    if (!mId) {
-      console.warn(`  ⚠ Goal MD${md}: match not found (${homeSheetId} vs ${awaySheetId})`)
-      continue
+        for (const mId of mdToMatchIds.get(md) ?? []) {
+          const info = matchTeamInfo.get(mId)
+          if (!info || (info.homeTeamId !== tId && info.awayTeamId !== tId)) continue
+          await prisma.availability.upsert({
+            where:  { matchId_playerId: { matchId: mId, playerId: pId } },
+            create: { matchId: mId, playerId: pId, status },
+            update: { status },
+          })
+          availCount++
+        }
+      }
     }
+    console.log(`✓ Availability: ${availCount}`)
 
-    const sId = playerMap.get(scorerSheetId)
-    if (!sId) {
-      console.warn(`  ⚠ Goal MD${md}: scorer not found (${scorerSheetId})`)
-      continue
-    }
-    const aId = assisterSheetId ? playerMap.get(assisterSheetId) : undefined
+    // ── 10. Ratings ───────────────────────────────────────────────────────────
+    // RatingsRaw is wide: [matchday, timestamp, respondentTeam, …53 player cols…, ref, gamesClose, teamwork, enjoyment]
+    // The respondent player is not identified in the raw data (only their team is),
+    // so we cannot reliably populate Rating.playerId. Skipping ratings import.
+    console.log('⚠  Ratings import skipped — respondent player not identifiable from RatingsRaw')
 
-    const n   = (goalCounters.get(mId) ?? 0) + 1
-    goalCounters.set(mId, n)
-    const gId = mkGoalId(mId, scorerSheetId, n)
-
-    await prisma.goal.upsert({
-      where:  { id: gId },
-      create: { id: gId, matchId: mId, scorerId: sId, assisterId: aId ?? null },
-      update: { assisterId: aId ?? null },
-    })
-    goalsOk++
+    console.log('\n✅  Import complete.\n')
+  } finally {
+    await prisma.$disconnect()
   }
-  console.log(`  ✓ ${goalsOk} goal(s) upserted`)
-
-  // ── 6. Upsert Ratings ─────────────────────────────────────────────────────
-  // Ratings cols: [0] matchday, [1] sheetPlayerId, [2] refScore, [3] teamwork,
-  //               [4] enjoyment, [5] gameCloseness
-  const ratingRows = ratingData.slice(1)
-  console.log(`\nUpserting ${ratingRows.length} rating row(s)…`)
-  let ratingsOk = 0
-
-  for (const row of ratingRows) {
-    const [mdRaw, sheetPlayerId, refScoreRaw, teamworkRaw, enjoymentRaw, gameClosenessRaw] = row
-    if (!sheetPlayerId) continue
-
-    const md      = parseInt((mdRaw ?? '').replace(/\D/g, ''), 10)
-    const pId     = playerMap.get(sheetPlayerId)
-    if (!md || !pId) continue
-
-    // Find any match in this matchday for this league
-    const mId = [...matchMap.entries()]
-      .find(([k]) => k.startsWith(`${md}-`))?.[1]
-    if (!mId) continue
-
-    const toInt = (v: string | undefined) => (v ? parseInt(v, 10) || null : null)
-
-    await prisma.rating.upsert({
-      where:  { matchId_playerId: { matchId: mId, playerId: pId } },
-      create: {
-        matchId: mId, playerId: pId,
-        refScore: toInt(refScoreRaw), teamwork: toInt(teamworkRaw),
-        enjoyment: toInt(enjoymentRaw), gameCloseness: toInt(gameClosenessRaw),
-      },
-      update: {
-        refScore: toInt(refScoreRaw), teamwork: toInt(teamworkRaw),
-        enjoyment: toInt(enjoymentRaw), gameCloseness: toInt(gameClosenessRaw),
-      },
-    })
-    ratingsOk++
-  }
-  console.log(`  ✓ ${ratingsOk} rating record(s) upserted`)
-
-  console.log('\n✅  Import complete.\n')
-  await prisma.$disconnect()
 }
 
-main().catch(async err => {
+main().catch(err => {
   console.error('Import failed:', err)
-  await prisma.$disconnect()
   process.exit(1)
 })
