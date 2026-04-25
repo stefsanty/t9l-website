@@ -24,12 +24,12 @@ function parseMatchdayNum(val: string): number | null {
   return m ? parseInt(m[1], 10) : null
 }
 
-function parseAvailStatus(val: string): string | null {
+function parseAvailStatus(val: string): { rsvp: string | null; participated: string | null } | null {
   const v = val.trim().toUpperCase()
-  if (v === 'Y' || v === 'GOING') return 'GOING'
-  if (v === 'EXPECTED' || v === 'UNDECIDED') return 'UNDECIDED'
-  if (v === 'PLAYED') return 'PLAYED'
-  return null // blank / not going → skip
+  if (v === 'Y' || v === 'GOING')             return { rsvp: 'GOING',     participated: null }
+  if (v === 'EXPECTED' || v === 'UNDECIDED')   return { rsvp: 'UNDECIDED', participated: null }
+  if (v === 'PLAYED')                          return { rsvp: null,        participated: 'JOINED' }
+  return null // blank / N / OUT → skip
 }
 
 function inferMatchdayFromTimestamp(
@@ -318,16 +318,16 @@ async function main() {
 
       for (let md = 1; md <= 8; md++) {
         const val    = row[3 + md]?.trim() ?? '' // index 4=MD1 … 11=MD8
-        const status = parseAvailStatus(val)
-        if (!status) continue
+        const parsed = parseAvailStatus(val)
+        if (!parsed) continue
 
         for (const mId of mdToMatchIds.get(md) ?? []) {
           const info = matchTeamInfo.get(mId)
           if (!info || (info.homeTeamId !== tId && info.awayTeamId !== tId)) continue
           await prisma.availability.upsert({
             where:  { matchId_playerId: { matchId: mId, playerId: pId } },
-            create: { matchId: mId, playerId: pId, status },
-            update: { status },
+            create: { matchId: mId, playerId: pId, rsvp: parsed.rsvp, participated: parsed.participated },
+            update: { rsvp: parsed.rsvp, participated: parsed.participated },
           })
           availCount++
         }

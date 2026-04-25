@@ -9,10 +9,12 @@ export default async function EditMatchPage({ params }: Props) {
   const [match, players] = await Promise.all([getMatch(id), getAllPlayers()])
   if (!match) notFound()
 
-  const rosterPlayers = players.filter((p) =>
-    p.playerTeams.some(
-      (pt) => pt.teamId === match.homeTeamId || pt.teamId === match.awayTeamId
-    )
+  const rosterPlayers = players.filter(
+    (p) =>
+      p.id === 'p-guest' ||
+      p.playerTeams.some(
+        (pt) => pt.teamId === match.homeTeamId || pt.teamId === match.awayTeamId
+      )
   )
 
   return (
@@ -130,23 +132,40 @@ export default async function EditMatchPage({ params }: Props) {
       {match.availability.length > 0 && (
         <section>
           <h2 className="text-sm font-semibold text-gray-300 mb-3">Availability</h2>
-          <div className="bg-gray-800 rounded-lg divide-y divide-gray-700">
-            {match.availability.map((av) => (
-              <div key={av.id} className="flex items-center justify-between px-4 py-2 text-sm">
-                <span className="text-white">{av.player.name}</span>
-                <span
-                  className={`text-xs ${
-                    av.status === 'GOING'
-                      ? 'text-green-400'
-                      : av.status === 'PLAYED'
-                      ? 'text-blue-400'
-                      : 'text-gray-400'
-                  }`}
-                >
-                  {av.status}
-                </span>
-              </div>
-            ))}
+          <div className="bg-gray-800 rounded-lg overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-700">
+                  <th className="text-left text-gray-400 font-medium px-4 py-2">Player</th>
+                  <th className="text-left text-gray-400 font-medium px-4 py-2">RSVP</th>
+                  <th className="text-left text-gray-400 font-medium px-4 py-2">Participated</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-700">
+                {match.availability.map((av) => (
+                  <tr key={av.id}>
+                    <td className="px-4 py-2 text-white">{av.player.name}</td>
+                    <td className="px-4 py-2">
+                      <span className={`text-xs ${
+                        av.rsvp === 'GOING' ? 'text-green-400' :
+                        av.rsvp === 'UNDECIDED' ? 'text-yellow-400' :
+                        av.rsvp === 'NOT_GOING' ? 'text-red-400' : 'text-gray-500'
+                      }`}>
+                        {av.rsvp ?? '—'}
+                      </span>
+                    </td>
+                    <td className="px-4 py-2">
+                      <span className={`text-xs ${
+                        av.participated === 'JOINED' ? 'text-blue-400' :
+                        av.participated === 'NO_SHOWED' ? 'text-red-400' : 'text-gray-500'
+                      }`}>
+                        {av.participated ?? '—'}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </section>
       )}

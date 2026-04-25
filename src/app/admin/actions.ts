@@ -38,15 +38,22 @@ export async function updatePlayer(formData: FormData) {
   const id      = formData.get('id')         as string
   const lineId  = (formData.get('lineId')    as string).trim() || null
   const picUrl  = (formData.get('pictureUrl') as string).trim() || null
-  await prisma.player.update({
-    where: { id },
-    data: {
-      name:       formData.get('name')       as string,
-      lineId,
-      role:       formData.get('role')       as string,
-      pictureUrl: picUrl,
-    },
-  })
+  try {
+    await prisma.player.update({
+      where: { id },
+      data: {
+        name:       formData.get('name')       as string,
+        lineId,
+        role:       formData.get('role')       as string,
+        pictureUrl: picUrl,
+      },
+    })
+  } catch (err: unknown) {
+    if (err instanceof Error && err.message.includes('Unique constraint')) {
+      throw new Error('A player with that LINE ID already exists.')
+    }
+    throw err
+  }
   revalidatePath('/admin/players')
   revalidatePath(`/admin/players/${id}`)
 }
@@ -75,12 +82,14 @@ export async function updateMatchScore(formData: FormData) {
   const id        = formData.get('matchId')   as string
   const homeScore = parseInt(formData.get('homeScore') as string, 10)
   const awayScore = parseInt(formData.get('awayScore') as string, 10)
+  const hs = isNaN(homeScore) ? null : homeScore
+  const as = isNaN(awayScore) ? null : awayScore
   await prisma.match.update({
     where: { id },
     data: {
-      homeScore: isNaN(homeScore) ? null : homeScore,
-      awayScore: isNaN(awayScore) ? null : awayScore,
-      status: 'finished',
+      homeScore: hs,
+      awayScore: as,
+      status: hs !== null && as !== null ? 'finished' : 'scheduled',
     },
   })
   revalidatePath('/admin/matches')

@@ -89,11 +89,12 @@ model Goal {
 }
 
 model Availability {
-  id       String @id @default(cuid())
-  matchId  String
-  playerId String
-  status   String @default("UNDECIDED")
-  match    Match  @relation(fields: [matchId], references: [id])
-  player   Player @relation(fields: [playerId], references: [id])
+  id           String  @id @default(cuid())
+  matchId      String
+  playerId     String
+  rsvp         String? // GOING | UNDECIDED | NOT_GOING | null
+  participated String? // JOINED | NO_SHOWED | null
+  match        Match   @relation(fields: [matchId], references: [id])
+  player       Player  @relation(fields: [playerId], references: [id])
   @@unique([matchId, playerId])
 }
