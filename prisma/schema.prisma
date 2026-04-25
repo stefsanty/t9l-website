@@ -1,0 +1,114 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model League {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  court     String?
+  dayOfWeek String?
+  season    String?
+  status    String   @default("active")
+  logoUrl   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  teams     Team[]
+  matches   Match[]
+}
+
+model Team {
+  id          String       @id @default(cuid())
+  leagueId    String
+  name        String
+  shortName   String?
+  color       String?
+  logoUrl     String?
+  league      League       @relation(fields: [leagueId], references: [id])
+  playerTeams PlayerTeam[]
+  homeMatches Match[]      @relation("HomeTeam")
+  awayMatches Match[]      @relation("AwayTeam")
+}
+
+model Player {
+  id            String         @id @default(cuid())
+  name          String
+  lineId        String?        @unique
+  pictureUrl    String?
+  role          String         @default("player")
+  playerTeams   PlayerTeam[]
+  scoredGoals   Goal[]         @relation("Scorer")
+  assistedGoals Goal[]         @relation("Assister")
+  ratings       Rating[]
+  availability  Availability[]
+}
+
+model PlayerTeam {
+  id       String  @id @default(cuid())
+  playerId String
+  teamId   String
+  position String?
+  isActive Boolean @default(true)
+  player   Player  @relation(fields: [playerId], references: [id])
+  team     Team    @relation(fields: [teamId], references: [id])
+  @@unique([playerId, teamId])
+}
+
+model Match {
+  id           String         @id @default(cuid())
+  leagueId     String
+  homeTeamId   String
+  awayTeamId   String
+  matchday     Int
+  date         DateTime?
+  venue        String?
+  homeScore    Int?
+  awayScore    Int?
+  status       String         @default("scheduled")
+  league       League         @relation(fields: [leagueId], references: [id])
+  homeTeam     Team           @relation("HomeTeam", fields: [homeTeamId], references: [id])
+  awayTeam     Team           @relation("AwayTeam", fields: [awayTeamId], references: [id])
+  goals        Goal[]
+  ratings      Rating[]
+  availability Availability[]
+}
+
+model Goal {
+  id         String  @id @default(cuid())
+  matchId    String
+  scorerId   String
+  assisterId String?
+  minute     Int?
+  match      Match   @relation(fields: [matchId], references: [id])
+  scorer     Player  @relation("Scorer", fields: [scorerId], references: [id])
+  assister   Player? @relation("Assister", fields: [assisterId], references: [id])
+}
+
+model Rating {
+  id            String @id @default(cuid())
+  matchId       String
+  playerId      String
+  refScore      Int?
+  teamwork      Int?
+  enjoyment     Int?
+  gameCloseness Int?
+  match         Match  @relation(fields: [matchId], references: [id])
+  player        Player @relation(fields: [playerId], references: [id])
+  @@unique([matchId, playerId])
+}
+
+model Availability {
+  id       String @id @default(cuid())
+  matchId  String
+  playerId String
+  status   String @default("UNDECIDED")
+  match    Match  @relation(fields: [matchId], references: [id])
+  player   Player @relation(fields: [playerId], references: [id])
+  @@unique([matchId, playerId])
+}
