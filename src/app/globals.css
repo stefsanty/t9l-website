@@ -190,6 +190,29 @@ html.light {
   --font-display: var(--font-barlow-condensed);
   --font-body: var(--font-inter);
 
+  /* Admin design tokens */
+  --color-admin-bg: #0d0f11;
+  --color-admin-surface: #141618;
+  --color-admin-surface2: #1c1f22;
+  --color-admin-surface3: #22262b;
+  --color-admin-border: #2a2e34;
+  --color-admin-border2: #363b42;
+  --color-admin-text: #e8eaed;
+  --color-admin-text2: #8b9099;
+  --color-admin-text3: #555b64;
+  --color-admin-green: #39ff87;
+  --color-admin-green-dim: #1a4033;
+  --color-admin-amber: #f59e0b;
+  --color-admin-amber-dim: #3d2c0a;
+  --color-admin-red: #f87171;
+  --color-admin-red-dim: #3d1515;
+  --color-admin-blue: #60a5fa;
+
+  /* Admin fonts */
+  --font-condensed: var(--font-barlow-condensed), sans-serif;
+  --font-mono: var(--font-dm-mono), monospace;
+  --font-barlow: var(--font-barlow-sans), sans-serif;
+
   @keyframes fade-in {
     from {
       opacity: 0;

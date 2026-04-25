@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Inter, Barlow_Condensed } from "next/font/google";
+import { Inter, Barlow_Condensed, Barlow, DM_Mono } from "next/font/google";
 import Script from "next/script";
 import AuthProvider from "@/components/AuthProvider";
 import ThemeProvider from "@/components/ThemeProvider";
@@ -16,6 +16,18 @@ const barlowCondensed = Barlow_Condensed({
   weight: ["400", "600", "700", "800"],
 });
 
+const barlowSans = Barlow({
+  variable: "--font-barlow-sans",
+  subsets: ["latin"],
+  weight: ["400", "500", "600"],
+});
+
+const dmMono = DM_Mono({
+  variable: "--font-dm-mono",
+  subsets: ["latin"],
+  weight: ["400", "500"],
+});
+
 export const metadata: Metadata = {
   title: "T9L | Tennozu 9-Aside League",
   description: "Mobile dashboard for the Tennozu 9-Aside League.",
@@ -29,7 +41,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${inter.variable} ${barlowCondensed.variable}`}
+      className={`${inter.variable} ${barlowCondensed.variable} ${barlowSans.variable} ${dmMono.variable}`}
     >
       <head>
         <script dangerouslySetInnerHTML={{ __html: `(function(){var s=localStorage.getItem('t9l-theme');var d=window.matchMedia('(prefers-color-scheme: dark)').matches;document.documentElement.classList.add(s||(d?'dark':'light'));})();` }} />
