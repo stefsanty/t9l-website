@@ -23,18 +23,22 @@ T9L.me — mobile-first, multi-tenant website for recreational football leagues.
 ```
 Postgres (Neon) — source of truth for all leagues
        ↕ Prisma (read + write)
-  lib/admin-data.ts (cached queries, tag=leagues)
+  lib/admin-data.ts#getPublicLeagueData(id) — cached, tag=leagues
+       ↓
+  lib/dbToDashboard.ts — adapts Prisma shape → Dashboard props
        ↓
   app/page.tsx (server component, dynamic — reads host header)
-       ├─ subdomain matches a League.subdomain → LeaguePublicView (DB)
-       ├─ apex / unknown host → getDefaultLeague() → LeaguePublicView (DB)
-       └─ no League rows at all → legacy components/Dashboard.tsx (Google Sheets, ISR 300s)
-                                  └─ kept only as a fallback for un-migrated envs
+       ├─ subdomain matches a League.subdomain → Dashboard
+       ├─ apex / unknown host → getLeagueFromHost() falls back to isDefault → Dashboard
+       └─ no League found at all → "No league configured" placeholder
 
-LeaguePublicView (single template, used by every league instance)
-   ├── Schedule tab   (gameWeeks → matches)
-   ├── Standings tab  (computed from completed matches)
-   └── Teams tab      (leagueTeams → playerAssignments)
+Dashboard (single template — used by every tenant; was originally the Sheets-
+   backed t9l.me dashboard, now driven by adapted DB data)
+   ├── Header                    (fixed top bar)
+   ├── NextMatchdayBanner        (matchday navigation, live scores, goals)
+   ├── GuestLoginBanner          (LINE login CTA when not signed in)
+   ├── MatchdayAvailability      (per-team pitch view + RSVP roster)
+   └── RsvpBar                   (sticky bottom RSVP toggle for the signed-in player)
 
 LINE OAuth → next-auth → Upstash Redis (lineId → player mapping)
 i18n → cookie t9l-lang → translateDict (Claude + Redis cache) → I18nProvider
@@ -43,24 +47,26 @@ Player pics → Vercel Blob Storage ← fetched at page.tsx render time
 
 ### Multi-Tenancy
 
-Every league is a row in the `League` table. The same `LeaguePublicView` component renders all of them — only data and branding (name, location, primary/accent color) vary. Architectural rules:
+Every league is a row in the `League` table. The same `Dashboard` component renders all of them — only data and branding (name, location, primary/accent color) vary. Architectural rules:
 
-1. **Single template, no per-league forks.** Adding a feature to `LeaguePublicView` updates every league instance simultaneously. Do not branch on league id/subdomain inside the template.
-2. **Identical Prisma `include` shape.** Both subdomain and default-league lookups go through `PUBLIC_LEAGUE_INCLUDE` in `lib/admin-data.ts` so the data shape passed to `LeaguePublicView` is invariant.
-3. **Branding via two CSS variables.** `LeaguePublicView` injects `--league-primary` and `--league-accent` from `league.primaryColor` / `league.accentColor` as inline styles on its root. Used for the league name color and active tab indicator. No light/dark variants, no theming engine — that's the whole API.
+1. **Single template, no per-league forks.** Adding a feature to `Dashboard` (or any of its children) updates every league instance simultaneously. Do not branch on league id/subdomain inside the template.
+2. **One Prisma include + one adapter.** All public renders go through `getPublicLeagueData(id)` in `lib/admin-data.ts` and `dbToDashboard()` in `lib/dbToDashboard.ts`, so the props shape passed to `Dashboard` is invariant across tenants.
+3. **LeagueTeam.id is the unifying team identifier.** Teams, players, matches, and goals all reference `LeagueTeam.id` so cross-references in the adapted Dashboard data line up regardless of underlying `Team` reuse across leagues.
+4. **Branding via two CSS variables.** `--primary` (active tab / accents) and `--accent` (league name color) are injected on the page root from `league.primaryColor` / `league.accentColor`. No light/dark variants, no theming engine — two CSS variables, that's the whole API.
+5. **Schema gaps degrade silently.** Per-player per-matchday RSVP, team rotation (`sittingOutTeamId`), and player position aren't in the DB yet — the adapter fills them with empty defaults so RSVP/availability widgets render but stay inert until those tables exist.
 
 ### Routing
 
 `page.tsx` reads the `host` request header and extracts the first segment as a potential league subdomain (e.g. `test.dev.t9l.me` → `test`).
 
-- **Subdomain match:** `getLeagueBySubdomain(sub)` → render `LeaguePublicView`
-- **Apex / no subdomain:** `getDefaultLeague()` → finds `League.isDefault === true`, falling back to the oldest league if none is flagged → render `LeaguePublicView`
-- **No DB leagues at all:** falls through to the Sheets-backed `Dashboard` (legacy, transitional)
+- **Subdomain match:** `getLeagueFromHost()` returns the matched League → `getPublicLeagueData(id)` → `dbToDashboard()` → render `Dashboard`
+- **Apex / no subdomain:** `getLeagueFromHost()` falls back to `League.isDefault === true` → same render path
+- **No matching League:** show a "No league configured" placeholder
 
 Helpers:
-- `lib/admin-data.ts#getLeagueBySubdomain(subdomain)` — cached Prisma query (revalidate=60, tag=leagues)
-- `lib/admin-data.ts#getDefaultLeague()` — same cache config, picks `isDefault=true` then falls back to oldest
-- `lib/getLeagueFromHost.ts` extracts the subdomain from the Host header. Apex (`t9l.me`, `dev.t9l.me`, `localhost`) returns null
+- `lib/getLeagueFromHost.ts` — single resolver for host → League (subdomain match, falling back to isDefault)
+- `lib/admin-data.ts#getPublicLeagueData(leagueId)` — cached Prisma query with the canonical public include
+- `lib/dbToDashboard.ts#dbToDashboard(league)` — adapter to `Dashboard`'s props
 - The `isDefault` flag is mutually exclusive — `updateLeagueInfo` toggles all other leagues off in a transaction when one is set to default
 
 ## Internationalization (i18n)

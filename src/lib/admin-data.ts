@@ -142,6 +142,7 @@ export const getPublicLeagueData = unstable_cache(
         },
         gameWeeks: {
           include: {
+            venue: true,
             matches: {
               include: {
                 homeTeam: { include: { team: true } },

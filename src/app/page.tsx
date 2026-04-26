@@ -1,13 +1,16 @@
 import { getLeagueFromHost } from '@/lib/getLeagueFromHost'
 import { getPublicLeagueData } from '@/lib/admin-data'
-import LeaguePublicView from '@/components/LeaguePublicView'
+import { dbToDashboard } from '@/lib/dbToDashboard'
+import { findNextMatchday } from '@/lib/stats'
+import Dashboard from '@/components/Dashboard'
 
 export const revalidate = 60
 
 export default async function Home() {
-  // Single resolution path: getLeagueFromHost() returns the matching League by
-  // subdomain, falling back to the league flagged isDefault. No Sheets fallback —
-  // the DB is the only source of truth now.
+  // One template for every tenant. The host header resolves to a League row
+  // (subdomain match, or apex → isDefault); the league's relational data is
+  // adapted into Dashboard's props shape so apex and subdomain renders use
+  // exactly the same component tree, only the underlying data differs.
   const leagueMeta = await getLeagueFromHost()
 
   if (!leagueMeta) {
@@ -34,5 +37,19 @@ export default async function Home() {
     )
   }
 
-  return <LeaguePublicView league={league} />
+  const data = dbToDashboard(league)
+  const nextMd = findNextMatchday(data.matchdays)
+
+  return (
+    <Dashboard
+      teams={data.teams}
+      players={data.players}
+      matchdays={data.matchdays}
+      goals={data.goals}
+      availability={data.availability}
+      availabilityStatuses={data.availabilityStatuses}
+      played={data.played}
+      nextMd={nextMd}
+    />
+  )
 }
