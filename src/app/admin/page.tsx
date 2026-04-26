@@ -1,6 +1,7 @@
 import Link from 'next/link'
-import { Plus, ArrowRight, Settings } from 'lucide-react'
+import { Plus, ArrowRight } from 'lucide-react'
 import { getAllLeagues } from '@/lib/admin-data'
+import LeagueRowSettingsLink from '@/components/admin/LeagueRowSettingsLink'
 
 // `unstable_cache` round-trips Date objects through JSON, so cached values come
 // back as ISO strings. Coerce to Date before formatting.
@@ -72,14 +73,7 @@ export default async function AdminDashboard() {
                 </div>
 
                 <div className="flex items-center gap-2 shrink-0">
-                  <Link
-                    href={`/admin/leagues/${league.id}/settings`}
-                    onClick={(e) => e.stopPropagation()}
-                    className="p-1.5 rounded-lg text-admin-text3 hover:text-admin-text hover:bg-admin-surface2 transition-colors no-underline"
-                    title="Settings"
-                  >
-                    <Settings className="w-4 h-4" />
-                  </Link>
+                  <LeagueRowSettingsLink leagueId={league.id} />
                   <ArrowRight className="w-4 h-4 text-admin-text3 group-hover:text-admin-text transition-colors" />
                 </div>
               </div>
