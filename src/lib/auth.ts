@@ -58,7 +58,7 @@ export const authOptions: AuthOptions = {
         ]
       : []),
     // LINE ID mock provider — active only when NEXTAUTH_DEV_MODE=true (Vercel Preview dev branch)
-    ...(process.env.NEXTAUTH_DEV_MODE === "true"
+    ...(process.env.NEXTAUTH_DEV_MODE?.trim() === "true"
       ? [
           CredentialsProvider({
             id: "line-mock",
