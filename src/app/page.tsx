@@ -1,7 +1,10 @@
+import { headers } from 'next/headers'
 import { fetchSheetData } from "@/lib/sheets";
 import { parseAllData } from "@/lib/data";
 import { findNextMatchday } from "@/lib/stats";
 import Dashboard from "@/components/Dashboard";
+import DbLeaguePage from "@/components/DbLeaguePage";
+import { getLeagueBySubdomain } from "@/lib/admin-data";
 import { unstable_cache } from "next/cache";
 
 const getCachedSheetData = unstable_cache(
@@ -10,7 +13,31 @@ const getCachedSheetData = unstable_cache(
   { revalidate: 300, tags: ["sheet-data"] }
 );
 
+// Subdomains that belong to the main T9L site (not league-specific)
+const MAIN_SUBDOMAINS = new Set(['www', 't9l', 'dev', 'localhost', ''])
+
+function extractSubdomain(host: string): string {
+  const hostname = host.split(':')[0] // strip port
+  const parts = hostname.split('.')
+  // e.g. "test.dev.t9l.me" → ["test","dev","t9l","me"] → first part is "test"
+  // e.g. "dev.t9l.me" → ["dev","t9l","me"] → "dev"
+  // e.g. "t9l.me" → ["t9l","me"] → "t9l"
+  // e.g. "localhost" → ["localhost"] → "localhost"
+  return parts[0] ?? ''
+}
+
 export default async function Home() {
+  const headersList = await headers()
+  const host = headersList.get('host') ?? ''
+  const subdomain = extractSubdomain(host)
+
+  if (!MAIN_SUBDOMAINS.has(subdomain)) {
+    const league = await getLeagueBySubdomain(subdomain)
+    if (league) {
+      return <DbLeaguePage league={league} />
+    }
+  }
+
   let raw;
   try {
     raw = await getCachedSheetData();
