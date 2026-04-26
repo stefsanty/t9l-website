@@ -1,6 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
+import Header from './Header'
 
 // ── Types inferred from Prisma include shape ──────────────────────────────────
 type TeamRow   = { id: string; name: string; logoUrl: string | null }
@@ -41,8 +42,8 @@ type LeagueData = {
   location: string
   startDate: Date | string
   endDate: Date | string | null
-  primaryColor?: string | null
-  accentColor?: string | null
+  primaryColor: string | null
+  accentColor: string | null
   leagueTeams: LeagueTeamRow[]
   gameWeeks: GameWeekRow[]
 }
@@ -96,8 +97,8 @@ function fmtTime(d: Date | string) {
 }
 
 function statusBadge(status: string) {
-  if (status === 'COMPLETED')  return <span className="text-xs font-bold uppercase text-emerald-400">FT</span>
-  if (status === 'IN_PROGRESS') return <span className="text-xs font-bold uppercase text-amber-400">LIVE</span>
+  if (status === 'COMPLETED')   return <span className="text-xs font-black uppercase text-[var(--success)]">FT</span>
+  if (status === 'IN_PROGRESS') return <span className="text-xs font-black uppercase text-[var(--warning)]">LIVE</span>
   return null
 }
 
@@ -108,28 +109,28 @@ function ScheduleTab({ gameWeeks }: { gameWeeks: GameWeekRow[] }) {
       {gameWeeks.map(gw => (
         <div key={gw.id}>
           <div className="flex items-center gap-3 mb-3">
-            <span className="text-xs font-bold uppercase tracking-widest text-white/40">GW{gw.weekNumber}</span>
-            <span className="text-xs text-white/30">{fmt(gw.startDate)}</span>
+            <span className="text-xs font-black uppercase tracking-widest text-fg-low">GW{gw.weekNumber}</span>
+            <span className="text-xs text-fg-low">{fmt(gw.startDate)}</span>
           </div>
 
           <div className="space-y-2">
             {gw.matches.map(m => (
-              <div key={m.id} className="flex items-center gap-2 bg-white/5 rounded-xl px-4 py-3">
-                <span className="flex-1 text-sm font-semibold text-right truncate">{m.homeTeam.team.name}</span>
+              <div key={m.id} className="flex items-center gap-2 bg-[var(--surface)] rounded-xl px-4 py-3 border border-[var(--border-subtle)]">
+                <span className="flex-1 text-sm font-semibold text-right truncate text-fg-high">{m.homeTeam.team.name}</span>
 
                 <div className="flex items-center gap-1.5 min-w-[5rem] justify-center">
                   {m.status === 'COMPLETED' ? (
                     <>
-                      <span className="text-base font-black tabular-nums">{m.homeScore}</span>
-                      <span className="text-white/30">–</span>
-                      <span className="text-base font-black tabular-nums">{m.awayScore}</span>
+                      <span className="text-base font-black tabular-nums text-fg-high">{m.homeScore}</span>
+                      <span className="text-fg-low">–</span>
+                      <span className="text-base font-black tabular-nums text-fg-high">{m.awayScore}</span>
                     </>
                   ) : (
-                    <span className="text-xs text-white/40">{fmtTime(m.playedAt)}</span>
+                    <span className="text-xs text-fg-low">{fmtTime(m.playedAt)}</span>
                   )}
                 </div>
 
-                <span className="flex-1 text-sm font-semibold truncate">{m.awayTeam.team.name}</span>
+                <span className="flex-1 text-sm font-semibold truncate text-fg-high">{m.awayTeam.team.name}</span>
                 <div className="w-8 flex justify-end">{statusBadge(m.status)}</div>
               </div>
             ))}
@@ -143,8 +144,8 @@ function ScheduleTab({ gameWeeks }: { gameWeeks: GameWeekRow[] }) {
 function StandingsTab({ standings }: { standings: StandingRow[] }) {
   if (standings.every(s => s.p === 0)) {
     return (
-      <div className="text-center py-16 text-white/40">
-        <p className="text-sm uppercase tracking-widest">No matches played yet</p>
+      <div className="text-center py-16 text-fg-low">
+        <p className="text-sm uppercase tracking-widest font-black">No matches played yet</p>
       </div>
     )
   }
@@ -153,7 +154,7 @@ function StandingsTab({ standings }: { standings: StandingRow[] }) {
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
-          <tr className="text-white/40 text-xs uppercase tracking-widest border-b border-white/10">
+          <tr className="text-fg-low text-xs uppercase tracking-widest border-b border-[var(--border-default)]">
             <th className="text-left pb-2 pr-2">#</th>
             <th className="text-left pb-2">Team</th>
             <th className="text-center pb-2 px-1">P</th>
@@ -161,20 +162,20 @@ function StandingsTab({ standings }: { standings: StandingRow[] }) {
             <th className="text-center pb-2 px-1">D</th>
             <th className="text-center pb-2 px-1">L</th>
             <th className="text-center pb-2 px-1">GD</th>
-            <th className="text-center pb-2 pl-1 font-black text-white/60">Pts</th>
+            <th className="text-center pb-2 pl-1 font-black text-fg-mid">Pts</th>
           </tr>
         </thead>
         <tbody>
           {standings.map((row, i) => (
-            <tr key={row.ltId} className="border-b border-white/5 last:border-0">
-              <td className="py-2.5 pr-2 text-white/40">{i + 1}</td>
-              <td className="py-2.5 font-semibold">{row.name}</td>
-              <td className="py-2.5 text-center text-white/60 px-1 tabular-nums">{row.p}</td>
-              <td className="py-2.5 text-center text-white/60 px-1 tabular-nums">{row.w}</td>
-              <td className="py-2.5 text-center text-white/60 px-1 tabular-nums">{row.d}</td>
-              <td className="py-2.5 text-center text-white/60 px-1 tabular-nums">{row.l}</td>
-              <td className="py-2.5 text-center text-white/60 px-1 tabular-nums">{row.gd > 0 ? `+${row.gd}` : row.gd}</td>
-              <td className="py-2.5 text-center font-black pl-1 tabular-nums">{row.pts}</td>
+            <tr key={row.ltId} className="border-b border-[var(--border-subtle)] last:border-0">
+              <td className="py-2.5 pr-2 text-fg-low">{i + 1}</td>
+              <td className="py-2.5 font-semibold text-fg-high">{row.name}</td>
+              <td className="py-2.5 text-center text-fg-mid px-1 tabular-nums">{row.p}</td>
+              <td className="py-2.5 text-center text-fg-mid px-1 tabular-nums">{row.w}</td>
+              <td className="py-2.5 text-center text-fg-mid px-1 tabular-nums">{row.d}</td>
+              <td className="py-2.5 text-center text-fg-mid px-1 tabular-nums">{row.l}</td>
+              <td className="py-2.5 text-center text-fg-mid px-1 tabular-nums">{row.gd > 0 ? `+${row.gd}` : row.gd}</td>
+              <td className="py-2.5 text-center font-black pl-1 tabular-nums text-fg-high">{row.pts}</td>
             </tr>
           ))}
         </tbody>
@@ -188,13 +189,13 @@ function TeamsTab({ leagueTeams }: { leagueTeams: LeagueTeamRow[] }) {
     <div className="space-y-6">
       {leagueTeams.map(lt => (
         <div key={lt.id}>
-          <h3 className="font-bold text-base mb-2">{lt.team.name}</h3>
+          <h3 className="font-black text-sm uppercase tracking-widest text-fg-high mb-2">{lt.team.name}</h3>
           {lt.playerAssignments.length === 0 ? (
-            <p className="text-sm text-white/40">No players assigned</p>
+            <p className="text-sm text-fg-low">No players assigned</p>
           ) : (
             <div className="flex flex-wrap gap-2">
               {lt.playerAssignments.map(pa => (
-                <span key={pa.player.id} className="text-xs bg-white/10 rounded-full px-3 py-1">
+                <span key={pa.player.id} className="text-xs bg-[var(--surface-md)] rounded-full px-3 py-1 text-fg-mid">
                   {pa.player.name}
                 </span>
               ))}
@@ -219,46 +220,44 @@ export default function LeaguePublicView({ league }: { league: LeagueData }) {
     { id: 'teams',     label: 'Teams'     },
   ]
 
-  // Per-league branding. CSS variables are scoped to this subtree only —
-  // hex strings come straight from the DB. No theming engine, no light/dark
-  // logic, just two overrides: --league-primary, --league-accent.
-  const brandStyle = {
-    '--league-primary': league.primaryColor ?? '#ffffff',
-    '--league-accent':  league.accentColor  ?? '#ffffff',
-  } as React.CSSProperties
+  // Per-league branding. Two CSS variables, that's the whole API: --primary
+  // drives the active tab indicator, --accent drives the league name color.
+  // Either may be null — the design tokens already handle that case.
+  const colorStyle: React.CSSProperties = {}
+  if (league.primaryColor) (colorStyle as Record<string, string>)['--primary'] = league.primaryColor
+  if (league.accentColor)  (colorStyle as Record<string, string>)['--accent']  = league.accentColor
 
   return (
-    <div className="min-h-dvh bg-midnight text-white" style={brandStyle}>
-      {/* Header */}
-      <div className="px-4 pt-8 pb-6 border-b border-white/10">
-        <p className="text-xs font-bold uppercase tracking-widest text-white/40 mb-1">{league.location}</p>
+    <div className="flex flex-col min-h-dvh bg-background max-w-lg mx-auto" style={colorStyle}>
+      <Header />
+
+      {/* League identity */}
+      <div className="px-4 pt-16 pb-4 border-b border-[var(--border-default)]">
+        <p className="text-xs font-black uppercase tracking-widest text-fg-low mb-1">{league.location}</p>
         <h1
-          className="font-display text-2xl font-black uppercase"
-          style={{ color: 'var(--league-primary)' }}
+          className="font-display text-xl font-black uppercase text-fg-high"
+          style={league.accentColor ? { color: 'var(--accent)' } : undefined}
         >
           {league.name}
         </h1>
-        <p className="text-xs text-white/40 mt-1">
+        <p className="text-xs text-fg-low mt-1">
           From {fmt(league.startDate)}
           {league.endDate ? ` · Until ${fmt(league.endDate)}` : ''}
         </p>
       </div>
 
       {/* Tab bar */}
-      <div className="flex border-b border-white/10 px-4">
+      <div className="flex border-b border-[var(--border-default)] px-4">
         {tabs.map(t => (
           <button
             key={t.id}
             onClick={() => setTab(t.id)}
             className={[
-              'py-3 px-4 text-sm font-semibold uppercase tracking-widest border-b-2 -mb-px transition-colors',
-              tab === t.id ? '' : 'border-transparent text-white/40 hover:text-white/60',
-            ].join(' ')}
-            style={
+              'py-3 px-4 text-xs font-black uppercase tracking-widest border-b-2 -mb-px transition-colors',
               tab === t.id
-                ? { borderColor: 'var(--league-accent)', color: 'var(--league-accent)' }
-                : undefined
-            }
+                ? 'border-[var(--primary)] text-fg-high'
+                : 'border-transparent text-fg-low hover:text-fg-mid',
+            ].join(' ')}
           >
             {t.label}
           </button>
@@ -266,11 +265,17 @@ export default function LeaguePublicView({ league }: { league: LeagueData }) {
       </div>
 
       {/* Content */}
-      <div className="px-4 py-6 max-w-2xl mx-auto">
+      <div className="px-4 py-6 flex-1">
         {tab === 'schedule'  && <ScheduleTab  gameWeeks={league.gameWeeks} />}
         {tab === 'standings' && <StandingsTab standings={standings} />}
         {tab === 'teams'     && <TeamsTab     leagueTeams={league.leagueTeams} />}
       </div>
+
+      <footer className="mt-3 mb-0 text-center px-4 pb-4">
+        <p className="text-[10px] font-black uppercase tracking-[0.3em] text-fg-low">
+          © 2026 Tennozu 9-Aside League • Tokyo
+        </p>
+      </footer>
     </div>
   )
 }

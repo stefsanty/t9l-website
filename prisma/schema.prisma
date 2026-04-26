@@ -45,7 +45,7 @@ model League {
   startDate      DateTime
   endDate        DateTime?
   // Per-league branding. Hex strings (e.g. "#22c55e"). Optional; UI falls back
-  // to neutral defaults when null. Kept intentionally minimal — no light/dark
+  // to the default tokens when null. Kept intentionally minimal — no light/dark
   // variants, no theming engine. Two CSS variables, that's it.
   primaryColor   String?
   accentColor    String?

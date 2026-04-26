@@ -129,60 +129,45 @@ export const getAllVenues = unstable_cache(
   { revalidate: 30, tags: ['leagues'] },
 )
 
+export const getPublicLeagueData = unstable_cache(
+  async (leagueId: string) =>
+    prisma.league.findUnique({
+      where: { id: leagueId },
+      include: {
+        leagueTeams: {
+          include: {
+            team: true,
+            playerAssignments: { include: { player: true } },
+          },
+        },
+        gameWeeks: {
+          include: {
+            matches: {
+              include: {
+                homeTeam: { include: { team: true } },
+                awayTeam: { include: { team: true } },
+                goals: {
+                  include: {
+                    player: true,
+                    scoringTeam: true,
+                    assist: { include: { player: true } },
+                  },
+                },
+              },
+              orderBy: { playedAt: 'asc' },
+            },
+          },
+          orderBy: { weekNumber: 'asc' },
+        },
+      },
+    }),
+  ['public-league-data'],
+  { revalidate: 60, tags: ['leagues'] },
+)
+
 export async function getLeague() {
   return prisma.league.findFirst({ orderBy: { createdAt: 'asc' } })
 }
-
-// Shared `include` for the public LeaguePublicView. Subdomain and default-
-// league lookups must return identical structure so the rendered template is
-// the same regardless of which path served the request.
-const PUBLIC_LEAGUE_INCLUDE = {
-  leagueTeams: {
-    include: {
-      team: true,
-      playerAssignments: { include: { player: true } },
-    },
-  },
-  gameWeeks: {
-    include: {
-      matches: {
-        include: {
-          homeTeam: { include: { team: true } },
-          awayTeam: { include: { team: true } },
-          goals: { include: { scoringTeam: true } },
-        },
-        orderBy: { playedAt: 'asc' },
-      },
-    },
-    orderBy: { weekNumber: 'asc' },
-  },
-} as const
-
-export const getLeagueBySubdomain = unstable_cache(
-  async (subdomain: string) =>
-    prisma.league.findUnique({
-      where: { subdomain },
-      include: PUBLIC_LEAGUE_INCLUDE,
-    }),
-  ['league-by-subdomain'],
-  { revalidate: 60, tags: ['leagues'] },
-)
-
-// Default league served at the apex domain. Falls back to the oldest league
-// if nothing is explicitly flagged, so a fresh DB still renders something.
-export const getDefaultLeague = unstable_cache(
-  async () =>
-    (await prisma.league.findFirst({
-      where: { isDefault: true },
-      include: PUBLIC_LEAGUE_INCLUDE,
-    })) ??
-    prisma.league.findFirst({
-      orderBy: { createdAt: 'asc' },
-      include: PUBLIC_LEAGUE_INCLUDE,
-    }),
-  ['default-league'],
-  { revalidate: 60, tags: ['leagues'] },
-)
 
 export async function getAllTeams() {
   return prisma.team.findMany({ orderBy: { name: 'asc' } })
