@@ -200,7 +200,7 @@ export default function TeamsTab({ leagueId, leagueTeams, allTeams }: TeamsTabPr
             <button
               onClick={handleEnroll}
               disabled={!enrollTeamId || pending}
-              className="flex-1 px-2 py-2 bg-admin-green text-admin-bg text-xs font-medium rounded hover:opacity-90 disabled:opacity-50 min-h-[36px]"
+              className="flex-1 px-2 py-2 bg-admin-green text-admin-ink text-xs font-medium rounded hover:opacity-90 disabled:opacity-50 min-h-[36px]"
             >
               Enroll
             </button>

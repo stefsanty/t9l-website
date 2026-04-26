@@ -149,7 +149,7 @@ export default function CreateLeagueForm() {
         <button
           type="submit"
           disabled={pending || subdomainStatus === 'taken'}
-          className="px-5 py-2.5 bg-admin-green text-admin-bg font-medium text-sm rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
+          className="px-5 py-2.5 bg-admin-green text-admin-ink font-medium text-sm rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {pending ? 'Creating…' : 'Create League'}
         </button>

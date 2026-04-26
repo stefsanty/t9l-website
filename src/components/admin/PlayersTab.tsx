@@ -334,7 +334,7 @@ function TransferPanel({
           <button
             onClick={handleTransfer}
             disabled={!toTeamId || pending}
-            className="flex-1 md:flex-none px-4 py-2.5 bg-admin-green text-admin-bg text-sm font-medium rounded hover:opacity-90 disabled:opacity-50"
+            className="flex-1 md:flex-none px-4 py-2.5 bg-admin-green text-admin-ink text-sm font-medium rounded hover:opacity-90 disabled:opacity-50"
           >
             {pending ? 'Transferring…' : 'Confirm'}
           </button>
