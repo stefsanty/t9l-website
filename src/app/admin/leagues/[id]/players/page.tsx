@@ -1,34 +1,12 @@
-import { notFound } from 'next/navigation'
-import { prisma } from '@/lib/prisma'
+import { getLeaguePlayers } from '@/lib/admin-data'
 import PlayersTab from '@/components/admin/PlayersTab'
 
 type Props = { params: Promise<{ id: string }> }
 
 export default async function PlayersPage({ params }: Props) {
   const { id } = await params
+  const [assignments, leagueTeams, gameWeeks] = await getLeaguePlayers(id)
 
-  const [assignments, leagueTeams, gameWeeks] = await Promise.all([
-    prisma.playerLeagueAssignment.findMany({
-      where: { leagueTeam: { leagueId: id } },
-      include: {
-        player: true,
-        leagueTeam: { include: { team: true } },
-      },
-      orderBy: { player: { name: 'asc' } },
-    }),
-    prisma.leagueTeam.findMany({
-      where: { leagueId: id },
-      include: { team: true },
-    }),
-    prisma.gameWeek.findMany({
-      where: { leagueId: id },
-      select: { weekNumber: true },
-      orderBy: { weekNumber: 'desc' },
-      take: 1,
-    }),
-  ])
-
-  // Group assignments by player
   const playerMap = new Map<string, {
     id: string
     name: string

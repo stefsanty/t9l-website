@@ -1,24 +1,11 @@
-import { notFound } from 'next/navigation'
-import { prisma } from '@/lib/prisma'
+import { getLeagueTeams } from '@/lib/admin-data'
 import TeamsTab from '@/components/admin/TeamsTab'
 
 type Props = { params: Promise<{ id: string }> }
 
 export default async function TeamsPage({ params }: Props) {
   const { id } = await params
-
-  const [leagueTeams, allTeams] = await Promise.all([
-    prisma.leagueTeam.findMany({
-      where: { leagueId: id },
-      include: {
-        team: true,
-        playerAssignments: { include: { player: true } },
-        homeMatches: true,
-        awayMatches: true,
-      },
-    }),
-    prisma.team.findMany({ orderBy: { name: 'asc' } }),
-  ])
+  const [leagueTeams, allTeams] = await getLeagueTeams(id)
 
   return (
     <TeamsTab
