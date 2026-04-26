@@ -49,7 +49,7 @@ export default async function LeagueLayout({ params, children }: Props) {
   return (
     <div className="flex flex-col min-h-full">
       {/* League header */}
-      <div className="border-b border-admin-border bg-admin-surface px-8 pt-5 pb-0">
+      <div className="border-b border-admin-border bg-admin-surface px-4 md:px-8 pt-4 md:pt-5 pb-0">
         {/* Back + breadcrumb */}
         <div className="mb-3">
           <Link
@@ -62,7 +62,7 @@ export default async function LeagueLayout({ params, children }: Props) {
         </div>
 
         {/* Title row */}
-        <div className="flex items-start justify-between mb-4">
+        <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-2 md:gap-0 mb-4">
           <div>
             <h1 className="font-condensed font-extrabold text-admin-text text-[26px] leading-tight">
               {league.name}
@@ -78,7 +78,7 @@ export default async function LeagueLayout({ params, children }: Props) {
           </div>
 
           {/* Status line */}
-          <div className="text-right text-sm text-admin-text2">
+          <div className="text-sm text-admin-text2 md:text-right">
             <span className="text-admin-green">Active</span>
             <span className="text-admin-text3 mx-1.5">·</span>
             <span>MD{completedCount} completed</span>
@@ -96,7 +96,7 @@ export default async function LeagueLayout({ params, children }: Props) {
       </div>
 
       {/* Page content */}
-      <div className="flex-1 p-8">
+      <div className="flex-1 p-4 md:p-8">
         {children}
       </div>
     </div>

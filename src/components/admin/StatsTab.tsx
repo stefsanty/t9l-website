@@ -113,7 +113,7 @@ export default function StatsTab({ leagueId, goals, matches, leagueTeams, gameWe
   return (
     <div className="space-y-8">
       {/* Filter toggle */}
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <Link
           href={`/admin/leagues/${leagueId}/stats`}
           className={cn(
@@ -144,80 +144,84 @@ export default function StatsTab({ leagueId, goals, matches, leagueTeams, gameWe
       {/* Top Scorers */}
       <section>
         <h2 className="font-condensed font-bold text-admin-text text-xl mb-4">Top Scorers</h2>
-        <div className="bg-admin-surface rounded-xl border border-admin-border overflow-hidden">
-          <div
-            className="grid text-admin-text3 text-xs uppercase tracking-wider px-5 py-2.5 border-b border-admin-border bg-admin-surface2"
-            style={{ gridTemplateColumns: '40px 1fr 160px 80px 80px 80px' }}
-          >
-            <span>Rank</span>
-            <span>Player</span>
-            <span>Team</span>
-            <span>Goals</span>
-            <span>Assists</span>
-            <span>G+A</span>
-          </div>
-
-          {scorers.length === 0 && (
-            <div className="text-admin-text3 text-sm text-center py-8">No goals recorded yet.</div>
-          )}
-
-          {scorers.map((row, idx) => (
+        <div className="overflow-x-auto">
+          <div className="min-w-[480px] bg-admin-surface rounded-xl border border-admin-border overflow-hidden">
             <div
-              key={row.name}
-              className="grid items-center px-5 py-3 border-b border-admin-border last:border-b-0 hover:bg-admin-surface2/50 transition-colors text-sm"
+              className="grid text-admin-text3 text-xs uppercase tracking-wider px-5 py-2.5 border-b border-admin-border bg-admin-surface2"
               style={{ gridTemplateColumns: '40px 1fr 160px 80px 80px 80px' }}
             >
-              <span className="text-admin-text3 font-mono text-xs">{idx + 1}</span>
-              <span className="text-admin-text font-medium">{row.name}</span>
-              <span className="text-admin-text2">{row.team || '—'}</span>
-              <span className="font-condensed font-bold text-admin-green text-lg">{row.goals}</span>
-              <span className="font-mono text-admin-text2">{row.assists}</span>
-              <span className="font-mono text-admin-text2">{row.goals + row.assists}</span>
+              <span>Rank</span>
+              <span>Player</span>
+              <span>Team</span>
+              <span>Goals</span>
+              <span>Assists</span>
+              <span>G+A</span>
             </div>
-          ))}
+
+            {scorers.length === 0 && (
+              <div className="text-admin-text3 text-sm text-center py-8">No goals recorded yet.</div>
+            )}
+
+            {scorers.map((row, idx) => (
+              <div
+                key={row.name}
+                className="grid items-center px-5 py-3 border-b border-admin-border last:border-b-0 hover:bg-admin-surface2/50 transition-colors text-sm"
+                style={{ gridTemplateColumns: '40px 1fr 160px 80px 80px 80px' }}
+              >
+                <span className="text-admin-text3 font-mono text-xs">{idx + 1}</span>
+                <span className="text-admin-text font-medium">{row.name}</span>
+                <span className="text-admin-text2">{row.team || '—'}</span>
+                <span className="font-condensed font-bold text-admin-green text-lg">{row.goals}</span>
+                <span className="font-mono text-admin-text2">{row.assists}</span>
+                <span className="font-mono text-admin-text2">{row.goals + row.assists}</span>
+              </div>
+            ))}
+          </div>
         </div>
       </section>
 
       {/* League Table */}
       <section>
         <h2 className="font-condensed font-bold text-admin-text text-xl mb-4">League Table</h2>
-        <div className="bg-admin-surface rounded-xl border border-admin-border overflow-hidden">
-          <div
-            className="grid text-admin-text3 text-xs uppercase tracking-wider px-5 py-2.5 border-b border-admin-border bg-admin-surface2"
-            style={{ gridTemplateColumns: '40px 1fr 60px 60px 60px 60px 60px 60px 80px 80px' }}
-          >
-            <span>Pos</span>
-            <span>Team</span>
-            <span>P</span>
-            <span>W</span>
-            <span>D</span>
-            <span>L</span>
-            <span>GF</span>
-            <span>GA</span>
-            <span>GD</span>
-            <span>Pts</span>
-          </div>
-
-          {table.map((row, idx) => (
+        <div className="overflow-x-auto">
+          <div className="min-w-[600px] bg-admin-surface rounded-xl border border-admin-border overflow-hidden">
             <div
-              key={row.name}
-              className="grid items-center px-5 py-3 border-b border-admin-border last:border-b-0 hover:bg-admin-surface2/50 transition-colors text-sm"
+              className="grid text-admin-text3 text-xs uppercase tracking-wider px-5 py-2.5 border-b border-admin-border bg-admin-surface2"
               style={{ gridTemplateColumns: '40px 1fr 60px 60px 60px 60px 60px 60px 80px 80px' }}
             >
-              <span className="text-admin-text3 font-mono text-xs">{idx + 1}</span>
-              <span className="text-admin-text font-medium">{row.name}</span>
-              {(['P', 'W', 'D', 'L', 'GF', 'GA'] as const).map((col) => (
-                <span key={col} className="font-mono text-admin-text2">{row[col]}</span>
-              ))}
-              <span className={cn(
-                'font-mono font-medium',
-                row.GD > 0 ? 'text-admin-green' : row.GD < 0 ? 'text-admin-red' : 'text-admin-text2',
-              )}>
-                {row.GD > 0 ? `+${row.GD}` : row.GD}
-              </span>
-              <span className="font-condensed font-bold text-admin-green text-base">{row.Pts}</span>
+              <span>Pos</span>
+              <span>Team</span>
+              <span>P</span>
+              <span>W</span>
+              <span>D</span>
+              <span>L</span>
+              <span>GF</span>
+              <span>GA</span>
+              <span>GD</span>
+              <span>Pts</span>
             </div>
-          ))}
+
+            {table.map((row, idx) => (
+              <div
+                key={row.name}
+                className="grid items-center px-5 py-3 border-b border-admin-border last:border-b-0 hover:bg-admin-surface2/50 transition-colors text-sm"
+                style={{ gridTemplateColumns: '40px 1fr 60px 60px 60px 60px 60px 60px 80px 80px' }}
+              >
+                <span className="text-admin-text3 font-mono text-xs">{idx + 1}</span>
+                <span className="text-admin-text font-medium">{row.name}</span>
+                {(['P', 'W', 'D', 'L', 'GF', 'GA'] as const).map((col) => (
+                  <span key={col} className="font-mono text-admin-text2">{row[col]}</span>
+                ))}
+                <span className={cn(
+                  'font-mono font-medium',
+                  row.GD > 0 ? 'text-admin-green' : row.GD < 0 ? 'text-admin-red' : 'text-admin-text2',
+                )}>
+                  {row.GD > 0 ? `+${row.GD}` : row.GD}
+                </span>
+                <span className="font-condensed font-bold text-admin-green text-base">{row.Pts}</span>
+              </div>
+            ))}
+          </div>
         </div>
         <p className="text-admin-text3 text-xs mt-2">* Own goals are excluded from individual goal totals.</p>
       </section>

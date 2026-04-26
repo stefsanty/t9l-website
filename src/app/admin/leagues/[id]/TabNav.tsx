@@ -15,7 +15,7 @@ export default function TabNav({ leagueId }: { leagueId: string }) {
   const pathname = usePathname()
 
   return (
-    <nav className="flex items-center gap-0 -mb-px">
+    <nav className="flex items-center gap-0 -mb-px overflow-x-auto scrollbar-hide">
       {tabs.map(({ label, segment }) => {
         const href = `/admin/leagues/${leagueId}/${segment}`
         const active = pathname.startsWith(href)
@@ -24,7 +24,7 @@ export default function TabNav({ leagueId }: { leagueId: string }) {
             key={segment}
             href={href}
             className={cn(
-              'px-4 py-2.5 text-sm transition-colors no-underline border-b-2 -mb-px',
+              'px-4 py-2.5 text-sm transition-colors no-underline border-b-2 -mb-px whitespace-nowrap shrink-0',
               active
                 ? 'text-admin-text border-admin-green'
                 : 'text-admin-text2 border-transparent hover:text-admin-text hover:border-admin-border2',
