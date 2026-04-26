@@ -4,7 +4,7 @@ import { findNextMatchday } from "@/lib/stats";
 import Dashboard from "@/components/Dashboard";
 import LeaguePublicView from "@/components/LeaguePublicView";
 import { getLeagueFromHost } from "@/lib/getLeagueFromHost";
-import { getLeagueBySubdomain } from "@/lib/admin-data";
+import { getLeagueBySubdomain, getDefaultLeague } from "@/lib/admin-data";
 import { unstable_cache } from "next/cache";
 
 const getCachedSheetData = unstable_cache(
@@ -14,9 +14,14 @@ const getCachedSheetData = unstable_cache(
 );
 
 export default async function Home() {
-  // Subdomain-based league routing.
-  // getLeagueFromHost() reads Host header + extracts subdomain using dot-count logic.
-  // getLeagueBySubdomain() fetches full league data (cached, includes teams/gameweeks/goals).
+  // Resolution order:
+  //   1. Host has a known league subdomain    → unified DB-backed template
+  //   2. Apex / unknown host, default league  → unified DB-backed template
+  //   3. No DB league at all                  → legacy Sheets-backed Dashboard
+  //
+  // Step 3 is a transitional fallback for environments that haven't been
+  // migrated to Postgres yet. Once a default league exists it becomes
+  // unreachable.
   const hostLeague = await getLeagueFromHost();
 
   if (hostLeague?.subdomain) {
@@ -26,7 +31,12 @@ export default async function Home() {
     }
   }
 
-  // Default: Google Sheets-backed dashboard
+  const defaultLeague = await getDefaultLeague();
+  if (defaultLeague) {
+    return <LeaguePublicView league={defaultLeague} />;
+  }
+
+  // Legacy Google Sheets fallback (no leagues seeded yet).
   let raw;
   try {
     raw = await getCachedSheetData();

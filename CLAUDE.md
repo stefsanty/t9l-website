@@ -4,7 +4,7 @@
 
 ## Project
 
-T9L.me — mobile-first website for the Tennozu 9-Aside League, a recreational football league in Tokyo. Players can log in via LINE, assign themselves to their roster entry, RSVP availability for upcoming matchdays, and view live league data sourced from a Google Sheet.
+T9L.me — mobile-first, multi-tenant website for recreational football leagues. Originally built for the Tennozu 9-Aside League in Tokyo (still served at the apex `t9l.me`), now hosts arbitrary leagues, each on its own subdomain (e.g. `<league>.t9l.me`). Every instance shares one component template — only data and branding vary. Players can log in via LINE, assign themselves to their roster entry, RSVP availability for upcoming matchdays, and view live league data from Postgres.
 
 ## Stack
 
@@ -21,34 +21,47 @@ T9L.me — mobile-first website for the Tennozu 9-Aside League, a recreational f
 ## Architecture Overview
 
 ```
-Google Sheets (source of truth)
-       ↕ read (batchGet) + write (availability cell updates)
-  lib/sheets.ts
-       ↓ parse
-  lib/data.ts → lib/stats.ts
+Postgres (Neon) — source of truth for all leagues
+       ↕ Prisma (read + write)
+  lib/admin-data.ts (cached queries, tag=leagues)
        ↓
   app/page.tsx (server component, dynamic — reads host header)
-       ├─ subdomain found in DB → components/LeaguePublicView.tsx (DB-driven, 3-tab)
-       └─ no subdomain match  → components/Dashboard.tsx (Google Sheets, ISR 300s)
-            ├── NextMatchdayBanner      (Home tab — match info only)
-            ├── MatchdayAvailability    (Home tab — RSVP + per-team attendance)
-            ├── LeagueTable             (Stats tab)
-            ├── TopPerformers           (Stats tab)
-            ├── MatchResults            (Stats tab)
-            └── SquadList               (Teams tab)
+       ├─ subdomain matches a League.subdomain → LeaguePublicView (DB)
+       ├─ apex / unknown host → getDefaultLeague() → LeaguePublicView (DB)
+       └─ no League rows at all → legacy components/Dashboard.tsx (Google Sheets, ISR 300s)
+                                  └─ kept only as a fallback for un-migrated envs
+
+LeaguePublicView (single template, used by every league instance)
+   ├── Schedule tab   (gameWeeks → matches)
+   ├── Standings tab  (computed from completed matches)
+   └── Teams tab      (leagueTeams → playerAssignments)
 
 LINE OAuth → next-auth → Upstash Redis (lineId → player mapping)
 i18n → cookie t9l-lang → translateDict (Claude + Redis cache) → I18nProvider
 Player pics → Vercel Blob Storage ← fetched at page.tsx render time
 ```
 
-### Subdomain Routing
+### Multi-Tenancy
 
-`page.tsx` reads the `host` request header and extracts the first segment as a potential league subdomain (e.g. `test.dev.t9l.me` → `test`). If a `League` row with that subdomain exists in the database, it renders `LeaguePublicView` with Prisma data instead of the Google Sheets Dashboard.
+Every league is a row in the `League` table. The same `LeaguePublicView` component renders all of them — only data and branding (name, location, primary/accent color) vary. Architectural rules:
 
+1. **Single template, no per-league forks.** Adding a feature to `LeaguePublicView` updates every league instance simultaneously. Do not branch on league id/subdomain inside the template.
+2. **Identical Prisma `include` shape.** Both subdomain and default-league lookups go through `PUBLIC_LEAGUE_INCLUDE` in `lib/admin-data.ts` so the data shape passed to `LeaguePublicView` is invariant.
+3. **Branding via two CSS variables.** `LeaguePublicView` injects `--league-primary` and `--league-accent` from `league.primaryColor` / `league.accentColor` as inline styles on its root. Used for the league name color and active tab indicator. No light/dark variants, no theming engine — that's the whole API.
+
+### Routing
+
+`page.tsx` reads the `host` request header and extracts the first segment as a potential league subdomain (e.g. `test.dev.t9l.me` → `test`).
+
+- **Subdomain match:** `getLeagueBySubdomain(sub)` → render `LeaguePublicView`
+- **Apex / no subdomain:** `getDefaultLeague()` → finds `League.isDefault === true`, falling back to the oldest league if none is flagged → render `LeaguePublicView`
+- **No DB leagues at all:** falls through to the Sheets-backed `Dashboard` (legacy, transitional)
+
+Helpers:
 - `lib/admin-data.ts#getLeagueBySubdomain(subdomain)` — cached Prisma query (revalidate=60, tag=leagues)
-- Known non-league hostnames skipped: `www`, `dev`, `localhost`, `t9l`, `127`, empty
-- `LeaguePublicView` renders schedule, standings, and team rosters entirely from the database; no Google Sheets dependency
+- `lib/admin-data.ts#getDefaultLeague()` — same cache config, picks `isDefault=true` then falls back to oldest
+- `lib/getLeagueFromHost.ts` extracts the subdomain from the Host header. Apex (`t9l.me`, `dev.t9l.me`, `localhost`) returns null
+- The `isDefault` flag is mutually exclusive — `updateLeagueInfo` toggles all other leagues off in a transaction when one is set to default
 
 ## Internationalization (i18n)
 

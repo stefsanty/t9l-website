@@ -41,6 +41,8 @@ type LeagueData = {
   location: string
   startDate: Date | string
   endDate: Date | string | null
+  primaryColor?: string | null
+  accentColor?: string | null
   leagueTeams: LeagueTeamRow[]
   gameWeeks: GameWeekRow[]
 }
@@ -217,12 +219,25 @@ export default function LeaguePublicView({ league }: { league: LeagueData }) {
     { id: 'teams',     label: 'Teams'     },
   ]
 
+  // Per-league branding. CSS variables are scoped to this subtree only —
+  // hex strings come straight from the DB. No theming engine, no light/dark
+  // logic, just two overrides: --league-primary, --league-accent.
+  const brandStyle = {
+    '--league-primary': league.primaryColor ?? '#ffffff',
+    '--league-accent':  league.accentColor  ?? '#ffffff',
+  } as React.CSSProperties
+
   return (
-    <div className="min-h-dvh bg-midnight text-white">
+    <div className="min-h-dvh bg-midnight text-white" style={brandStyle}>
       {/* Header */}
       <div className="px-4 pt-8 pb-6 border-b border-white/10">
         <p className="text-xs font-bold uppercase tracking-widest text-white/40 mb-1">{league.location}</p>
-        <h1 className="font-display text-2xl font-black uppercase">{league.name}</h1>
+        <h1
+          className="font-display text-2xl font-black uppercase"
+          style={{ color: 'var(--league-primary)' }}
+        >
+          {league.name}
+        </h1>
         <p className="text-xs text-white/40 mt-1">
           From {fmt(league.startDate)}
           {league.endDate ? ` · Until ${fmt(league.endDate)}` : ''}
@@ -237,10 +252,13 @@ export default function LeaguePublicView({ league }: { league: LeagueData }) {
             onClick={() => setTab(t.id)}
             className={[
               'py-3 px-4 text-sm font-semibold uppercase tracking-widest border-b-2 -mb-px transition-colors',
-              tab === t.id
-                ? 'border-white text-white'
-                : 'border-transparent text-white/40 hover:text-white/60',
+              tab === t.id ? '' : 'border-transparent text-white/40 hover:text-white/60',
             ].join(' ')}
+            style={
+              tab === t.id
+                ? { borderColor: 'var(--league-accent)', color: 'var(--league-accent)' }
+                : undefined
+            }
           >
             {t.label}
           </button>
