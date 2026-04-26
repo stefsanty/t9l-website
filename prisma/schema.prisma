@@ -37,13 +37,15 @@ model Venue {
 }
 
 model League {
-  id        String    @id @default(cuid())
-  name      String
-  location  String
-  startDate DateTime
-  endDate   DateTime?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  id          String    @id @default(cuid())
+  name        String
+  description String?
+  subdomain   String?   @unique
+  location    String
+  startDate   DateTime
+  endDate     DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   leagueTeams LeagueTeam[]
   gameWeeks   GameWeek[]
@@ -130,6 +132,7 @@ model Match {
   awayScore  Int         @default(0)
   venueId    String?
   playedAt   DateTime
+  endedAt    DateTime?
   status     MatchStatus @default(SCHEDULED)
   createdAt  DateTime    @default(now())
   updatedAt  DateTime    @updatedAt

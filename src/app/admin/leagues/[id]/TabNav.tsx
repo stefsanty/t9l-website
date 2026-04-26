@@ -9,6 +9,7 @@ const tabs = [
   { label: 'Teams',    segment: 'teams'    },
   { label: 'Players',  segment: 'players'  },
   { label: 'Stats',    segment: 'stats'    },
+  { label: 'Settings', segment: 'settings' },
 ]
 
 export default function TabNav({ leagueId }: { leagueId: string }) {
