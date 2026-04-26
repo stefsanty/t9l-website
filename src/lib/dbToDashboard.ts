@@ -119,11 +119,19 @@ function toIsoDay(d: Date | string | null): string | null {
   return y && m && day ? `${y}-${m}-${day}` : null
 }
 
-function toIsoTime(d: Date | string | null): string {
+function toJstHm(d: Date | string | null): string {
   if (!d) return ''
   const date = typeof d === 'string' ? new Date(d) : d
   if (isNaN(date.getTime())) return ''
-  return date.toISOString()
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+    timeZone: 'Asia/Tokyo',
+  }).formatToParts(date)
+  const h = parts.find((p) => p.type === 'hour')?.value
+  const m = parts.find((p) => p.type === 'minute')?.value
+  return h && m ? `${h}:${m}` : ''
 }
 
 export type DashboardProps = {
@@ -173,8 +181,8 @@ export function dbToDashboard(league: DbPublicLeague): DashboardProps {
       return {
         id: m.id,
         matchNumber: idx + 1,
-        kickoff: toIsoTime(m.playedAt),
-        fullTime: toIsoTime(m.endedAt),
+        kickoff: toJstHm(m.playedAt),
+        fullTime: toJstHm(m.endedAt),
         homeTeamId: m.homeTeam.id,
         awayTeamId: m.awayTeam.id,
         homeGoals: isCompleted ? m.homeScore : null,
