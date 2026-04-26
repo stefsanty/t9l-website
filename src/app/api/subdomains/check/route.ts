@@ -2,21 +2,15 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { prisma } from '@/lib/prisma'
 
-function toSlug(name: string) {
-  return name
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '')
-}
-
 export async function GET(req: NextRequest) {
-  const value = req.nextUrl.searchParams.get('value')?.trim() ?? ''
+  const value   = req.nextUrl.searchParams.get('value')?.trim().toLowerCase() ?? ''
+  const exclude = req.nextUrl.searchParams.get('exclude') ?? ''
   if (!value) return NextResponse.json({ available: false })
 
-  const leagues = await prisma.league.findMany({ select: { name: true } })
-  const taken = leagues.some((l) => toSlug(l.name) === value)
+  const existing = await prisma.league.findFirst({
+    where: { subdomain: value, NOT: exclude ? { id: exclude } : undefined },
+    select: { id: true },
+  })
 
-  return NextResponse.json({ available: !taken })
+  return NextResponse.json({ available: !existing })
 }

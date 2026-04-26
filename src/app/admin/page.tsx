@@ -1,30 +1,13 @@
 import Link from 'next/link'
-import { prisma } from '@/lib/prisma'
 import { Plus, ArrowRight, Settings } from 'lucide-react'
-
-function toSlug(name: string) {
-  return name
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '')
-}
+import { getAllLeagues } from '@/lib/admin-data'
 
 function formatDate(d: Date) {
   return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
 }
 
 export default async function AdminDashboard() {
-  const leagues = await prisma.league.findMany({
-    include: {
-      gameWeeks: {
-        include: { matches: true, venue: true },
-        orderBy: { weekNumber: 'asc' },
-      },
-    },
-    orderBy: { createdAt: 'desc' },
-  })
+  const leagues = await getAllLeagues()
 
   return (
     <div className="p-4 md:p-8">
@@ -36,7 +19,7 @@ export default async function AdminDashboard() {
         </div>
         <Link
           href="/admin/leagues/new"
-          className="inline-flex items-center gap-2 px-4 py-2 bg-admin-green text-admin-bg font-medium text-sm rounded-lg no-underline hover:opacity-90 transition-opacity"
+          className="inline-flex items-center gap-2 px-4 py-2 bg-admin-green text-admin-ink font-medium text-sm rounded-lg no-underline hover:opacity-90 transition-opacity"
         >
           <Plus className="w-4 h-4" />
           New League
@@ -50,80 +33,55 @@ export default async function AdminDashboard() {
           <p className="text-sm mb-6">Create your first league to get started.</p>
           <Link
             href="/admin/leagues/new"
-            className="inline-flex items-center gap-2 px-4 py-2 bg-admin-green text-admin-bg font-medium text-sm rounded-lg no-underline hover:opacity-90"
+            className="inline-flex items-center gap-2 px-4 py-2 bg-admin-green text-admin-ink font-medium text-sm rounded-lg no-underline hover:opacity-90"
           >
-            <Plus className="w-4 h-4" /> New League
+            <Plus className="w-4 h-4" />
+            Create League
           </Link>
         </div>
       )}
 
-      {/* League cards grid */}
-      <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))' }}>
+      {/* League list */}
+      <div className="space-y-3">
         {leagues.map((league) => {
-          const sortedWeeks = league.gameWeeks
-          const completedCount = sortedWeeks.filter(
-            (gw) => gw.matches.length > 0 && gw.matches.every((m) => m.status === 'COMPLETED'),
-          ).length
-          const nextGW = sortedWeeks.find(
-            (gw) => gw.matches.length === 0 || !gw.matches.every((m) => m.status === 'COMPLETED'),
-          )
-          const subdomain = toSlug(league.name)
+          const totalMatches  = league.gameWeeks.reduce((s, gw) => s + gw.matches.length, 0)
+          const played        = league.gameWeeks.reduce((s, gw) => s + gw.matches.filter(m => m.status === 'COMPLETED').length, 0)
+          const venues        = [...new Set(league.gameWeeks.map(gw => gw.venue?.name).filter(Boolean))]
 
           return (
-            <div
+            <Link
               key={league.id}
-              className="bg-admin-surface border border-admin-border rounded-xl flex flex-col overflow-hidden hover:border-admin-border2 transition-colors"
+              href={`/admin/leagues/${league.id}/schedule`}
+              className="block bg-admin-surface rounded-xl border border-admin-border p-5 no-underline hover:border-admin-border2 transition-colors group"
             >
-              {/* Card header */}
-              <div className="p-5 pb-4">
-                <div className="font-condensed font-extrabold text-admin-text text-[22px] leading-tight mb-1">
-                  {league.name}
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <h2 className="font-condensed font-bold text-admin-text text-lg leading-tight truncate group-hover:text-white transition-colors">
+                    {league.name}
+                  </h2>
+                  <p className="text-admin-text2 text-sm mt-0.5">{league.location}</p>
+
+                  <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-xs text-admin-text3">
+                    <span>{formatDate(league.startDate)}{league.endDate ? ` – ${formatDate(league.endDate)}` : ''}</span>
+                    <span>{league.gameWeeks.length} matchday{league.gameWeeks.length !== 1 ? 's' : ''}</span>
+                    <span>{played}/{totalMatches} matches played</span>
+                    {venues.length > 0 && <span>{venues.join(', ')}</span>}
+                  </div>
                 </div>
-                <div className="font-mono text-admin-green text-xs">
-                  {subdomain}.t9l.me
-                </div>
-              </div>
 
-              <div className="h-px bg-admin-border mx-5" />
-
-              {/* Next matchday */}
-              <div className="p-5 flex-1">
-                <p className="text-admin-text3 text-xs uppercase tracking-wider mb-2">Next Matchday</p>
-                {nextGW ? (
-                  <>
-                    <div className="flex items-baseline gap-2 mb-1">
-                      <span className="font-condensed font-bold text-[26px] text-admin-text leading-none">
-                        MD{nextGW.weekNumber}
-                      </span>
-                      <span className="text-admin-text2 text-sm font-mono">
-                        {formatDate(nextGW.startDate)}
-                      </span>
-                    </div>
-                    <p className="text-admin-text3 text-xs">
-                      {nextGW.venue?.name ?? 'Venue TBD'} · {nextGW.matches.length} match{nextGW.matches.length !== 1 ? 'es' : ''}
-                    </p>
-                  </>
-                ) : (
-                  <p className="text-admin-text3 text-sm">All matchdays complete</p>
-                )}
-              </div>
-
-              {/* Card footer */}
-              <div className="px-5 py-3 border-t border-admin-border bg-admin-surface2 flex items-center justify-between">
-                <span className="text-admin-text3 text-xs font-mono">
-                  MD{completedCount} completed
-                </span>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 shrink-0">
                   <Link
-                    href={`/admin/leagues/${league.id}/schedule`}
-                    className="inline-flex items-center gap-1 px-3 py-1.5 bg-admin-green text-admin-bg text-xs font-medium rounded no-underline hover:opacity-90 transition-opacity"
+                    href={`/admin/leagues/${league.id}/settings`}
+                    onClick={(e) => e.stopPropagation()}
+                    className="p-1.5 rounded-lg text-admin-text3 hover:text-admin-text hover:bg-admin-surface2 transition-colors no-underline"
+                    title="Settings"
                   >
-                    Configure
-                    <ArrowRight className="w-3 h-3" />
+                    <Settings className="w-4 h-4" />
                   </Link>
+                  <ArrowRight className="w-4 h-4 text-admin-text3 group-hover:text-admin-text transition-colors" />
                 </div>
               </div>
-            </div>
+            </Link>
           )
         })}
       </div>

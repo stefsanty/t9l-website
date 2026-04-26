@@ -10,6 +10,7 @@ import { useToast } from './ToastProvider'
 import {
   createGameWeek,
   updateGameWeek,
+  updateGameWeekVenue,
   deleteGameWeek,
   createMatch,
   updateMatch,
@@ -33,6 +34,7 @@ interface MatchRow {
   awayScore: number
   status: MatchStatus
   playedAt: Date
+  endedAt: Date | null
 }
 
 interface VenueRef {
@@ -185,7 +187,7 @@ export default function ScheduleTab({ leagueId, gameWeeks, leagueTeams, venues }
               {venues.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
             </select>
             <div className="flex gap-2">
-              <button type="submit" disabled={pending} className="flex-1 px-3 py-2.5 bg-admin-green text-admin-bg text-sm font-medium rounded hover:opacity-90 disabled:opacity-50">
+              <button type="submit" disabled={pending} className="flex-1 px-3 py-2.5 bg-admin-green text-admin-ink text-sm font-medium rounded hover:opacity-90 disabled:opacity-50">
                 Create
               </button>
               <button type="button" onClick={() => setShowAddMatchday(false)} className="px-3 py-2.5 border border-admin-border text-admin-text2 text-sm rounded hover:border-admin-border2">
@@ -201,7 +203,7 @@ export default function ScheduleTab({ leagueId, gameWeeks, leagueTeams, venues }
               <option value="">Venue (optional)</option>
               {venues.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
             </select>
-            <button type="submit" disabled={pending} className="px-3 py-1.5 bg-admin-green text-admin-bg text-sm font-medium rounded hover:opacity-90 disabled:opacity-50">
+            <button type="submit" disabled={pending} className="px-3 py-1.5 bg-admin-green text-admin-ink text-sm font-medium rounded hover:opacity-90 disabled:opacity-50">
               Create
             </button>
             <button type="button" onClick={() => setShowAddMatchday(false)} className="px-3 py-1.5 border border-admin-border text-admin-text2 text-sm rounded hover:border-admin-border2">
@@ -222,7 +224,7 @@ export default function ScheduleTab({ leagueId, gameWeeks, leagueTeams, venues }
           {!showAddMatchday && (
             <button
               onClick={() => setShowAddMatchday(true)}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-admin-green text-admin-bg text-sm font-medium hover:opacity-90 transition-opacity"
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-admin-green text-admin-ink text-sm font-medium hover:opacity-90 transition-opacity"
             >
               <Plus className="w-3.5 h-3.5" />
               Add
@@ -332,7 +334,7 @@ export default function ScheduleTab({ leagueId, gameWeeks, leagueTeams, venues }
                           <button
                             type="submit"
                             disabled={pending}
-                            className="flex-1 px-3 py-2.5 bg-admin-green text-admin-bg text-sm font-medium rounded hover:opacity-90 disabled:opacity-50"
+                            className="flex-1 px-3 py-2.5 bg-admin-green text-admin-ink text-sm font-medium rounded hover:opacity-90 disabled:opacity-50"
                           >
                             Add
                           </button>
@@ -385,7 +387,7 @@ export default function ScheduleTab({ leagueId, gameWeeks, leagueTeams, venues }
             </button>
             <button
               onClick={() => setShowAddMatchday(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-admin-green text-admin-bg text-sm font-medium hover:opacity-90 transition-opacity"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-admin-green text-admin-ink text-sm font-medium hover:opacity-90 transition-opacity"
             >
               <Plus className="w-3.5 h-3.5" />
               Add Matchday
@@ -449,8 +451,18 @@ export default function ScheduleTab({ leagueId, gameWeeks, leagueTeams, venues }
                       className="font-mono text-admin-text2"
                     />
                   </span>
-                  <span className="text-admin-text2 text-sm truncate pr-4">
-                    {gw.venue?.name ?? <span className="text-admin-text3">—</span>}
+                  <span className="text-admin-text2 text-sm pr-4" onClick={(e) => e.stopPropagation()}>
+                    <InlineEditCell
+                      value={gw.venue?.name ?? ''}
+                      displayValue={gw.venue?.name || <span className="text-admin-text3">—</span>}
+                      type="text"
+                      placeholder="Venue name…"
+                      onSave={async (val) => {
+                        await updateGameWeekVenue(gw.id, leagueId, val)
+                        toast('Venue updated')
+                      }}
+                      className="text-admin-text2 text-sm"
+                    />
                   </span>
                   <span className="text-admin-text2 text-sm font-mono">{gw.matches.length}</span>
                   <span><StatusBadge status={status} /></span>
@@ -477,10 +489,11 @@ export default function ScheduleTab({ leagueId, gameWeeks, leagueTeams, venues }
                     {gw.matches.length > 0 && (
                       <div
                         className="grid text-admin-text3 text-xs uppercase tracking-wider px-8 py-2 border-b border-admin-border"
-                        style={{ gridTemplateColumns: '32px 120px 1fr 1fr 80px 110px 60px' }}
+                        style={{ gridTemplateColumns: '32px 100px 90px 1fr 1fr 80px 110px 60px' }}
                       >
                         <span>#</span>
                         <span>Kickoff</span>
+                        <span>FT</span>
                         <span>Home</span>
                         <span>Away</span>
                         <span>Score</span>
@@ -537,7 +550,7 @@ export default function ScheduleTab({ leagueId, gameWeeks, leagueTeams, venues }
                         <button
                           type="submit"
                           disabled={pending}
-                          className="px-3 py-1.5 bg-admin-green text-admin-bg text-sm font-medium rounded hover:opacity-90 disabled:opacity-50"
+                          className="px-3 py-1.5 bg-admin-green text-admin-ink text-sm font-medium rounded hover:opacity-90 disabled:opacity-50"
                         >
                           Add
                         </button>
@@ -616,7 +629,18 @@ function MobileMatchRow({ match, index, leagueId, leagueTeams, onDelete }: Mobil
     <div className="px-4 py-3 border-b border-admin-border/50 last:border-b-0">
       <div className="flex items-center gap-2 mb-2">
         <span className="text-admin-text3 font-mono text-xs">#{index}</span>
-        <span className="font-mono text-admin-text3 text-xs">{fmtTime(match.playedAt)}</span>
+        <span className="font-mono text-admin-text3 text-xs">
+          <InlineEditCell
+            value={fmtDatetime(match.playedAt)}
+            displayValue={fmtTime(match.playedAt)}
+            type="datetime-local"
+            onSave={async (val) => {
+              await updateMatch(match.id, leagueId, { playedAt: val })
+              toast('Kickoff updated')
+            }}
+            className="font-mono text-admin-text3 text-xs"
+          />
+        </span>
         <StatusBadge status={match.status} />
         <div className="ml-auto">
           <ConfirmDialog
@@ -721,7 +745,7 @@ function MatchSubrow({ match, index, leagueId, leagueTeams, onDelete }: MatchSub
   return (
     <div
       className="grid items-center px-8 py-2.5 border-b border-admin-border/50 last:border-b-0 hover:bg-admin-surface2 transition-colors text-sm"
-      style={{ gridTemplateColumns: '32px 120px 1fr 1fr 80px 110px 60px' }}
+      style={{ gridTemplateColumns: '32px 100px 90px 1fr 1fr 80px 110px 60px' }}
     >
       <span className="text-admin-text3 font-mono text-xs">{index}</span>
 
@@ -733,6 +757,24 @@ function MatchSubrow({ match, index, leagueId, leagueTeams, onDelete }: MatchSub
           onSave={async (val) => {
             await updateMatch(match.id, leagueId, { playedAt: val })
             toast('Kickoff updated')
+          }}
+          className="font-mono text-admin-text2 text-sm"
+        />
+      </span>
+
+      <span className="font-mono text-admin-text2">
+        <InlineEditCell
+          value={match.endedAt ? fmtTime(match.endedAt) : ''}
+          displayValue={match.endedAt ? fmtTime(match.endedAt) : <span className="text-admin-text3">—</span>}
+          type="time"
+          placeholder="HH:MM"
+          onSave={async (timeStr) => {
+            if (!timeStr) {
+              await updateMatch(match.id, leagueId, { endedAt: null })
+            } else {
+              await updateMatch(match.id, leagueId, { endedAt: `${fmtDate(match.playedAt)}T${timeStr}` })
+            }
+            toast('Full time updated')
           }}
           className="font-mono text-admin-text2 text-sm"
         />
