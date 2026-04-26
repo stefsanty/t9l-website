@@ -2,8 +2,10 @@ import Link from 'next/link'
 import { Plus, ArrowRight, Settings } from 'lucide-react'
 import { getAllLeagues } from '@/lib/admin-data'
 
-function formatDate(d: Date) {
-  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+// `unstable_cache` round-trips Date objects through JSON, so cached values come
+// back as ISO strings. Coerce to Date before formatting.
+function formatDate(d: Date | string) {
+  return new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
 }
 
 export default async function AdminDashboard() {
