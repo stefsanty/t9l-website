@@ -43,8 +43,10 @@ export default async function LeagueLayout({ params, children }: Props) {
 
   const subdomain = toSlug(league.name)
 
-  const formatDate = (d: Date) =>
-    d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+  // `unstable_cache` round-trips Date objects through JSON, so cached values
+  // come back as ISO strings. Coerce to Date before formatting.
+  const formatDate = (d: Date | string) =>
+    new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
 
   return (
     <div className="flex flex-col min-h-full">
