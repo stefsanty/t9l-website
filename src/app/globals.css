@@ -239,17 +239,19 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-a {
-  color: var(--primary);
-  text-decoration: underline;
-  text-underline-offset: 4px;
-  text-decoration-color: rgba(233, 0, 82, 0.3);
-  transition: all 0.2s ease-in-out;
-}
+@layer base {
+  a {
+    color: var(--primary);
+    text-decoration: underline;
+    text-underline-offset: 4px;
+    text-decoration-color: rgba(233, 0, 82, 0.3);
+    transition: all 0.2s ease-in-out;
+  }
 
-a:hover {
-  color: #FF2E7E; /* Slightly brighter pink */
-  text-decoration-color: var(--primary);
+  a:hover {
+    color: #FF2E7E; /* Slightly brighter pink */
+    text-decoration-color: var(--primary);
+  }
 }
 
 /* Custom geometric patterns/backgrounds */
