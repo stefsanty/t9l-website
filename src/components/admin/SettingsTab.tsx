@@ -16,6 +16,8 @@ interface League {
   startDate: Date
   endDate: Date | null
   primaryColor: string | null
+  accentColor: string | null
+  isDefault: boolean
 }
 
 function fmtDate(d: Date | null) {
@@ -36,6 +38,8 @@ export default function SettingsTab({ league }: { league: League }) {
   const [startDate, setStartDate]   = useState(fmtDate(league.startDate))
   const [endDate, setEndDate]       = useState(fmtDate(league.endDate))
   const [primaryColor, setPrimary]  = useState(league.primaryColor ?? '')
+  const [accentColor, setAccent]    = useState(league.accentColor ?? '')
+  const [isDefault, setIsDefault]   = useState(league.isDefault)
   const [subStatus, setSubStatus]   = useState<SubdomainStatus>('idle')
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -82,6 +86,8 @@ export default function SettingsTab({ league }: { league: League }) {
           startDate:    startDate || undefined,
           endDate:      endDate || null,
           primaryColor: primaryColor.trim() || null,
+          accentColor:  accentColor.trim() || null,
+          isDefault,
         })
         toast('Settings saved')
       } catch (err: unknown) {
@@ -168,26 +174,6 @@ export default function SettingsTab({ league }: { league: League }) {
           </p>
         </div>
 
-        {/* Primary color */}
-        <div className="space-y-1.5">
-          <label className="text-xs font-medium text-admin-text2 uppercase tracking-wide">Primary Color</label>
-          <div className="flex items-center gap-2">
-            <input
-              type="color"
-              value={primaryColor || '#FF1A6B'}
-              onChange={(e) => setPrimary(e.target.value)}
-              className="w-9 h-9 rounded cursor-pointer border border-admin-border bg-transparent"
-            />
-            <input
-              type="text"
-              value={primaryColor}
-              onChange={(e) => setPrimary(e.target.value)}
-              className="flex-1 bg-admin-surface2 border border-admin-border rounded-lg px-3 py-2 text-sm text-admin-text placeholder:text-admin-text3 focus:outline-none focus:border-admin-border2"
-              placeholder="#FF1A6B (leave empty for default)"
-            />
-          </div>
-        </div>
-
         {/* Location */}
         <div className="space-y-1.5">
           <label className="text-xs font-medium text-admin-text2 uppercase tracking-wide">Location</label>
@@ -220,6 +206,70 @@ export default function SettingsTab({ league }: { league: League }) {
               className="w-full bg-admin-surface2 border border-admin-border rounded-lg px-3 py-2 text-sm text-admin-text focus:outline-none focus:border-admin-border2"
             />
           </div>
+        </div>
+
+        {/* Branding — two CSS-variable overrides, nothing more */}
+        <div className="space-y-3 pt-2 border-t border-admin-border">
+          <label className="text-xs font-medium text-admin-text2 uppercase tracking-wide">Branding</label>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <label className="text-xs text-admin-text3">Primary Color</label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="color"
+                  value={primaryColor || '#ffffff'}
+                  onChange={(e) => setPrimary(e.target.value)}
+                  className="h-9 w-12 rounded border border-admin-border bg-admin-surface2 cursor-pointer"
+                />
+                <input
+                  type="text"
+                  value={primaryColor}
+                  onChange={(e) => setPrimary(e.target.value)}
+                  placeholder="#ffffff"
+                  className="flex-1 bg-admin-surface2 border border-admin-border rounded-lg px-3 py-2 text-sm font-mono text-admin-text placeholder:text-admin-text3 focus:outline-none focus:border-admin-border2"
+                />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs text-admin-text3">Accent Color</label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="color"
+                  value={accentColor || '#ffffff'}
+                  onChange={(e) => setAccent(e.target.value)}
+                  className="h-9 w-12 rounded border border-admin-border bg-admin-surface2 cursor-pointer"
+                />
+                <input
+                  type="text"
+                  value={accentColor}
+                  onChange={(e) => setAccent(e.target.value)}
+                  placeholder="#ffffff"
+                  className="flex-1 bg-admin-surface2 border border-admin-border rounded-lg px-3 py-2 text-sm font-mono text-admin-text placeholder:text-admin-text3 focus:outline-none focus:border-admin-border2"
+                />
+              </div>
+            </div>
+          </div>
+          <p className="text-xs text-admin-text3">
+            Controls league name color (primary) and active-tab indicator (accent). Leave blank for neutral white.
+          </p>
+        </div>
+
+        {/* Default-league flag — apex domain (t9l.me) renders this league */}
+        <div className="space-y-2 pt-2 border-t border-admin-border">
+          <label className="flex items-start gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={isDefault}
+              onChange={(e) => setIsDefault(e.target.checked)}
+              className="mt-0.5 h-4 w-4 rounded border-admin-border bg-admin-surface2 cursor-pointer"
+            />
+            <span className="space-y-0.5">
+              <span className="block text-sm font-medium text-admin-text">Serve at apex domain</span>
+              <span className="block text-xs text-admin-text3">
+                When enabled, this league is shown at t9l.me (no subdomain). Only one league can hold this at a time — saving will unset any other default.
+              </span>
+            </span>
+          </label>
         </div>
 
         {/* Save */}

@@ -144,6 +144,28 @@ export default function CreateLeagueForm() {
         </div>
       </div>
 
+      {/* Branding (optional — editable later in Settings) */}
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="block text-admin-text2 text-sm mb-1.5">Primary Color</label>
+          <input
+            name="primaryColor"
+            type="color"
+            defaultValue="#ffffff"
+            className="h-10 w-full rounded-lg border border-admin-border bg-admin-surface3 cursor-pointer"
+          />
+        </div>
+        <div>
+          <label className="block text-admin-text2 text-sm mb-1.5">Accent Color</label>
+          <input
+            name="accentColor"
+            type="color"
+            defaultValue="#ffffff"
+            className="h-10 w-full rounded-lg border border-admin-border bg-admin-surface3 cursor-pointer"
+          />
+        </div>
+      </div>
+
       {/* Submit */}
       <div className="flex items-center gap-3 pt-2">
         <button

@@ -43,6 +43,7 @@ type LeagueData = {
   startDate: Date | string
   endDate: Date | string | null
   primaryColor: string | null
+  accentColor: string | null
   leagueTeams: LeagueTeamRow[]
   gameWeeks: GameWeekRow[]
 }
@@ -219,9 +220,12 @@ export default function LeaguePublicView({ league }: { league: LeagueData }) {
     { id: 'teams',     label: 'Teams'     },
   ]
 
-  const colorStyle = league.primaryColor
-    ? ({ '--primary': league.primaryColor } as React.CSSProperties)
-    : undefined
+  // Per-league branding. Two CSS variables, that's the whole API: --primary
+  // drives the active tab indicator, --accent drives the league name color.
+  // Either may be null — the design tokens already handle that case.
+  const colorStyle: React.CSSProperties = {}
+  if (league.primaryColor) (colorStyle as Record<string, string>)['--primary'] = league.primaryColor
+  if (league.accentColor)  (colorStyle as Record<string, string>)['--accent']  = league.accentColor
 
   return (
     <div className="flex flex-col min-h-dvh bg-background max-w-lg mx-auto" style={colorStyle}>
@@ -230,7 +234,12 @@ export default function LeaguePublicView({ league }: { league: LeagueData }) {
       {/* League identity */}
       <div className="px-4 pt-16 pb-4 border-b border-[var(--border-default)]">
         <p className="text-xs font-black uppercase tracking-widest text-fg-low mb-1">{league.location}</p>
-        <h1 className="font-display text-xl font-black uppercase text-fg-high">{league.name}</h1>
+        <h1
+          className="font-display text-xl font-black uppercase text-fg-high"
+          style={league.accentColor ? { color: 'var(--accent)' } : undefined}
+        >
+          {league.name}
+        </h1>
         <p className="text-xs text-fg-low mt-1">
           From {fmt(league.startDate)}
           {league.endDate ? ` · Until ${fmt(league.endDate)}` : ''}

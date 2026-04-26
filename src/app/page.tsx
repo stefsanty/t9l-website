@@ -5,6 +5,9 @@ import LeaguePublicView from '@/components/LeaguePublicView'
 export const revalidate = 60
 
 export default async function Home() {
+  // Single resolution path: getLeagueFromHost() returns the matching League by
+  // subdomain, falling back to the league flagged isDefault. No Sheets fallback —
+  // the DB is the only source of truth now.
   const leagueMeta = await getLeagueFromHost()
 
   if (!leagueMeta) {

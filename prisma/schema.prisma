@@ -37,21 +37,29 @@ model Venue {
 }
 
 model League {
-  id           String    @id @default(cuid())
-  name         String
-  location     String
-  startDate    DateTime
-  endDate      DateTime?
-  subdomain    String?   @unique
-  isDefault    Boolean   @default(false)
-  primaryColor String?
-  description  String?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  id             String    @id @default(cuid())
+  name           String
+  description    String?
+  subdomain      String?   @unique
+  location       String
+  startDate      DateTime
+  endDate        DateTime?
+  // Per-league branding. Hex strings (e.g. "#22c55e"). Optional; UI falls back
+  // to the default tokens when null. Kept intentionally minimal — no light/dark
+  // variants, no theming engine. Two CSS variables, that's it.
+  primaryColor   String?
+  accentColor    String?
+  // Exactly one league is served at the apex/root domain (t9l.me). Enforced
+  // at the application layer (action toggles all others off in a transaction).
+  isDefault      Boolean   @default(false)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   leagueTeams LeagueTeam[]
   gameWeeks   GameWeek[]
   matches     Match[]
+
+  @@index([isDefault])
 }
 
 model Team {

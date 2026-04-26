@@ -13,6 +13,16 @@ async function assertAdmin() {
 
 // ── League ──────────────────────────────────────────────────────────────────
 
+// Hex validation matches what the form accepts: "#" + 3 or 6 hex chars.
+const HEX_RE = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/
+
+function normalizeHex(input: string | null): string | null {
+  if (input === null || input.trim() === '') return null
+  const trimmed = input.trim()
+  if (!HEX_RE.test(trimmed)) throw new Error(`Invalid color "${trimmed}". Use #RRGGBB or #RGB.`)
+  return trimmed.toLowerCase()
+}
+
 export async function createLeague(formData: FormData) {
   await assertAdmin()
   const name        = (formData.get('name')        as string).trim()
@@ -21,6 +31,8 @@ export async function createLeague(formData: FormData) {
   const startDate   = formData.get('startDate')    as string
   const endDate     = formData.get('endDate')      as string | null
   const subdomain   = (formData.get('subdomain')   as string | null)?.trim() || null
+  const primaryColor = normalizeHex(formData.get('primaryColor') as string | null)
+  const accentColor  = normalizeHex(formData.get('accentColor')  as string | null)
 
   const league = await prisma.league.create({
     data: {
@@ -28,14 +40,16 @@ export async function createLeague(formData: FormData) {
       location,
       description,
       subdomain,
-      startDate:    new Date(startDate),
-      endDate:      endDate ? new Date(endDate) : null,
-      primaryColor: null,
+      primaryColor,
+      accentColor,
+      startDate: new Date(startDate),
+      endDate:   endDate ? new Date(endDate) : null,
     },
   })
 
   updateTag('leagues')
   revalidatePath('/admin')
+  revalidatePath('/')
   redirect(`/admin/leagues/${league.id}/schedule`)
 }
 
@@ -47,23 +61,41 @@ export async function updateLeagueInfo(id: string, data: {
   startDate?:    string
   endDate?:      string | null
   primaryColor?: string | null
+  accentColor?:  string | null
+  isDefault?:    boolean
 }) {
   await assertAdmin()
-  await prisma.league.update({
-    where: { id },
-    data: {
-      name:         data.name,
-      description:  data.description  !== undefined ? (data.description  || null) : undefined,
-      subdomain:    data.subdomain     !== undefined ? (data.subdomain    || null) : undefined,
-      primaryColor: data.primaryColor  !== undefined ? (data.primaryColor || null) : undefined,
-      location:     data.location,
-      startDate:    data.startDate ? new Date(data.startDate) : undefined,
-      endDate:      data.endDate !== undefined ? (data.endDate ? new Date(data.endDate) : null) : undefined,
-    },
-  })
+
+  const baseData = {
+    name:         data.name,
+    description:  data.description !== undefined ? (data.description || null) : undefined,
+    subdomain:    data.subdomain   !== undefined ? (data.subdomain   || null) : undefined,
+    location:     data.location,
+    startDate:    data.startDate ? new Date(data.startDate) : undefined,
+    endDate:      data.endDate !== undefined ? (data.endDate ? new Date(data.endDate) : null) : undefined,
+    primaryColor: data.primaryColor !== undefined ? normalizeHex(data.primaryColor) : undefined,
+    accentColor:  data.accentColor  !== undefined ? normalizeHex(data.accentColor)  : undefined,
+  }
+
+  // `isDefault` is mutually exclusive across all leagues. Toggling on must
+  // toggle every other league off in the same transaction so we never end
+  // up with two defaults (or zero, if the previous default is being moved).
+  if (data.isDefault === true) {
+    await prisma.$transaction([
+      prisma.league.updateMany({ where: { id: { not: id } }, data: { isDefault: false } }),
+      prisma.league.update({ where: { id }, data: { ...baseData, isDefault: true } }),
+    ])
+  } else {
+    await prisma.league.update({
+      where: { id },
+      data: { ...baseData, isDefault: data.isDefault === false ? false : undefined },
+    })
+  }
+
   updateTag('leagues')
   revalidatePath(`/admin/leagues/${id}`)
   revalidatePath('/admin')
+  revalidatePath('/')
 }
 
 export async function deleteLeague(id: string) {
