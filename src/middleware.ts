@@ -5,10 +5,10 @@ export default withAuth({
     authorized: ({ token }) => token?.isAdmin === true,
   },
   pages: {
-    signIn: '/',
+    signIn: '/admin/login',
   },
 })
 
 export const config = {
-  matcher: ['/admin/:path*'],
+  matcher: ['/admin', '/admin/((?!login).*)'],
 }
