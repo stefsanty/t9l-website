@@ -1,243 +1,257 @@
 'use client'
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 
-// ── Types (shaped from Prisma include) ────────────────────────────────────────
+// ── Types inferred from Prisma include shape ──────────────────────────────────
+type TeamRow   = { id: string; name: string; logoUrl: string | null }
+type PlayerRow = { id: string; name: string }
 
-interface TeamRef {
+type GoalRow = {
   id: string
-  team: { id: string; name: string; logoUrl: string | null }
+  scoringTeam: { id: string }
 }
 
-interface MatchRow {
+type MatchRow = {
   id: string
-  homeTeam: TeamRef
-  awayTeam: TeamRef
+  homeTeam: { id: string; team: TeamRow }
+  awayTeam: { id: string; team: TeamRow }
   homeScore: number
   awayScore: number
   status: string
-  playedAt: string // ISO string — serialized from server
+  playedAt: Date | string
+  goals: GoalRow[]
 }
 
-interface GameWeekRow {
+type GameWeekRow = {
   id: string
   weekNumber: number
-  startDate: string
-  venue: { name: string } | null
+  startDate: Date | string
   matches: MatchRow[]
 }
 
-interface League {
+type LeagueTeamRow = {
   id: string
-  name: string
-  description: string | null
-  location: string
-  startDate: string
-  endDate: string | null
+  team: TeamRow
+  playerAssignments: Array<{ player: PlayerRow; fromGameWeek: number; toGameWeek: number | null }>
 }
 
-interface LeaguePublicViewProps {
-  league: League
-  leagueTeams: TeamRef[]
+type LeagueData = {
+  id: string
+  name: string
+  location: string
+  startDate: Date | string
+  endDate: Date | string | null
+  leagueTeams: LeagueTeamRow[]
   gameWeeks: GameWeekRow[]
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-function fmtDate(iso: string) {
-  return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
-}
-
-function fmtTime(iso: string) {
-  return new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
-}
-
-type Standing = {
-  team: TeamRef
+// ── Standings calculation ─────────────────────────────────────────────────────
+type StandingRow = {
+  ltId: string
+  name: string
   p: number; w: number; d: number; l: number
   gf: number; ga: number; gd: number; pts: number
 }
 
-function computeStandings(leagueTeams: TeamRef[], gameWeeks: GameWeekRow[]): Standing[] {
-  const map = new Map<string, Standing>()
-  for (const lt of leagueTeams) {
-    map.set(lt.id, { team: lt, p: 0, w: 0, d: 0, l: 0, gf: 0, ga: 0, gd: 0, pts: 0 })
+function computeStandings(league: LeagueData): StandingRow[] {
+  const map = new Map<string, StandingRow>()
+  for (const lt of league.leagueTeams) {
+    map.set(lt.id, { ltId: lt.id, name: lt.team.name, p:0,w:0,d:0,l:0,gf:0,ga:0,gd:0,pts:0 })
   }
-  for (const gw of gameWeeks) {
+
+  for (const gw of league.gameWeeks) {
     for (const m of gw.matches) {
       if (m.status !== 'COMPLETED') continue
       const home = map.get(m.homeTeam.id)
       const away = map.get(m.awayTeam.id)
       if (!home || !away) continue
+
       home.p++; away.p++
       home.gf += m.homeScore; home.ga += m.awayScore
       away.gf += m.awayScore; away.ga += m.homeScore
-      if (m.homeScore > m.awayScore) { home.w++; home.pts += 3; away.l++ }
-      else if (m.homeScore < m.awayScore) { away.w++; away.pts += 3; home.l++ }
-      else { home.d++; away.d++; home.pts++; away.pts++ }
+
+      if (m.homeScore > m.awayScore)      { home.w++; home.pts+=3; away.l++ }
+      else if (m.homeScore < m.awayScore) { away.w++; away.pts+=3; home.l++ }
+      else                                { home.d++; home.pts++; away.d++; away.pts++ }
+
+      home.gd = home.gf - home.ga
+      away.gd = away.gf - away.ga
     }
   }
-  for (const s of map.values()) s.gd = s.gf - s.ga
-  return [...map.values()].sort((a, b) => b.pts - a.pts || b.gd - a.gd || b.gf - a.gf)
+
+  return [...map.values()].sort((a,b) =>
+    b.pts - a.pts || b.gd - a.gd || b.gf - a.gf || a.name.localeCompare(b.name)
+  )
 }
 
-// ── Main component ────────────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function fmt(d: Date | string, opts?: Intl.DateTimeFormatOptions) {
+  return new Date(d).toLocaleDateString('en-GB', opts ?? { day:'numeric', month:'short', year:'numeric' })
+}
 
-export default function LeaguePublicView({ league, leagueTeams, gameWeeks }: LeaguePublicViewProps) {
-  const [tab, setTab] = useState<'schedule' | 'standings' | 'teams'>('schedule')
-  const standings = computeStandings(leagueTeams, gameWeeks)
+function fmtTime(d: Date | string) {
+  return new Date(d).toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit', timeZone:'Asia/Tokyo' })
+}
 
-  const now = new Date()
-  const upcoming = gameWeeks.filter(gw => new Date(gw.startDate) >= now)
-  const past = [...gameWeeks].filter(gw => new Date(gw.startDate) < now).reverse()
+function statusBadge(status: string) {
+  if (status === 'COMPLETED')  return <span className="text-xs font-bold uppercase text-emerald-400">FT</span>
+  if (status === 'IN_PROGRESS') return <span className="text-xs font-bold uppercase text-amber-400">LIVE</span>
+  return null
+}
 
+// ── Sub-components ────────────────────────────────────────────────────────────
+function ScheduleTab({ gameWeeks }: { gameWeeks: GameWeekRow[] }) {
   return (
-    <div className="min-h-dvh bg-background text-foreground">
-      {/* Header */}
-      <header className="border-b border-border-subtle bg-card px-4 py-5 md:px-8">
-        <div className="max-w-3xl mx-auto">
-          <h1 className="font-display font-black uppercase text-2xl md:text-3xl tracking-tight text-fg-high">
-            {league.name}
-          </h1>
-          <p className="text-fg-mid text-sm mt-1">{league.location}</p>
-          <p className="text-fg-low text-xs mt-0.5">
-            {fmtDate(league.startDate)}
-            {league.endDate ? ` – ${fmtDate(league.endDate)}` : ''}
-          </p>
-        </div>
-      </header>
-
-      {/* Tab bar */}
-      <div className="sticky top-0 z-10 bg-card border-b border-border-subtle px-4 md:px-8">
-        <div className="max-w-3xl mx-auto flex gap-0">
-          {(['schedule', 'standings', 'teams'] as const).map(t => (
-            <button
-              key={t}
-              onClick={() => setTab(t)}
-              className={`px-4 py-3 text-sm font-medium capitalize border-b-2 transition-colors ${
-                tab === t
-                  ? 'text-primary border-primary'
-                  : 'text-fg-mid border-transparent hover:text-fg-high'
-              }`}
-            >
-              {t}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <main className="max-w-3xl mx-auto px-4 md:px-8 py-6">
-
-        {/* ── Schedule tab ──────────────────────────────────────────────── */}
-        {tab === 'schedule' && (
-          <div className="space-y-6">
-            {gameWeeks.length === 0 && (
-              <p className="text-fg-low text-sm text-center py-12">No matches scheduled yet.</p>
-            )}
-            {upcoming.length > 0 && (
-              <section>
-                <h2 className="text-xs font-semibold uppercase tracking-widest text-fg-low mb-3">Upcoming</h2>
-                <div className="space-y-3">
-                  {upcoming.map(gw => <GameWeekCard key={gw.id} gw={gw} />)}
-                </div>
-              </section>
-            )}
-            {past.length > 0 && (
-              <section>
-                <h2 className="text-xs font-semibold uppercase tracking-widest text-fg-low mb-3">Past Results</h2>
-                <div className="space-y-3">
-                  {past.map(gw => <GameWeekCard key={gw.id} gw={gw} />)}
-                </div>
-              </section>
-            )}
+    <div className="space-y-6">
+      {gameWeeks.map(gw => (
+        <div key={gw.id}>
+          <div className="flex items-center gap-3 mb-3">
+            <span className="text-xs font-bold uppercase tracking-widest text-white/40">GW{gw.weekNumber}</span>
+            <span className="text-xs text-white/30">{fmt(gw.startDate)}</span>
           </div>
-        )}
 
-        {/* ── Standings tab ─────────────────────────────────────────────── */}
-        {tab === 'standings' && (
-          <div className="pl-card rounded-xl overflow-hidden">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-xs text-fg-low uppercase tracking-wider bg-surface">
-                  <th className="text-left px-4 py-2.5">#</th>
-                  <th className="text-left px-2 py-2.5">Team</th>
-                  <th className="text-center px-2 py-2.5">P</th>
-                  <th className="text-center px-2 py-2.5">W</th>
-                  <th className="text-center px-2 py-2.5">D</th>
-                  <th className="text-center px-2 py-2.5">L</th>
-                  <th className="text-center px-2 py-2.5">GD</th>
-                  <th className="text-center px-2 py-2.5">Pts</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border-subtle">
-                {standings.map((s, i) => (
-                  <tr key={s.team.id} className="hover:bg-surface transition-colors">
-                    <td className="px-4 py-3 text-fg-low text-xs">{i + 1}</td>
-                    <td className="px-2 py-3 font-medium text-fg-high">{s.team.team.name}</td>
-                    <td className="px-2 py-3 text-center text-fg-mid">{s.p}</td>
-                    <td className="px-2 py-3 text-center text-fg-mid">{s.w}</td>
-                    <td className="px-2 py-3 text-center text-fg-mid">{s.d}</td>
-                    <td className="px-2 py-3 text-center text-fg-mid">{s.l}</td>
-                    <td className="px-2 py-3 text-center text-fg-mid">{s.gd > 0 ? `+${s.gd}` : s.gd}</td>
-                    <td className="px-2 py-3 text-center font-bold text-fg-high">{s.pts}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {standings.every(s => s.p === 0) && (
-              <p className="text-fg-low text-sm text-center py-8">No results yet.</p>
-            )}
-          </div>
-        )}
+          <div className="space-y-2">
+            {gw.matches.map(m => (
+              <div key={m.id} className="flex items-center gap-2 bg-white/5 rounded-xl px-4 py-3">
+                <span className="flex-1 text-sm font-semibold text-right truncate">{m.homeTeam.team.name}</span>
 
-        {/* ── Teams tab ─────────────────────────────────────────────────── */}
-        {tab === 'teams' && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {leagueTeams.map(lt => (
-              <div key={lt.id} className="pl-card rounded-xl p-4 flex items-center gap-3">
-                {lt.team.logoUrl ? (
-                  <img src={lt.team.logoUrl} alt={lt.team.name} className="w-10 h-10 rounded-full object-cover" />
-                ) : (
-                  <div className="w-10 h-10 rounded-full bg-surface-md flex items-center justify-center text-lg font-bold text-primary">
-                    {lt.team.name.charAt(0)}
-                  </div>
-                )}
-                <span className="font-medium text-fg-high">{lt.team.name}</span>
+                <div className="flex items-center gap-1.5 min-w-[5rem] justify-center">
+                  {m.status === 'COMPLETED' ? (
+                    <>
+                      <span className="text-base font-black tabular-nums">{m.homeScore}</span>
+                      <span className="text-white/30">–</span>
+                      <span className="text-base font-black tabular-nums">{m.awayScore}</span>
+                    </>
+                  ) : (
+                    <span className="text-xs text-white/40">{fmtTime(m.playedAt)}</span>
+                  )}
+                </div>
+
+                <span className="flex-1 text-sm font-semibold truncate">{m.awayTeam.team.name}</span>
+                <div className="w-8 flex justify-end">{statusBadge(m.status)}</div>
               </div>
             ))}
           </div>
-        )}
-
-      </main>
+        </div>
+      ))}
     </div>
   )
 }
 
-// ── GameWeek card ─────────────────────────────────────────────────────────────
-
-function GameWeekCard({ gw }: { gw: GameWeekRow }) {
-  return (
-    <div className="pl-card rounded-xl overflow-hidden">
-      <div className="bg-surface px-4 py-2.5 flex items-center justify-between">
-        <span className="font-display font-bold uppercase text-sm text-fg-high">MD{gw.weekNumber}</span>
-        <span className="text-xs text-fg-low">{fmtDate(gw.startDate)}{gw.venue ? ` · ${gw.venue.name}` : ''}</span>
+function StandingsTab({ standings }: { standings: StandingRow[] }) {
+  if (standings.every(s => s.p === 0)) {
+    return (
+      <div className="text-center py-16 text-white/40">
+        <p className="text-sm uppercase tracking-widest">No matches played yet</p>
       </div>
-      <div className="divide-y divide-border-subtle">
-        {gw.matches.map(m => (
-          <div key={m.id} className="px-4 py-3 flex items-center gap-2 text-sm">
-            <span className="text-xs text-fg-low font-mono w-12 shrink-0">{fmtTime(m.playedAt)}</span>
-            <span className="flex-1 text-right text-fg-high truncate">{m.homeTeam.team.name}</span>
-            <span className="font-mono font-bold text-fg-high shrink-0 w-14 text-center">
-              {m.status === 'COMPLETED'
-                ? `${m.homeScore} – ${m.awayScore}`
-                : <span className="text-fg-low text-xs">vs</span>}
-            </span>
-            <span className="flex-1 text-fg-high truncate">{m.awayTeam.team.name}</span>
-          </div>
+    )
+  }
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="text-white/40 text-xs uppercase tracking-widest border-b border-white/10">
+            <th className="text-left pb-2 pr-2">#</th>
+            <th className="text-left pb-2">Team</th>
+            <th className="text-center pb-2 px-1">P</th>
+            <th className="text-center pb-2 px-1">W</th>
+            <th className="text-center pb-2 px-1">D</th>
+            <th className="text-center pb-2 px-1">L</th>
+            <th className="text-center pb-2 px-1">GD</th>
+            <th className="text-center pb-2 pl-1 font-black text-white/60">Pts</th>
+          </tr>
+        </thead>
+        <tbody>
+          {standings.map((row, i) => (
+            <tr key={row.ltId} className="border-b border-white/5 last:border-0">
+              <td className="py-2.5 pr-2 text-white/40">{i + 1}</td>
+              <td className="py-2.5 font-semibold">{row.name}</td>
+              <td className="py-2.5 text-center text-white/60 px-1 tabular-nums">{row.p}</td>
+              <td className="py-2.5 text-center text-white/60 px-1 tabular-nums">{row.w}</td>
+              <td className="py-2.5 text-center text-white/60 px-1 tabular-nums">{row.d}</td>
+              <td className="py-2.5 text-center text-white/60 px-1 tabular-nums">{row.l}</td>
+              <td className="py-2.5 text-center text-white/60 px-1 tabular-nums">{row.gd > 0 ? `+${row.gd}` : row.gd}</td>
+              <td className="py-2.5 text-center font-black pl-1 tabular-nums">{row.pts}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function TeamsTab({ leagueTeams }: { leagueTeams: LeagueTeamRow[] }) {
+  return (
+    <div className="space-y-6">
+      {leagueTeams.map(lt => (
+        <div key={lt.id}>
+          <h3 className="font-bold text-base mb-2">{lt.team.name}</h3>
+          {lt.playerAssignments.length === 0 ? (
+            <p className="text-sm text-white/40">No players assigned</p>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {lt.playerAssignments.map(pa => (
+                <span key={pa.player.id} className="text-xs bg-white/10 rounded-full px-3 py-1">
+                  {pa.player.name}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ── Main component ────────────────────────────────────────────────────────────
+type Tab = 'schedule' | 'standings' | 'teams'
+
+export default function LeaguePublicView({ league }: { league: LeagueData }) {
+  const [tab, setTab] = useState<Tab>('schedule')
+  const standings = useMemo(() => computeStandings(league), [league])
+
+  const tabs: Array<{ id: Tab; label: string }> = [
+    { id: 'schedule',  label: 'Schedule'  },
+    { id: 'standings', label: 'Standings' },
+    { id: 'teams',     label: 'Teams'     },
+  ]
+
+  return (
+    <div className="min-h-dvh bg-midnight text-white">
+      {/* Header */}
+      <div className="px-4 pt-8 pb-6 border-b border-white/10">
+        <p className="text-xs font-bold uppercase tracking-widest text-white/40 mb-1">{league.location}</p>
+        <h1 className="font-display text-2xl font-black uppercase">{league.name}</h1>
+        <p className="text-xs text-white/40 mt-1">
+          From {fmt(league.startDate)}
+          {league.endDate ? ` · Until ${fmt(league.endDate)}` : ''}
+        </p>
+      </div>
+
+      {/* Tab bar */}
+      <div className="flex border-b border-white/10 px-4">
+        {tabs.map(t => (
+          <button
+            key={t.id}
+            onClick={() => setTab(t.id)}
+            className={[
+              'py-3 px-4 text-sm font-semibold uppercase tracking-widest border-b-2 -mb-px transition-colors',
+              tab === t.id
+                ? 'border-white text-white'
+                : 'border-transparent text-white/40 hover:text-white/60',
+            ].join(' ')}
+          >
+            {t.label}
+          </button>
         ))}
-        {gw.matches.length === 0 && (
-          <p className="px-4 py-3 text-xs text-fg-low">No matches scheduled.</p>
-        )}
+      </div>
+
+      {/* Content */}
+      <div className="px-4 py-6 max-w-2xl mx-auto">
+        {tab === 'schedule'  && <ScheduleTab  gameWeeks={league.gameWeeks} />}
+        {tab === 'standings' && <StandingsTab standings={standings} />}
+        {tab === 'teams'     && <TeamsTab     leagueTeams={league.leagueTeams} />}
       </div>
     </div>
   )
