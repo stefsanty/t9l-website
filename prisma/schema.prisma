@@ -37,15 +37,17 @@ model Venue {
 }
 
 model League {
-  id          String    @id @default(cuid())
-  name        String
-  description String?
-  subdomain   String?   @unique
-  location    String
-  startDate   DateTime
-  endDate     DateTime?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id           String    @id @default(cuid())
+  name         String
+  location     String
+  startDate    DateTime
+  endDate      DateTime?
+  subdomain    String?   @unique
+  isDefault    Boolean   @default(false)
+  primaryColor String?
+  description  String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   leagueTeams LeagueTeam[]
   gameWeeks   GameWeek[]
