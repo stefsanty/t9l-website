@@ -133,6 +133,36 @@ export async function getLeague() {
   return prisma.league.findFirst({ orderBy: { createdAt: 'asc' } })
 }
 
+export const getLeagueBySubdomain = unstable_cache(
+  async (subdomain: string) =>
+    prisma.league.findUnique({
+      where: { subdomain },
+      include: {
+        leagueTeams: {
+          include: {
+            team: true,
+            playerAssignments: { include: { player: true } },
+          },
+        },
+        gameWeeks: {
+          include: {
+            matches: {
+              include: {
+                homeTeam: { include: { team: true } },
+                awayTeam: { include: { team: true } },
+                goals: { include: { scoringTeam: true } },
+              },
+              orderBy: { playedAt: 'asc' },
+            },
+          },
+          orderBy: { weekNumber: 'asc' },
+        },
+      },
+    }),
+  ['league-by-subdomain'],
+  { revalidate: 60, tags: ['leagues'] },
+)
+
 export async function getAllTeams() {
   return prisma.team.findMany({ orderBy: { name: 'asc' } })
 }

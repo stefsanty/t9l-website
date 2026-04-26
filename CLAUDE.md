@@ -27,20 +27,28 @@ Google Sheets (source of truth)
        ↓ parse
   lib/data.ts → lib/stats.ts
        ↓
-  app/page.tsx (server component, ISR revalidate=300)
-       ↓ props
-  components/Dashboard.tsx (client, 3-tab UI)
-       ├── NextMatchdayBanner      (Home tab — match info only)
-       ├── MatchdayAvailability    (Home tab — RSVP + per-team attendance)
-       ├── LeagueTable             (Stats tab)
-       ├── TopPerformers           (Stats tab)
-       ├── MatchResults            (Stats tab)
-       └── SquadList               (Teams tab)
+  app/page.tsx (server component, dynamic — reads host header)
+       ├─ subdomain found in DB → components/LeaguePublicView.tsx (DB-driven, 3-tab)
+       └─ no subdomain match  → components/Dashboard.tsx (Google Sheets, ISR 300s)
+            ├── NextMatchdayBanner      (Home tab — match info only)
+            ├── MatchdayAvailability    (Home tab — RSVP + per-team attendance)
+            ├── LeagueTable             (Stats tab)
+            ├── TopPerformers           (Stats tab)
+            ├── MatchResults            (Stats tab)
+            └── SquadList               (Teams tab)
 
 LINE OAuth → next-auth → Upstash Redis (lineId → player mapping)
 i18n → cookie t9l-lang → translateDict (Claude + Redis cache) → I18nProvider
 Player pics → Vercel Blob Storage ← fetched at page.tsx render time
 ```
+
+### Subdomain Routing
+
+`page.tsx` reads the `host` request header and extracts the first segment as a potential league subdomain (e.g. `test.dev.t9l.me` → `test`). If a `League` row with that subdomain exists in the database, it renders `LeaguePublicView` with Prisma data instead of the Google Sheets Dashboard.
+
+- `lib/admin-data.ts#getLeagueBySubdomain(subdomain)` — cached Prisma query (revalidate=60, tag=leagues)
+- Known non-league hostnames skipped: `www`, `dev`, `localhost`, `t9l`, `127`, empty
+- `LeaguePublicView` renders schedule, standings, and team rosters entirely from the database; no Google Sheets dependency
 
 ## Internationalization (i18n)
 

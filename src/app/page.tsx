@@ -1,7 +1,10 @@
+import { headers } from 'next/headers'
 import { fetchSheetData } from "@/lib/sheets";
 import { parseAllData } from "@/lib/data";
 import { findNextMatchday } from "@/lib/stats";
 import Dashboard from "@/components/Dashboard";
+import LeaguePublicView from "@/components/LeaguePublicView";
+import { getLeagueBySubdomain } from "@/lib/admin-data";
 import { unstable_cache } from "next/cache";
 
 const getCachedSheetData = unstable_cache(
@@ -11,6 +14,23 @@ const getCachedSheetData = unstable_cache(
 );
 
 export default async function Home() {
+  // Detect league subdomain from host header.
+  // e.g. test.dev.t9l.me → subdomain = "test"
+  const headersList = await headers()
+  const host = headersList.get('host') ?? ''
+  const subdomain = host.split(':')[0].split('.')[0] // strip port, take first segment
+
+  // Known non-league hostnames
+  const SKIP = new Set(['www', 'dev', 'localhost', 't9l', '127', ''])
+
+  if (!SKIP.has(subdomain)) {
+    const league = await getLeagueBySubdomain(subdomain)
+    if (league) {
+      return <LeaguePublicView league={league} />
+    }
+  }
+
+  // Default: Google Sheets dashboard
   let raw;
   try {
     raw = await getCachedSheetData();
