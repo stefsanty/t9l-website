@@ -28,8 +28,9 @@ export async function createLeague(formData: FormData) {
       location,
       description,
       subdomain,
-      startDate: new Date(startDate),
-      endDate:   endDate ? new Date(endDate) : null,
+      startDate:    new Date(startDate),
+      endDate:      endDate ? new Date(endDate) : null,
+      primaryColor: null,
     },
   })
 
@@ -39,23 +40,25 @@ export async function createLeague(formData: FormData) {
 }
 
 export async function updateLeagueInfo(id: string, data: {
-  name?:        string
-  description?: string | null
-  subdomain?:   string | null
-  location?:    string
-  startDate?:   string
-  endDate?:     string | null
+  name?:         string
+  description?:  string | null
+  subdomain?:    string | null
+  location?:     string
+  startDate?:    string
+  endDate?:      string | null
+  primaryColor?: string | null
 }) {
   await assertAdmin()
   await prisma.league.update({
     where: { id },
     data: {
-      name:        data.name,
-      description: data.description !== undefined ? (data.description || null) : undefined,
-      subdomain:   data.subdomain   !== undefined ? (data.subdomain   || null) : undefined,
-      location:    data.location,
-      startDate:   data.startDate ? new Date(data.startDate) : undefined,
-      endDate:     data.endDate !== undefined ? (data.endDate ? new Date(data.endDate) : null) : undefined,
+      name:         data.name,
+      description:  data.description  !== undefined ? (data.description  || null) : undefined,
+      subdomain:    data.subdomain     !== undefined ? (data.subdomain    || null) : undefined,
+      primaryColor: data.primaryColor  !== undefined ? (data.primaryColor || null) : undefined,
+      location:     data.location,
+      startDate:    data.startDate ? new Date(data.startDate) : undefined,
+      endDate:      data.endDate !== undefined ? (data.endDate ? new Date(data.endDate) : null) : undefined,
     },
   })
   updateTag('leagues')

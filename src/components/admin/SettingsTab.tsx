@@ -15,6 +15,7 @@ interface League {
   location: string
   startDate: Date
   endDate: Date | null
+  primaryColor: string | null
 }
 
 function fmtDate(d: Date | null) {
@@ -34,6 +35,7 @@ export default function SettingsTab({ league }: { league: League }) {
   const [location, setLocation]     = useState(league.location)
   const [startDate, setStartDate]   = useState(fmtDate(league.startDate))
   const [endDate, setEndDate]       = useState(fmtDate(league.endDate))
+  const [primaryColor, setPrimary]  = useState(league.primaryColor ?? '')
   const [subStatus, setSubStatus]   = useState<SubdomainStatus>('idle')
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -73,12 +75,13 @@ export default function SettingsTab({ league }: { league: League }) {
     startTransition(async () => {
       try {
         await updateLeagueInfo(league.id, {
-          name:        name.trim(),
-          description: description.trim() || null,
-          subdomain:   subdomain.trim().toLowerCase() || null,
-          location:    location.trim(),
-          startDate:   startDate || undefined,
-          endDate:     endDate || null,
+          name:         name.trim(),
+          description:  description.trim() || null,
+          subdomain:    subdomain.trim().toLowerCase() || null,
+          location:     location.trim(),
+          startDate:    startDate || undefined,
+          endDate:      endDate || null,
+          primaryColor: primaryColor.trim() || null,
         })
         toast('Settings saved')
       } catch (err: unknown) {
@@ -163,6 +166,26 @@ export default function SettingsTab({ league }: { league: League }) {
             {subStatus === 'invalid' && 'Lowercase letters, numbers, hyphens only. Must start/end with alphanumeric.'}
             {subStatus !== 'taken' && subStatus !== 'invalid' && 'Used for the public-facing URL (e.g. my-league.t9l.me)'}
           </p>
+        </div>
+
+        {/* Primary color */}
+        <div className="space-y-1.5">
+          <label className="text-xs font-medium text-admin-text2 uppercase tracking-wide">Primary Color</label>
+          <div className="flex items-center gap-2">
+            <input
+              type="color"
+              value={primaryColor || '#FF1A6B'}
+              onChange={(e) => setPrimary(e.target.value)}
+              className="w-9 h-9 rounded cursor-pointer border border-admin-border bg-transparent"
+            />
+            <input
+              type="text"
+              value={primaryColor}
+              onChange={(e) => setPrimary(e.target.value)}
+              className="flex-1 bg-admin-surface2 border border-admin-border rounded-lg px-3 py-2 text-sm text-admin-text placeholder:text-admin-text3 focus:outline-none focus:border-admin-border2"
+              placeholder="#FF1A6B (leave empty for default)"
+            />
+          </div>
         </div>
 
         {/* Location */}

@@ -129,6 +129,42 @@ export const getAllVenues = unstable_cache(
   { revalidate: 30, tags: ['leagues'] },
 )
 
+export const getPublicLeagueData = unstable_cache(
+  async (leagueId: string) =>
+    prisma.league.findUnique({
+      where: { id: leagueId },
+      include: {
+        leagueTeams: {
+          include: {
+            team: true,
+            playerAssignments: { include: { player: true } },
+          },
+        },
+        gameWeeks: {
+          include: {
+            matches: {
+              include: {
+                homeTeam: { include: { team: true } },
+                awayTeam: { include: { team: true } },
+                goals: {
+                  include: {
+                    player: true,
+                    scoringTeam: true,
+                    assist: { include: { player: true } },
+                  },
+                },
+              },
+              orderBy: { playedAt: 'asc' },
+            },
+          },
+          orderBy: { weekNumber: 'asc' },
+        },
+      },
+    }),
+  ['public-league-data'],
+  { revalidate: 60, tags: ['leagues'] },
+)
+
 export async function getLeague() {
   return prisma.league.findFirst({ orderBy: { createdAt: 'asc' } })
 }
