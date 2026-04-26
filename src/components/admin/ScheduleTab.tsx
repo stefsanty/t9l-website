@@ -73,11 +73,13 @@ function fmtDatetime(d: Date) {
   return new Date(d).toISOString().slice(0, 16)
 }
 
-function gwStatus(gw: GameWeekRow): MatchStatus {
+type GwBadgeStatus = 'COMPLETED' | 'IN_PROGRESS' | 'UPCOMING' | 'SCHEDULED'
+
+function gwStatus(gw: GameWeekRow): GwBadgeStatus {
   if (gw.matches.length === 0) return 'SCHEDULED'
   if (gw.matches.every((m) => m.status === 'COMPLETED')) return 'COMPLETED'
   if (gw.matches.some((m) => m.status === 'IN_PROGRESS')) return 'IN_PROGRESS'
-  return 'SCHEDULED'
+  return 'UPCOMING'
 }
 
 // ── Main component ───────────────────────────────────────────────────────────
@@ -177,11 +179,11 @@ export default function ScheduleTab({ leagueId, gameWeeks, leagueTeams, venues }
               name="startDate"
               type="date"
               required
-              className="w-full bg-admin-surface3 border border-admin-border text-admin-text text-sm rounded px-3 py-2.5 font-mono"
+              className="w-full bg-admin-surface2 border border-admin-border2 text-admin-text text-sm rounded-md px-3 py-[9px] font-mono"
             />
             <select
               name="venueId"
-              className="w-full bg-admin-surface3 border border-admin-border text-admin-text text-sm rounded px-3 py-2.5"
+              className="w-full bg-admin-surface2 border border-admin-border2 text-admin-text text-sm rounded-md px-3 py-[9px]"
             >
               <option value="">Venue (optional)</option>
               {venues.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
@@ -198,8 +200,8 @@ export default function ScheduleTab({ leagueId, gameWeeks, leagueTeams, venues }
         ) : (
           <>
             <span className="font-condensed font-bold text-admin-text text-sm shrink-0">MD{nextMDNum}</span>
-            <input name="startDate" type="date" required className="bg-admin-surface3 border border-admin-border text-admin-text text-sm rounded px-3 py-1.5 font-mono" />
-            <select name="venueId" className="bg-admin-surface3 border border-admin-border text-admin-text text-sm rounded px-3 py-1.5 flex-1">
+            <input name="startDate" type="date" required className="bg-admin-surface2 border border-admin-border2 text-admin-text text-sm rounded-md px-3 py-[9px] font-mono" />
+            <select name="venueId" className="bg-admin-surface2 border border-admin-border2 text-admin-text text-sm rounded-md px-3 py-[9px] flex-1">
               <option value="">Venue (optional)</option>
               {venues.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
             </select>
@@ -306,7 +308,7 @@ export default function ScheduleTab({ leagueId, gameWeeks, leagueTeams, venues }
                         <select
                           name="homeTeamId"
                           required
-                          className="w-full bg-admin-surface3 border border-admin-border text-admin-text text-sm rounded px-3 py-2.5"
+                          className="w-full bg-admin-surface2 border border-admin-border2 text-admin-text text-sm rounded-md px-3 py-[9px]"
                         >
                           <option value="">Home team…</option>
                           {leagueTeams.map((lt) => (
@@ -316,7 +318,7 @@ export default function ScheduleTab({ leagueId, gameWeeks, leagueTeams, venues }
                         <select
                           name="awayTeamId"
                           required
-                          className="w-full bg-admin-surface3 border border-admin-border text-admin-text text-sm rounded px-3 py-2.5"
+                          className="w-full bg-admin-surface2 border border-admin-border2 text-admin-text text-sm rounded-md px-3 py-[9px]"
                         >
                           <option value="">Away team…</option>
                           {leagueTeams.map((lt) => (
@@ -328,7 +330,7 @@ export default function ScheduleTab({ leagueId, gameWeeks, leagueTeams, venues }
                           type="datetime-local"
                           required
                           defaultValue={fmtDatetime(gw.startDate)}
-                          className="w-full bg-admin-surface3 border border-admin-border text-admin-text text-sm rounded px-3 py-2.5 font-mono"
+                          className="w-full bg-admin-surface2 border border-admin-border2 text-admin-text text-sm rounded-md px-3 py-[9px] font-mono"
                         />
                         <div className="flex gap-2">
                           <button
@@ -378,18 +380,20 @@ export default function ScheduleTab({ leagueId, gameWeeks, leagueTeams, venues }
       {/* ── Desktop view ──────────────────────────────────────────────────── */}
       <div className="hidden md:block">
         {/* Toolbar */}
-        <div className="flex items-center justify-between mb-5">
-          <h2 className="font-condensed font-bold text-admin-text text-xl">Match Schedule</h2>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="font-condensed font-bold text-[13px] uppercase tracking-[2px] text-admin-text2">
+            Matchday Schedule
+          </h2>
           <div className="flex items-center gap-2">
-            <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-admin-border text-admin-text2 text-sm hover:border-admin-border2 hover:text-admin-text transition-colors">
-              <Upload className="w-3.5 h-3.5" />
+            <button className="flex items-center gap-1.5 rounded-[6px] border border-admin-border bg-transparent px-2.5 py-1 text-xs text-admin-text2 transition-colors hover:border-admin-border2 hover:text-admin-text">
+              <Upload className="w-3 h-3" />
               Import Schedule
             </button>
             <button
               onClick={() => setShowAddMatchday(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-admin-green text-admin-ink text-sm font-medium hover:opacity-90 transition-opacity"
+              className="flex items-center gap-1.5 rounded-[6px] bg-admin-green px-2.5 py-1 text-xs font-semibold text-admin-ink hover:opacity-90"
             >
-              <Plus className="w-3.5 h-3.5" />
+              <Plus className="w-3 h-3" />
               Add Matchday
             </button>
           </div>
@@ -467,20 +471,29 @@ export default function ScheduleTab({ leagueId, gameWeeks, leagueTeams, venues }
                   <span className="text-admin-text2 text-sm font-mono">{gw.matches.length}</span>
                   <span><StatusBadge status={status} /></span>
                   <div
-                    className="flex items-center gap-1 justify-end"
+                    className="flex items-center justify-end gap-1.5"
                     onClick={(e) => e.stopPropagation()}
                   >
-                    <ConfirmDialog
-                      trigger={
-                        <button className="p-1.5 rounded text-admin-text3 hover:text-admin-red hover:bg-admin-red-dim transition-colors">
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      }
-                      title={`Delete MD${gw.weekNumber}?`}
-                      description="This will permanently delete this matchday and all its matches."
-                      confirmLabel={`Delete MD${gw.weekNumber}`}
-                      onConfirm={() => handleDeleteGW(gw.id)}
-                    />
+                    <button
+                      type="button"
+                      onClick={() => toggleExpand(gw.id)}
+                      className="rounded-[6px] border border-admin-border bg-transparent px-2.5 py-1 text-xs text-admin-text2 transition-colors hover:border-admin-border2 hover:text-admin-text"
+                    >
+                      Edit
+                    </button>
+                    {status !== 'COMPLETED' && (
+                      <ConfirmDialog
+                        trigger={
+                          <button className="rounded-[6px] border border-admin-red bg-admin-red-dim px-2.5 py-1 text-xs font-semibold text-admin-red transition-colors hover:opacity-90">
+                            Delete
+                          </button>
+                        }
+                        title={`Delete MD${gw.weekNumber}?`}
+                        description="This will permanently delete this matchday and all its matches."
+                        confirmLabel={`Delete MD${gw.weekNumber}`}
+                        onConfirm={() => handleDeleteGW(gw.id)}
+                      />
+                    )}
                   </div>
                 </div>
 
@@ -522,7 +535,7 @@ export default function ScheduleTab({ leagueId, gameWeeks, leagueTeams, venues }
                         <select
                           name="homeTeamId"
                           required
-                          className="bg-admin-surface3 border border-admin-border text-admin-text text-sm rounded px-2 py-1.5 flex-1"
+                          className="bg-admin-surface2 border border-admin-border2 text-admin-text text-sm rounded-md px-3 py-[9px] flex-1"
                         >
                           <option value="">Home team…</option>
                           {leagueTeams.map((lt) => (
@@ -533,7 +546,7 @@ export default function ScheduleTab({ leagueId, gameWeeks, leagueTeams, venues }
                         <select
                           name="awayTeamId"
                           required
-                          className="bg-admin-surface3 border border-admin-border text-admin-text text-sm rounded px-2 py-1.5 flex-1"
+                          className="bg-admin-surface2 border border-admin-border2 text-admin-text text-sm rounded-md px-3 py-[9px] flex-1"
                         >
                           <option value="">Away team…</option>
                           {leagueTeams.map((lt) => (
@@ -545,7 +558,7 @@ export default function ScheduleTab({ leagueId, gameWeeks, leagueTeams, venues }
                           type="datetime-local"
                           required
                           defaultValue={fmtDatetime(gw.startDate)}
-                          className="bg-admin-surface3 border border-admin-border text-admin-text text-sm rounded px-2 py-1.5 font-mono"
+                          className="bg-admin-surface2 border border-admin-border2 text-admin-text text-sm rounded-md px-3 py-[9px] font-mono"
                         />
                         <button
                           type="submit"
@@ -829,12 +842,12 @@ function MatchSubrow({ match, index, leagueId, leagueTeams, onDelete }: MatchSub
           </div>
         ) : (
           <span
-            className="font-mono text-admin-text2 text-sm cursor-pointer hover:text-admin-text transition-colors"
+            className="cursor-pointer transition-colors"
             onClick={() => { setHomeScore(String(match.homeScore)); setAwayScore(String(match.awayScore)); setEditingScore(true) }}
           >
             {match.status === 'COMPLETED'
-              ? `${match.homeScore} – ${match.awayScore}`
-              : <span className="text-admin-text3">vs</span>}
+              ? <span className="font-condensed font-bold text-base tracking-[1px] text-admin-text">{match.homeScore} – {match.awayScore}</span>
+              : <span className="font-mono text-xs text-admin-text3">vs</span>}
           </span>
         )}
       </span>

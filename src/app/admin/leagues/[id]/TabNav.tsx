@@ -4,12 +4,13 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
 
+// Settings is hidden from the visible tab nav (prototype shows 4 tabs only) but
+// the route at /admin/leagues/[id]/settings remains reachable via direct URL.
 const tabs = [
   { label: 'Schedule', segment: 'schedule' },
   { label: 'Teams',    segment: 'teams'    },
   { label: 'Players',  segment: 'players'  },
   { label: 'Stats',    segment: 'stats'    },
-  { label: 'Settings', segment: 'settings' },
 ]
 
 export default function TabNav({ leagueId }: { leagueId: string }) {

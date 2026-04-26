@@ -143,19 +143,21 @@ export default function StatsTab({ leagueId, goals, matches, leagueTeams, gameWe
 
       {/* Top Scorers */}
       <section>
-        <h2 className="font-condensed font-bold text-admin-text text-xl mb-4">Top Scorers</h2>
+        <h2 className="font-condensed text-[13px] font-bold uppercase tracking-[2px] text-admin-text2 mb-3">
+          Top Scorers
+        </h2>
         <div className="overflow-x-auto">
-          <div className="min-w-[480px] bg-admin-surface rounded-xl border border-admin-border overflow-hidden">
+          <div className="min-w-[480px] bg-admin-surface rounded-lg border border-admin-border overflow-hidden">
             <div
-              className="grid text-admin-text3 text-xs uppercase tracking-wider px-5 py-2.5 border-b border-admin-border bg-admin-surface2"
-              style={{ gridTemplateColumns: '40px 1fr 160px 80px 80px 80px' }}
+              className="grid text-admin-text3 text-[11px] uppercase tracking-[1.5px] px-5 py-2.5 border-b border-admin-border bg-admin-surface2"
+              style={{ gridTemplateColumns: '48px 1fr 160px 80px 80px 80px' }}
             >
               <span>Rank</span>
               <span>Player</span>
               <span>Team</span>
-              <span>Goals</span>
-              <span>Assists</span>
-              <span>G+A</span>
+              <span className="text-center">Goals</span>
+              <span className="text-center">Assists</span>
+              <span className="text-center">G+A</span>
             </div>
 
             {scorers.length === 0 && (
@@ -166,14 +168,14 @@ export default function StatsTab({ leagueId, goals, matches, leagueTeams, gameWe
               <div
                 key={row.name}
                 className="grid items-center px-5 py-3 border-b border-admin-border last:border-b-0 hover:bg-admin-surface2/50 transition-colors text-sm"
-                style={{ gridTemplateColumns: '40px 1fr 160px 80px 80px 80px' }}
+                style={{ gridTemplateColumns: '48px 1fr 160px 80px 80px 80px' }}
               >
-                <span className="text-admin-text3 font-mono text-xs">{idx + 1}</span>
-                <span className="text-admin-text font-medium">{row.name}</span>
+                <span className="text-admin-text3 font-mono text-xs">#{idx + 1}</span>
+                <span className="text-admin-text font-semibold">{row.name}</span>
                 <span className="text-admin-text2">{row.team || '—'}</span>
-                <span className="font-condensed font-bold text-admin-green text-lg">{row.goals}</span>
-                <span className="font-mono text-admin-text2">{row.assists}</span>
-                <span className="font-mono text-admin-text2">{row.goals + row.assists}</span>
+                <span className="text-center font-condensed font-bold text-admin-green text-[20px] leading-none">{row.goals}</span>
+                <span className="text-center font-mono text-admin-text">{row.assists}</span>
+                <span className="text-center font-mono font-bold text-admin-text">{row.goals + row.assists}</span>
               </div>
             ))}
           </div>
@@ -182,23 +184,25 @@ export default function StatsTab({ leagueId, goals, matches, leagueTeams, gameWe
 
       {/* League Table */}
       <section>
-        <h2 className="font-condensed font-bold text-admin-text text-xl mb-4">League Table</h2>
+        <h2 className="font-condensed text-[13px] font-bold uppercase tracking-[2px] text-admin-text2 mb-3">
+          League Table
+        </h2>
         <div className="overflow-x-auto">
-          <div className="min-w-[600px] bg-admin-surface rounded-xl border border-admin-border overflow-hidden">
+          <div className="min-w-[600px] bg-admin-surface rounded-lg border border-admin-border overflow-hidden">
             <div
-              className="grid text-admin-text3 text-xs uppercase tracking-wider px-5 py-2.5 border-b border-admin-border bg-admin-surface2"
+              className="grid text-admin-text3 text-[11px] uppercase tracking-[1.5px] px-5 py-2.5 border-b border-admin-border bg-admin-surface2"
               style={{ gridTemplateColumns: '40px 1fr 60px 60px 60px 60px 60px 60px 80px 80px' }}
             >
-              <span>Pos</span>
+              <span className="text-center">Pos</span>
               <span>Team</span>
-              <span>P</span>
-              <span>W</span>
-              <span>D</span>
-              <span>L</span>
-              <span>GF</span>
-              <span>GA</span>
-              <span>GD</span>
-              <span>Pts</span>
+              <span className="text-center">P</span>
+              <span className="text-center">W</span>
+              <span className="text-center">D</span>
+              <span className="text-center">L</span>
+              <span className="text-center">GF</span>
+              <span className="text-center">GA</span>
+              <span className="text-center">GD</span>
+              <span className="text-center">Pts</span>
             </div>
 
             {table.map((row, idx) => (
@@ -207,18 +211,18 @@ export default function StatsTab({ leagueId, goals, matches, leagueTeams, gameWe
                 className="grid items-center px-5 py-3 border-b border-admin-border last:border-b-0 hover:bg-admin-surface2/50 transition-colors text-sm"
                 style={{ gridTemplateColumns: '40px 1fr 60px 60px 60px 60px 60px 60px 80px 80px' }}
               >
-                <span className="text-admin-text3 font-mono text-xs">{idx + 1}</span>
-                <span className="text-admin-text font-medium">{row.name}</span>
+                <span className="text-center text-admin-text3 font-mono text-xs">{idx + 1}</span>
+                <span className="text-admin-text font-semibold">{row.name}</span>
                 {(['P', 'W', 'D', 'L', 'GF', 'GA'] as const).map((col) => (
-                  <span key={col} className="font-mono text-admin-text2">{row[col]}</span>
+                  <span key={col} className="text-center font-mono text-admin-text">{row[col]}</span>
                 ))}
                 <span className={cn(
-                  'font-mono font-medium',
-                  row.GD > 0 ? 'text-admin-green' : row.GD < 0 ? 'text-admin-red' : 'text-admin-text2',
+                  'text-center font-mono',
+                  row.GD > 0 ? 'text-admin-green' : row.GD < 0 ? 'text-admin-red' : 'text-admin-text3',
                 )}>
                   {row.GD > 0 ? `+${row.GD}` : row.GD}
                 </span>
-                <span className="font-condensed font-bold text-admin-green text-base">{row.Pts}</span>
+                <span className="text-center font-condensed font-bold text-admin-green text-[20px] leading-none">{row.Pts}</span>
               </div>
             ))}
           </div>

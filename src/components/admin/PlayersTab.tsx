@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useTransition } from 'react'
-import { ArrowRight, X, ChevronDown } from 'lucide-react'
+import { ArrowRight, X, ChevronDown, Plus } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import StatusBadge from './StatusBadge'
 import ConfirmDialog from './ConfirmDialog'
@@ -56,16 +56,32 @@ export default function PlayersTab({ leagueId, players, leagueTeams, maxGameWeek
     }
   }
 
-  if (players.length === 0) {
-    return (
-      <div className="flex items-center justify-center py-12 text-admin-text3 text-sm bg-admin-surface rounded-xl border border-admin-border">
-        No players assigned to this league yet.
-      </div>
-    )
-  }
-
   return (
     <>
+      {/* ── Toolbar ─────────────────────────────────────────────────────── */}
+      <div className="mb-4 flex items-center justify-between">
+        <h2 className="font-condensed text-[13px] font-bold uppercase tracking-[2px] text-admin-text2">
+          Players ({players.length})
+        </h2>
+        <button
+          type="button"
+          disabled
+          className="inline-flex items-center gap-1.5 rounded-[6px] bg-admin-green px-2.5 py-1 text-xs font-semibold text-admin-ink hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+          title="Coming soon"
+        >
+          <Plus className="w-3 h-3" />
+          Assign Player
+        </button>
+      </div>
+
+      {players.length === 0 ? (
+        <div className="flex items-center justify-center py-12 text-admin-text3 text-sm bg-admin-surface rounded-xl border border-admin-border">
+          No players assigned to this league yet.
+        </div>
+      ) : null}
+
+      {players.length > 0 && (
+        <>
       {/* ── Mobile: card list ────────────────────────────────────────────── */}
       <div className="md:hidden bg-admin-surface rounded-xl border border-admin-border overflow-hidden divide-y divide-admin-border">
         {players.map((player) => {
@@ -197,23 +213,22 @@ export default function PlayersTab({ leagueId, players, leagueTeams, maxGameWeek
                   )}
                 </span>
 
-                <div className="flex items-center gap-1 justify-end">
+                <div className="flex items-center justify-end gap-1.5">
                   <button
                     onClick={() => setTransferPanelId(isTransferOpen ? null : player.id)}
                     className={cn(
-                      'flex items-center gap-1 px-2.5 py-1 rounded text-xs border transition-colors',
+                      'rounded-[6px] border px-2.5 py-1 text-xs transition-colors',
                       isTransferOpen
-                        ? 'bg-admin-green-dim border-admin-green/30 text-admin-green'
-                        : 'border-admin-border text-admin-text2 hover:border-admin-border2 hover:text-admin-text',
+                        ? 'bg-admin-green-dim border-admin-green/40 text-admin-green'
+                        : 'border-admin-border bg-transparent text-admin-text2 hover:border-admin-border2 hover:text-admin-text',
                     )}
                   >
-                    Transfer
-                    <ChevronDown className={cn('w-3 h-3 transition-transform', isTransferOpen && 'rotate-180')} />
+                    {isTransferOpen ? 'Cancel' : 'Transfer'}
                   </button>
                   <ConfirmDialog
                     trigger={
-                      <button className="p-1.5 rounded text-admin-text3 hover:text-admin-red hover:bg-admin-red-dim transition-colors">
-                        <X className="w-3.5 h-3.5" />
+                      <button className="rounded-[6px] border border-admin-border bg-transparent px-2.5 py-1 text-xs text-admin-text2 transition-colors hover:border-admin-border2 hover:text-admin-text">
+                        Remove
                       </button>
                     }
                     title={`Remove ${player.name}?`}
@@ -238,6 +253,8 @@ export default function PlayersTab({ leagueId, players, leagueTeams, maxGameWeek
           )
         })}
       </div>
+        </>
+      )}
     </>
   )
 }
@@ -287,26 +304,28 @@ function TransferPanel({
   }
 
   return (
-    <div className="mx-4 md:mx-5 my-3 p-4 bg-admin-surface3 rounded-lg border border-admin-border">
-      <p className="text-admin-text3 text-xs uppercase tracking-wider mb-3">Transfer {player.name}</p>
+    <div className="mx-4 md:mx-5 my-3 p-4 bg-admin-surface3 rounded-md border border-admin-border">
+      <p className="font-condensed text-[15px] font-bold tracking-[0.5px] text-admin-text mb-4">
+        Transfer {player.name}
+      </p>
       <div className="flex flex-col md:flex-row md:items-end gap-3 md:gap-4">
         {/* From (readonly) */}
-        <div className="w-full md:flex-1">
-          <label className="block text-admin-text3 text-xs mb-1.5">From</label>
-          <div className="bg-admin-surface2 border border-admin-border rounded px-3 py-2.5 text-admin-text2 text-sm">
-            {currentAssignment.leagueTeam.team.name}
+        <div className="w-full md:flex-1 flex flex-col gap-1.5">
+          <label className="text-[11px] font-semibold uppercase tracking-[1.5px] text-admin-text3">From team</label>
+          <div className="text-sm text-admin-text2 py-2">
+            {currentAssignment.leagueTeam.team.name} <span className="text-admin-text3">(current)</span>
           </div>
         </div>
 
         <ArrowRight className="hidden md:block w-4 h-4 text-admin-text3 mb-2.5 shrink-0" />
 
         {/* To */}
-        <div className="w-full md:flex-1">
-          <label className="block text-admin-text3 text-xs mb-1.5">To</label>
+        <div className="w-full md:flex-1 flex flex-col gap-1.5">
+          <label className="text-[11px] font-semibold uppercase tracking-[1.5px] text-admin-text3">To team</label>
           <select
             value={toTeamId}
             onChange={(e) => setToTeamId(e.target.value)}
-            className="w-full bg-admin-surface2 border border-admin-border text-admin-text text-sm rounded px-3 py-2.5"
+            className="w-full bg-admin-surface2 border border-admin-border2 text-admin-text text-sm rounded-md px-3 py-[9px] outline-none"
           >
             <option value="">Select team…</option>
             {otherTeams.map((lt) => (
@@ -316,12 +335,12 @@ function TransferPanel({
         </div>
 
         {/* Effective from GW */}
-        <div className="w-full md:w-auto">
-          <label className="block text-admin-text3 text-xs mb-1.5">Effective from GW</label>
+        <div className="w-full md:w-auto flex flex-col gap-1.5">
+          <label className="text-[11px] font-semibold uppercase tracking-[1.5px] text-admin-text3">Effective from</label>
           <select
             value={fromGW}
             onChange={(e) => setFromGW(Number(e.target.value))}
-            className="w-full md:w-auto bg-admin-surface2 border border-admin-border text-admin-text text-sm rounded px-3 py-2.5 font-mono"
+            className="w-full md:w-auto bg-admin-surface2 border border-admin-border2 text-admin-text text-sm rounded-md px-3 py-[9px] font-mono outline-none"
           >
             {futureGWs.map((gw) => (
               <option key={gw} value={gw}>GW{gw}</option>
@@ -334,13 +353,13 @@ function TransferPanel({
           <button
             onClick={handleTransfer}
             disabled={!toTeamId || pending}
-            className="flex-1 md:flex-none px-4 py-2.5 bg-admin-green text-admin-ink text-sm font-medium rounded hover:opacity-90 disabled:opacity-50"
+            className="flex-1 md:flex-none rounded-[6px] bg-admin-green px-3.5 py-1.5 text-[13px] font-semibold tracking-[0.2px] text-admin-ink hover:opacity-90 disabled:opacity-50"
           >
-            {pending ? 'Transferring…' : 'Confirm'}
+            {pending ? 'Transferring…' : 'Confirm Transfer'}
           </button>
           <button
             onClick={onClose}
-            className="flex-1 md:flex-none px-4 py-2.5 border border-admin-border text-admin-text2 text-sm rounded hover:border-admin-border2"
+            className="flex-1 md:flex-none rounded-[6px] border border-admin-border bg-transparent px-3.5 py-1.5 text-[13px] font-semibold tracking-[0.2px] text-admin-text2 hover:border-admin-border2 hover:text-admin-text"
           >
             Cancel
           </button>
