@@ -28,7 +28,11 @@ import { google } from 'googleapis'
 import { PrismaClient, type Prisma } from '@prisma/client'
 import type { LeagueData } from '../src/types'
 
-// Load env BEFORE importing modules that read env at top-level
+// Load env BEFORE importing modules that read env at top-level.
+// .env.preview wins (per-PR Neon branch testing); falls back to .env.production
+// (live prod backfill); .env.local last (developer override).
+// dotenv defaults to first-write-wins, so order matters.
+dotenv.config({ path: path.resolve(process.cwd(), '.env.preview') })
 dotenv.config({ path: path.resolve(process.cwd(), '.env.production') })
 dotenv.config({ path: path.resolve(process.cwd(), '.env.local') })
 dotenv.config()
@@ -142,7 +146,12 @@ interface RawSheetData {
 async function fetchSheetData(): Promise<RawSheetData> {
   const SHEET_ID = process.env.GOOGLE_SHEET_ID ?? process.env.GOOGLE_SHEETS_ID ?? ''
   const SERVICE_EMAIL = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL ?? ''
-  const PRIVATE_KEY = (process.env.GOOGLE_PRIVATE_KEY ?? '').replace(/\\n/g, '\n')
+  // `vercel env pull` wraps PEM values in extra "..." which dotenv leaves as
+  // a leading/trailing literal " character — strip those before normalizing
+  // \n escapes to actual newlines.
+  const PRIVATE_KEY = (process.env.GOOGLE_PRIVATE_KEY ?? '')
+    .replace(/^["']|["']$/g, '')
+    .replace(/\\n/g, '\n')
   if (!SHEET_ID) throw new Error('Missing GOOGLE_SHEET_ID')
   if (!SERVICE_EMAIL) throw new Error('Missing GOOGLE_SERVICE_ACCOUNT_EMAIL')
   if (!PRIVATE_KEY) throw new Error('Missing GOOGLE_PRIVATE_KEY')
@@ -550,11 +559,16 @@ async function main() {
     if (flags.dryRun) {
       console.log('\nDry-run mode — wrapping in $transaction(rollback)…')
       const counts = await prisma
-        .$transaction(async (tx) => {
-          const c = await runBackfill(tx as unknown as PrismaClient, parsed, flags)
-          // Throw to roll back the transaction
-          throw { __dryRunCounts: c }
-        })
+        .$transaction(
+          async (tx) => {
+            const c = await runBackfill(tx as unknown as PrismaClient, parsed, flags)
+            // Throw to roll back the transaction
+            throw { __dryRunCounts: c }
+          },
+          // 5min timeout: full backfill across ~50 players × 8 matchdays takes
+          // multiple seconds of round-trips even on a per-PR Neon branch.
+          { timeout: 300_000, maxWait: 10_000 },
+        )
         .catch((e: any) => {
           if (e && typeof e === 'object' && '__dryRunCounts' in e) {
             return e.__dryRunCounts as Counts
