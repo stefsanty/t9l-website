@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
+import { revalidatePublicData } from '@/lib/revalidate'
 
 async function assertAdmin() {
   const session = await getServerSession(authOptions)
@@ -29,6 +30,7 @@ export async function updateLeague(formData: FormData) {
   })
   revalidatePath('/admin/settings')
   revalidatePath('/admin')
+  revalidatePublicData()
 }
 
 // ── Players ────────────────────────────────────────────────────────────────────
@@ -48,6 +50,7 @@ export async function updatePlayer(formData: FormData) {
   })
   revalidatePath('/admin/players')
   revalidatePath(`/admin/players/${id}`)
+  revalidatePublicData()
 }
 
 export async function createPlayer(formData: FormData) {
@@ -59,6 +62,7 @@ export async function createPlayer(formData: FormData) {
   await prisma.player.create({ data: { name, lineId } })
 
   revalidatePath('/admin/players')
+  revalidatePublicData()
   redirect('/admin/players')
 }
 
@@ -79,6 +83,7 @@ export async function updateMatchScore(formData: FormData) {
   })
   revalidatePath('/admin/matches')
   revalidatePath(`/admin/matches/${id}`)
+  revalidatePublicData()
 }
 
 export async function addGoal(formData: FormData) {
@@ -100,6 +105,7 @@ export async function addGoal(formData: FormData) {
 
   revalidatePath(`/admin/matches/${matchId}`)
   revalidatePath('/admin/matches')
+  revalidatePublicData()
 }
 
 export async function deleteGoal(formData: FormData) {
@@ -111,4 +117,5 @@ export async function deleteGoal(formData: FormData) {
   await prisma.goal.delete({ where: { id: goalId } })
   revalidatePath(`/admin/matches/${matchId}`)
   revalidatePath('/admin/matches')
+  revalidatePublicData()
 }

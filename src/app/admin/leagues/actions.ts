@@ -1,10 +1,12 @@
 'use server'
 
 import { prisma } from '@/lib/prisma'
-import { revalidatePath, updateTag } from 'next/cache'
+import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
+import { revalidatePublicData } from '@/lib/revalidate'
+import { SETTING_IDS, type DataSource, type WriteMode } from '@/lib/settings'
 
 async function assertAdmin() {
   const session = await getServerSession(authOptions)
@@ -33,7 +35,7 @@ export async function createLeague(formData: FormData) {
     },
   })
 
-  updateTag('leagues')
+  revalidatePublicData()
   revalidatePath('/admin')
   redirect(`/admin/leagues/${league.id}/schedule`)
 }
@@ -58,7 +60,7 @@ export async function updateLeagueInfo(id: string, data: {
       endDate:     data.endDate !== undefined ? (data.endDate ? new Date(data.endDate) : null) : undefined,
     },
   })
-  updateTag('leagues')
+  revalidatePublicData()
   revalidatePath(`/admin/leagues/${id}`)
   revalidatePath('/admin')
 }
@@ -70,7 +72,7 @@ export async function deleteLeague(id: string) {
   })
   if (completedMatches > 0) throw new Error('Cannot delete league with completed matches')
   await prisma.league.delete({ where: { id } })
-  updateTag('leagues')
+  revalidatePublicData()
   revalidatePath('/admin')
   redirect('/admin')
 }
@@ -93,7 +95,7 @@ export async function createGameWeek(leagueId: string, data: {
       venueId:    data.venueId || null,
     },
   })
-  updateTag('leagues')
+  revalidatePublicData()
   revalidatePath(`/admin/leagues/${leagueId}/schedule`)
 }
 
@@ -108,7 +110,7 @@ export async function updateGameWeekVenue(id: string, leagueId: string, venueNam
     }
     await prisma.gameWeek.update({ where: { id }, data: { venueId: venue.id } })
   }
-  updateTag('leagues')
+  revalidatePublicData()
   revalidatePath(`/admin/leagues/${leagueId}/schedule`)
 }
 
@@ -126,7 +128,7 @@ export async function updateGameWeek(id: string, leagueId: string, data: {
       venueId:   data.venueId !== undefined ? (data.venueId || null) : undefined,
     },
   })
-  updateTag('leagues')
+  revalidatePublicData()
   revalidatePath(`/admin/leagues/${leagueId}/schedule`)
 }
 
@@ -137,7 +139,7 @@ export async function deleteGameWeek(id: string, leagueId: string) {
   })
   if (completedMatches > 0) throw new Error('Cannot delete matchday with completed matches')
   await prisma.gameWeek.delete({ where: { id } })
-  updateTag('leagues')
+  revalidatePublicData()
   revalidatePath(`/admin/leagues/${leagueId}/schedule`)
 }
 
@@ -159,7 +161,7 @@ export async function createMatch(gameWeekId: string, leagueId: string, data: {
       status:     'SCHEDULED',
     },
   })
-  updateTag('leagues')
+  revalidatePublicData()
   revalidatePath(`/admin/leagues/${leagueId}/schedule`)
 }
 
@@ -188,14 +190,14 @@ export async function updateMatch(id: string, leagueId: string, data: {
     }
   }
   await prisma.match.update({ where: { id }, data: updateData })
-  updateTag('leagues')
+  revalidatePublicData()
   revalidatePath(`/admin/leagues/${leagueId}/schedule`)
 }
 
 export async function deleteMatch(id: string, leagueId: string) {
   await assertAdmin()
   await prisma.match.delete({ where: { id } })
-  updateTag('leagues')
+  revalidatePublicData()
   revalidatePath(`/admin/leagues/${leagueId}/schedule`)
 }
 
@@ -204,7 +206,7 @@ export async function deleteMatch(id: string, leagueId: string) {
 export async function enrollTeam(leagueId: string, teamId: string) {
   await assertAdmin()
   await prisma.leagueTeam.create({ data: { leagueId, teamId } })
-  updateTag('leagues')
+  revalidatePublicData()
   revalidatePath(`/admin/leagues/${leagueId}/teams`)
 }
 
@@ -218,7 +220,7 @@ export async function removeTeamFromLeague(leagueTeamId: string, leagueId: strin
   })
   if (completedMatches > 0) throw new Error('Cannot remove team with completed matches')
   await prisma.leagueTeam.delete({ where: { id: leagueTeamId } })
-  updateTag('leagues')
+  revalidatePublicData()
   revalidatePath(`/admin/leagues/${leagueId}/teams`)
 }
 
@@ -231,7 +233,7 @@ export async function assignPlayer(playerId: string, leagueTeamId: string, fromG
   })
   const lt = await prisma.leagueTeam.findUnique({ where: { id: leagueTeamId }, select: { leagueId: true } })
   if (lt) {
-    updateTag('leagues')
+    revalidatePublicData()
     revalidatePath(`/admin/leagues/${lt.leagueId}/players`)
   }
 }
@@ -253,7 +255,7 @@ export async function transferPlayer(
       data: { playerId, leagueTeamId: toLeagueTeamId, fromGameWeek },
     })
   })
-  updateTag('leagues')
+  revalidatePublicData()
   revalidatePath(`/admin/leagues/${leagueId}/players`)
 }
 
@@ -265,6 +267,70 @@ export async function removePlayerFromLeague(playerId: string, leagueId: string)
   await prisma.playerLeagueAssignment.deleteMany({
     where: { playerId, leagueTeamId: { in: leagueTeamIds } },
   })
-  updateTag('leagues')
+  revalidatePublicData()
   revalidatePath(`/admin/leagues/${leagueId}/players`)
+}
+
+// ── Settings (data source / write mode toggles) ──────────────────────────────
+
+const VALID_DATA_SOURCES: DataSource[] = ['sheets', 'db']
+const VALID_WRITE_MODES: WriteMode[] = ['sheets-only', 'dual', 'db-only']
+
+/**
+ * Flip the apex public site's source-of-truth between Google Sheets and DB.
+ *
+ * Cache buster path:
+ *   1. updateTag('settings') invalidates getDataSource()'s 30s cache, so the
+ *      next public-page render reads the new value
+ *   2. revalidatePublicData() invalidates 'public-data' so the next render
+ *      doesn't serve a stale getFromSheets() / getFromDb() result
+ */
+export async function setDataSource(value: DataSource) {
+  await assertAdmin()
+  if (!VALID_DATA_SOURCES.includes(value)) {
+    throw new Error(`Invalid data source: ${value}`)
+  }
+  await prisma.setting.upsert({
+    where: { id: SETTING_IDS.publicDataSource },
+    create: {
+      id: SETTING_IDS.publicDataSource,
+      category: 'public',
+      key: 'dataSource',
+      leagueId: null,
+      value,
+    },
+    update: { value },
+  })
+  // updateTag is server-action only; revalidatePublicData uses it under the
+  // hood. Tag chain: settings (own helper cache) + public-data (dispatcher).
+  const { updateTag: _updateTag } = await import('next/cache')
+  _updateTag('settings')
+  revalidatePublicData()
+  revalidatePath('/admin')
+}
+
+/**
+ * Flip the RSVP write mode. `dual` is the safe default during cutover.
+ * `db-only` retires the Sheets write entirely.
+ */
+export async function setWriteMode(value: WriteMode) {
+  await assertAdmin()
+  if (!VALID_WRITE_MODES.includes(value)) {
+    throw new Error(`Invalid write mode: ${value}`)
+  }
+  await prisma.setting.upsert({
+    where: { id: SETTING_IDS.publicWriteMode },
+    create: {
+      id: SETTING_IDS.publicWriteMode,
+      category: 'public',
+      key: 'writeMode',
+      leagueId: null,
+      value,
+    },
+    update: { value },
+  })
+  const { updateTag: _updateTag } = await import('next/cache')
+  _updateTag('settings')
+  revalidatePublicData()
+  revalidatePath('/admin')
 }

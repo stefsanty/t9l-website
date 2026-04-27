@@ -5,7 +5,13 @@ import { CheckCircle, XCircle, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import ConfirmDialog from './ConfirmDialog'
 import { useToast } from './ToastProvider'
-import { updateLeagueInfo, deleteLeague } from '@/app/admin/leagues/actions'
+import {
+  updateLeagueInfo,
+  deleteLeague,
+  setDataSource,
+  setWriteMode,
+} from '@/app/admin/leagues/actions'
+import type { DataSource, WriteMode } from '@/lib/settings'
 
 interface League {
   id: string
@@ -24,9 +30,22 @@ function fmtDate(d: Date | null) {
 
 type SubdomainStatus = 'idle' | 'checking' | 'available' | 'taken' | 'invalid'
 
-export default function SettingsTab({ league }: { league: League }) {
+interface SettingsTabProps {
+  league: League
+  initialDataSource: DataSource
+  initialWriteMode: WriteMode
+}
+
+export default function SettingsTab({
+  league,
+  initialDataSource,
+  initialWriteMode,
+}: SettingsTabProps) {
   const { toast } = useToast()
   const [pending, startTransition] = useTransition()
+  const [dataSource, setDataSourceState] = useState<DataSource>(initialDataSource)
+  const [writeMode, setWriteModeState] = useState<WriteMode>(initialWriteMode)
+  const [savingToggle, setSavingToggle] = useState<'dataSource' | 'writeMode' | null>(null)
 
   const [name, setName]             = useState(league.name)
   const [description, setDesc]      = useState(league.description ?? '')
@@ -99,6 +118,38 @@ export default function SettingsTab({ league }: { league: League }) {
       await updateLeagueInfo(league.id, { endDate: new Date().toISOString().split('T')[0] })
       toast('Season ended')
     })
+  }
+
+  async function handleDataSourceChange(value: DataSource) {
+    if (value === dataSource) return
+    setSavingToggle('dataSource')
+    const prev = dataSource
+    setDataSourceState(value) // optimistic
+    try {
+      await setDataSource(value)
+      toast(`Data source set to ${value === 'db' ? 'Database' : 'Google Sheets'}`)
+    } catch (err) {
+      setDataSourceState(prev) // revert
+      toast(err instanceof Error ? err.message : 'Failed to set data source')
+    } finally {
+      setSavingToggle(null)
+    }
+  }
+
+  async function handleWriteModeChange(value: WriteMode) {
+    if (value === writeMode) return
+    setSavingToggle('writeMode')
+    const prev = writeMode
+    setWriteModeState(value)
+    try {
+      await setWriteMode(value)
+      toast(`Write mode set to ${value}`)
+    } catch (err) {
+      setWriteModeState(prev)
+      toast(err instanceof Error ? err.message : 'Failed to set write mode')
+    } finally {
+      setSavingToggle(null)
+    }
   }
 
   const saveDisabled = pending || subStatus === 'taken' || subStatus === 'invalid' || !name.trim() || !location.trim()
@@ -207,6 +258,90 @@ export default function SettingsTab({ league }: { league: League }) {
         >
           {pending ? 'Saving…' : 'Save Changes'}
         </button>
+      </section>
+
+      {/* Public-site data source + RSVP write mode (Sheets→DB cutover) */}
+      <section className="bg-admin-surface rounded-xl border border-admin-border p-5 space-y-5">
+        <div>
+          <h2 className="font-condensed font-bold text-admin-text text-lg">Public site source-of-truth</h2>
+          <p className="text-xs text-admin-text3 mt-1">
+            Apex (t9l.me/) only — subdomain leagues already read from the database.
+          </p>
+        </div>
+
+        {dataSource === 'sheets' && (
+          <div className="rounded-lg border border-admin-amber/30 bg-admin-amber/5 px-3 py-2 text-xs text-admin-amber leading-relaxed">
+            Switching to <strong>Database</strong> hides Sheet edits made after the most recent backfill. Run the backfill before flipping back to <strong>Google Sheets</strong> if you have been editing the Sheet.
+          </div>
+        )}
+
+        <div className="space-y-3">
+          <label className="text-xs font-medium text-admin-text2 uppercase tracking-wide block">Data source</label>
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              type="button"
+              disabled={savingToggle !== null}
+              onClick={() => handleDataSourceChange('sheets')}
+              className={cn(
+                'rounded-lg border px-4 py-3 text-left transition-colors disabled:opacity-50',
+                dataSource === 'sheets'
+                  ? 'border-admin-green bg-admin-green/10 text-admin-text'
+                  : 'border-admin-border bg-admin-surface2 text-admin-text2 hover:border-admin-border2 hover:text-admin-text',
+              )}
+            >
+              <div className="text-sm font-medium">Google Sheets</div>
+              <div className="text-xs text-admin-text3 mt-0.5">Legacy. Apex reads the spreadsheet.</div>
+            </button>
+            <button
+              type="button"
+              disabled={savingToggle !== null}
+              onClick={() => handleDataSourceChange('db')}
+              className={cn(
+                'rounded-lg border px-4 py-3 text-left transition-colors disabled:opacity-50',
+                dataSource === 'db'
+                  ? 'border-admin-green bg-admin-green/10 text-admin-text'
+                  : 'border-admin-border bg-admin-surface2 text-admin-text2 hover:border-admin-border2 hover:text-admin-text',
+              )}
+            >
+              <div className="text-sm font-medium">Database</div>
+              <div className="text-xs text-admin-text3 mt-0.5">Admin-managed. Apex reads Postgres.</div>
+            </button>
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          <label className="text-xs font-medium text-admin-text2 uppercase tracking-wide block">RSVP write mode</label>
+          <div className="grid grid-cols-3 gap-3">
+            {(['sheets-only', 'dual', 'db-only'] as WriteMode[]).map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                disabled={savingToggle !== null}
+                onClick={() => handleWriteModeChange(mode)}
+                className={cn(
+                  'rounded-lg border px-3 py-2.5 text-left transition-colors disabled:opacity-50',
+                  writeMode === mode
+                    ? 'border-admin-green bg-admin-green/10 text-admin-text'
+                    : 'border-admin-border bg-admin-surface2 text-admin-text2 hover:border-admin-border2 hover:text-admin-text',
+                )}
+              >
+                <div className="text-sm font-medium capitalize">{mode.replace('-', ' ')}</div>
+                <div className="text-[11px] text-admin-text3 mt-0.5 leading-tight">
+                  {mode === 'sheets-only' && 'Pre-PR-3 fallback'}
+                  {mode === 'dual' && 'Both stores; safe default'}
+                  {mode === 'db-only' && 'Post-cutover; Sheets retired'}
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {savingToggle && (
+          <div className="text-xs text-admin-text3 flex items-center gap-2">
+            <Loader2 className="w-3 h-3 animate-spin" />
+            Saving {savingToggle === 'dataSource' ? 'data source' : 'write mode'}…
+          </div>
+        )}
       </section>
 
       {/* Quick actions */}
