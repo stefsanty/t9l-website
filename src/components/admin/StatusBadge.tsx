@@ -5,11 +5,11 @@ type Status = 'SCHEDULED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'POSTPON
 const config: Record<Status, { label: string; classes: string }> = {
   SCHEDULED:   { label: 'Scheduled',   classes: 'bg-admin-surface3 text-admin-text2 border border-admin-border' },
   IN_PROGRESS: { label: 'In Progress', classes: 'bg-admin-amber-dim text-admin-amber border border-admin-amber/30' },
-  COMPLETED:   { label: 'Completed',   classes: 'bg-admin-green-dim text-admin-green border border-admin-green/30' },
+  COMPLETED:   { label: 'Completed',   classes: 'bg-admin-surface3 text-admin-text3 border border-admin-border' },
   CANCELLED:   { label: 'Cancelled',   classes: 'bg-admin-red-dim text-admin-red border border-admin-red/30' },
   POSTPONED:   { label: 'Postponed',   classes: 'bg-admin-surface3 text-admin-text3 border border-admin-border' },
   ACTIVE:      { label: 'Active',      classes: 'bg-admin-green-dim text-admin-green border border-admin-green/30' },
-  UPCOMING:    { label: 'Upcoming',    classes: 'bg-admin-surface3 text-admin-text2 border border-admin-border' },
+  UPCOMING:    { label: 'Upcoming',    classes: 'bg-admin-amber-dim text-admin-amber border border-admin-amber/30' },
 }
 
 interface StatusBadgeProps {

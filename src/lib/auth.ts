@@ -1,6 +1,14 @@
 import type { AuthOptions } from "next-auth";
 import LineProvider from "next-auth/providers/line";
 import CredentialsProvider from "next-auth/providers/credentials";
+import { timingSafeEqual } from "crypto";
+
+function safeEqual(a: string, b: string): boolean {
+  const ab = Buffer.from(a);
+  const bb = Buffer.from(b);
+  if (ab.length !== bb.length) return false;
+  return timingSafeEqual(ab, bb);
+}
 
 type PlayerMapping = {
   playerId: string;
@@ -27,12 +35,39 @@ async function getPlayerMapping(lineId: string): Promise<PlayerMapping | null> {
 
 export const authOptions: AuthOptions = {
   pages: {
+    signIn: '/admin/login',
     error: '/auth-error',
   },
   providers: [
     LineProvider({
       clientId: process.env.LINE_CLIENT_ID ?? "",
       clientSecret: process.env.LINE_CLIENT_SECRET ?? "",
+    }),
+    CredentialsProvider({
+      id: "admin-credentials",
+      name: "Admin",
+      credentials: {
+        username: { label: "Username", type: "text" },
+        password: { label: "Password", type: "password" },
+      },
+      async authorize(credentials) {
+        const expectedUser = process.env.ADMIN_USERNAME;
+        const expectedPass = process.env.ADMIN_PASSWORD;
+        if (!expectedUser || !expectedPass) {
+          console.error("[auth] ADMIN_USERNAME / ADMIN_PASSWORD not set");
+          return null;
+        }
+        if (!credentials?.username || !credentials?.password) return null;
+        const userOk = safeEqual(credentials.username, expectedUser);
+        const passOk = safeEqual(credentials.password, expectedPass);
+        if (!userOk || !passOk) return null;
+        return {
+          id: `admin:${expectedUser}`,
+          name: "Admin",
+          email: null,
+          image: null,
+        };
+      },
     }),
     // Dev-only credentials provider for easy account switching
     ...(process.env.NODE_ENV === "development"
@@ -83,6 +118,19 @@ export const authOptions: AuthOptions = {
   session: { strategy: "jwt" },
   callbacks: {
     async jwt({ token, account, profile, user }) {
+      // Handle admin username/password login — bypass LINE flow entirely
+      if (account?.provider === "admin-credentials" && user) {
+        token.authProvider = "admin-credentials";
+        token.isAdmin = true;
+        token.name = user.name ?? "Admin";
+        return token;
+      }
+      // Preserve admin session on subsequent refreshes (no account on refresh)
+      if (token.authProvider === "admin-credentials") {
+        token.isAdmin = true;
+        return token;
+      }
+
       // Handle Dev Login
       if (account?.provider === "dev-login" && user) {
         token.lineId = user.id;

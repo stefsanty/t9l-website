@@ -118,8 +118,9 @@ html.light {
 }
 
 /* ── Admin dark mode (shadcn zinc dark theme) ─────────────────────────────── */
-/* Applied via <div className="dark"> wrapper on the admin layout */
-.dark {
+/* Scoped to .admin-shell.dark so it only affects the admin layout's wrapper, */
+/* never the public site even when <html class="dark">.                       */
+.admin-shell.dark {
   --background: oklch(0.141 0.005 285.823);
   --foreground: oklch(0.985 0 0);
   --card: oklch(0.21 0.006 285.885);
@@ -238,17 +239,19 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-a {
-  color: var(--primary);
-  text-decoration: underline;
-  text-underline-offset: 4px;
-  text-decoration-color: rgba(233, 0, 82, 0.3);
-  transition: all 0.2s ease-in-out;
-}
+@layer base {
+  a {
+    color: var(--primary);
+    text-decoration: underline;
+    text-underline-offset: 4px;
+    text-decoration-color: rgba(233, 0, 82, 0.3);
+    transition: all 0.2s ease-in-out;
+  }
 
-a:hover {
-  color: #FF2E7E; /* Slightly brighter pink */
-  text-decoration-color: var(--primary);
+  a:hover {
+    color: #FF2E7E; /* Slightly brighter pink */
+    text-decoration-color: var(--primary);
+  }
 }
 
 /* Custom geometric patterns/backgrounds */

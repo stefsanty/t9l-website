@@ -98,18 +98,20 @@ function TeamDetail({
 
       {record.P > 0 && (
         <div className="mb-6">
-          <p className="text-admin-text3 text-xs uppercase tracking-wider mb-3">League Record</p>
-          <div className="grid grid-cols-8 gap-0 border border-admin-border rounded-lg overflow-hidden">
+          <p className="font-condensed text-[13px] font-bold uppercase tracking-[2px] text-admin-text2 mb-3">
+            League Record
+          </p>
+          <div className="grid grid-cols-8 gap-2 text-center">
             {(['P', 'W', 'D', 'L', 'GF', 'GA', 'GD', 'Pts'] as const).map((col) => (
-              <div key={col} className="border-r border-admin-border last:border-r-0">
-                <div className="text-admin-text3 text-xs text-center py-1.5 bg-admin-surface2 border-b border-admin-border">
+              <div key={col}>
+                <div className="text-[10px] uppercase tracking-[1px] text-admin-text3 mb-1">
                   {col}
                 </div>
                 <div className={cn(
-                  'text-center py-2 font-mono text-sm font-medium',
-                  col === 'Pts' ? 'text-admin-green font-bold' :
-                  col === 'GD' ? (record.GD > 0 ? 'text-admin-green' : record.GD < 0 ? 'text-admin-red' : 'text-admin-text2') :
-                  'text-admin-text2',
+                  'font-condensed text-[18px] font-bold leading-none',
+                  col === 'Pts' ? 'text-admin-green' :
+                  col === 'GD' ? (record.GD > 0 ? 'text-admin-green' : record.GD < 0 ? 'text-admin-red' : 'text-admin-text') :
+                  'text-admin-text',
                 )}>
                   {col === 'GD' && record.GD > 0 ? `+${record.GD}` : record[col]}
                 </div>
@@ -120,25 +122,24 @@ function TeamDetail({
       )}
 
       <div>
-        <p className="text-admin-text3 text-xs uppercase tracking-wider mb-3">
-          <span className="flex items-center gap-1.5">
-            <Users className="w-3 h-3" />
-            Players
-          </span>
+        <p className="font-condensed text-[13px] font-bold uppercase tracking-[2px] text-admin-text2 mb-3 flex items-center gap-1.5">
+          <Users className="w-3 h-3" />
+          Players
         </p>
         {lt.playerAssignments.length === 0 ? (
           <p className="text-admin-text3 text-sm">No players assigned to this team.</p>
         ) : (
-          <div className="flex flex-col gap-1">
+          <ul className="flex flex-col gap-0.5">
             {lt.playerAssignments.map((pa) => (
-              <div
+              <li
                 key={pa.id}
-                className="flex items-center px-3 py-2.5 rounded-lg bg-admin-surface2 text-sm text-admin-text min-h-[40px]"
+                className="flex items-center gap-2 text-sm text-admin-text"
               >
+                <span className="text-admin-text3 select-none">·</span>
                 {pa.player.name}
-              </div>
+              </li>
             ))}
-          </div>
+          </ul>
         )}
       </div>
     </div>
@@ -189,7 +190,7 @@ export default function TeamsTab({ leagueId, leagueTeams, allTeams }: TeamsTabPr
           <select
             value={enrollTeamId}
             onChange={(e) => setEnrollTeamId(e.target.value)}
-            className="bg-admin-surface3 border border-admin-border text-admin-text text-xs rounded px-2 py-2 w-full"
+            className="bg-admin-surface2 border border-admin-border2 text-admin-text text-sm rounded-md px-3 py-[9px] w-full"
           >
             <option value="">Select team…</option>
             {availableTeams.map((t) => (
@@ -216,7 +217,7 @@ export default function TeamsTab({ leagueId, leagueTeams, allTeams }: TeamsTabPr
         <button
           onClick={() => setShowEnroll(true)}
           disabled={availableTeams.length === 0}
-          className="flex items-center gap-1.5 text-admin-text3 text-xs hover:text-admin-green transition-colors disabled:opacity-40 disabled:cursor-not-allowed py-1"
+          className="flex w-full items-center justify-center gap-1.5 rounded-[6px] border border-admin-border bg-transparent px-3 py-1.5 text-[13px] font-semibold tracking-[0.2px] text-admin-text2 transition-colors hover:border-admin-border2 hover:text-admin-text disabled:opacity-40 disabled:cursor-not-allowed"
         >
           <Plus className="w-3.5 h-3.5" />
           Enroll Team
@@ -271,7 +272,9 @@ export default function TeamsTab({ leagueId, leagueTeams, allTeams }: TeamsTabPr
         {/* Left panel – team list */}
         <div className="w-[220px] shrink-0 border-r border-admin-border flex flex-col">
           <div className="px-4 py-3 border-b border-admin-border">
-            <p className="text-admin-text3 text-xs uppercase tracking-wider">Teams ({leagueTeams.length})</p>
+            <p className="font-condensed text-[13px] font-bold uppercase tracking-[2px] text-admin-text2">
+              Teams ({leagueTeams.length})
+            </p>
           </div>
 
           <div className="flex-1 overflow-y-auto">

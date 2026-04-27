@@ -31,7 +31,7 @@ export default function AdminNav({ adminName }: AdminNavProps) {
         {/* Logo */}
         <Link
           href="/admin"
-          className="font-condensed font-extrabold text-admin-green text-lg tracking-wide no-underline hover:opacity-90 shrink-0"
+          className="font-condensed font-extrabold text-admin-green text-[18px] tracking-[2px] uppercase no-underline hover:opacity-90 shrink-0"
         >
           T9L Admin
         </Link>
@@ -50,7 +50,7 @@ export default function AdminNav({ adminName }: AdminNavProps) {
         <div className="relative hidden md:block">
           <button
             onClick={() => setDropdownOpen((o) => !o)}
-            className="flex items-center gap-2 text-admin-text2 hover:text-admin-text text-sm transition-colors"
+            className="flex items-center gap-2 text-admin-text2 hover:text-admin-text font-mono text-xs transition-colors"
           >
             <span className="w-6 h-6 rounded-full bg-admin-surface3 border border-admin-border2 flex items-center justify-center">
               <User className="w-3 h-3" />
@@ -165,10 +165,10 @@ function NavLink({
     <Link
       href={href}
       className={cn(
-        'px-3 py-1.5 rounded text-sm transition-colors no-underline',
+        'px-3 py-1.5 text-[13px] tracking-[0.3px] transition-colors no-underline',
         active
-          ? 'text-admin-text bg-admin-surface2'
-          : 'text-admin-text2 hover:text-admin-text hover:bg-admin-surface2',
+          ? 'text-admin-text'
+          : 'text-admin-text2 hover:text-admin-text',
       )}
     >
       {label}

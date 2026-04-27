@@ -19,5 +19,6 @@ declare module "next-auth/jwt" {
     teamId?: string | null;
     linePictureUrl?: string;
     isAdmin?: boolean;
+    authProvider?: string;
   }
 }
