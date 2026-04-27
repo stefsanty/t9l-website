@@ -3,6 +3,7 @@ import { Inter, Barlow_Condensed, Barlow, DM_Mono } from "next/font/google";
 import Script from "next/script";
 import AuthProvider from "@/components/AuthProvider";
 import ThemeProvider from "@/components/ThemeProvider";
+import VersionFooter from "@/components/VersionFooter";
 import "./globals.css";
 
 const inter = Inter({
@@ -87,6 +88,7 @@ export default function RootLayout({
         <ThemeProvider>
           <AuthProvider>
             {children}
+            <VersionFooter variant="public" />
           </AuthProvider>
         </ThemeProvider>
       </body>

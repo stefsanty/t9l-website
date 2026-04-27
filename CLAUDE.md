@@ -1,5 +1,7 @@
 # CLAUDE.md
 
+> **Current release:** v1.1 — Sheets→DB cutover complete. Version constant lives in `src/lib/version.ts`; bump there and update this CLAUDE.md line on each release.
+
 > **Maintenance rule:** Whenever an architectural decision is made — new component, changed data flow, new API route, new Prisma model or column, modified Sheet schema, UX philosophy change — update this file **in the same PR** as the change. PRs that touch architecture without updating CLAUDE.md should be sent back. This file is the single source of truth for how the project works.
 >
 > **Test rule:** Every PR that adds or changes behavior ships with at least one test that proves the new behavior. Unit tests for pure functions (Vitest), e2e tests for user-visible flows (Playwright). The CI workflow at `.github/workflows/test.yml` runs Vitest + tsc on every PR; merge is blocked on red. See [Testing](#testing) below for what to add per change-type.

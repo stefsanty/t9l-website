@@ -2,6 +2,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import AdminNav from '@/components/admin/AdminNav'
 import ToastProvider from '@/components/admin/ToastProvider'
+import VersionFooter from '@/components/VersionFooter'
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const session = await getServerSession(authOptions)
@@ -17,6 +18,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         <main className="flex-1 overflow-x-hidden">
           {children}
         </main>
+        <VersionFooter variant="admin" />
       </ToastProvider>
     </div>
   )
