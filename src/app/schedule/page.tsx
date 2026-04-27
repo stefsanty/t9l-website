@@ -1,30 +1,22 @@
-import { fetchSheetData } from "@/lib/sheets";
-import { parseAllData } from "@/lib/data";
 import { findNextMatchday } from "@/lib/stats";
-import { unstable_cache } from "next/cache";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import Link from "next/link";
 import MatchdayCard from "@/components/MatchdayCard";
 import Header from "@/components/Header";
+import { getPublicLeagueData } from "@/lib/publicData";
 
 export const metadata = {
   title: "Schedule | T9L",
 };
 
-const getCachedSheetData = unstable_cache(
-  async () => fetchSheetData(),
-  ["sheet-data"],
-  { revalidate: 300, tags: ["sheet-data"] }
-);
-
 export default async function SchedulePage() {
   const session = await getServerSession(authOptions);
   const userTeamId = session?.teamId;
 
-  let raw;
+  let data;
   try {
-    raw = await getCachedSheetData();
+    data = await getPublicLeagueData();
   } catch {
     return (
       <div className="flex items-center justify-center min-h-dvh bg-midnight text-white px-6 text-center">
@@ -40,7 +32,6 @@ export default async function SchedulePage() {
     );
   }
 
-  const data = parseAllData(raw);
   const nextMd = findNextMatchday(data.matchdays);
 
   const userNextPlayingMdId = userTeamId

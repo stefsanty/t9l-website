@@ -281,11 +281,13 @@ Every PR that ships ≥ PR 2 has four parallel rollback paths. Sequencing of *wh
 
 ### Per-PR snapshot ledger
 
-| PR | Merge commit | Git tag | Last-good prod deploy URL | Neon snapshot branch | Sheets snapshot |
+| PR | Merge commit | Git tag (rollback target *for next PR*) | Prod deploy URL | Neon snapshot branch | Sheets snapshot |
 |---|---|---|---|---|---|
-| 1 | `87cc64f` | `v-pre-pr-2-backfill` | `https://t9l-website-784a0vmrz-t9l-app.vercel.app` | `pre-pr-2-backfill` (`br-frosty-night-aoczjbgo`, endpoint `ep-fancy-feather-aog9jjya`) | N/A — PR 1 didn't touch Sheets |
+| 1 (schema additions) | `87cc64f` | — (initial; tag was assigned to PR 1.5 below) | `https://t9l-website-784a0vmrz-t9l-app.vercel.app` | `pre-pr-2-backfill` (`br-frosty-night-aoczjbgo`, endpoint `ep-fancy-feather-aog9jjya`) | N/A |
+| 1.5 (testing infra + runbook) | `7f32896` | `v-pre-pr-2-backfill` (moved here; rollback target for PR 2) | `https://t9l-website-8g700kpdn-t9l-app.vercel.app` | (reuses PR 1's snapshot — PR 1.5 didn't touch schema/data) | N/A — PR 1.5 didn't touch Sheets |
+| 2 (backfill + adapter + dispatcher) | `<TBD post-merge>` | `v-pre-pr-3-toggle` (rollback target for PR 3) | `<TBD post-deploy>` | `pre-pr-2-backfill` (consumed during pre-merge testing on per-PR Neon branch; restoration target for PR 3) | N/A — PR 2 doesn't touch Sheets (RSVP dual-write lands in PR 3) |
 
-Keep this table append-only; future PRs add a row.
+Keep this table append-only; future PRs add a row. **Rollback target convention:** the tag in row N points to the commit *before PR (N+1) was merged* — i.e. it's where you'd reset main to undo PR (N+1).
 
 ## Sheets→DB migration
 
@@ -294,8 +296,31 @@ Multi-PR cutover replacing Google Sheets with Neon Postgres as the source of tru
 Status:
 
 - **PR 1 — Schema additions** ✅ shipped (`87cc64f`, 2026-04-27). Strictly additive: `Player.position`, `Team.shortName/color`, `Venue.url/courtSize`, `Venue.name @unique`, `Match @@unique`, `Availability` model + enums, `Setting` model. Public site behavior unchanged.
-- **PR 1.5 — Testing + autonomy + runbook** *(this PR)* — Vitest, Playwright config, GitHub Actions CI, settings.json autonomy rules, this CLAUDE.md update.
-- **PR 2 — Backfill script + DB→public adapter** — Pending. Adds `scripts/sheetsToDbBackfill.ts`, `lib/dbToPublicLeagueData.ts`, `lib/publicData.ts`, `lib/settings.ts`. Default `dataSource='sheets'` → no behavior change.
-- **PR 3 — Toggle UI + RSVP dual-write** — Pending. Re-enables Settings tab, adds Data source / Write mode radios.
+- **PR 1.5 — Testing + autonomy + runbook** ✅ shipped (`7f32896`, 2026-04-27). Vitest, Playwright config, GitHub Actions CI, `.claude/settings.json` autonomy rules, runbook.
+- **PR 2 — Backfill script + DB→public adapter** *(this PR)* — Adds `scripts/sheetsToDbBackfill.ts` (idempotent, `--no-overwrite-goals` default per C3), `lib/dbToPublicLeagueData.ts` (Prisma → `LeagueData` shape), `lib/publicData.ts` (two-source dispatcher per C5), `lib/settings.ts` (getDataSource/getWriteMode helpers), `lib/revalidate.ts` (admin-side cache buster, wired in PR 3). Pages switch from `parseAllData(fetchSheetData())` to `getPublicLeagueData()`. Default `dataSource='sheets'` → public site behavior unchanged.
+- **PR 3 — Toggle UI + RSVP dual-write** — Pending. Re-enables Settings tab, adds Data source / Write mode radios. Wires `revalidatePublicData()` into all 21 admin server actions.
 - **PR 4 — Operational toggle flip** — Pending. No code; flip `dataSource` to `db` via admin Settings on prod.
 - **PR 5 — Retire Sheets path** — Pending; only after weeks of confidence post-PR-4.
+
+### How to run the backfill
+
+\`\`\`bash
+# Pull production env (or per-branch preview env via vercel env pull)
+vercel env pull .env.production --environment=production --yes
+
+# Source DB connection vars
+grep -E '^(DATABASE_URL|DATABASE_URL_UNPOOLED|GOOGLE_)' .env.production > /tmp/bf.env
+set -a; source /tmp/bf.env; set +a; rm /tmp/bf.env
+
+# Always preview first
+npx ts-node --project tsconfig.scripts.json scripts/sheetsToDbBackfill.ts --dry-run --verbose-diff
+
+# Then run for real (defaults are safe: no goal overwrites, availability merge mode optional)
+npx ts-node --project tsconfig.scripts.json scripts/sheetsToDbBackfill.ts
+
+# To recreate goals (destructive — only if Sheets is the trusted source AND you've staged a Neon snapshot):
+npx ts-node --project tsconfig.scripts.json scripts/sheetsToDbBackfill.ts --allow-overwrite-goals
+
+# To preserve in-flight RSVPs during the dual-write window (PR 3+):
+npx ts-node --project tsconfig.scripts.json scripts/sheetsToDbBackfill.ts --availability-merge
+\`\`\`
