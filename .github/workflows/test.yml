@@ -1,0 +1,36 @@
+name: test
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  unit:
+    name: Unit + type-check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install deps
+        run: npm ci --no-audit --no-fund
+
+      - name: Generate Prisma client (no DB connection)
+        run: npx prisma generate
+        env:
+          # Prisma generate needs the env var to exist for schema validation, but does not connect.
+          DATABASE_URL: 'postgresql://placeholder@localhost:5432/placeholder?sslmode=disable'
+          DATABASE_URL_UNPOOLED: 'postgresql://placeholder@localhost:5432/placeholder?sslmode=disable'
+
+      - name: Type-check
+        run: npx tsc --noEmit
+
+      - name: Vitest
+        run: npm test -- --run --reporter=default
