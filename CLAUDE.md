@@ -1,6 +1,12 @@
 # CLAUDE.md
 
-> **Current release:** v1.1 — Sheets→DB cutover complete. Version constant lives in `src/lib/version.ts`; bump there and update this CLAUDE.md line on each release.
+> **Current release:** v1.1.0 — Sheets→DB cutover complete + version label shipped. Constant lives in `src/lib/version.ts`; bump there and update this line on each release.
+
+> **Version-bump rule:** Every PR bumps `APP_VERSION` in `src/lib/version.ts` as part of the change.
+> - Patch bump (1.1.0 → 1.1.1) — fixes, chores, refactors, docs.
+> - Minor bump (1.1.0 → 1.2.0) — new user-visible features.
+> - Major bump (1.1.0 → 2.0.0) — breaking changes / migrations of public contracts.
+> The bump lives in the same commit as the change. The matching test in `tests/unit/version.test.ts` updates in the same commit. After merge, the autonomy post-merge sequence pushes an annotated release tag `v<APP_VERSION>` at the merge SHA — separate from the rollback tag (`v-pre-pr-N-...`).
 
 > **Maintenance rule:** Whenever an architectural decision is made — new component, changed data flow, new API route, new Prisma model or column, modified Sheet schema, UX philosophy change — update this file **in the same PR** as the change. PRs that touch architecture without updating CLAUDE.md should be sent back. This file is the single source of truth for how the project works.
 >
