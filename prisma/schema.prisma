@@ -5,7 +5,7 @@ generator client {
 datasource db {
   provider  = "postgresql"
   url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
+  directUrl = env("DATABASE_URL_UNPOOLED")
 }
 
 enum Role {
@@ -25,10 +25,12 @@ model User {
 
 model Venue {
   id        String   @id @default(cuid())
-  name      String
+  name      String   @unique
   address   String?
   city      String?
   notes     String?
+  url       String?
+  courtSize String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -37,24 +39,32 @@ model Venue {
 }
 
 model League {
-  id          String    @id @default(cuid())
-  name        String
-  description String?
-  subdomain   String?   @unique
-  location    String
-  startDate   DateTime
-  endDate     DateTime?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id           String    @id @default(cuid())
+  name         String
+  description  String?
+  subdomain    String?   @unique
+  location     String
+  startDate    DateTime
+  endDate      DateTime?
+  isDefault    Boolean   @default(false)
+  primaryColor String?
+  accentColor  String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   leagueTeams LeagueTeam[]
   gameWeeks   GameWeek[]
   matches     Match[]
+  settings    Setting[]
+
+  @@index([isDefault])
 }
 
 model Team {
   id        String   @id @default(cuid())
   name      String
+  shortName String?
+  color     String?
   logoUrl   String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -81,6 +91,7 @@ model LeagueTeam {
 model Player {
   id         String   @id @default(cuid())
   name       String
+  position   String?
   lineId     String?  @unique
   pictureUrl String?
   createdAt  DateTime @default(now())
@@ -89,6 +100,7 @@ model Player {
   leagueAssignments PlayerLeagueAssignment[]
   goals             Goal[]
   assists           Assist[]
+  availability      Availability[]
 }
 
 model PlayerLeagueAssignment {
@@ -114,9 +126,10 @@ model GameWeek {
   endDate    DateTime
   venueId    String?
 
-  league  League   @relation(fields: [leagueId], references: [id], onDelete: Cascade)
-  venue   Venue?   @relation(fields: [venueId], references: [id])
-  matches Match[]
+  league       League         @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+  venue        Venue?         @relation(fields: [venueId], references: [id])
+  matches      Match[]
+  availability Availability[]
 
   @@unique([leagueId, weekNumber])
   @@index([leagueId])
@@ -145,6 +158,7 @@ model Match {
   goals    Goal[]
   assists  Assist[]
 
+  @@unique([gameWeekId, homeTeamId, awayTeamId])
   @@index([leagueId])
   @@index([gameWeekId])
 }
@@ -189,4 +203,44 @@ model Assist {
 
   @@index([matchId])
   @@index([playerId])
+}
+
+model Availability {
+  id           String              @id @default(cuid())
+  playerId     String
+  gameWeekId   String
+  rsvp         RsvpStatus?
+  participated ParticipatedStatus?
+  updatedAt    DateTime            @updatedAt
+
+  player   Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  gameWeek GameWeek @relation(fields: [gameWeekId], references: [id], onDelete: Cascade)
+
+  @@unique([playerId, gameWeekId])
+  @@index([gameWeekId])
+  @@index([playerId])
+}
+
+model Setting {
+  id        String   @id @default(cuid())
+  category  String
+  key       String
+  leagueId  String?
+  value     String
+  updatedAt DateTime @updatedAt
+
+  league League? @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+
+  @@unique([category, key, leagueId])
+}
+
+enum RsvpStatus {
+  GOING
+  UNDECIDED
+  NOT_GOING
+}
+
+enum ParticipatedStatus {
+  JOINED
+  NO_SHOWED
 }
