@@ -1,22 +1,12 @@
-import { fetchSheetData } from "@/lib/sheets";
-import { parseAllData } from "@/lib/data";
 import { findNextMatchday } from "@/lib/stats";
 import Dashboard from "@/components/Dashboard";
 import LeaguePublicView from "@/components/LeaguePublicView";
 import { getLeagueFromHost } from "@/lib/getLeagueFromHost";
 import { getLeagueBySubdomain } from "@/lib/admin-data";
-import { unstable_cache } from "next/cache";
-
-const getCachedSheetData = unstable_cache(
-  async () => fetchSheetData(),
-  ["sheet-data"],
-  { revalidate: 300, tags: ["sheet-data"] }
-);
+import { getPublicLeagueData } from "@/lib/publicData";
 
 export default async function Home() {
-  // Subdomain-based league routing.
-  // getLeagueFromHost() reads Host header + extracts subdomain using dot-count logic.
-  // getLeagueBySubdomain() fetches full league data (cached, includes teams/gameweeks/goals).
+  // Subdomain-based league routing — already on DB.
   const hostLeague = await getLeagueFromHost();
 
   if (hostLeague?.subdomain) {
@@ -26,10 +16,12 @@ export default async function Home() {
     }
   }
 
-  // Default: Google Sheets-backed dashboard
-  let raw;
+  // Apex: source-of-truth dispatcher. Default reads Sheets per
+  // Setting.public.dataSource (PR 4 flips this to 'db'); both paths
+  // produce the same `LeagueData` shape so consumers don't change.
+  let data;
   try {
-    raw = await getCachedSheetData();
+    data = await getPublicLeagueData();
   } catch {
     return (
       <div className="flex items-center justify-center min-h-dvh bg-midnight text-white px-6 text-center">
@@ -41,7 +33,6 @@ export default async function Home() {
     );
   }
 
-  const data = parseAllData(raw);
   const nextMd = findNextMatchday(data.matchdays);
 
   return (

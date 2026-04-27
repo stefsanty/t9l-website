@@ -1,12 +1,10 @@
 export const dynamic = 'force-dynamic';
 
-import { fetchSheetData } from '@/lib/sheets';
-import { parseAllData } from '@/lib/data';
 import AssignPlayerClient from '@/components/AssignPlayerClient';
+import { getPublicLeagueData } from '@/lib/publicData';
 
 export default async function AssignPlayerPage() {
-  const raw = await fetchSheetData();
-  const data = parseAllData(raw);
+  const data = await getPublicLeagueData();
 
   const playersByTeam = data.teams.map((team) => ({
     team,

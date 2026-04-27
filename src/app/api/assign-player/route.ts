@@ -3,8 +3,7 @@ import { getServerSession } from "next-auth";
 import { revalidatePath } from "next/cache";
 import { authOptions } from "@/lib/auth";
 import { put } from "@vercel/blob";
-import { fetchSheetData } from "@/lib/sheets";
-import { parseAllData } from "@/lib/data";
+import { getPublicLeagueData } from "@/lib/publicData";
 
 function slugify(name: string): string {
   return name
@@ -41,8 +40,7 @@ export async function POST(req: Request) {
   }
 
   // Validate the player exists in the roster
-  const raw = await fetchSheetData();
-  const data = parseAllData(raw);
+  const data = await getPublicLeagueData();
   const player = data.players.find((p) => p.id === playerId);
 
   if (!player) {

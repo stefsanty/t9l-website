@@ -1,5 +1,3 @@
-import { fetchSheetData } from "@/lib/sheets";
-import { parseAllData } from "@/lib/data";
 import {
   computeLeagueTable,
   computePlayerStats,
@@ -7,13 +5,7 @@ import {
   computeMatchdayVibes,
 } from "@/lib/stats";
 import StatsDashboard from "@/components/StatsDashboard";
-import { unstable_cache } from "next/cache";
-
-const getCachedSheetData = unstable_cache(
-  async () => fetchSheetData(),
-  ["sheet-data"],
-  { revalidate: 300, tags: ["sheet-data"] }
-);
+import { getPublicLeagueData } from "@/lib/publicData";
 
 async function fetchPlayerPictures(
   playerIds: string[],
@@ -44,9 +36,9 @@ async function fetchPlayerPictures(
 }
 
 export default async function StatsPage() {
-  let raw;
+  let data;
   try {
-    raw = await getCachedSheetData();
+    data = await getPublicLeagueData();
   } catch {
     return (
       <div className="flex items-center justify-center min-h-dvh bg-midnight text-white px-6 text-center">
@@ -57,8 +49,6 @@ export default async function StatsPage() {
       </div>
     );
   }
-
-  const data = parseAllData(raw);
 
   const leagueTable = computeLeagueTable(data.teams, data.matchdays);
   const nextMd = findNextMatchday(data.matchdays);
