@@ -1,6 +1,10 @@
 # CLAUDE.md
 
-> **Maintenance rule:** Whenever an architectural decision is made — new component, changed data flow, new API route, modified sheet schema, UX philosophy change — update this file immediately as part of the same commit. This file is the single source of truth for how the project works.
+> **Maintenance rule:** Whenever an architectural decision is made — new component, changed data flow, new API route, new Prisma model or column, modified Sheet schema, UX philosophy change — update this file **in the same PR** as the change. PRs that touch architecture without updating CLAUDE.md should be sent back. This file is the single source of truth for how the project works.
+>
+> **Test rule:** Every PR that adds or changes behavior ships with at least one test that proves the new behavior. Unit tests for pure functions (Vitest), e2e tests for user-visible flows (Playwright). The CI workflow at `.github/workflows/test.yml` runs Vitest + tsc on every PR; merge is blocked on red. See [Testing](#testing) below for what to add per change-type.
+>
+> **Autonomy rule:** The Claude Code harness reads `.claude/settings.json` (committed) and `.claude/settings.local.json` (gitignored, per-developer override). The committed file pre-approves routine read/edit/grep/install/test/git/gh/vercel/neonctl tools and explicitly **denies** destructive Bash patterns (`git push --force*`, `git reset --hard*`, `rm -rf*`, `prisma migrate reset*`, `neonctl branches delete*`, raw SQL `DROP/TRUNCATE/DELETE FROM`). If a routine command is hitting an approval prompt, propose adding it to `permissions.allow` in `.claude/settings.json` rather than `settings.local.json` so the whole team benefits.
 
 ## Project
 
@@ -11,12 +15,14 @@ T9L.me — mobile-first website for the Tennozu 9-Aside League, a recreational f
 - Next.js (App Router, server + client components, ISR)
 - TypeScript (strict mode)
 - Tailwind CSS v4
-- `googleapis` — Google Sheets API (read + write)
-- `next-auth` v4 — LINE OAuth authentication
+- `googleapis` — Google Sheets API (read + write) — public-site source of truth on apex (cutover to DB in progress; see [Sheets→DB Migration](#sheetsdb-migration))
+- `@prisma/client` + `@neondatabase/serverless` — Postgres ORM (Neon-hosted) — admin-side source of truth and target of public-site cutover
+- `next-auth` v4 — LINE OAuth (public players) + Credentials provider (admin)
 - `@upstash/redis` — JWT→player mapping storage, i18n translation cache
-- `@anthropic-ai/sdk` — Runtime translation (Claude 3.5 Haiku)
+- `@anthropic-ai/sdk` — runtime translation (Claude 3.5 Haiku)
 - `@vercel/blob` — player profile picture storage
-- Deployed to Vercel
+- Vitest (unit) + Playwright (e2e) — see [Testing](#testing)
+- Deployed to Vercel; Neon-Vercel marketplace integration auto-provisions a Neon branch DB per Vercel preview branch
 
 ## Architecture Overview
 
@@ -202,3 +208,94 @@ npm run lint         # ESLint
 - `computeMatchScores`: if a matchday has any goals at all, all 3 matches are treated as played (even if 0-0). This is a simplification — no explicit "match finished" flag exists.
 - Player pictures: fetched from Redis/Blob at page.tsx render time and passed down as `playerPictures: Record<string, string>` to avoid per-component async calls
 - The `/minato` route redirects to the team's AppSheet data-entry form
+
+## Prisma schema (admin-side / DB cutover target)
+
+`prisma/schema.prisma` defines the DB-backed admin and (post-cutover) public-site source of truth. Key models:
+
+- **`User`** — admin/viewer accounts (`role: ADMIN|VIEWER`). LINE-linked via `lineId @unique`.
+- **`League`** — single league instance (e.g. "T9L 2026 Spring"). Has `subdomain @unique` for subdomain-based public routing. **Restored fields** `isDefault Boolean`, `primaryColor String?`, `accentColor String?` were re-added to the schema in PR 1 to match prod's actual columns; they're orphan from a rolled-back per-league-branding feature, populated only on `T9L 2026 Spring` (`isDefault: true`) and `Test League 2025` (`isDefault: false`). No code reads them today.
+- **`Team`** + **`LeagueTeam`** — teams are global brand identities (`Team`); a team's participation in a league is `LeagueTeam`. PR 1 added `Team.shortName String?` and `Team.color String?`. `Team.name` is **not `@unique`** because the test-league seed introduced duplicates (`Storm United`, `Phoenix FC`); upserts key on `id` (slug) instead.
+- **`Player`** + **`PlayerLeagueAssignment`** — players are global; league participation is recorded with `fromGameWeek` / `toGameWeek`. PR 1 added `Player.position String?` (FC Torpedo players are intentionally null).
+- **`Venue`** — PR 1 added `url String?`, `courtSize String?`, and `name @unique`.
+- **`GameWeek`** — `(leagueId, weekNumber) @@unique`. Has optional `venueId`.
+- **`Match`** — PR 1 added `@@unique([gameWeekId, homeTeamId, awayTeamId])` so the upcoming backfill can `prisma.match.upsert` by natural key. Constraint is safe under T9L's 4-team round-robin (each pair plays once per MD); revisit if format ever allows the same pair to play twice in one MD.
+- **`Goal`** + **`Assist`** — `Goal` cascades on `Match` delete; **does not cascade on `Player` delete** (deleting a Player with goals will FK-fail — admin "remove from league" only deletes `PlayerLeagueAssignment`, not `Player`).
+- **`Availability`** *(new in PR 1)* — RSVP per `(playerId, gameWeekId) @@unique`. Two enums: `RsvpStatus { GOING, UNDECIDED, NOT_GOING }` and `ParticipatedStatus { JOINED, NO_SHOWED }`. Cascades on Player and GameWeek delete. Public-site RSVP route will dual-write to this table starting PR 3.
+- **`Setting`** *(new in PR 1)* — `(category, key, leagueId) @@unique` composite. `leagueId IS NULL` rows are global; per-league rows override. Used by upcoming PR 3 to store `(public, dataSource) ∈ {sheets, db}` and `(public, writeMode) ∈ {sheets-only, dual, db-only}` toggles. Cascades on League delete.
+
+The `directUrl` connection in `datasource db { ... }` reads from `DATABASE_URL_UNPOOLED` (matches the Neon-Vercel integration's canonical var name). The legacy `DIRECT_URL` var is also still set on production and Preview (dev) for backwards compatibility but no longer referenced by the schema.
+
+## Testing
+
+Two tools, both wired into `package.json` and CI.
+
+| Stack | Purpose | Where |
+|---|---|---|
+| **Vitest** | Pure-function and module-level tests; run in CI on every PR | `tests/unit/**/*.test.ts(x)`; config in `vitest.config.ts` |
+| **Playwright** | End-to-end tests against a base URL (defaults to `https://t9l.me`); run locally pre-merge for PR 3+ user-flow changes | `tests/e2e/**/*.spec.ts`; config in `playwright.config.ts`; override base URL with `BASE_URL=https://<preview>.vercel.app npm run test:e2e` |
+
+Scripts:
+
+```bash
+npm test            # vitest watch
+npm run test:run    # vitest one-shot (same as CI)
+npm run test:e2e    # playwright against $BASE_URL (default https://t9l.me)
+npm run test:ci     # vitest only (e2e is opt-in in CI for now)
+```
+
+CI workflow `.github/workflows/test.yml` runs `npm ci`, `prisma generate` (placeholder URLs — no DB connection needed for codegen), `tsc --noEmit`, then `vitest run`. PRs are merge-blocked on red.
+
+What to add per change-type:
+
+- **Pure-function or library change** (e.g. `lib/data.ts`, `lib/stats.ts`, parsers, mappers) → Vitest unit test with explicit input/output. Example: `tests/unit/slugify.test.ts`.
+- **API route or server action change** → Vitest test that calls the handler directly (mock `next-auth` session if auth-gated); assert response status + body shape.
+- **Public UI flow change** (anything visible at apex `/`, `/schedule`, `/stats`, `/admin`) → Playwright e2e covering the user-visible behavior. Run against the PR's preview URL (`BASE_URL=<preview>`) before requesting merge.
+- **Backfill / migration script change** → Vitest unit tests for row mappers (Sheets row → Prisma create input). Integration test that runs the full backfill against the per-PR Neon branch DB and asserts row counts + spot-check fields.
+- **Schema change** → No new test required for the migration itself (Prisma's `migrate deploy` covers correctness), but any code that reads new fields needs a unit or e2e test.
+
+## Backups & rollback runbook
+
+Every PR that ships ≥ PR 2 has four parallel rollback paths. Sequencing of *which* path to invoke depends on what broke.
+
+### Layer 1 — Git tag reset (fastest if the bad change is the latest commit on `main`)
+- Each PR's merge commit is tagged `v-pre-pr-<N+1>-<slug>` (e.g. `v-pre-pr-2-backfill` is the last-known-good before PR 2 merges).
+- To revert main locally: `git fetch origin --tags && git reset --hard v-pre-pr-2-backfill`. **Do not push --force to main** — instead create a revert PR: `git revert <merge-sha>` and merge that.
+- Tags are immutable; check listing with `git tag -l "v-pre-pr-*" -n1`.
+
+### Layer 2 — Vercel deploy promotion (fastest if you need prod restored without waiting for CI)
+- Vercel retains every prior production deploy. Each PR's "last good prod deploy URL" is recorded in this section as it lands.
+- To promote a previous prod deploy back to current: `vercel promote <deploy-url>` (e.g. `vercel promote https://t9l-website-784a0vmrz-t9l-app.vercel.app`).
+- This rolls back code + the running build only. Schema/data are unaffected — pair with Layer 3 if the issue was DB-side.
+
+### Layer 3 — Neon branch restore (when the DB itself is wrong)
+- Before each PR ≥ 2 merges, a snapshot Neon branch is cut from `production`: `neonctl branches create --name pre-pr-<N>-<slug> --parent production --project-id young-lake-57212861`. This captures the DB state pre-PR.
+- To restore prod to the snapshot state: `neonctl branches restore production --source pre-pr-<N>-<slug> --project-id young-lake-57212861`. This is destructive on the current `production` branch — confirm with the operator before invoking.
+- The connection URI for a snapshot branch (read-only inspection) is fetchable via `neonctl connection-string <branch-id> --project-id young-lake-57212861`.
+- Project ID: `young-lake-57212861`. Default branch on Neon is named `production` (not `main`). Org: `org-floral-feather-76166317`.
+
+### Layer 4 — Sheets snapshot (when public-site Sheets data needs reverting)
+- Before PR 2 (the first PR after which dual-write or backfill could touch any data adjacent to Sheets), make a date-stamped duplicate of the source spreadsheet via Drive: File → Make a copy → name `T9L Roster Snapshot YYYY-MM-DD pre-pr-N`. Record the snapshot file ID below.
+- Restore by copying values back from the snapshot to the live sheet (same tabs, same ranges).
+- Source Sheet ID: `1BLTV9v518fEi3DXRA-qcYY3bLDm_qftNoY_5SNzjKSc`. Snapshots: *(none yet — PR 1 didn't touch Sheets; first snapshot will be cut before PR 2 merges).*
+
+### Per-PR snapshot ledger
+
+| PR | Merge commit | Git tag | Last-good prod deploy URL | Neon snapshot branch | Sheets snapshot |
+|---|---|---|---|---|---|
+| 1 | `87cc64f` | `v-pre-pr-2-backfill` | `https://t9l-website-784a0vmrz-t9l-app.vercel.app` | `pre-pr-2-backfill` (`br-frosty-night-aoczjbgo`, endpoint `ep-fancy-feather-aog9jjya`) | N/A — PR 1 didn't touch Sheets |
+
+Keep this table append-only; future PRs add a row.
+
+## Sheets→DB migration
+
+Multi-PR cutover replacing Google Sheets with Neon Postgres as the source of truth for the public site. Plan: `/tmp/sheets-to-db-migration-plan.md` (v2, post-review).
+
+Status:
+
+- **PR 1 — Schema additions** ✅ shipped (`87cc64f`, 2026-04-27). Strictly additive: `Player.position`, `Team.shortName/color`, `Venue.url/courtSize`, `Venue.name @unique`, `Match @@unique`, `Availability` model + enums, `Setting` model. Public site behavior unchanged.
+- **PR 1.5 — Testing + autonomy + runbook** *(this PR)* — Vitest, Playwright config, GitHub Actions CI, settings.json autonomy rules, this CLAUDE.md update.
+- **PR 2 — Backfill script + DB→public adapter** — Pending. Adds `scripts/sheetsToDbBackfill.ts`, `lib/dbToPublicLeagueData.ts`, `lib/publicData.ts`, `lib/settings.ts`. Default `dataSource='sheets'` → no behavior change.
+- **PR 3 — Toggle UI + RSVP dual-write** — Pending. Re-enables Settings tab, adds Data source / Write mode radios.
+- **PR 4 — Operational toggle flip** — Pending. No code; flip `dataSource` to `db` via admin Settings on prod.
+- **PR 5 — Retire Sheets path** — Pending; only after weeks of confidence post-PR-4.
