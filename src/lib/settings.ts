@@ -5,6 +5,16 @@ export type DataSource = 'sheets' | 'db'
 export type WriteMode = 'sheets-only' | 'dual' | 'db-only'
 
 /**
+ * Deterministic ids for the two global Setting rows seeded by the
+ * 20260427170000_seed_public_settings migration. Server actions in
+ * `app/admin/leagues/actions.ts` upsert by these ids.
+ */
+export const SETTING_IDS = {
+  publicDataSource: 's-public-dataSource-global',
+  publicWriteMode: 's-public-writeMode-global',
+} as const
+
+/**
  * Returns the current public-site data source, falling back to 'sheets' if
  * the Setting row is absent (first-deploy default).
  *
@@ -12,12 +22,8 @@ export type WriteMode = 'sheets-only' | 'dual' | 'db-only'
  */
 export const getDataSource = unstable_cache(
   async (): Promise<DataSource> => {
-    // findFirst (not findUnique): the (category, key, leagueId) composite has
-    // a nullable leagueId. Postgres treats NULL != NULL in unique indexes,
-    // so Prisma's findUnique typing rejects null in that slot. The unique
-    // constraint still prevents duplicate global rows in practice.
-    const row = await prisma.setting.findFirst({
-      where: { category: 'public', key: 'dataSource', leagueId: null },
+    const row = await prisma.setting.findUnique({
+      where: { id: SETTING_IDS.publicDataSource },
     })
     const v = row?.value
     return v === 'db' ? 'db' : 'sheets'
@@ -34,8 +40,8 @@ export const getDataSource = unstable_cache(
  */
 export const getWriteMode = unstable_cache(
   async (): Promise<WriteMode> => {
-    const row = await prisma.setting.findFirst({
-      where: { category: 'public', key: 'writeMode', leagueId: null },
+    const row = await prisma.setting.findUnique({
+      where: { id: SETTING_IDS.publicWriteMode },
     })
     const v = row?.value
     if (v === 'sheets-only' || v === 'dual' || v === 'db-only') return v
