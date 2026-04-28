@@ -1,10 +1,11 @@
 'use client'
 
 import { useState, useTransition } from 'react'
-import { ArrowRight, X, ChevronDown, Plus } from 'lucide-react'
+import { ArrowRight, X, ChevronDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import StatusBadge from './StatusBadge'
 import ConfirmDialog from './ConfirmDialog'
+import AssignLineDialog from './AssignLineDialog'
 import { useToast } from './ToastProvider'
 import { transferPlayer, removePlayerFromLeague } from '@/app/admin/leagues/actions'
 
@@ -25,7 +26,16 @@ interface Assignment {
 interface PlayerRow {
   id: string
   name: string
+  lineId: string | null
   assignments: Assignment[]
+}
+
+interface OrphanLineLogin {
+  lineId: string
+  name: string | null
+  pictureUrl: string | null
+  firstSeenAt: string
+  lastSeenAt: string
 }
 
 interface PlayersTabProps {
@@ -33,6 +43,7 @@ interface PlayersTabProps {
   players: PlayerRow[]
   leagueTeams: LeagueTeamRef[]
   maxGameWeek: number
+  orphans: OrphanLineLogin[]
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -43,7 +54,7 @@ function currentTeam(player: PlayerRow): Assignment | null {
 
 // ── Component ────────────────────────────────────────────────────────────────
 
-export default function PlayersTab({ leagueId, players, leagueTeams, maxGameWeek }: PlayersTabProps) {
+export default function PlayersTab({ leagueId, players, leagueTeams, maxGameWeek, orphans }: PlayersTabProps) {
   const { toast } = useToast()
   const [transferPanelId, setTransferPanelId] = useState<string | null>(null)
 
@@ -63,15 +74,15 @@ export default function PlayersTab({ leagueId, players, leagueTeams, maxGameWeek
         <h2 className="font-condensed text-[13px] font-bold uppercase tracking-[2px] text-admin-text2">
           Players ({players.length})
         </h2>
-        <button
-          type="button"
-          disabled
-          className="inline-flex items-center gap-1.5 rounded-[6px] bg-admin-green px-2.5 py-1 text-xs font-semibold text-admin-ink hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
-          title="Coming soon"
-        >
-          <Plus className="w-3 h-3" />
-          Assign Player
-        </button>
+        <AssignLineDialog
+          leagueId={leagueId}
+          orphans={orphans}
+          players={players.map((p) => ({
+            id: p.id,
+            name: p.name,
+            hasLineLink: !!p.lineId,
+          }))}
+        />
       </div>
 
       {players.length === 0 ? (
