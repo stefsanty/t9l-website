@@ -295,6 +295,38 @@ export async function setRsvp(
 }
 
 /**
+ * Throwing variant of {@link setRsvp} for v1.8.0 public hot paths.
+ *
+ * Used by `/api/rsvp` POST where Redis is the canonical write target on the
+ * response critical path and the Prisma upsert is deferred via `waitUntil`.
+ * A silent Redis failure would leave the user 200-OK with no durable write
+ * landing anywhere — the caller needs to surface a 500.
+ *
+ * No-client (KV env unset / construction failure) is still silent.
+ */
+export async function setRsvpOrThrow(
+  gameWeekId: string,
+  gwStartDate: Date,
+  playerSlug: string,
+  rsvp: RsvpValue | null,
+): Promise<void> {
+  const client = await getClient()
+  if (!client) return
+  const k = key(gameWeekId)
+  const field = `${playerSlug}${RSVP_SUFFIX}`
+  if (rsvp === null) {
+    await client.hdel(k, field)
+    await client.hset(k, { [SEEDED_FIELD]: SEEDED_VALUE })
+  } else {
+    await client.hset(k, {
+      [SEEDED_FIELD]: SEEDED_VALUE,
+      [field]: rsvp,
+    })
+  }
+  await client.expireat(k, computeRsvpExpireAt(gwStartDate))
+}
+
+/**
  * Write the participated signal. Same contract as `setRsvp`. Currently no
  * admin endpoint writes this — kept for parity with the Prisma schema and
  * future admin "post-match attendance" workflow.

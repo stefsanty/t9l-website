@@ -6,7 +6,7 @@ import { authOptions } from "@/lib/auth";
 import { put } from "@vercel/blob";
 import { getPublicLeagueData } from "@/lib/publicData";
 import { prisma } from "@/lib/prisma";
-import { setMapping } from "@/lib/playerMappingStore";
+import { setMappingOrThrow } from "@/lib/playerMappingStore";
 
 const PLAYER_ID_PREFIX = "p-";
 
@@ -96,6 +96,86 @@ async function uploadAndPersistLinePic(args: {
   }
 }
 
+// v1.8.0 — durable backup write for /assign-player POST.
+//
+// Pre-v1.8.0 the Prisma transaction blocked the response (~1–3s on cold
+// Neon plus cold-lambda overhead — the bulk of the user-perceived link
+// latency). v1.8.0 inverts the write path: Redis (`setMappingOrThrow`) is
+// the canonical store written synchronously, and this function runs in
+// `waitUntil` so the response can return as soon as the Redis write lands.
+//
+// The Prisma transaction here is the durable secondary that backs admin
+// queries (e.g. PR 14/15's linked-players picker filter) and the recovery
+// script. On failure we emit a `[v1.8.0 DRIFT]` log line carrying the
+// lineId + dbPlayerId so operators can grep Vercel logs and replay via
+// `scripts/auditRedisVsPrisma.ts --repair-prisma`.
+async function persistAssignmentToPrisma(args: {
+  lineId: string;
+  dbPlayerId: string;
+}): Promise<void> {
+  const { lineId, dbPlayerId } = args;
+  try {
+    // Atomic: clear lineId from any other Player that currently holds it
+    // (collision-safe because lineId is @unique), then set on target. The
+    // updateMany makes the no-op case (no other holder) a clean no-throw.
+    await prisma.$transaction([
+      prisma.player.updateMany({
+        where: { lineId, id: { not: dbPlayerId } },
+        data: { lineId: null },
+      }),
+      prisma.player.update({
+        where: { id: dbPlayerId },
+        data: { lineId },
+      }),
+    ]);
+    // Best-effort legacy-hash cleanup; was already non-fatal pre-v1.8.0.
+    await legacyRedisCleanup(lineId, { dropMapping: true });
+  } catch (err) {
+    console.error(
+      "[v1.8.0 DRIFT] kind=playerMapping op=link lineId=%s dbPlayerId=%s err=%o",
+      lineId,
+      dbPlayerId,
+      err,
+    );
+  }
+}
+
+// v1.8.0 — durable backup write for /assign-player DELETE.
+//
+// Same framing as `persistAssignmentToPrisma`: Redis (`setMappingOrThrow`
+// with the null sentinel) is canonical and written synchronously; this
+// runs in `waitUntil` to clear the durable Prisma row off the critical
+// path. Drift on Prisma failure is logged and recoverable via the audit
+// script.
+async function persistUnassignmentToPrisma(lineId: string): Promise<void> {
+  try {
+    const current = await prisma.player.findUnique({
+      where: { lineId },
+      select: { id: true },
+    });
+    let unlinkedSlug: string | null = null;
+    if (current) {
+      unlinkedSlug = current.id.startsWith(PLAYER_ID_PREFIX)
+        ? current.id.slice(PLAYER_ID_PREFIX.length)
+        : current.id;
+      await prisma.player.update({
+        where: { id: current.id },
+        data: { lineId: null },
+      });
+    }
+    await legacyRedisCleanup(lineId, {
+      dropMapping: true,
+      ...(unlinkedSlug ? { dropPic: unlinkedSlug } : {}),
+    });
+  } catch (err) {
+    console.error(
+      "[v1.8.0 DRIFT] kind=playerMapping op=unlink lineId=%s err=%o",
+      lineId,
+      err,
+    );
+  }
+}
+
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
 
@@ -112,7 +192,8 @@ export async function POST(req: Request) {
 
   // Validate the player exists in the public roster (works for both Sheets
   // and DB data sources). The public id is a slug; DB Player.id is the same
-  // slug carrying a "p-" prefix.
+  // slug carrying a "p-" prefix. getPublicLeagueData is unstable_cache-wrapped,
+  // so this is typically <50ms even cold.
   const data = await getPublicLeagueData();
   const player = data.players.find((p) => p.id === playerId);
 
@@ -124,47 +205,30 @@ export async function POST(req: Request) {
   const teamId = player.teamId;
   const dbPlayerId = `${PLAYER_ID_PREFIX}${playerId}`;
 
-  // Atomic Prisma write: clear lineId from any other Player that currently
-  // holds it (collision-safe because lineId is @unique), then set on target.
-  // Use updateMany for the clear so a no-op (no other holder) doesn't throw.
-  // pictureUrl is intentionally NOT set here — the LINE-CDN-fetch + Blob put
-  // is scheduled below via waitUntil and persists the URL out of band, off
-  // the response critical path.
+  // ── Synchronous canonical write: Redis ──────────────────────────────────
+  // v1.8.0: Redis is the canonical store consulted by the JWT callback on
+  // every authenticated request. Writing it synchronously here means the
+  // user's next /api/auth/session (via `await update()` on the client) sees
+  // the new mapping immediately — no Prisma round-trip on the read path.
+  // Throwing variant: silent failure here would leave both stores empty
+  // after the response, since the Prisma write is deferred below.
   try {
-    await prisma.$transaction([
-      prisma.player.updateMany({
-        where: { lineId: session.lineId, id: { not: dbPlayerId } },
-        data: { lineId: null },
-      }),
-      prisma.player.update({
-        where: { id: dbPlayerId },
-        data: { lineId: session.lineId },
-      }),
-    ]);
+    await setMappingOrThrow(session.lineId, { playerId, playerName, teamId });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Storage error";
     return NextResponse.json({ error: message }, { status: 500 });
   }
 
-  // Drop the legacy Redis mapping for this lineId so the auth fallback can't
-  // serve a stale row in front of the just-written Prisma value.
-  await legacyRedisCleanup(session.lineId, { dropMapping: true });
+  // ── Deferred durable write: Prisma transaction (background) ─────────────
+  // The atomic clear-then-set runs in waitUntil. On failure the catch in
+  // `persistAssignmentToPrisma` emits a `[v1.8.0 DRIFT]` log line; operator
+  // recovery via `scripts/auditRedisVsPrisma.ts --repair-prisma`.
+  waitUntil(persistAssignmentToPrisma({ lineId: session.lineId, dbPlayerId }));
 
-  // Write the post-write mapping into the Redis store. As of PR 16 / v1.5.0
-  // this is the **canonical** lineId→Player record consulted by the JWT
-  // callback — not just a pre-warmed cache in front of Prisma. The shape
-  // matches `getPlayerMappingFromDb` (slug-only, no `p-`/`t-` prefix) so
-  // the next /api/auth/session via `await update()` on the client reads
-  // directly from Redis with no Prisma round-trip. The Prisma transaction
-  // above remains as the durable secondary that backs the admin-filter
-  // query and the recovery script. Sliding 24h TTL keeps active sessions
-  // alive indefinitely while letting forgotten/dead entries decay.
-  await setMapping(session.lineId, { playerId, playerName, teamId });
-
-  // Schedule the LINE-pic mirror as background work — runs after the response
-  // returns. waitUntil keeps the lambda alive long enough for the Promise to
-  // settle, then exits cleanly. No-op when the user has no LINE picture or
-  // Blob storage isn't configured.
+  // ── Deferred picture mirror (independent of Prisma) ─────────────────────
+  // PR 12 already moved this off the critical path. Kept independent of the
+  // Prisma waitUntil above so a Prisma failure doesn't tank the picture
+  // mirror and vice versa.
   if (session.linePictureUrl && process.env.BLOB_READ_WRITE_TOKEN) {
     waitUntil(
       uploadAndPersistLinePic({
@@ -188,39 +252,18 @@ export async function DELETE() {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 
-  let unlinkedSlug: string | null = null;
-
+  // ── Synchronous canonical write: Redis (null sentinel) ──────────────────
+  // The user's next session refresh reads `null` from Redis directly —
+  // orphan state served without a Prisma round-trip.
   try {
-    const current = await prisma.player.findUnique({
-      where: { lineId: session.lineId },
-      select: { id: true },
-    });
-    if (current) {
-      unlinkedSlug = current.id.startsWith(PLAYER_ID_PREFIX)
-        ? current.id.slice(PLAYER_ID_PREFIX.length)
-        : current.id;
-      await prisma.player.update({
-        where: { id: current.id },
-        data: { lineId: null },
-      });
-    }
+    await setMappingOrThrow(session.lineId, null);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Storage error";
     return NextResponse.json({ error: message }, { status: 500 });
   }
 
-  // Defensive cleanup of legacy Redis state: drop the line-player-map hash
-  // entry AND the player-pic key (the unassign UX has always cleared the pic
-  // cache to prompt a fresh upload on next assignment).
-  await legacyRedisCleanup(session.lineId, {
-    dropMapping: true,
-    ...(unlinkedSlug ? { dropPic: unlinkedSlug } : {}),
-  });
-
-  // Pre-warm the JWT-callback cache (PR 9) with the null sentinel so the next
-  // session read serves the un-linked state from cache instead of doing a
-  // cold Prisma findUnique that confirms the same null.
-  await setMapping(session.lineId, null);
+  // ── Deferred durable write: clear Prisma Player.lineId (background) ─────
+  waitUntil(persistUnassignmentToPrisma(session.lineId));
 
   revalidatePath("/");
   revalidateTag("public-data", { expire: 0 });

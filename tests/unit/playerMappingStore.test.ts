@@ -3,6 +3,7 @@ import {
   __setRedisClientForTesting,
   getMapping,
   setMapping,
+  setMappingOrThrow,
   deleteMapping,
   type RedisLike,
   type PlayerMapping,
@@ -328,5 +329,60 @@ describe('namespace isolation', () => {
     expect(writtenKey.startsWith('t9l:auth:map:')).toBe(true)
     expect(writtenKey.startsWith('t9l:i18n:')).toBe(false)
     expect(writtenKey).not.toBe('line-player-map')
+  })
+})
+
+describe('playerMappingStore.setMappingOrThrow — v1.8.0 throwing variant', () => {
+  it('writes the mapping with the same shape as setMapping on success', async () => {
+    const { client, setMock } = makeFakeRedis({})
+    __setRedisClientForTesting(client)
+
+    await setMappingOrThrow('U1', SAMPLE)
+
+    expect(setMock).toHaveBeenCalledWith(
+      `${KEY_PREFIX}U1`,
+      JSON.stringify(SAMPLE),
+      { ex: TTL },
+    )
+  })
+
+  it('writes the null sentinel for unlinks', async () => {
+    const { client, setMock } = makeFakeRedis({})
+    __setRedisClientForTesting(client)
+
+    await setMappingOrThrow('U-orphan', null)
+
+    expect(setMock).toHaveBeenCalledWith(
+      `${KEY_PREFIX}U-orphan`,
+      NULL_SENTINEL,
+      { ex: TTL },
+    )
+  })
+
+  it('THROWS when Redis errors (vs setMapping which swallows)', async () => {
+    const { client, setMock } = makeFakeRedis({})
+    setMock.mockRejectedValueOnce(new Error('Upstash unreachable'))
+    __setRedisClientForTesting(client)
+
+    await expect(setMappingOrThrow('U1', SAMPLE)).rejects.toThrow(
+      'Upstash unreachable',
+    )
+  })
+
+  it('does NOT throw when KV env is unset (no-client = silent no-op for dev/test)', async () => {
+    const original = {
+      url: process.env.KV_REST_API_URL,
+      token: process.env.KV_REST_API_TOKEN,
+    }
+    delete process.env.KV_REST_API_URL
+    delete process.env.KV_REST_API_TOKEN
+    __setRedisClientForTesting(null)
+
+    try {
+      await expect(setMappingOrThrow('U1', SAMPLE)).resolves.toBeUndefined()
+    } finally {
+      if (original.url) process.env.KV_REST_API_URL = original.url
+      if (original.token) process.env.KV_REST_API_TOKEN = original.token
+    }
   })
 })

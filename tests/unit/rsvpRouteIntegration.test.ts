@@ -1,20 +1,34 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 /**
- * Integration test for the v1.7.0 RSVP write path. Pins three contracts:
+ * Integration test for the RSVP write path. v1.8.0 inverts the order:
+ * Redis (`setRsvpOrThrow`) is canonical and written synchronously, and the
+ * Prisma upsert is deferred via `waitUntil`. The Sheets dual-write rides
+ * along inside the same waitUntil callback in `dual` mode.
  *
- *   1. The DB (`prisma.availability.upsert`) AND the Redis store (`setRsvp`)
- *      are both written to on every successful RSVP — failure of either
- *      still propagates as a 500.
- *   2. `setRsvp` is called with the public slug (not the prefixed DB id)
- *      and the GameWeek's startDate (so the absolute TTL anchors correctly).
+ * Contracts pinned (post-v1.8.0):
+ *   1. The Redis store (`setRsvpOrThrow`) is written on the synchronous
+ *      response path with the public slug (not the prefixed DB id) and
+ *      the GameWeek's startDate (so the absolute TTL anchors correctly).
+ *   2. `prisma.availability.upsert` runs INSIDE `waitUntil` — captured but
+ *      not awaited inline. After draining the deferred promise, the upsert
+ *      is observed.
  *   3. `revalidateTag('public-data')` and `revalidatePath('/')` are NOT
  *      called from this route — RSVP no longer flows through the static
  *      cache.
+ *   4. Redis-throw → 500 response (don't 200 with no durable write
+ *      anywhere). v1.8.0 requires the Redis write to succeed before the
+ *      response returns; the Prisma write is the durable backup, not the
+ *      gate.
  */
 
+const { setRsvpOrThrowMock, waitUntilMock } = vi.hoisted(() => ({
+  setRsvpOrThrowMock: vi.fn(),
+  waitUntilMock: vi.fn(),
+}))
+
 vi.mock('@/lib/rsvpStore', () => ({
-  setRsvp: vi.fn(),
+  setRsvpOrThrow: setRsvpOrThrowMock,
 }))
 
 vi.mock('@/lib/prisma', () => ({
@@ -36,7 +50,8 @@ vi.mock('@/lib/sheets', () => ({
 }))
 
 vi.mock('@/lib/settings', () => ({
-  // dual mode → both Prisma + Sheets writes; Redis pre-warm fires regardless.
+  // dual mode → Prisma write deferred; Sheets best-effort inside the same
+  // waitUntil callback. Redis write sync.
   getWriteMode: vi.fn().mockResolvedValue('dual'),
 }))
 
@@ -58,16 +73,23 @@ vi.mock('next/cache', () => ({
   revalidatePath: revalidatePathMock,
 }))
 
+vi.mock('@vercel/functions', () => ({
+  waitUntil: waitUntilMock,
+}))
+
 // Imports must come after vi.mock calls.
 import { POST } from '@/app/api/rsvp/route'
-import { setRsvp } from '@/lib/rsvpStore'
 import { prisma } from '@/lib/prisma'
 
-const setRsvpMock = vi.mocked(setRsvp)
 const upsertMock = vi.mocked(prisma.availability.upsert)
 
 beforeEach(() => {
   vi.clearAllMocks()
+  setRsvpOrThrowMock.mockResolvedValue(undefined)
+  // Eagerly invoke the deferred callback so the Prisma upsert runs in the test.
+  waitUntilMock.mockImplementation((p: unknown) => {
+    ;(p as Promise<unknown>).catch(() => {})
+  })
 })
 
 function makeRequest(matchdayId: string, status: string) {
@@ -78,11 +100,25 @@ function makeRequest(matchdayId: string, status: string) {
   })
 }
 
-describe('POST /api/rsvp — v1.7.0 dual-write to Prisma + Redis', () => {
-  it('returns 200 and writes Prisma upsert + Redis setRsvp on a GOING RSVP', async () => {
+describe('POST /api/rsvp — v1.8.0 Redis-canonical sync, Prisma deferred', () => {
+  it('returns 200, writes Redis sync, and schedules the Prisma upsert via waitUntil', async () => {
     const res = await POST(makeRequest('md3', 'GOING'))
     expect(res.status).toBe(200)
 
+    // Synchronous: Redis write happens on the response path.
+    expect(setRsvpOrThrowMock).toHaveBeenCalledTimes(1)
+    expect(setRsvpOrThrowMock).toHaveBeenCalledWith(
+      'cuid-gw-3',
+      new Date('2026-08-01T00:00:00Z'),
+      'ian-noseda',
+      'GOING',
+    )
+
+    // Deferred: waitUntil scheduled exactly one Promise containing the upsert.
+    expect(waitUntilMock).toHaveBeenCalledTimes(1)
+
+    // After draining the deferred work, the upsert ran with the expected shape.
+    await new Promise((r) => setImmediate(r))
     expect(upsertMock).toHaveBeenCalledTimes(1)
     expect(upsertMock).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -94,26 +130,18 @@ describe('POST /api/rsvp — v1.7.0 dual-write to Prisma + Redis', () => {
         },
       }),
     )
-
-    expect(setRsvpMock).toHaveBeenCalledTimes(1)
-    expect(setRsvpMock).toHaveBeenCalledWith(
-      'cuid-gw-3',
-      new Date('2026-08-01T00:00:00Z'),
-      'ian-noseda',
-      'GOING',
-    )
   })
 
-  it('passes the public slug (no `p-` prefix) to setRsvp — matches the merge-layer contract', async () => {
+  it('passes the public slug (no `p-` prefix) to setRsvpOrThrow', async () => {
     await POST(makeRequest('md3', 'UNDECIDED'))
-    const playerArg = setRsvpMock.mock.calls[0][2]
+    const playerArg = setRsvpOrThrowMock.mock.calls[0][2]
     expect(playerArg).toBe('ian-noseda')
     expect(playerArg.startsWith('p-')).toBe(false)
   })
 
-  it('passes null to setRsvp when clearing the RSVP (status="")', async () => {
+  it('passes null to setRsvpOrThrow when clearing the RSVP (status="")', async () => {
     await POST(makeRequest('md3', ''))
-    expect(setRsvpMock).toHaveBeenCalledWith(
+    expect(setRsvpOrThrowMock).toHaveBeenCalledWith(
       'cuid-gw-3',
       new Date('2026-08-01T00:00:00Z'),
       'ian-noseda',
@@ -127,13 +155,12 @@ describe('POST /api/rsvp — v1.7.0 dual-write to Prisma + Redis', () => {
     expect(revalidatePathMock).not.toHaveBeenCalled()
   })
 
-  it('returns 500 if Prisma upsert throws — failure surfaces, does not silently desync stores', async () => {
-    upsertMock.mockRejectedValueOnce(new Error('Prisma down'))
+  it('returns 500 if setRsvpOrThrow throws — no durable write anywhere is worse than a clear error', async () => {
+    setRsvpOrThrowMock.mockRejectedValueOnce(new Error('Upstash unreachable'))
     const res = await POST(makeRequest('md3', 'GOING'))
     expect(res.status).toBe(500)
-    // Critical: no Redis write happens after Prisma fails — partial-write
-    // states must not survive. (The Redis write inside the same try block
-    // is guarded by the Prisma upsert succeeding.)
-    expect(setRsvpMock).not.toHaveBeenCalled()
+    // Critical: Prisma must NOT be scheduled when Redis fails — bailing out
+    // before waitUntil keeps both stores in lockstep (neither has the write).
+    expect(waitUntilMock).not.toHaveBeenCalled()
   })
 })
