@@ -56,7 +56,14 @@ export default function AssignPlayerClient({ playersByTeam }: Props) {
       }
 
       await update();
+      // router.push alone leaves AssignPlayerClient mounted with submitting=true:
+      // App Router serves '/' from its client RSC cache without re-fetching, so
+      // navigation never tears down this component and the button stays stuck on
+      // "Saving…". Pair with refresh() to invalidate the cache, force a fresh
+      // RSC render of '/' (which now reflects the just-assigned playerId), and
+      // complete unmount.
       router.push('/');
+      router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong');
       setSubmitting(false);
@@ -80,8 +87,8 @@ export default function AssignPlayerClient({ playersByTeam }: Props) {
 
       await update();
       setSelectedPlayerId(null);
-      setUnassigning(false);
       router.push('/');
+      router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong');
       setUnassigning(false);
