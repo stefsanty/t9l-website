@@ -7,7 +7,6 @@ import {
 } from '@/lib/assignButtonLabel'
 
 const baseConfirm = {
-  redirecting: false,
   isAlreadyAssigned: false,
   submitting: false,
   selectedPlayerId: null as string | null,
@@ -22,31 +21,29 @@ describe('assignButtonLabel', () => {
     expect(assignButtonLabel({ ...baseConfirm, selectedPlayerId: 'p-x' })).toBe('Confirm')
   })
 
-  it('shows "Saving…" only while the API call is in flight', () => {
+  // The "Saving…" window collapsed to a single render in v1.4.0 — the
+  // optimistic flip replaces the form with the success view immediately.
+  // The label only matters for the brief synchronous gap before the
+  // transition body schedules the optimistic update. Pin the legacy state
+  // so a future re-introduction of a multi-second submitting window doesn't
+  // silently degrade the perceived-instant promise.
+  it('shows "Saving…" while submitting (legacy in-flight label)', () => {
     expect(
       assignButtonLabel({ ...baseConfirm, selectedPlayerId: 'p-x', submitting: true }),
     ).toBe('Saving…')
   })
 
-  // Regression for the v1.1.1 stuck-on-Saving bug. Pre-fix the loading state
-  // spanned API + next-auth update + router.push + destination RSC render
-  // (5–7s post-cutover). The fix flips submitting → redirecting the moment
-  // the API write succeeds; redirecting MUST take precedence so the button
-  // shows the "navigating" affordance, never "Saving…".
-  it('shows "Done — redirecting…" while navigation is in progress (regression)', () => {
+  it('shows "Linked" once the user is already assigned to the selected player', () => {
     expect(
       assignButtonLabel({
         ...baseConfirm,
         selectedPlayerId: 'p-x',
-        redirecting: true,
-        // submitting may briefly overlap if state updates batch differently —
-        // redirecting must still win.
-        submitting: true,
+        isAlreadyAssigned: true,
       }),
-    ).toBe('Done — redirecting…')
+    ).toBe('Linked')
   })
 
-  it('"Linked" wins over "Saving…" once isAlreadyAssigned latches', () => {
+  it('"Linked" wins over "Saving…"', () => {
     expect(
       assignButtonLabel({
         ...baseConfirm,
@@ -56,17 +53,6 @@ describe('assignButtonLabel', () => {
       }),
     ).toBe('Linked')
   })
-
-  it('redirecting wins over isAlreadyAssigned (so the affordance is consistent on the way out)', () => {
-    expect(
-      assignButtonLabel({
-        ...baseConfirm,
-        selectedPlayerId: 'p-x',
-        isAlreadyAssigned: true,
-        redirecting: true,
-      }),
-    ).toBe('Done — redirecting…')
-  })
 })
 
 describe('assignButtonDisabled', () => {
@@ -74,7 +60,6 @@ describe('assignButtonDisabled', () => {
     selectedPlayerId: 'p-x' as string | null,
     submitting: false,
     unassigning: false,
-    redirecting: false,
     isAlreadyAssigned: false,
   }
 
@@ -86,8 +71,8 @@ describe('assignButtonDisabled', () => {
     expect(assignButtonDisabled({ ...base, selectedPlayerId: null })).toBe(true)
   })
 
-  it('disabled while redirecting (no double-submit during the slow nav window)', () => {
-    expect(assignButtonDisabled({ ...base, redirecting: true })).toBe(true)
+  it('disabled while submitting (no double-submit during the brief request window)', () => {
+    expect(assignButtonDisabled({ ...base, submitting: true })).toBe(true)
   })
 
   it('disabled when already assigned', () => {
@@ -97,30 +82,26 @@ describe('assignButtonDisabled', () => {
 
 describe('unassignButtonLabel', () => {
   it('shows the resting label by default', () => {
-    expect(unassignButtonLabel({ unassigning: false, redirecting: false })).toBe('Unassign Profile')
+    expect(unassignButtonLabel({ unassigning: false })).toBe('Unassign Profile')
   })
 
   it('shows "Removing…" while the API call is in flight', () => {
-    expect(unassignButtonLabel({ unassigning: true, redirecting: false })).toBe('Removing…')
-  })
-
-  it('shows "Redirecting…" once the API succeeds (regression)', () => {
-    expect(unassignButtonLabel({ unassigning: false, redirecting: true })).toBe('Redirecting…')
-  })
-
-  it('redirecting wins over unassigning if both flip', () => {
-    expect(unassignButtonLabel({ unassigning: true, redirecting: true })).toBe('Redirecting…')
+    expect(unassignButtonLabel({ unassigning: true })).toBe('Removing…')
   })
 })
 
 describe('unassignButtonDisabled', () => {
-  const base = { submitting: false, unassigning: false, redirecting: false }
+  const base = { submitting: false, unassigning: false }
 
   it('enabled at rest', () => {
     expect(unassignButtonDisabled(base)).toBe(false)
   })
 
-  it('disabled while redirecting', () => {
-    expect(unassignButtonDisabled({ ...base, redirecting: true })).toBe(true)
+  it('disabled while unassigning', () => {
+    expect(unassignButtonDisabled({ ...base, unassigning: true })).toBe(true)
+  })
+
+  it('disabled while a submit is in flight (prevents racing the assign POST with a DELETE)', () => {
+    expect(unassignButtonDisabled({ ...base, submitting: true })).toBe(true)
   })
 })
