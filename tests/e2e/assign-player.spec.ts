@@ -15,14 +15,19 @@ test.describe('public assign-player surface', () => {
 })
 
 /**
- * Regression test for the v1.1.1 → v1.2.2 stuck-on-Saving bug.
+ * Regression test for the v1.1.1 → v1.2.2 stuck-on-Saving bug, with the
+ * timing target tightened to the Definition of Done in v1.3.0.
  *
  * Pre-fix the button stayed on "Saving…" for the entire post-click chain
  * (API write + next-auth update + router.push + destination RSC render).
  * Under the post-cutover Prisma-on-every-JWT auth path that's 5–7 seconds
- * end-to-end. v1.2.2 splits that into submitting → redirecting at the API
- * boundary so the button leaves "Saving…" within ~1s of the API responding,
- * regardless of how slow the navigation chain is.
+ * end-to-end. v1.2.2 (PR 7) split that into submitting → redirecting at
+ * the API boundary so the button leaves "Saving…" within ~1s of the API
+ * responding. v1.3.0 (PR 11) drops the awaited next-auth `update()`,
+ * removing a separate cold-startable /api/auth/session round-trip from
+ * the user-visible critical path — so the label flip is now strictly
+ * a React re-render after API response (~50ms in local dev). Timeout
+ * tightened to 200ms to match the project Definition of Done target.
  *
  * Requires dev server (NODE_ENV=development → dev-login provider exposed
  * per `lib/auth.ts`). Skipped against any non-localhost BASE_URL because
@@ -32,15 +37,15 @@ test.describe('public assign-player surface', () => {
  *   npm run dev               # in another terminal
  *   BASE_URL=http://localhost:3000 npm run test:e2e -- assign-player
  *
- * The unit tests in tests/unit/assignButtonLabel.test.ts are the CI-runnable
- * regression: they pin the state-machine precedence (redirecting wins over
- * submitting; redirecting wins over isAlreadyAssigned) which is the actual
- * defect surface.
+ * The unit tests in tests/unit/assignButtonLabel.test.ts pin the state-
+ * machine precedence (redirecting wins over submitting; redirecting wins
+ * over isAlreadyAssigned). tests/unit/kickOffSessionRefresh.test.ts pins
+ * the fire-and-forget call shape so re-introducing `await` is caught.
  */
-test.describe('regression: stuck-on-Saving (PR α / v1.2.2)', () => {
+test.describe('regression: button leaves Saving fast (PR α v1.2.2 + PR 11 v1.3.0)', () => {
   test.skip(!isLocal, 'requires local dev with dev-login provider (NODE_ENV=development)')
 
-  test('button leaves "Saving…" within 1s of API success even when navigation is slow', async ({ page }) => {
+  test('button leaves "Saving…" within 200ms of API success (DoD)', async ({ page }) => {
     // Stall the destination page so navigation can't complete fast — this is
     // what masks the bug pre-fix (the component eventually unmounts when the
     // RSC payload arrives, but the user perceives 5+s of "Saving…").
@@ -76,11 +81,14 @@ test.describe('regression: stuck-on-Saving (PR α / v1.2.2)', () => {
     const res = await apiResponse
     expect(res.status()).toBe(200)
 
-    // The regression assertion: within 1s of the API responding 200, the
-    // button MUST NOT still say "Saving…". Pre-fix it sat on "Saving…" until
-    // the (slow) navigation finished. Post-fix it shows "Done — redirecting…"
-    // immediately.
-    await expect(confirm).not.toHaveText(/Saving/, { timeout: 1_000 })
-    await expect(confirm).toHaveText(/Done — redirecting|Linked/, { timeout: 1_000 })
+    // The regression assertion: within 200ms of the API responding 200, the
+    // button MUST NOT still say "Saving…". Pre-PR-7 it sat on "Saving…" for
+    // the entire post-click chain (5–7s end-to-end). PR 7 dropped it to ~1s
+    // by splitting submitting → redirecting at the API boundary. PR 11 drops
+    // it again by removing the awaited `update()` round-trip — so the label
+    // flip is now strictly the React re-render after API response and easily
+    // fits the 200ms Definition of Done in local dev.
+    await expect(confirm).not.toHaveText(/Saving/, { timeout: 200 })
+    await expect(confirm).toHaveText(/Done — redirecting|Linked/, { timeout: 200 })
   })
 })
