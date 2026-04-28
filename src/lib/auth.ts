@@ -3,6 +3,10 @@ import LineProvider from "next-auth/providers/line";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { timingSafeEqual } from "crypto";
 import { prisma } from "@/lib/prisma";
+import {
+  getCached as getCachedMapping,
+  setCached as setCachedMapping,
+} from "@/lib/playerMappingCache";
 
 function safeEqual(a: string, b: string): boolean {
   const ab = Buffer.from(a);
@@ -75,17 +79,36 @@ async function getPlayerMappingFromRedis(lineId: string): Promise<PlayerMapping 
 }
 
 async function getPlayerMapping(lineId: string): Promise<PlayerMapping | null> {
+  // Cache-aside: check Upstash first. Hit returns immediately and skips both
+  // Prisma and the Redis fallback. Miss falls through to the canonical reads
+  // and writes the result back (including null mappings via the sentinel).
+  // Writers in api/assign-player, admin/leagues/actions, and admin/actions
+  // call playerMappingCache.invalidate() so the cache can't outlive a write
+  // beyond the racy in-flight window. See PR 8 (v1.2.3).
+  const cached = await getCachedMapping(lineId);
+  if (cached !== undefined) return cached.value;
+
+  let resolved: PlayerMapping | null = null;
   try {
     const fromDb = await getPlayerMappingFromDb(lineId);
-    if (fromDb) return fromDb;
+    if (fromDb) {
+      resolved = fromDb;
+    }
   } catch (err) {
     console.error("[auth] getPlayerMappingFromDb failed for lineId=%s: %o", lineId, err);
   }
-  const fromRedis = await getPlayerMappingFromRedis(lineId);
-  if (fromRedis) {
-    console.warn("[auth] DEPRECATED Redis hit for lineId=%s — backfill row missing in Prisma", lineId);
+  if (!resolved) {
+    const fromRedis = await getPlayerMappingFromRedis(lineId);
+    if (fromRedis) {
+      console.warn("[auth] DEPRECATED Redis hit for lineId=%s — backfill row missing in Prisma", lineId);
+      resolved = fromRedis;
+    }
   }
-  return fromRedis;
+
+  // Cache the outcome — including null — so unmapped LINE IDs don't re-hit
+  // Prisma every request. Invalidation at every write site keeps this honest.
+  await setCachedMapping(lineId, resolved);
+  return resolved;
 }
 
 // Upsert a LineLogin row on every authenticated request. Powers the admin
