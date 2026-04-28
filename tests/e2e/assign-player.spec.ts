@@ -113,6 +113,46 @@ test.describe('regression: navigate-immediately + toast on link success (v1.6.1)
     await expect(toast).toBeHidden({ timeout: 8_000 })
   })
 
+  // v1.8.0 — direct-API timing target. The click→nav budget above is already
+  // tight from PR 18 (sync push, deferred await), but it doesn't measure the
+  // API itself. v1.8.0 inverts the write path: Redis is canonical and written
+  // synchronously; Prisma is deferred via waitUntil. The API response should
+  // therefore complete in well under 1s on warm cache (was 3–5s cold pre-v1.8.0
+  // because the Prisma transaction blocked the response). 600ms is generous
+  // for warm + Upstash REST round-trip.
+  test('v1.8.0 — direct POST /api/assign-player returns in <600ms on warm cache', async ({ page }) => {
+    await loginAsGuest(page)
+    await page.goto('/assign-player')
+
+    const firstRow = page.locator('[data-testid^="assign-player-row-"]').first()
+    await expect(firstRow).toBeVisible({ timeout: 5_000 })
+    const testid = await firstRow.getAttribute('data-testid')
+    const playerId = testid!.replace('assign-player-row-', '')
+
+    // Warm-up: any POST first to spin the lambda. Discard timing.
+    await page.request.post('/api/assign-player', {
+      data: { playerId },
+      headers: { 'Content-Type': 'application/json' },
+    })
+
+    // Now measure a warm hit. v1.8.0 budget: <600ms (Redis sync + waitUntil
+    // schedule + revalidate; Prisma transaction is OFF this critical path).
+    const t0 = Date.now()
+    const res = await page.request.post('/api/assign-player', {
+      data: { playerId },
+      headers: { 'Content-Type': 'application/json' },
+    })
+    const elapsed = Date.now() - t0
+    expect(res.status()).toBe(200)
+    expect(
+      elapsed,
+      `warm POST took ${elapsed}ms — v1.8.0 inversion target is <600ms (Prisma deferred via waitUntil); pre-v1.8.0 cold-path was 3–5s`,
+    ).toBeLessThan(600)
+
+    // Cleanup: unlink so the dev DB stays clean.
+    await page.request.delete('/api/assign-player').catch(() => {})
+  })
+
   test('Confirm with a stalled API navigates to / immediately, toast fires post-nav', async ({
     page,
   }) => {

@@ -182,6 +182,16 @@ function parseStoredValue(
  * `updatePlayer` / `createPlayer`, `admin/leagues/actions`
  * `adminLinkLineToPlayer`) so the post-write JWT callback hits the store
  * immediately without falling through to the defensive Prisma path.
+ *
+ * Failure semantics: silent no-op on no-client (KV env unset) and on Redis
+ * errors. Suitable for write sites where the durable Prisma write has
+ * already happened and Redis is the secondary mirror — admin actions, etc.
+ *
+ * For v1.8.0 public hot paths (`/api/assign-player`, `/api/rsvp`) where
+ * Redis is the canonical write target on the response critical path AND
+ * Prisma is deferred via `waitUntil`, use {@link setMappingOrThrow}
+ * instead — silent failure there would mean the response succeeds but no
+ * durable write lands anywhere.
  */
 export async function setMapping(
   lineId: string,
@@ -195,6 +205,28 @@ export async function setMapping(
   } catch (err) {
     console.warn('[playerMappingStore] redis SET errored for lineId=%s: %o', lineId, err)
   }
+}
+
+/**
+ * Throwing variant of {@link setMapping} for v1.8.0 public hot paths.
+ *
+ * Used by `/api/assign-player` POST/DELETE where Redis is the canonical
+ * write target on the response critical path and Prisma is deferred via
+ * `waitUntil`. A silent Redis failure would leave the user 200-OK with
+ * neither store updated — the caller needs to surface a 500 instead.
+ *
+ * No-client (KV env unset / construction failure) is still silent — that's
+ * a dev / test condition without Redis configured, not a real prod failure
+ * mode.
+ */
+export async function setMappingOrThrow(
+  lineId: string,
+  mapping: PlayerMapping | null,
+): Promise<void> {
+  const client = await getClient()
+  if (!client) return
+  const value = mapping === null ? NULL_SENTINEL : JSON.stringify(mapping)
+  await client.set(key(lineId), value, { ex: TTL_SECONDS })
 }
 
 /**

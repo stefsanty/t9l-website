@@ -6,6 +6,7 @@ import {
   getRsvpForGameWeek,
   getRsvpForGameWeeks,
   setRsvp,
+  setRsvpOrThrow,
   setParticipated,
   seedGameWeek,
   deleteGameWeek,
@@ -440,6 +441,69 @@ describe('rsvpStore when Redis is not configured', () => {
       ).resolves.toBeUndefined()
       await expect(seedGameWeek('gw-x', start)).resolves.toBeUndefined()
       await expect(deleteGameWeek('gw-x')).resolves.toBeUndefined()
+    } finally {
+      if (original.url) process.env.KV_REST_API_URL = original.url
+      if (original.token) process.env.KV_REST_API_TOKEN = original.token
+    }
+  })
+})
+
+describe('rsvpStore.setRsvpOrThrow — v1.8.0 throwing variant', () => {
+  it('writes hset + expireat with the same shape as setRsvp on success', async () => {
+    const { client, hsetMock, expireatMock } = makeFakeRedis({})
+    __setRedisClientForTesting(client)
+    const start = new Date('2026-08-01T00:00:00Z')
+
+    await setRsvpOrThrow('gw-x', start, 'ian-noseda', 'GOING')
+
+    expect(hsetMock).toHaveBeenCalledWith(`${KEY_PREFIX}gw-x`, {
+      [SEEDED_FIELD]: SEEDED_VALUE,
+      'ian-noseda:rsvp': 'GOING',
+    })
+    expect(expireatMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('clears the field via hdel + reasserts sentinel for null rsvp', async () => {
+    const { client, hsetMock, hdelMock, expireatMock } = makeFakeRedis({
+      [`${KEY_PREFIX}gw-x`]: { [SEEDED_FIELD]: SEEDED_VALUE, 'ian-noseda:rsvp': 'GOING' },
+    })
+    __setRedisClientForTesting(client)
+    const start = new Date('2026-08-01T00:00:00Z')
+
+    await setRsvpOrThrow('gw-x', start, 'ian-noseda', null)
+
+    expect(hdelMock).toHaveBeenCalledWith(`${KEY_PREFIX}gw-x`, 'ian-noseda:rsvp')
+    expect(hsetMock).toHaveBeenCalledWith(`${KEY_PREFIX}gw-x`, {
+      [SEEDED_FIELD]: SEEDED_VALUE,
+    })
+    expect(expireatMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('THROWS when Redis errors (vs setRsvp which swallows)', async () => {
+    const { client, hsetMock } = makeFakeRedis({})
+    hsetMock.mockRejectedValueOnce(new Error('Upstash unreachable'))
+    __setRedisClientForTesting(client)
+    const start = new Date('2026-08-01T00:00:00Z')
+
+    await expect(
+      setRsvpOrThrow('gw-x', start, 'ian-noseda', 'GOING'),
+    ).rejects.toThrow('Upstash unreachable')
+  })
+
+  it('does NOT throw when KV env is unset (no-client = silent no-op for dev/test)', async () => {
+    const original = {
+      url: process.env.KV_REST_API_URL,
+      token: process.env.KV_REST_API_TOKEN,
+    }
+    delete process.env.KV_REST_API_URL
+    delete process.env.KV_REST_API_TOKEN
+    __setRedisClientForTesting(null)
+    const start = new Date('2026-08-01T00:00:00Z')
+
+    try {
+      await expect(
+        setRsvpOrThrow('gw-x', start, 'ian-noseda', 'GOING'),
+      ).resolves.toBeUndefined()
     } finally {
       if (original.url) process.env.KV_REST_API_URL = original.url
       if (original.token) process.env.KV_REST_API_TOKEN = original.token

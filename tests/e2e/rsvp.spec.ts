@@ -103,4 +103,46 @@ test.describe('RSVP write → dashboard reflection (v1.7.0)', () => {
     )
     expect(writeMs).toBeLessThan(3000)
   })
+
+  // v1.8.0 — direct-API timing target. The RSVP write was previously
+  // bounded by `prisma.availability.upsert` on the response critical path
+  // (~1–3s on cold Neon). v1.8.0 inverts: Redis is canonical and written
+  // synchronously; the Prisma upsert is deferred via waitUntil. Warm budget
+  // 600ms (gameWeek findUnique + setRsvpOrThrow + revalidate-free response).
+  test('v1.8.0 — POST /api/rsvp returns in <600ms on warm cache', async ({
+    page,
+  }) => {
+    await page.goto('/api/auth/csrf')
+    const csrf = await page.evaluate(
+      () => (document.body.innerText.match(/"csrfToken":"([^"]+)"/) ?? [])[1],
+    )
+    const lineId = process.env.E2E_LINE_ID
+    test.skip(!lineId, 'set E2E_LINE_ID to a dev-DB-linked LINE id')
+
+    await page.request.post('/api/auth/callback/line-mock?json=true', {
+      form: {
+        lineId: lineId!,
+        csrfToken: csrf ?? '',
+        callbackUrl: '/',
+        json: 'true',
+      },
+    })
+
+    // Warm-up: discard timing.
+    await page.request.post('/api/rsvp', {
+      data: { matchdayId: 'md3', status: 'GOING' },
+    })
+
+    // Measure warm round-trip.
+    const t0 = Date.now()
+    const res = await page.request.post('/api/rsvp', {
+      data: { matchdayId: 'md3', status: 'UNDECIDED' },
+    })
+    const elapsed = Date.now() - t0
+    expect(res.ok()).toBe(true)
+    expect(
+      elapsed,
+      `warm POST took ${elapsed}ms — v1.8.0 target is <600ms (Prisma upsert deferred via waitUntil); pre-v1.8.0 was 1–3s on cold Neon`,
+    ).toBeLessThan(600)
+  })
 })
