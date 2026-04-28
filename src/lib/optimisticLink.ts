@@ -12,6 +12,20 @@
  *
  * The component owns the optimistic state itself (`useOptimistic`) and the
  * commit/revert wiring; this module only owns the I/O.
+ *
+ * Why `deps.fetch` is optional (PR 15 / v1.4.3):
+ *   The previous shape REQUIRED callers to pass `{ fetch }` and then invoked
+ *   `deps.fetch(...)` internally — which calls fetch as a *method of `deps`*,
+ *   not as a method of the Window. Browser fetch's WebIDL brand check rejects
+ *   any receiver that isn't a Window/Worker → "Illegal invocation". Vitest
+ *   spies have no such brand check, so unit tests passed cleanly while every
+ *   real link/unlink in production threw and rolled back the optimistic flip.
+ *   The fix: make `deps` optional, and when it's omitted, default to a
+ *   free-function wrapper around the global `fetch`. Free-function fetch in
+ *   module scope works in browsers (the WebIDL realm-binding handles the
+ *   global call). Tests still pass `{ fetch: spy }` — the seam is preserved
+ *   for injection, but production callers no longer touch the fetch reference
+ *   at all.
  */
 
 export type LinkedState = {
@@ -31,12 +45,18 @@ export type FetchLike = (
   init?: RequestInit,
 ) => Promise<{ ok: boolean; json: () => Promise<unknown> }>
 
+// Default to a free-function call against the global `fetch`, so there is no
+// way to accidentally invoke fetch as a method of any other receiver. Tests
+// can override by passing `deps.fetch`.
+const defaultFetch: FetchLike = (input, init) => fetch(input, init)
+
 export async function attemptLink(
   playerId: string,
-  deps: { fetch: FetchLike },
+  deps?: { fetch?: FetchLike },
 ): Promise<LinkAttemptResult> {
+  const fetchImpl = deps?.fetch ?? defaultFetch
   try {
-    const res = await deps.fetch('/api/assign-player', {
+    const res = await fetchImpl('/api/assign-player', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ playerId }),
@@ -65,11 +85,12 @@ export async function attemptLink(
   }
 }
 
-export async function attemptUnlink(deps: {
-  fetch: FetchLike
+export async function attemptUnlink(deps?: {
+  fetch?: FetchLike
 }): Promise<UnlinkAttemptResult> {
+  const fetchImpl = deps?.fetch ?? defaultFetch
   try {
-    const res = await deps.fetch('/api/assign-player', { method: 'DELETE' })
+    const res = await fetchImpl('/api/assign-player', { method: 'DELETE' })
     if (!res.ok) {
       const body = (await res.json().catch(() => ({}))) as { error?: string }
       return { ok: false, error: body.error ?? 'Unassignment failed' }
