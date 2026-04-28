@@ -5,7 +5,7 @@ import { authOptions } from "@/lib/auth";
 import { put } from "@vercel/blob";
 import { getPublicLeagueData } from "@/lib/publicData";
 import { prisma } from "@/lib/prisma";
-import { invalidate as invalidateMappingCache } from "@/lib/playerMappingCache";
+import { setCached as setCachedMapping } from "@/lib/playerMappingCache";
 
 const PLAYER_ID_PREFIX = "p-";
 
@@ -130,9 +130,12 @@ export async function POST(req: Request) {
   // serve a stale row in front of the just-written Prisma value.
   await legacyRedisCleanup(session.lineId, { dropMapping: true });
 
-  // Bust the JWT-callback cache (PR 8) so the next /api/auth/session reads
-  // the freshly-written Prisma row instead of the previous mapping.
-  await invalidateMappingCache(session.lineId);
+  // Pre-warm the JWT-callback cache (PR 9) with the post-write mapping. The
+  // shape matches getPlayerMappingFromDb (slug-only, no `p-`/`t-` prefix) so
+  // the next /api/auth/session served by `await update()` on the client hits
+  // the cache instead of paying the cold-Neon Prisma relation-include cost.
+  // This replaces the prior invalidate-then-cold-read pattern.
+  await setCachedMapping(session.lineId, { playerId, playerName, teamId });
 
   revalidatePath("/");
   revalidateTag("public-data", { expire: 0 });
@@ -175,9 +178,10 @@ export async function DELETE() {
     ...(unlinkedSlug ? { dropPic: unlinkedSlug } : {}),
   });
 
-  // Bust the JWT-callback cache (PR 8) so the next session read sees the
-  // un-linked Prisma state instead of the prior mapping.
-  await invalidateMappingCache(session.lineId);
+  // Pre-warm the JWT-callback cache (PR 9) with the null sentinel so the next
+  // session read serves the un-linked state from cache instead of doing a
+  // cold Prisma findUnique that confirms the same null.
+  await setCachedMapping(session.lineId, null);
 
   revalidatePath("/");
   revalidateTag("public-data", { expire: 0 });

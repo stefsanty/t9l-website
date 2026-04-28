@@ -4,9 +4,12 @@ import { prisma } from '@/lib/prisma'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
+import { authOptions, getPlayerMappingFromDb } from '@/lib/auth'
 import { revalidatePublicData } from '@/lib/revalidate'
-import { invalidate as invalidateMappingCache } from '@/lib/playerMappingCache'
+import {
+  invalidate as invalidateMappingCache,
+  setCached as setCachedMapping,
+} from '@/lib/playerMappingCache'
 
 async function assertAdmin() {
   const session = await getServerSession(authOptions)
@@ -61,11 +64,20 @@ export async function updatePlayer(formData: FormData) {
     },
   })
 
+  // OLD lineId — the previous holder no longer maps to this player. Could in
+  // principle be pre-warmed with null, but invalidate is the conservative
+  // choice: the next request re-reads Prisma and self-heals, and the 60s TTL
+  // guards against drift either way. (See PR 9.)
   if (priorLineId && priorLineId !== lineId) {
     await invalidateMappingCache(priorLineId)
   }
+  // NEW lineId — pre-warm with the post-write mapping so the just-linked
+  // user's next /api/auth/session hits cache instead of the cold Prisma
+  // relation-include. Uses the canonical slug-stripping helper for shape
+  // parity with the JWT path.
   if (lineId && lineId !== priorLineId) {
-    await invalidateMappingCache(lineId)
+    const fresh = await getPlayerMappingFromDb(lineId)
+    await setCachedMapping(lineId, fresh)
   }
 
   revalidatePath('/admin/players')
@@ -81,10 +93,16 @@ export async function createPlayer(formData: FormData) {
   // TODO: team assignment requires selecting a LeagueTeam (not a bare Team)
   await prisma.player.create({ data: { name, lineId } })
 
-  // If a lineId was supplied, the JWT mapping cache may hold a null sentinel
-  // for it (the LINE user logged in pre-Player-creation). Drop it so the next
-  // session read sees the new Player.
-  if (lineId) await invalidateMappingCache(lineId)
+  // If a lineId was supplied, pre-warm the JWT mapping cache (PR 9) with the
+  // post-write shape so the LINE user's next session read hits cache rather
+  // than re-running the cold Prisma findUnique that would otherwise replace
+  // the prior null sentinel. createPlayer doesn't assign a LeagueTeam yet so
+  // the resolved teamId is the empty string — same as what the JWT path would
+  // compute itself for an unassigned player.
+  if (lineId) {
+    const fresh = await getPlayerMappingFromDb(lineId)
+    await setCachedMapping(lineId, fresh)
+  }
 
   revalidatePath('/admin/players')
   revalidatePublicData()
