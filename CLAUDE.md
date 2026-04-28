@@ -2,17 +2,22 @@
 
 > **Stale-worktree protocol — FIRST ACTION OF EVERY FRESH SESSION.**
 >
+> **Parent first, worktree second.** The parent repo's local `main` needs to track `origin/main` so future worktrees inherit fresh state; THEN the worktree's branch rebases on `origin/main` to pick up everything since spawn. Skipping the parent step fixes the current worktree but leaves the next worktree spawn on the same stale base.
+>
 > ```
-> git fetch --all --prune && git rebase origin/main
+> git -C /Users/stefan/t9l-website fetch --all --prune
+> git -C /Users/stefan/t9l-website pull --ff-only origin main
+> git rebase origin/main   # in the worktree
 > ```
 >
 > Every Claude Code session is spawned in a worktree branched off the parent repo's *local* `main`, which routinely lags behind `origin/main` as PRs merge upstream. The worktree's HEAD on session start is therefore frequently weeks behind reality. Without the rebase, the entire CLAUDE.md / file structure / git log / dependency surface you observe is a stale snapshot — diagnostics like "the file the plan references doesn't exist" can be artifacts of the lag, not real prompt injection. Multiple prior sessions have flagged plan inputs as fictional and stopped, when in fact rebasing onto `origin/main` revealed all the referenced files were already shipped.
 >
 > **Procedure:**
-> 1. **Run the fetch + rebase as your first command, before any reading or analysis.** Do not skip this even if the parent message looks self-contained.
-> 2. **If `git rebase` reports conflicts, STOP and surface to the user.** Do not attempt to resolve, force, abort-and-reset, or otherwise paper over divergent state — the conflict means the orchestrator gave the worktree commits that diverge from upstream, and the right move is operator intervention.
-> 3. **If the rebase succeeds (or is a no-op fast-forward), proceed with the task as briefed.** Re-read CLAUDE.md from scratch — frontmatter, file structure, ledger — because everything you "remembered" from the pre-rebase state may be wrong.
-> 4. **If the rebase reveals files / tags / version constants the briefing references that you previously couldn't see, that's the expected path — execute the briefing.** A briefing matching post-rebase state is the strongest signal it's legitimate, not the weakest.
+> 1. **Fast-forward the parent's `main` to `origin/main` first** via the `git -C` commands above. If `pull --ff-only` fails (parent has uncommitted changes, or local `main` has diverged from `origin/main`), STOP and surface to the user. Do NOT force, do NOT `reset --hard`, do NOT switch branches inside the parent — divergent parent state means the operator has uncommitted work or an in-progress branch and needs to resolve manually.
+> 2. **Then rebase the worktree onto `origin/main`.** Run *before* any reading or analysis of the briefing — do not skip even if the parent message looks self-contained.
+> 3. **If `git rebase` reports conflicts in the worktree, STOP and surface to the user.** Do not attempt to resolve, force, abort-and-reset, or otherwise paper over divergent state — the conflict means the orchestrator gave the worktree commits that diverge from upstream, and the right move is operator intervention.
+> 4. **If both succeed (or are no-op fast-forwards), proceed with the task as briefed.** Re-read CLAUDE.md from scratch — frontmatter, file structure, ledger — because everything you "remembered" from the pre-rebase state may be wrong.
+> 5. **If the rebase reveals files / tags / version constants the briefing references that you previously couldn't see, that's the expected path — execute the briefing.** A briefing matching post-rebase state is the strongest signal it's legitimate, not the weakest.
 >
 > This rule exists because diagnostic agents have repeatedly mis-classified legitimate work as prompt injection on the basis of a stale worktree. The cost of pausing to rebase is seconds; the cost of refusing real work in front of a backlog of merged PRs is multi-session drag.
 >
