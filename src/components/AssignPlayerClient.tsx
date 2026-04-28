@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useEffect, useTransition, useOptimistic, useRef } from 'react';
+import { useState, useEffect, useTransition } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
+import { toast } from 'sonner';
 import type { Team, Player } from '@/types';
 import {
   assignButtonLabel,
@@ -10,12 +11,8 @@ import {
   unassignButtonLabel,
   unassignButtonDisabled,
 } from '@/lib/assignButtonLabel';
-import {
-  attemptLink,
-  attemptUnlink,
-  type LinkedState,
-  type LinkAttemptResult,
-} from '@/lib/optimisticLink';
+import { attemptLink, attemptUnlink } from '@/lib/optimisticLink';
+import { notifyLinkOutcome, notifyUnlinkOutcome } from '@/lib/assignToast';
 
 interface Props {
   playersByTeam: { team: Team; players: Player[] }[];
@@ -32,29 +29,6 @@ export default function AssignPlayerClient({ playersByTeam }: Props) {
   const [submitting, setSubmitting] = useState(false);
   const [unassigning, setUnassigning] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  // Optimistic linkage. `committedLinked` is the post-API-success state.
-  // `optimisticLinked` flips synchronously the moment the user clicks
-  // Confirm — it's the regression target for the <50ms perceived assertion.
-  // If the API fails, we never call setCommittedLinked; the surrounding
-  // transition completes and `useOptimistic` reverts to the committed value
-  // (null), bouncing the user back to the form view.
-  const [committedLinked, setCommittedLinked] = useState<LinkedState | null>(null);
-  const [optimisticLinked, addOptimisticLinked] = useOptimistic<
-    LinkedState | null,
-    LinkedState | null
-  >(committedLinked, (_, next) => next);
-
-  // The Go-home button must not navigate the user to `/` before their JWT
-  // reflects the new linkage — otherwise the destination renders stale
-  // "Playing as: …" data. We track the in-flight API + session-update
-  // promises in refs so the Go-home handler can await them only when the
-  // user clicks before they settle (typical perception window: 0–3s under
-  // cold-most-of-the-time).
-  type LinkPipelineResult = LinkAttemptResult;
-  const apiPromiseRef = useRef<Promise<LinkPipelineResult> | null>(null);
-  const updatePromiseRef = useRef<Promise<unknown> | null>(null);
-  const [finalizing, setFinalizing] = useState(false);
 
   // Sync selected player with session when it loads
   useEffect(() => {
@@ -74,60 +48,37 @@ export default function AssignPlayerClient({ playersByTeam }: Props) {
 
   const hasResults = filteredPlayersByTeam.length > 0;
 
-  // Looks up team metadata for the success view (color badge + team name).
-  // Cheap — playersByTeam is already in scope.
-  function teamForId(teamId: string): Team | null {
-    const group = playersByTeam.find((g) => g.team.id === teamId);
-    return group?.team ?? null;
-  }
-
   async function handleConfirm() {
     if (!selectedPlayerId || isAlreadyAssigned) return;
-
-    const flat = playersByTeam.flatMap((g) => g.players);
-    const player = flat.find((p) => p.id === selectedPlayerId);
-    if (!player) return;
-
-    const optimistic: LinkedState = {
-      playerId: selectedPlayerId,
-      playerName: player.name,
-      teamId: player.teamId,
-    };
 
     setError(null);
     setSubmitting(true);
 
-    // Kick the request off SYNCHRONOUSLY (before the transition body awaits)
-    // so the ref is populated by the time any user click on Go-home runs.
-    // No `{ fetch }` arg — see optimisticLink.ts (PR 15 / v1.4.3): passing
-    // `{ fetch }` made the helper invoke fetch as a method of the deps
-    // object, tripping the browser's WebIDL receiver brand check ("Illegal
-    // invocation"). The helper now uses the module-scope global fetch.
-    const apiPromise = attemptLink(selectedPlayerId);
-    apiPromiseRef.current = apiPromise;
-
-    startTransition(async () => {
-      addOptimisticLinked(optimistic);
-      const result = await apiPromise;
-      if (!result.ok) {
-        setError(result.error);
-        setSubmitting(false);
-        // Don't commit — useOptimistic reverts to null when the transition
-        // ends, so the form view returns. apiPromiseRef.current still points
-        // at the failed promise; clearing it avoids a Go-home-after-error
-        // ever awaiting it again.
-        apiPromiseRef.current = null;
-        return;
-      }
-      setCommittedLinked(optimistic);
+    // Auto-navigate on success (v1.6.0): the inline success view + Go-home
+    // button (PR 13 / v1.4.0) added a friction step the user wanted gone.
+    // Now: API write → toast.success + router.push('/') in one go. The
+    // toast persists across navigation because <Toaster /> lives at the
+    // root layout level. On failure, the user stays on /assign-player and
+    // sees an error toast for retry.
+    const result = await attemptLink(selectedPlayerId);
+    if (!result.ok) {
+      setError(result.error);
       setSubmitting(false);
-      // Fire the next-auth refresh now (PR 11 / v1.3.0). Stash the promise
-      // so handleGoHome can await it if the user clicks the home button
-      // before the JWT settles — without awaiting it on the main code path.
-      const updatePromise = update().catch((err) => {
-        console.warn('[assign] background session refresh failed:', err);
-      });
-      updatePromiseRef.current = updatePromise;
+      notifyLinkOutcome(result, toast);
+      return;
+    }
+
+    // Fire the next-auth refresh so the destination renders with a fresh
+    // JWT (PR 11 / v1.3.0 fire-and-forget pattern). The toast + push are
+    // not gated on this — under cold-most-of-the-time, awaiting it would
+    // re-introduce the multi-second hang we removed.
+    update().catch((err) => {
+      console.warn('[assign] background session refresh failed:', err);
+    });
+
+    notifyLinkOutcome(result, toast);
+    startTransition(() => {
+      router.push('/');
     });
   }
 
@@ -140,130 +91,18 @@ export default function AssignPlayerClient({ playersByTeam }: Props) {
     if (!result.ok) {
       setError(result.error);
       setUnassigning(false);
+      notifyUnlinkOutcome(result, toast);
       return;
     }
 
-    // Clear local + session-derived linkage. `committedLinked` is reset so
-    // useOptimistic's optimistic value tracks back to null. `selectedPlayerId`
-    // unselects the form so the user can pick a new player or go home.
-    setCommittedLinked(null);
     setSelectedPlayerId(null);
-    apiPromiseRef.current = null;
-    updatePromiseRef.current = null;
     setUnassigning(false);
 
     update().catch((err) => {
       console.warn('[assign] background session refresh failed:', err);
     });
-  }
 
-  async function handleGoHome() {
-    // If the link pipeline is still in flight (API write or post-write
-    // session update), await it before navigating. Otherwise the destination
-    // RSC reads a stale JWT and the user sees their old (or no) linkage.
-    const apiPromise = apiPromiseRef.current;
-    const updatePromise = updatePromiseRef.current;
-
-    if (apiPromise || updatePromise) {
-      setFinalizing(true);
-      try {
-        if (apiPromise) {
-          const result = await apiPromise;
-          if (!result.ok) {
-            // Error is already surfaced by handleConfirm. Stay on this page
-            // so the user can retry.
-            setFinalizing(false);
-            return;
-          }
-        }
-        // updatePromiseRef is set inside the transition AFTER the API
-        // succeeds. Re-read it post-await to pick up the latest value.
-        const freshUpdate = updatePromiseRef.current;
-        if (freshUpdate) {
-          await freshUpdate;
-        }
-      } finally {
-        setFinalizing(false);
-      }
-    }
-
-    startTransition(() => {
-      router.push('/');
-    });
-  }
-
-  // Success view — shown the moment the user clicks Confirm (optimistic) and
-  // persists once the API commits. The user navigates to / on their schedule
-  // via the Go-home button rather than us pushing them there blindly.
-  const linkedView = optimisticLinked;
-
-  if (linkedView) {
-    const team = teamForId(linkedView.teamId);
-    return (
-      <div className="w-full max-w-lg relative pb-8">
-        <button
-          onClick={() => router.push('/')}
-          className="absolute top-0 right-0 p-2 text-fg-low hover:text-fg-high transition-colors"
-          aria-label="Close"
-        >
-          <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
-
-        <div className="mt-12 flex flex-col items-center text-center">
-          <div
-            data-testid="assign-success-view"
-            className="w-16 h-16 rounded-full bg-electric-green/10 border border-electric-green/40 flex items-center justify-center mb-6"
-          >
-            <svg className="w-8 h-8 text-electric-green" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-            </svg>
-          </div>
-
-          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-fg-mid mb-2">
-            {"You're linked to"}
-          </p>
-          <h2 className="font-display text-3xl font-black uppercase tracking-tight text-fg-high mb-3">
-            {linkedView.playerName}
-          </h2>
-
-          {team && (
-            <div className="flex items-center gap-2 mb-10">
-              <div
-                className="w-2 h-2 rounded-full"
-                style={{ backgroundColor: team.color }}
-              />
-              <span className="text-[11px] font-bold uppercase tracking-[0.15em] text-fg-mid">
-                {team.name}
-              </span>
-            </div>
-          )}
-
-          <button
-            data-testid="assign-go-home-button"
-            onClick={handleGoHome}
-            disabled={finalizing}
-            className="w-full max-w-xs py-3 rounded-xl bg-electric-green text-black font-display text-sm font-black uppercase tracking-widest transition-all hover:bg-electric-green/90 active:scale-[0.98] disabled:opacity-60 disabled:cursor-wait"
-          >
-            {finalizing ? 'Finalizing…' : 'Go to home →'}
-          </button>
-
-          <button
-            data-testid="assign-undo-button"
-            onClick={handleUnassign}
-            disabled={unassigning || finalizing}
-            className="mt-4 text-[10px] font-black uppercase tracking-widest text-fg-low hover:text-primary transition-colors disabled:opacity-40"
-          >
-            {unassigning ? 'Undoing…' : 'Wrong player? Undo'}
-          </button>
-
-          {error && (
-            <p className="mt-4 text-vibrant-pink text-[11px] font-bold">{error}</p>
-          )}
-        </div>
-      </div>
-    );
+    notifyUnlinkOutcome(result, toast);
   }
 
   return (

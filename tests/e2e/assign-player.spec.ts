@@ -15,33 +15,35 @@ test.describe('public assign-player surface', () => {
 })
 
 /**
- * Regression tests for the assign-player perceived-latency target.
+ * Regression tests for the v1.6.0 auto-navigate + toast UX.
  *
- * Pre-v1.4.0 the click-to-feedback latency was bounded by the API write +
- * next-auth update + router.push + destination RSC render — 5–7s end-to-end
- * pre-PRs-10/11/12, ~2–3s post. v1.4.0 (PR 13) replaces the auto-navigate
- * with `useOptimistic` + an inline success view, collapsing the perceived
- * latency to a single React render after the click. The Definition of Done
- * tightens to <50ms — strictly the time from click to optimistic flip.
+ * v1.4.0 (PR 13) replaced the auto-navigate-on-success with `useOptimistic`
+ * + an inline "✓ Linked to {Player}" success view + an explicit Go-home
+ * button. v1.6.0 reverses that: the inline view is gone, the API write
+ * triggers `router.push('/')` immediately, and a Sonner toast confirms the
+ * outcome. The toast lives at the root layout level so it persists across
+ * the route transition.
  *
- * The pre-v1.4.0 "button leaves Saving…" assertion is gone because the
- * confirm button is gone after the optimistic flip — the form is replaced
- * by the success view entirely. The new assertion targets that view.
+ * Two specs:
+ *   1. Confirm → URL changes to `/` within ~1s, success toast visible with
+ *      the player name, toast auto-dismisses within ~5s.
+ *   2. Stalled API → user stays on /assign-player while the request is in
+ *      flight (no premature push, no double-fire), and lands on / once the
+ *      API resolves.
  *
- * Requires dev server (NODE_ENV=development → dev-login provider exposed
- * per `lib/auth.ts`). Skipped against any non-localhost BASE_URL because
- * the dev-login provider is intentionally absent from Vercel preview/prod.
+ * Requires dev server (NODE_ENV=development → dev-login provider). Skipped
+ * against any non-localhost BASE_URL because dev-login is absent in prod.
  *
  * Run locally:
- *   npm run dev               # in another terminal
+ *   npm run dev
  *   BASE_URL=http://localhost:3000 npm run test:e2e -- assign-player
  *
- * The unit tests at:
- *   - tests/unit/optimisticLink.test.ts        — the rollback gate
- *   - tests/unit/assignButtonLabel.test.ts     — the button state machine
- * pin the underlying contracts.
+ * Unit tests pin the underlying contracts:
+ *   - tests/unit/optimisticLink.test.ts — the rollback gate (200/4xx/network)
+ *   - tests/unit/assignToast.test.ts    — toast dispatch shape
+ *   - tests/unit/assignButtonLabel.test.ts — confirm/unassign button states
  */
-test.describe('regression: optimistic linking is perceived-instant (PR 13 / v1.4.0)', () => {
+test.describe('regression: auto-navigate + toast on link success (v1.6.0)', () => {
   test.skip(!isLocal, 'requires local dev with dev-login provider (NODE_ENV=development)')
 
   // Helper: log in as a fresh guest with no linked player so the form
@@ -53,7 +55,7 @@ test.describe('regression: optimistic linking is perceived-instant (PR 13 / v1.4
     )
     await page.request.post('/api/auth/callback/dev-login?json=true', {
       form: {
-        playerId: 'guest-dev',
+        playerId: `guest-dev-${Date.now()}`,
         playerName: 'Guest Dev',
         teamId: '',
         csrfToken: csrf ?? '',
@@ -63,44 +65,47 @@ test.describe('regression: optimistic linking is perceived-instant (PR 13 / v1.4
     })
   }
 
-  test('success view appears within 50ms of click (DoD)', async ({ page }) => {
-    // Stall the API so the assertion can't be satisfied by the API itself
-    // returning fast — the only way to pass under this stall is the optimistic
-    // pre-API-resolution UI flip.
-    await page.route('**/api/assign-player', async (route) => {
-      if (route.request().method() === 'POST') {
-        await new Promise((r) => setTimeout(r, 4_000))
-      }
-      await route.continue()
-    })
-
+  test('Confirm → navigates to / and shows a success toast that auto-dismisses', async ({
+    page,
+  }) => {
     await loginAsGuest(page)
     await page.goto('/assign-player')
-    await page.getByRole('button', { name: /^[A-Z]/ }).first().click()
 
-    const confirm = page.getByTestId('assign-confirm-button')
-    const successView = page.getByTestId('assign-success-view')
+    // Pick the first selectable player and capture their name so we can
+    // assert the toast contains it.
+    const firstRow = page.locator('[data-testid^="assign-player-row-"]').first()
+    await expect(firstRow).toBeVisible({ timeout: 5_000 })
+    const playerName = (await firstRow.locator('p').first().textContent())?.trim() ?? ''
+    expect(playerName, 'expected at least one selectable player row').toBeTruthy()
+    await firstRow.click()
 
     const clickAt = Date.now()
-    await confirm.click()
-    await expect(successView).toBeVisible({ timeout: 200 })
-    const flipAt = Date.now()
-    const elapsed = flipAt - clickAt
-    // 50ms is the perceived-instant target. Allow some slack for Playwright's
-    // own polling cadence and CI variance — fail loudly if the flip is more
-    // than ~3x the target, which would indicate the optimistic path broke.
-    expect(elapsed, `click→success-view took ${elapsed}ms (target <50ms)`).toBeLessThan(150)
+    await page.getByTestId('assign-confirm-button').click()
 
-    // The inline Go-home affordance must also be present immediately —
-    // the user has to be able to navigate on their own schedule.
-    await expect(page.getByTestId('assign-go-home-button')).toBeVisible()
+    // URL changes to / within ~1s — i.e. the auto-navigate fires the moment
+    // the API resolves, no Go-home click required.
+    await page.waitForURL((url) => url.pathname === '/', { timeout: 5_000 })
+    const navAt = Date.now()
+    expect(
+      navAt - clickAt,
+      `click→navigation took ${navAt - clickAt}ms — should be ≤ ~3s under warm cache`,
+    ).toBeLessThan(5_000)
+
+    // Toast confirms the outcome on the destination. Sonner renders toasts
+    // with role="status".
+    const toast = page.getByRole('status').filter({ hasText: new RegExp(`Linked to ${playerName}`, 'i') })
+    await expect(toast).toBeVisible({ timeout: 2_000 })
+
+    // Sonner's default exit animation kicks in after the duration (4500ms).
+    // Allow generous slack for the unmount transition; we just want to
+    // confirm the toast is not sticky.
+    await expect(toast).toBeHidden({ timeout: 8_000 })
   })
 
-  test('Go-home awaits the in-flight API + session-update before navigating', async ({ page }) => {
-    // Stall the assign-player POST by 2s so the user can race it: click
-    // Confirm, then click Go-home before the API resolves. The destination
-    // (/) MUST NOT render until the JWT reflects the new linkage — otherwise
-    // the user lands on stale data.
+  test('Confirm with a stalled API stays on /assign-player until the write resolves', async ({
+    page,
+  }) => {
+    // Stall the POST by 2s so we can observe pre-resolution state.
     await page.route('**/api/assign-player', async (route) => {
       if (route.request().method() === 'POST') {
         await new Promise((r) => setTimeout(r, 2_000))
@@ -110,39 +115,35 @@ test.describe('regression: optimistic linking is perceived-instant (PR 13 / v1.4
 
     await loginAsGuest(page)
     await page.goto('/assign-player')
-    await page.getByRole('button', { name: /^[A-Z]/ }).first().click()
+
+    const firstRow = page.locator('[data-testid^="assign-player-row-"]').first()
+    await expect(firstRow).toBeVisible({ timeout: 5_000 })
+    await firstRow.click()
 
     const confirm = page.getByTestId('assign-confirm-button')
-    const goHome = page.getByTestId('assign-go-home-button')
-
-    await confirm.click()
-    // Optimistic flip: the success view + Go-home button are immediately
-    // available, even though the API hasn't responded yet.
-    await expect(goHome).toBeVisible({ timeout: 200 })
-
-    // Click Go-home immediately. We expect:
-    //  - the button enters "Finalizing…" state (still on /assign-player)
-    //  - it does NOT navigate while the API is still pending
-    //  - it navigates to / once the API resolves
     const clickAt = Date.now()
-    await goHome.click()
+    await confirm.click()
 
-    // Within a few hundred ms (well before the 2s API resolution) the button
-    // should show Finalizing… AND the URL should still be /assign-player.
-    await expect(goHome).toHaveText(/Finalizing/, { timeout: 300 })
+    // Within ~500ms the URL must still be /assign-player — auto-nav must
+    // wait for the API write rather than fire optimistically.
+    await page.waitForTimeout(500)
     expect(page.url()).toContain('/assign-player')
 
-    // After the API resolves the navigation completes.
-    await page.waitForURL('**/', { timeout: 5_000 })
+    // The button shows "Saving…" (the in-flight label from assignButtonLabel).
+    await expect(confirm).toHaveText(/Saving/i)
+
+    // Once the API resolves we land on /.
+    await page.waitForURL((url) => url.pathname === '/', { timeout: 6_000 })
     const navAt = Date.now()
-    const elapsed = navAt - clickAt
-    // The await-the-pipeline path means Go-home navigates only once the API
-    // has settled — i.e. roughly the API stall time. Accept anything above
-    // ~1.5s (the stall is 2s, allow for fetch-mock jitter).
     expect(
-      elapsed,
-      `Go-home → navigation took ${elapsed}ms — should be ≥ stall of 2s, indicating it awaited the pipeline`,
+      navAt - clickAt,
+      `nav took ${navAt - clickAt}ms — must be ≥ ~1.5s (the 2s API stall)`,
     ).toBeGreaterThan(1_500)
+
+    // Toast still fires after navigation.
+    await expect(
+      page.getByRole('status').filter({ hasText: /Linked to/i }),
+    ).toBeVisible({ timeout: 2_000 })
   })
 })
 
