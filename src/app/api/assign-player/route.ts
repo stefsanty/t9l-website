@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { revalidatePath, revalidateTag } from "next/cache";
+import { waitUntil } from "@vercel/functions";
 import { authOptions } from "@/lib/auth";
 import { put } from "@vercel/blob";
 import { getPublicLeagueData } from "@/lib/publicData";
@@ -42,6 +43,59 @@ async function legacyRedisCleanup(
   }
 }
 
+// Mirror the LINE profile picture into Vercel Blob and persist the resulting
+// public URL to Player.pictureUrl + the legacy Redis key. PR 12 / v1.3.1
+// scheduled this off the response critical path: pre-fix this whole chain
+// (LINE CDN fetch + Blob put + Redis SET) ran serially before the route
+// returned, costing 200–500ms warm and meaningfully more cold. Now it runs
+// after the response is sent, via waitUntil. The destination renders with a
+// fallback avatar (PlayerAvatar's chain handles missing pictureUrl
+// gracefully) until this completes — typically <1s in the background — at
+// which point revalidateTag('public-data') busts the page cache and the
+// real picture appears on the next render. Failure is non-fatal: the link
+// itself is already persisted.
+async function uploadAndPersistLinePic(args: {
+  dbPlayerId: string;
+  publicPlayerId: string;
+  playerName: string;
+  lineUrl: string;
+}): Promise<void> {
+  const { dbPlayerId, publicPlayerId, playerName, lineUrl } = args;
+  try {
+    const picResponse = await fetch(lineUrl);
+    if (!picResponse.ok) return;
+    const blob = await picResponse.blob();
+    const { url } = await put(`player-pics/${slugify(playerName)}`, blob, {
+      access: "public",
+      addRandomSuffix: false,
+    });
+
+    await prisma.player.update({
+      where: { id: dbPlayerId },
+      data: { pictureUrl: url },
+    });
+
+    if (process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN) {
+      try {
+        const { Redis } = await import("@upstash/redis");
+        const redis = new Redis({
+          url: process.env.KV_REST_API_URL,
+          token: process.env.KV_REST_API_TOKEN,
+        });
+        await redis.set(`player-pic:${publicPlayerId}`, url);
+      } catch {
+        /* non-fatal */
+      }
+    }
+
+    // Bust the public-data cache so the page renders with the new URL on the
+    // next request instead of waiting up to 30s for unstable_cache to expire.
+    revalidateTag("public-data", { expire: 0 });
+  } catch (err) {
+    console.warn("[assign-player] background pic upload failed: %o", err);
+  }
+}
+
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
 
@@ -70,43 +124,12 @@ export async function POST(req: Request) {
   const teamId = player.teamId;
   const dbPlayerId = `${PLAYER_ID_PREFIX}${playerId}`;
 
-  let pictureUrl: string | null = null;
-
-  // Optionally mirror LINE profile picture into Vercel Blob, then persist on
-  // Player.pictureUrl. Keep the legacy `player-pic:${playerId}` Redis key in
-  // sync because stats/page.tsx still reads it for SquadList/TopPerformers
-  // avatars (separate from the auth-mapping concern this PR is migrating).
-  if (session.linePictureUrl && process.env.BLOB_READ_WRITE_TOKEN) {
-    try {
-      const picResponse = await fetch(session.linePictureUrl);
-      if (picResponse.ok) {
-        const blob = await picResponse.blob();
-        const { url } = await put(`player-pics/${slugify(playerName)}`, blob, {
-          access: "public",
-          addRandomSuffix: false,
-        });
-        pictureUrl = url;
-        if (process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN) {
-          try {
-            const { Redis } = await import("@upstash/redis");
-            const redis = new Redis({
-              url: process.env.KV_REST_API_URL,
-              token: process.env.KV_REST_API_TOKEN,
-            });
-            await redis.set(`player-pic:${playerId}`, url);
-          } catch {
-            /* non-fatal */
-          }
-        }
-      }
-    } catch {
-      // Non-fatal: profile picture upload failed, continue
-    }
-  }
-
   // Atomic Prisma write: clear lineId from any other Player that currently
   // holds it (collision-safe because lineId is @unique), then set on target.
   // Use updateMany for the clear so a no-op (no other holder) doesn't throw.
+  // pictureUrl is intentionally NOT set here — the LINE-CDN-fetch + Blob put
+  // is scheduled below via waitUntil and persists the URL out of band, off
+  // the response critical path.
   try {
     await prisma.$transaction([
       prisma.player.updateMany({
@@ -115,10 +138,7 @@ export async function POST(req: Request) {
       }),
       prisma.player.update({
         where: { id: dbPlayerId },
-        data: {
-          lineId: session.lineId,
-          ...(pictureUrl ? { pictureUrl } : {}),
-        },
+        data: { lineId: session.lineId },
       }),
     ]);
   } catch (err) {
@@ -136,6 +156,21 @@ export async function POST(req: Request) {
   // the cache instead of paying the cold-Neon Prisma relation-include cost.
   // This replaces the prior invalidate-then-cold-read pattern.
   await setCachedMapping(session.lineId, { playerId, playerName, teamId });
+
+  // Schedule the LINE-pic mirror as background work — runs after the response
+  // returns. waitUntil keeps the lambda alive long enough for the Promise to
+  // settle, then exits cleanly. No-op when the user has no LINE picture or
+  // Blob storage isn't configured.
+  if (session.linePictureUrl && process.env.BLOB_READ_WRITE_TOKEN) {
+    waitUntil(
+      uploadAndPersistLinePic({
+        dbPlayerId,
+        publicPlayerId: playerId,
+        playerName,
+        lineUrl: session.linePictureUrl,
+      }),
+    );
+  }
 
   revalidatePath("/");
   revalidateTag("public-data", { expire: 0 });
