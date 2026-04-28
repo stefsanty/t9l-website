@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useTransition } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import type { Team, Player } from '@/types';
@@ -10,6 +10,7 @@ import {
   unassignButtonLabel,
   unassignButtonDisabled,
 } from '@/lib/assignButtonLabel';
+import { postAssignNavigate } from '@/lib/postAssignNavigate';
 
 interface Props {
   playersByTeam: { team: Team; players: Player[] }[];
@@ -18,6 +19,7 @@ interface Props {
 export default function AssignPlayerClient({ playersByTeam }: Props) {
     const { data: session, update } = useSession();
   const router = useRouter();
+  const [, startTransition] = useTransition();
   const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(
     session?.playerId ?? null,
   );
@@ -75,11 +77,14 @@ export default function AssignPlayerClient({ playersByTeam }: Props) {
       setRedirecting(true);
 
       await update();
-      // Pair push + refresh: push initiates client-side navigation; refresh
-      // invalidates the client RSC cache so the destination renders against
-      // the updated session/Player.lineId rather than the stale cache.
-      router.push('/');
-      router.refresh();
+      // The API route already calls revalidatePath('/') + revalidateTag(
+      // 'public-data', { expire: 0 }) — those propagate to the client router
+      // cache, so a redundant router.refresh() after push is wasted work
+      // (a full second RSC fetch, and under this app's cold-lambda regime
+      // that's a 1–3s critical-path hit). startTransition keeps urgent state
+      // updates from being blocked while the destination payload arrives.
+      // See PR β / v1.2.7 and tests/unit/postAssignNavigate.test.ts.
+      postAssignNavigate({ router, startTransition });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong');
       setSubmitting(false);
@@ -107,8 +112,9 @@ export default function AssignPlayerClient({ playersByTeam }: Props) {
       setSelectedPlayerId(null);
 
       await update();
-      router.push('/');
-      router.refresh();
+      // Same reasoning as handleConfirm: the DELETE route revalidates server
+      // caches, so a separate router.refresh() is redundant cold-path cost.
+      postAssignNavigate({ router, startTransition });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong');
       setUnassigning(false);
