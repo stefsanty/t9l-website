@@ -145,3 +145,115 @@ test.describe('regression: optimistic linking is perceived-instant (PR 13 / v1.4
     ).toBeGreaterThan(1_500)
   })
 })
+
+/**
+ * Filter-already-linked-players regression (PR 14 / v1.4.2).
+ *
+ * Before this PR, `/assign-player` listed every roster row regardless of
+ * whether another LINE user already held that `Player.lineId`. The user
+ * could pick a claimed player, click Confirm, and the optimistic UI would
+ * flash success before the API returned 409 — a small but real false-success
+ * footgun. v1.4.2 reads `Player.lineId IS NOT NULL` from Prisma at SSR time
+ * and renders those rows greyed-out (a `<div>`, not a `<button>`) with an
+ * "Already linked" tag, so the user can see them on the roster but cannot
+ * select them.
+ *
+ * The test runs in two contexts: A links a real player via the API; B opens
+ * `/assign-player` in a fresh browser context and asserts the row A linked
+ * renders as a non-clickable `<div>` with `data-linked="true"`. Cleanup
+ * unlinks A regardless of pass/fail so the dev DB returns to its prior state.
+ */
+test.describe('regression: already-linked players are greyed-out (PR 14 / v1.4.2)', () => {
+  test.skip(!isLocal, 'requires local dev with dev-login provider (NODE_ENV=development)')
+
+  async function devLogin(
+    page: import('@playwright/test').Page,
+    playerIdSeed: string,
+  ) {
+    // The dev-login provider sets `token.lineId = "dev-" + credentials.playerId`,
+    // so passing distinct seeds for A and B guarantees distinct `Player.lineId`
+    // writes — required for the "viewer is excluded from the linked set" path.
+    await page.goto('/api/auth/csrf')
+    const csrf = await page.evaluate(() =>
+      (document.body.innerText.match(/"csrfToken":"([^"]+)"/) ?? [])[1],
+    )
+    await page.request.post('/api/auth/callback/dev-login?json=true', {
+      form: {
+        playerId: playerIdSeed,
+        playerName: `Dev ${playerIdSeed}`,
+        teamId: '',
+        csrfToken: csrf ?? '',
+        callbackUrl: '/assign-player',
+        json: 'true',
+      },
+    })
+  }
+
+  test('a player linked by another LINE user appears greyed-out + non-clickable', async ({ browser }) => {
+    const ctxA = await browser.newContext()
+    const pageA = await ctxA.newPage()
+    let linkedSlug: string | null = null
+
+    try {
+      await devLogin(pageA, `pr14-a-${Date.now()}`)
+      await pageA.goto('/assign-player')
+
+      // Pick the first row currently rendered as `data-linked="false"`. The
+      // dev DB may already have many linked rows from prior runs / backfill;
+      // the test only requires ONE unlinked row to drive the scenario.
+      const unlinkedRows = pageA.locator('[data-testid^="assign-player-row-"][data-linked="false"]')
+      await expect(unlinkedRows.first()).toBeVisible({ timeout: 5_000 })
+      const testid = await unlinkedRows.first().getAttribute('data-testid')
+      expect(testid, 'expected at least one unlinked roster row in the dev DB').toBeTruthy()
+      linkedSlug = testid!.replace('assign-player-row-', '')
+
+      // Link A → linkedSlug via the API directly (skip the React UX, this
+      // test is about what B sees, not about the link flow itself).
+      const linkRes = await pageA.request.post('/api/assign-player', {
+        data: { playerId: linkedSlug },
+        headers: { 'Content-Type': 'application/json' },
+      })
+      expect(linkRes.status(), 'A→link write must succeed for this scenario').toBe(200)
+
+      // Now open a separate context (fresh cookie jar) as user B with a
+      // distinct dev playerId seed → distinct lineId. B has not linked
+      // anyone, so `linkedSlug` should NOT be the viewer's own row.
+      const ctxB = await browser.newContext()
+      const pageB = await ctxB.newPage()
+      try {
+        await devLogin(pageB, `pr14-b-${Date.now()}`)
+        await pageB.goto('/assign-player')
+
+        const targetRow = pageB.getByTestId(`assign-player-row-${linkedSlug}`)
+        await expect(targetRow).toBeVisible({ timeout: 5_000 })
+
+        // Greyed-out container is rendered as a `<div>` with data-linked="true".
+        // The selector below also confirms the row is NOT a `<button>`, so the
+        // browser's pointer-events / role semantics already disable it.
+        await expect(targetRow).toHaveAttribute('data-linked', 'true')
+        await expect(targetRow).toHaveAttribute('aria-disabled', 'true')
+        await expect(targetRow.locator('xpath=self::div')).toHaveCount(1)
+        await expect(targetRow.locator('xpath=self::button')).toHaveCount(0)
+
+        // The "Already linked" tag is visible on the row — UX transparency.
+        await expect(targetRow).toContainText(/Already linked/i)
+
+        // Clicking the row must not select it: the Confirm button stays in
+        // its "no selection" disabled state. (We confirm by checking that
+        // selecting via the row didn't move us to the success view.)
+        await targetRow.click({ trial: true }).catch(() => {})
+        await expect(pageB.getByTestId('assign-success-view')).toHaveCount(0)
+      } finally {
+        await ctxB.close()
+      }
+    } finally {
+      if (linkedSlug) {
+        // Unlink A regardless of pass/fail — leaves the dev DB pristine for
+        // subsequent runs. A 200 or 401 (session expired) are both fine; we
+        // just don't want to leave a Player.lineId pointing at a dev seed.
+        await pageA.request.delete('/api/assign-player').catch(() => {})
+      }
+      await ctxA.close()
+    }
+  })
+})

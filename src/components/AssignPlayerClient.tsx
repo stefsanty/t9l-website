@@ -3,7 +3,8 @@
 import { useState, useEffect, useTransition, useOptimistic, useRef } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import type { Team, Player } from '@/types';
+import type { Team } from '@/types';
+import type { AnnotatedPlayer } from '@/lib/linkedPlayers';
 import {
   assignButtonLabel,
   assignButtonDisabled,
@@ -18,7 +19,7 @@ import {
 } from '@/lib/optimisticLink';
 
 interface Props {
-  playersByTeam: { team: Team; players: Player[] }[];
+  playersByTeam: { team: Team; players: AnnotatedPlayer[] }[];
 }
 
 export default function AssignPlayerClient({ playersByTeam }: Props) {
@@ -329,9 +330,36 @@ export default function AssignPlayerClient({ playersByTeam }: Props) {
                 <div className="grid grid-cols-2 gap-2">
                   {players.map((player) => {
                     const isSelected = selectedPlayerId === player.id;
+                    // PR 14 / v1.4.2 — `player.linked` is true when another LINE
+                    // user already holds this Player.lineId. Greyed-out, non-
+                    // clickable, "Already linked" tag. This prevents the false-
+                    // success path where the optimistic UI flips, then 409s.
+                    if (player.linked) {
+                      return (
+                        <div
+                          key={player.id}
+                          data-testid={`assign-player-row-${player.id}`}
+                          data-linked="true"
+                          aria-disabled="true"
+                          className="flex items-center gap-3 px-3 py-2.5 rounded-xl border border-border-subtle bg-surface/40 text-fg-low cursor-not-allowed opacity-50 select-none"
+                        >
+                          <div className="w-1.5 h-1.5 rounded-full shrink-0 border-2 border-border-subtle bg-transparent" />
+                          <div className="min-w-0 flex-1">
+                            <p className="text-[12px] font-bold truncate line-through decoration-fg-low/40">
+                              {player.name}
+                            </p>
+                          </div>
+                          <span className="shrink-0 text-[8px] font-black uppercase tracking-[0.15em] text-fg-low">
+                            {"Already linked"}
+                          </span>
+                        </div>
+                      );
+                    }
                     return (
                       <button
                         key={player.id}
+                        data-testid={`assign-player-row-${player.id}`}
+                        data-linked="false"
                         onClick={() => setSelectedPlayerId(player.id)}
                         className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border text-left transition-all ${
                           isSelected
