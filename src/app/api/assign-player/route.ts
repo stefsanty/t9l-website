@@ -5,6 +5,7 @@ import { authOptions } from "@/lib/auth";
 import { put } from "@vercel/blob";
 import { getPublicLeagueData } from "@/lib/publicData";
 import { prisma } from "@/lib/prisma";
+import { invalidate as invalidateMappingCache } from "@/lib/playerMappingCache";
 
 const PLAYER_ID_PREFIX = "p-";
 
@@ -129,6 +130,10 @@ export async function POST(req: Request) {
   // serve a stale row in front of the just-written Prisma value.
   await legacyRedisCleanup(session.lineId, { dropMapping: true });
 
+  // Bust the JWT-callback cache (PR 8) so the next /api/auth/session reads
+  // the freshly-written Prisma row instead of the previous mapping.
+  await invalidateMappingCache(session.lineId);
+
   revalidatePath("/");
   revalidateTag("public-data", { expire: 0 });
   return NextResponse.json({ ok: true, playerId, playerName, teamId });
@@ -169,6 +174,10 @@ export async function DELETE() {
     dropMapping: true,
     ...(unlinkedSlug ? { dropPic: unlinkedSlug } : {}),
   });
+
+  // Bust the JWT-callback cache (PR 8) so the next session read sees the
+  // un-linked Prisma state instead of the prior mapping.
+  await invalidateMappingCache(session.lineId);
 
   revalidatePath("/");
   revalidateTag("public-data", { expire: 0 });

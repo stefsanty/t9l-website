@@ -7,6 +7,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { revalidatePublicData } from '@/lib/revalidate'
 import { SETTING_IDS, type DataSource, type WriteMode } from '@/lib/settings'
+import { invalidate as invalidateMappingCache } from '@/lib/playerMappingCache'
 
 async function assertAdmin() {
   const session = await getServerSession(authOptions)
@@ -303,6 +304,10 @@ export async function adminLinkLineToPlayer(input: {
       data: { lineId },
     }),
   ])
+
+  // Bust the JWT-callback mapping cache (PR 8). The previous holder (if any)
+  // was on the same lineId, so a single invalidation covers both records.
+  await invalidateMappingCache(lineId)
 
   revalidatePublicData()
   revalidatePath(`/admin/leagues/${leagueId}/players`)

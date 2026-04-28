@@ -6,6 +6,7 @@ import { redirect } from 'next/navigation'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { revalidatePublicData } from '@/lib/revalidate'
+import { invalidate as invalidateMappingCache } from '@/lib/playerMappingCache'
 
 async function assertAdmin() {
   const session = await getServerSession(authOptions)
@@ -40,6 +41,17 @@ export async function updatePlayer(formData: FormData) {
   const id     = formData.get('id')          as string
   const lineId = (formData.get('lineId')     as string).trim() || null
   const picUrl = (formData.get('pictureUrl') as string).trim() || null
+
+  // Read the prior lineId so we can invalidate both old and new in the JWT
+  // mapping cache (PR 8). If the admin reassigns or clears the LINE link,
+  // both the previously-cached mapping and any null cached for the new value
+  // need to go.
+  const prior = await prisma.player.findUnique({
+    where: { id },
+    select: { lineId: true },
+  })
+  const priorLineId = prior?.lineId ?? null
+
   await prisma.player.update({
     where: { id },
     data: {
@@ -48,6 +60,14 @@ export async function updatePlayer(formData: FormData) {
       pictureUrl: picUrl,
     },
   })
+
+  if (priorLineId && priorLineId !== lineId) {
+    await invalidateMappingCache(priorLineId)
+  }
+  if (lineId && lineId !== priorLineId) {
+    await invalidateMappingCache(lineId)
+  }
+
   revalidatePath('/admin/players')
   revalidatePath(`/admin/players/${id}`)
   revalidatePublicData()
@@ -60,6 +80,11 @@ export async function createPlayer(formData: FormData) {
 
   // TODO: team assignment requires selecting a LeagueTeam (not a bare Team)
   await prisma.player.create({ data: { name, lineId } })
+
+  // If a lineId was supplied, the JWT mapping cache may hold a null sentinel
+  // for it (the LINE user logged in pre-Player-creation). Drop it so the next
+  // session read sees the new Player.
+  if (lineId) await invalidateMappingCache(lineId)
 
   revalidatePath('/admin/players')
   revalidatePublicData()
