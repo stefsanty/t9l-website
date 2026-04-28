@@ -8,6 +8,7 @@ import { authOptions, getPlayerMappingFromDb } from '@/lib/auth'
 import { revalidatePublicData } from '@/lib/revalidate'
 import { SETTING_IDS, type DataSource, type WriteMode } from '@/lib/settings'
 import { setMapping } from '@/lib/playerMappingStore'
+import { seedGameWeek, deleteGameWeek as deleteGameWeekFromRedis } from '@/lib/rsvpStore'
 
 async function assertAdmin() {
   const session = await getServerSession(authOptions)
@@ -87,7 +88,7 @@ export async function createGameWeek(leagueId: string, data: {
   venueId?:   string | null
 }) {
   await assertAdmin()
-  await prisma.gameWeek.create({
+  const gw = await prisma.gameWeek.create({
     data: {
       leagueId,
       weekNumber: data.weekNumber,
@@ -96,6 +97,11 @@ export async function createGameWeek(leagueId: string, data: {
       venueId:    data.venueId || null,
     },
   })
+  // v1.7.0 — pre-warm the Redis RSVP hash with the `__seeded` sentinel so
+  // the first dashboard read for this GW returns hit-with-empty instead of
+  // miss-then-Prisma-fallthrough. Failure is swallowed by the store helper;
+  // a missing seed self-heals on first read via the publicData backfill.
+  await seedGameWeek(gw.id, gw.startDate)
   revalidatePublicData()
   revalidatePath(`/admin/leagues/${leagueId}/schedule`)
 }
@@ -140,6 +146,9 @@ export async function deleteGameWeek(id: string, leagueId: string) {
   })
   if (completedMatches > 0) throw new Error('Cannot delete matchday with completed matches')
   await prisma.gameWeek.delete({ where: { id } })
+  // Cleanup-only: orphan Redis hashes would expire on their own (matchday +
+  // 90d), but eager deletion keeps the namespace tidy.
+  await deleteGameWeekFromRedis(id)
   revalidatePublicData()
   revalidatePath(`/admin/leagues/${leagueId}/schedule`)
 }

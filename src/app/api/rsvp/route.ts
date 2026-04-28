@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
-import { revalidatePath, revalidateTag } from 'next/cache'
 import { authOptions } from '@/lib/auth'
 import { writeRosterAvailability } from '@/lib/sheets'
 import { getWriteMode } from '@/lib/settings'
 import { prisma } from '@/lib/prisma'
+import { setRsvp } from '@/lib/rsvpStore'
 import type { RsvpStatus } from '@prisma/client'
 
 type IncomingStatus = 'GOING' | 'UNDECIDED' | ''
@@ -75,12 +75,16 @@ export async function POST(req: Request) {
   // session.playerId is the public slug (e.g. "ian-noseda"); DB ids carry "p-" prefix.
   const dbPlayerId = `p-${session.playerId}`
 
-  // ── DB write (canonical post-cutover; runs first so failures fail fast) ──
+  // ── DB write (durable backup) + Redis pre-warm (canonical read store) ──
+  // v1.7.0: Redis is the canonical read source for RSVP signals; Prisma is
+  // the durable secondary that the recovery script rebuilds from. Both
+  // writes run inside the same try block so a failure on either propagates
+  // to the user — partial-write states must not survive.
   if (writeMode !== 'sheets-only') {
     try {
       const gameWeek = await prisma.gameWeek.findUnique({
         where: { leagueId_weekNumber: { leagueId: LEAGUE_ID, weekNumber } },
-        select: { id: true },
+        select: { id: true, startDate: true },
       })
       if (!gameWeek) {
         return NextResponse.json(
@@ -104,6 +108,16 @@ export async function POST(req: Request) {
           rsvp: dbStatus.rsvp,
         },
       })
+
+      // Redis write-through. Failure here does NOT roll back the Prisma
+      // write — the rsvpStore swallows write errors internally (see
+      // `setRsvp`) and logs. Worst case: the next dashboard render misses,
+      // falls through to Prisma, and repopulates Redis with the canonical
+      // value. Errors-not-rolled-back is the same pattern playerMappingStore
+      // uses post-Prisma-write in v1.5.0.
+      // session.playerId is the public slug — Redis keys by slug, not the
+      // prefixed DB id (matches dbToPublicLeagueData's `players[].id` shape).
+      await setRsvp(gameWeek.id, gameWeek.startDate, session.playerId, dbStatus.rsvp)
     } catch (err) {
       const message = err instanceof Error ? err.message : 'rsvp-db-failed'
       console.error('[rsvp] DB write failed', { matchdayId, dbPlayerId, err: message })
@@ -138,12 +152,11 @@ export async function POST(req: Request) {
     }
   }
 
-  // ── Cache invalidation ──
-  // revalidateTag busts the public-data dispatcher cache (both sheets + db
-  // sources share the tag). Next 16 requires a second arg — `expire: 0` means
-  // "treat as expired now". revalidatePath also kept for the existing /-page
-  // legacy behavior; harmless if redundant.
-  revalidateTag('public-data', { expire: 0 })
-  revalidatePath('/')
+  // v1.7.0 — RSVP no longer flows through the static `public-data` cache.
+  // Reads are now Redis-direct via `lib/publicData.ts#getRsvpData`, which
+  // is uncached. The `setRsvp` write above is read-your-own-writes
+  // consistent without any cache-bust round-trip, so the prior
+  // `revalidateTag('public-data', { expire: 0 })` + `revalidatePath('/')`
+  // calls are removed.
   return NextResponse.json({ ok: true })
 }

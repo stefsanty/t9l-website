@@ -6,9 +6,6 @@ import type {
   Matchday,
   Goal,
   PlayerRating,
-  Availability,
-  AvailabilityStatuses,
-  PlayedStatus,
   LeagueData,
 } from '@/types'
 
@@ -42,20 +39,6 @@ function fmtTimeJST(d: Date): string {
   }).format(d)
 }
 
-type AvStatus = 'Y' | 'EXPECTED' | 'PLAYED' | 'GOING' | 'UNDECIDED'
-
-function mapAvailability(av: {
-  rsvp: string | null
-  participated: string | null
-}): AvStatus | null {
-  // PLAYED takes precedence — it's the "actually showed up" signal that drives
-  // match stats. RSVP is intent, participated is fact.
-  if (av.participated === 'JOINED') return 'PLAYED'
-  if (av.rsvp === 'GOING') return 'GOING'
-  if (av.rsvp === 'UNDECIDED') return 'UNDECIDED'
-  return null
-}
-
 const EMPTY_DATA: LeagueData = {
   teams: [],
   players: [],
@@ -77,6 +60,12 @@ const EMPTY_DATA: LeagueData = {
  *
  * Per CLAUDE.md "Sheets→DB migration", PR 2 plumbs this in but defaults
  * `dataSource='sheets'`; only PR 4 flips reads to use this.
+ *
+ * v1.7.0 — Static fields only. The returned `availability`,
+ * `availabilityStatuses`, and `played` are always empty objects; the live
+ * RSVP signals are merged in from Redis at the dispatcher in
+ * `lib/publicData.ts#getPublicLeagueData`. Consumers see the same shape;
+ * the construction path is split.
  *
  * Notes on contract preservation (regression-prone areas — see CLAUDE.md "Important Notes"):
  *  - Match.kickoff / Match.fullTime are JST "HH:MM" strings, not ISO timestamps.
@@ -111,7 +100,7 @@ export async function dbToPublicLeagueData(): Promise<LeagueData> {
             },
             orderBy: { playedAt: 'asc' },
           },
-          availability: true,
+          // v1.7.0: availability dropped — sourced from Redis at dispatch time.
         },
         orderBy: { weekNumber: 'asc' },
       },
@@ -145,16 +134,10 @@ export async function dbToPublicLeagueData(): Promise<LeagueData> {
   })
 
   const players: Player[] = []
-  // playerId (prefixed) → public slug + teamId
-  const playerSlugByDbId = new Map<string, string>()
-  const playerTeamByDbId = new Map<string, string>()
-
   for (const pla of plas) {
     if (pla.player.id === GUEST_ID) continue
     const slug = stripPrefix(pla.player.id, PLAYER_ID_PREFIX)
     const teamSlug = ltToSlug.get(pla.leagueTeamId) ?? ''
-    playerSlugByDbId.set(pla.player.id, slug)
-    playerTeamByDbId.set(pla.player.id, teamSlug)
     players.push({
       id: slug,
       name: pla.player.name,
@@ -235,35 +218,8 @@ export async function dbToPublicLeagueData(): Promise<LeagueData> {
     })
   }
 
-  // ── availability + availabilityStatuses + played ─────────────────────────
-  const availability: Availability = {}
-  const availabilityStatuses: AvailabilityStatuses = {}
-  const played: PlayedStatus = {}
-
-  for (const gw of league.gameWeeks) {
-    const mdId = `md${gw.weekNumber}`
-    for (const av of gw.availability) {
-      const status = mapAvailability(av)
-      if (!status) continue
-      const playerSlug = playerSlugByDbId.get(av.playerId)
-      const teamSlug = playerTeamByDbId.get(av.playerId)
-      if (!playerSlug || !teamSlug) continue
-
-      if (!availability[mdId]) availability[mdId] = {}
-      if (!availability[mdId][teamSlug]) availability[mdId][teamSlug] = []
-      availability[mdId][teamSlug].push(playerSlug)
-
-      if (!availabilityStatuses[mdId]) availabilityStatuses[mdId] = {}
-      if (!availabilityStatuses[mdId][teamSlug]) availabilityStatuses[mdId][teamSlug] = {}
-      availabilityStatuses[mdId][teamSlug][playerSlug] = status
-
-      if (status === 'PLAYED') {
-        if (!played[mdId]) played[mdId] = {}
-        if (!played[mdId][teamSlug]) played[mdId][teamSlug] = []
-        played[mdId][teamSlug].push(playerSlug)
-      }
-    }
-  }
+  // v1.7.0: availability/availabilityStatuses/played are merged in by
+  // `lib/publicData.ts#getPublicLeagueData` from the Redis rsvpStore.
 
   // Per migration plan §2 / S3 — ratings paused, not dropped.
   const ratings: PlayerRating[] = []
@@ -274,11 +230,11 @@ export async function dbToPublicLeagueData(): Promise<LeagueData> {
     matchdays,
     goals,
     ratings,
-    availability,
-    availabilityStatuses,
-    played,
+    availability: {},
+    availabilityStatuses: {},
+    played: {},
   }
 }
 
 // Exported for unit tests.
-export const __test = { stripPrefix, fmtDateJST, fmtTimeJST, mapAvailability }
+export const __test = { stripPrefix, fmtDateJST, fmtTimeJST }
