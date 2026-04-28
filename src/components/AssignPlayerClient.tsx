@@ -11,6 +11,7 @@ import {
   unassignButtonDisabled,
 } from '@/lib/assignButtonLabel';
 import { postAssignNavigate } from '@/lib/postAssignNavigate';
+import { kickOffSessionRefresh } from '@/lib/kickOffSessionRefresh';
 
 interface Props {
   playersByTeam: { team: Team; players: Player[] }[];
@@ -76,14 +77,18 @@ export default function AssignPlayerClient({ playersByTeam }: Props) {
       setSubmitting(false);
       setRedirecting(true);
 
-      await update();
+      // Fire-and-forget the next-auth session refresh (PR 11 / v1.3.0). Pre-
+      // fix this was awaited; under cold-lambda steady-state (this site's
+      // regime) /api/auth/session is itself a cold-startable round-trip on
+      // the user's critical path. Running it in parallel with navigation
+      // costs the same lambda spin-up but moves it off the perceived path.
+      // Brief stale-flash on slow refetches is acceptable (the local session
+      // cache catches up within ~1s and re-renders).
+      kickOffSessionRefresh(update);
       // The API route already calls revalidatePath('/') + revalidateTag(
       // 'public-data', { expire: 0 }) — those propagate to the client router
-      // cache, so a redundant router.refresh() after push is wasted work
-      // (a full second RSC fetch, and under this app's cold-lambda regime
-      // that's a 1–3s critical-path hit). startTransition keeps urgent state
-      // updates from being blocked while the destination payload arrives.
-      // See PR β / v1.2.7 and tests/unit/postAssignNavigate.test.ts.
+      // cache, so a redundant router.refresh() after push is wasted work.
+      // See PR 10 / v1.2.7 and tests/unit/postAssignNavigate.test.ts.
       postAssignNavigate({ router, startTransition });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong');
@@ -111,9 +116,9 @@ export default function AssignPlayerClient({ playersByTeam }: Props) {
       setRedirecting(true);
       setSelectedPlayerId(null);
 
-      await update();
-      // Same reasoning as handleConfirm: the DELETE route revalidates server
-      // caches, so a separate router.refresh() is redundant cold-path cost.
+      // Fire-and-forget — same reasoning as handleConfirm. The session
+      // refetch happens in parallel with navigation rather than blocking it.
+      kickOffSessionRefresh(update);
       postAssignNavigate({ router, startTransition });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong');
