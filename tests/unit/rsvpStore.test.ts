@@ -162,6 +162,30 @@ describe('rsvpStore.getRsvpForGameWeek — tri-state result', () => {
     expect(r.data.size).toBe(0)
   })
 
+  it('returns hit when Upstash auto-parses __seeded string "1" into the number 1 (regression: prod drift)', async () => {
+    // Real Upstash REST client behavior: HGETALL coerces field values that
+    // parse as JSON. `'1'` round-trips as the number `1`. The sentinel
+    // check must coerce both sides for comparison, otherwise every GW
+    // post-apply reads as miss-not-hit and the dashboard falls through to
+    // Prisma on every render.
+    const fake: RedisLike = {
+      hgetall: vi.fn(async () => ({
+        __seeded: 1, // <-- number, not string
+        'ian-noseda:rsvp': 'GOING',
+      })),
+      hset: vi.fn(),
+      hdel: vi.fn(),
+      expireat: vi.fn(async () => 1),
+      del: vi.fn(),
+    }
+    __setRedisClientForTesting(fake)
+
+    const r = await getRsvpForGameWeek(GW_ID, START)
+    expect(r.status).toBe('hit')
+    if (r.status !== 'hit') return
+    expect(r.data.get('ian-noseda')).toEqual({ rsvp: 'GOING' })
+  })
+
   it('returns miss when the key is absent (publicData should fall through to Prisma)', async () => {
     const { client } = makeFakeRedis({})
     __setRedisClientForTesting(client)

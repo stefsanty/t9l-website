@@ -83,19 +83,17 @@ export type RsvpBackfillDecision =
   | {
       kind: 'drift-overwrite'
       targetFields: Record<string, string>
-      redisHad: Record<string, string> | null
+      redisHad: Record<string, unknown> | null
       diff: { onlyInPrisma: string[]; onlyInRedis: string[]; differing: string[] }
     }
 
 export function decideBackfillAction(
   targetFields: Record<string, string>,
-  redisRaw: Record<string, string> | null,
+  redisRaw: Record<string, unknown> | null,
 ): RsvpBackfillDecision {
   if (redisRaw === null || Object.keys(redisRaw).length === 0) {
     return { kind: 'create', targetFields }
   }
-  // Drop the sentinel from the comparison — both sides should always have
-  // it post-write; treat its absence on the Redis side as drift.
   const target = { ...targetFields }
   const redis = { ...redisRaw }
 
@@ -103,13 +101,17 @@ export function decideBackfillAction(
   const onlyInRedis: string[] = []
   const differing: string[] = []
 
+  // Upstash's REST client auto-parses values that look like JSON: `'1'`
+  // comes back as the number `1`, `'true'` as a boolean. The sentinel
+  // `__seeded='1'` is the obvious case; coerce both sides via `String()`
+  // for the comparison so type-coerced equals don't get reported as drift.
   const allFields = new Set<string>([...Object.keys(target), ...Object.keys(redis)])
   for (const field of allFields) {
     const t = target[field]
     const r = redis[field]
     if (t === undefined && r !== undefined) onlyInRedis.push(field)
     else if (r === undefined && t !== undefined) onlyInPrisma.push(field)
-    else if (t !== r) differing.push(field)
+    else if (String(t) !== String(r)) differing.push(field)
   }
 
   if (
@@ -241,9 +243,9 @@ async function main() {
       const targetFields = buildTargetFields(rows)
 
       const key = `${KEY_PREFIX}${gw.id}`
-      let redisRaw: Record<string, string> | null
+      let redisRaw: Record<string, unknown> | null
       try {
-        redisRaw = await redis.hgetall(key) as Record<string, string> | null
+        redisRaw = (await redis.hgetall(key)) as Record<string, unknown> | null
       } catch (err) {
         console.warn(
           `  ERROR  ${gw.id} (W${gw.weekNumber}): redis.hgetall failed: ${err instanceof Error ? err.message : err}`,

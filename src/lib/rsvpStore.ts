@@ -94,8 +94,15 @@ export type RsvpReadResult =
 // Minimal interface so the helper is decoupled from `@upstash/redis` at the
 // type level — and so tests can drop in a fake without import-mock plumbing.
 // Only the hash + expireat ops we actually use; not a general Redis interface.
+//
+// `hgetall` returns `Record<string, unknown>` because Upstash's REST client
+// auto-coerces field values that look like JSON: `'1'` comes back as the
+// number `1`, `'true'` as a boolean, etc. The string-typed enum values we
+// store (`'GOING'`, `'JOINED'`) survive the round-trip unchanged, but the
+// `__seeded='1'` sentinel does not. All call sites must coerce via
+// `String()` before comparing against the canonical string forms.
 export type RedisLike = {
-  hgetall: (key: string) => Promise<Record<string, string> | null>
+  hgetall: (key: string) => Promise<Record<string, unknown> | null>
   hset: (key: string, fields: Record<string, string>) => Promise<unknown>
   hdel: (key: string, ...fields: string[]) => Promise<unknown>
   expireat: (key: string, unixSeconds: number) => Promise<unknown>
@@ -159,23 +166,32 @@ export function computeRsvpExpireAt(
  * Parse a HGETALL result into the (playerSlug → RsvpEntry) map. Skips the
  * `__seeded` sentinel and any field whose suffix doesn't match the schema.
  *
+ * Values are coerced via `String()` before being assigned to entry fields:
+ * Upstash's REST client auto-parses numeric strings into numbers and
+ * `'true'`/`'false'` into booleans. The enum values we store (`'GOING'`,
+ * `'JOINED'`) survive round-tripping unchanged, but defensive coercion
+ * here protects against future schema additions that store numeric or
+ * boolean-shaped data.
+ *
  * Pure — exported for unit testing.
  */
-export function parseHashFields(raw: Record<string, string>): GwRsvpMap {
+export function parseHashFields(raw: Record<string, unknown>): GwRsvpMap {
   const data: GwRsvpMap = new Map()
   for (const [field, value] of Object.entries(raw)) {
     if (field === SEEDED_FIELD) continue
+    if (value === undefined || value === null) continue
+    const stringValue = String(value)
     if (field.endsWith(RSVP_SUFFIX)) {
       const slug = field.slice(0, -RSVP_SUFFIX.length)
       if (!slug) continue
       const entry = data.get(slug) ?? {}
-      entry.rsvp = value as RsvpValue
+      entry.rsvp = stringValue as RsvpValue
       data.set(slug, entry)
     } else if (field.endsWith(PARTICIPATED_SUFFIX)) {
       const slug = field.slice(0, -PARTICIPATED_SUFFIX.length)
       if (!slug) continue
       const entry = data.get(slug) ?? {}
-      entry.participated = value as ParticipatedValue
+      entry.participated = stringValue as ParticipatedValue
       data.set(slug, entry)
     }
     // Other fields: defensively ignored. Lets us extend the schema later
@@ -195,7 +211,7 @@ export async function getRsvpForGameWeek(
 ): Promise<RsvpReadResult> {
   const client = await getClient()
   if (!client) return { status: 'error', reason: 'no-client' }
-  let raw: Record<string, string> | null
+  let raw: Record<string, unknown> | null
   try {
     raw = await client.hgetall(key(gameWeekId))
   } catch (err) {
@@ -208,8 +224,10 @@ export async function getRsvpForGameWeek(
   }
   // Upstash returns null for a missing key, or `{}`/empty when the hash has
   // been emptied (which auto-deletes the key in Redis — so this is mostly
-  // null in practice, but defensively handle both).
-  if (!raw || raw[SEEDED_FIELD] !== SEEDED_VALUE) {
+  // null in practice, but defensively handle both). The sentinel is
+  // compared via `String()` because Upstash's REST client auto-parses the
+  // numeric-string `'1'` into the number `1` on read.
+  if (!raw || String(raw[SEEDED_FIELD] ?? '') !== SEEDED_VALUE) {
     return { status: 'miss' }
   }
   return { status: 'hit', data: parseHashFields(raw) }

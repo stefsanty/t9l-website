@@ -122,6 +122,17 @@ describe('decideBackfillAction — CREATE / MATCH / DRIFT', () => {
     const decision = decideBackfillAction(empty, empty)
     expect(decision.kind).toBe('match')
   })
+
+  it('MATCH when Upstash auto-parses __seeded string "1" into number 1 (regression: post-apply drift)', () => {
+    // Upstash's REST HGETALL auto-parses numeric strings into numbers.
+    // The decision helper must coerce via String() before comparing,
+    // otherwise --apply followed by --dry-run reports drift on every GW
+    // we just wrote (observed in v1.7.0 cutover dry-run #2).
+    const target = { __seeded: '1', 'ian-noseda:rsvp': 'GOING' }
+    const redisRaw = { __seeded: 1, 'ian-noseda:rsvp': 'GOING' }
+    const decision = decideBackfillAction(target, redisRaw)
+    expect(decision.kind).toBe('match')
+  })
 })
 
 describe('computeExpireAt — same math as rsvpStore', () => {
