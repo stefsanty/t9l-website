@@ -1,7 +1,10 @@
 import { describe, it, expect } from 'vitest'
 import { __test } from '@/lib/dbToPublicLeagueData'
 
-const { stripPrefix, fmtDateJST, fmtTimeJST, mapAvailability } = __test
+const { stripPrefix, fmtDateJST, fmtTimeJST } = __test
+// `mapAvailability` moved to `lib/rsvpMerge.ts` in PR 19 / v1.7.0 — its
+// tests live in `tests/unit/rsvpMerge.test.ts` alongside the new
+// merge-into-LeagueData logic.
 
 describe('stripPrefix', () => {
   it('removes the prefix when present', () => {
@@ -53,28 +56,3 @@ describe('fmtTimeJST', () => {
   })
 })
 
-describe('mapAvailability', () => {
-  it('PLAYED takes precedence over GOING', () => {
-    expect(mapAvailability({ rsvp: 'GOING', participated: 'JOINED' })).toBe('PLAYED')
-  })
-
-  it('maps GOING when only rsvp set', () => {
-    expect(mapAvailability({ rsvp: 'GOING', participated: null })).toBe('GOING')
-  })
-
-  it('maps UNDECIDED when only rsvp UNDECIDED', () => {
-    expect(mapAvailability({ rsvp: 'UNDECIDED', participated: null })).toBe('UNDECIDED')
-  })
-
-  it('returns null when both fields null (player has no opinion yet)', () => {
-    expect(mapAvailability({ rsvp: null, participated: null })).toBe(null)
-  })
-
-  it('returns null for NOT_GOING (so they do NOT show up in availability)', () => {
-    expect(mapAvailability({ rsvp: 'NOT_GOING', participated: null })).toBe(null)
-  })
-
-  it('JOINED participated alone maps to PLAYED (no rsvp recorded but they showed up)', () => {
-    expect(mapAvailability({ rsvp: null, participated: 'JOINED' })).toBe('PLAYED')
-  })
-})
