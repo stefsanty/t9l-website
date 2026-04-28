@@ -1,5 +1,8 @@
 import { test, expect } from '@playwright/test'
 
+const baseURL = process.env.BASE_URL ?? 'https://t9l.me'
+const isLocal = baseURL.includes('localhost') || baseURL.includes('127.0.0.1')
+
 test.describe('public assign-player surface', () => {
   test('page renders with the player-search form', async ({ page }) => {
     const response = await page.goto('/assign-player')
@@ -9,23 +12,75 @@ test.describe('public assign-player surface', () => {
     // Bottom action bar always visible (fixed-position) regardless of session.
     await expect(page.getByRole('button', { name: /Guest|Confirm|Select Player/i }).first()).toBeVisible()
   })
+})
 
-  /**
-   * Manual reproduction of the v1.1.1 "Saving…" stuck-state bug (fixed in v1.1.2):
-   *
-   *   1. Run `npm run dev` locally (NODE_ENV=development → exposes dev-login provider).
-   *   2. Open http://localhost:3000 in a fresh browser profile, click the avatar →
-   *      "Login as Guest (No Player)". Lands on /assign-player as `guest-dev`.
-   *   3. Search for any roster name, click a tile, click "Confirm".
-   *   4. PRE-FIX: Button shows "Saving…" indefinitely; navigation to "/" never
-   *      perceptibly completes even though the API route returns 200.
-   *      POST-FIX: Button briefly flashes "Saving…", page navigates to "/" within
-   *      ~1s with the assigned player reflected in the avatar dropdown.
-   *
-   * The dev-login provider is gated on NODE_ENV=development (see lib/auth.ts), so
-   * an automated assertion of this flow cannot run against a Vercel preview or
-   * prod deploy. Adding @testing-library/react + jsdom solely for this 1-line
-   * navigation tweak is out of scope for a patch release; revisit if the public
-   * `/assign-player` flow grows additional client-side state machines.
-   */
+/**
+ * Regression test for the v1.1.1 → v1.2.2 stuck-on-Saving bug.
+ *
+ * Pre-fix the button stayed on "Saving…" for the entire post-click chain
+ * (API write + next-auth update + router.push + destination RSC render).
+ * Under the post-cutover Prisma-on-every-JWT auth path that's 5–7 seconds
+ * end-to-end. v1.2.2 splits that into submitting → redirecting at the API
+ * boundary so the button leaves "Saving…" within ~1s of the API responding,
+ * regardless of how slow the navigation chain is.
+ *
+ * Requires dev server (NODE_ENV=development → dev-login provider exposed
+ * per `lib/auth.ts`). Skipped against any non-localhost BASE_URL because
+ * the dev-login provider is intentionally absent from Vercel preview/prod.
+ *
+ * Run locally:
+ *   npm run dev               # in another terminal
+ *   BASE_URL=http://localhost:3000 npm run test:e2e -- assign-player
+ *
+ * The unit tests in tests/unit/assignButtonLabel.test.ts are the CI-runnable
+ * regression: they pin the state-machine precedence (redirecting wins over
+ * submitting; redirecting wins over isAlreadyAssigned) which is the actual
+ * defect surface.
+ */
+test.describe('regression: stuck-on-Saving (PR α / v1.2.2)', () => {
+  test.skip(!isLocal, 'requires local dev with dev-login provider (NODE_ENV=development)')
+
+  test('button leaves "Saving…" within 1s of API success even when navigation is slow', async ({ page }) => {
+    // Stall the destination page so navigation can't complete fast — this is
+    // what masks the bug pre-fix (the component eventually unmounts when the
+    // RSC payload arrives, but the user perceives 5+s of "Saving…").
+    await page.route('**/', async (route) => {
+      if (route.request().resourceType() === 'document') {
+        await new Promise((r) => setTimeout(r, 4_000))
+      }
+      await route.continue()
+    })
+
+    // Sign in via the dev-only credentials provider as a guest with no player.
+    // (Mirrors the "Login as Guest (No Player)" affordance in the dev menu.)
+    await page.goto('/api/auth/csrf')
+    const csrf = await page.evaluate(() => (document.body.innerText.match(/"csrfToken":"([^"]+)"/) ?? [])[1])
+    await page.request.post('/api/auth/callback/dev-login?json=true', {
+      form: {
+        playerId: 'guest-dev',
+        playerName: 'Guest Dev',
+        teamId: '',
+        csrfToken: csrf ?? '',
+        callbackUrl: '/assign-player',
+        json: 'true',
+      },
+    })
+
+    await page.goto('/assign-player')
+    // Pick any roster name to enable the Confirm button.
+    await page.getByRole('button', { name: /^[A-Z]/ }).first().click()
+
+    const confirm = page.getByTestId('assign-confirm-button')
+    const apiResponse = page.waitForResponse((r) => r.url().includes('/api/assign-player') && r.request().method() === 'POST')
+    await confirm.click()
+    const res = await apiResponse
+    expect(res.status()).toBe(200)
+
+    // The regression assertion: within 1s of the API responding 200, the
+    // button MUST NOT still say "Saving…". Pre-fix it sat on "Saving…" until
+    // the (slow) navigation finished. Post-fix it shows "Done — redirecting…"
+    // immediately.
+    await expect(confirm).not.toHaveText(/Saving/, { timeout: 1_000 })
+    await expect(confirm).toHaveText(/Done — redirecting|Linked/, { timeout: 1_000 })
+  })
 })
