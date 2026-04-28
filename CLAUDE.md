@@ -304,6 +304,12 @@ Keep this table append-only; future PRs add a row. **Rollback target convention:
 
 **Neon branch hygiene rule.** Snapshots older than 5 PRs ago can be retired by the active session as needed to free Neon branch slots; the active per-PR snapshot is sufficient for forward rollback (Layer 1 git tag + Layer 2 Vercel deploy promotion still cover the older windows). Each retirement gets a one-line note in the ledger row of the snapshot being retired AND in the row of the PR that retired it.
 
+### Operational events
+
+One-shot ops on shared systems (Redis cleanup, Sheets edits, manual DB writes outside a migration) get a dated line here. No PR / no version bump for pure data-only events; record what was done so future sessions can audit.
+
+- **2026-04-28** — Dropped orphan Redis `line-player-map` entries surfaced by PR 6 backfill: Aleksandr Ivankov's second LINE ID (`U86cccdcbbcc00e4a44d6bfbe7f280ed8` — kept the first) and Nikolai Akira Kawabata's mapping (`U02a29d4afc55535ffb990aabe9080e65` — player not in current DB roster). Also DEL'd legacy slug-keyed `player-pic:nikolai-akira-kawabata` (the U86c and U02a29 LINE-ID-keyed pics didn't exist). HLEN before 33 → after 31. Verified both HGETs return null.
+
 ## Sheets→DB migration
 
 Multi-PR cutover replacing Google Sheets with Neon Postgres as the source of truth for the public site. Plan: `/tmp/sheets-to-db-migration-plan.md` (v2, post-review).
