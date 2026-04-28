@@ -6,7 +6,7 @@ import { authOptions } from "@/lib/auth";
 import { put } from "@vercel/blob";
 import { getPublicLeagueData } from "@/lib/publicData";
 import { prisma } from "@/lib/prisma";
-import { setCached as setCachedMapping } from "@/lib/playerMappingCache";
+import { setMapping } from "@/lib/playerMappingStore";
 
 const PLAYER_ID_PREFIX = "p-";
 
@@ -150,12 +150,16 @@ export async function POST(req: Request) {
   // serve a stale row in front of the just-written Prisma value.
   await legacyRedisCleanup(session.lineId, { dropMapping: true });
 
-  // Pre-warm the JWT-callback cache (PR 9) with the post-write mapping. The
-  // shape matches getPlayerMappingFromDb (slug-only, no `p-`/`t-` prefix) so
-  // the next /api/auth/session served by `await update()` on the client hits
-  // the cache instead of paying the cold-Neon Prisma relation-include cost.
-  // This replaces the prior invalidate-then-cold-read pattern.
-  await setCachedMapping(session.lineId, { playerId, playerName, teamId });
+  // Write the post-write mapping into the Redis store. As of PR 16 / v1.5.0
+  // this is the **canonical** lineId→Player record consulted by the JWT
+  // callback — not just a pre-warmed cache in front of Prisma. The shape
+  // matches `getPlayerMappingFromDb` (slug-only, no `p-`/`t-` prefix) so
+  // the next /api/auth/session via `await update()` on the client reads
+  // directly from Redis with no Prisma round-trip. The Prisma transaction
+  // above remains as the durable secondary that backs the admin-filter
+  // query and the recovery script. Sliding 24h TTL keeps active sessions
+  // alive indefinitely while letting forgotten/dead entries decay.
+  await setMapping(session.lineId, { playerId, playerName, teamId });
 
   // Schedule the LINE-pic mirror as background work — runs after the response
   // returns. waitUntil keeps the lambda alive long enough for the Promise to
@@ -216,7 +220,7 @@ export async function DELETE() {
   // Pre-warm the JWT-callback cache (PR 9) with the null sentinel so the next
   // session read serves the un-linked state from cache instead of doing a
   // cold Prisma findUnique that confirms the same null.
-  await setCachedMapping(session.lineId, null);
+  await setMapping(session.lineId, null);
 
   revalidatePath("/");
   revalidateTag("public-data", { expire: 0 });

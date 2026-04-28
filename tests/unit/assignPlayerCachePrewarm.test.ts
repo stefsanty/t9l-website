@@ -1,25 +1,29 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 /**
- * Regression test for PR 9 (v1.2.5) — the assign-player route must pre-warm
- * the JWT mapping cache, NOT invalidate it.
+ * Regression test for the assign-player route's write to the player-mapping
+ * store. The contract: every link/unlink writes the post-write state into
+ * Redis (`setMapping`), it does NOT delete (`deleteMapping`) and re-read.
  *
- * Pre-PR-9 the route called `invalidate(lineId)` after every write. The next
- * /api/auth/session that ran inside `await update()` on the client (in
- * `AssignPlayerClient.handleConfirm`) hit a cold cache and paid the 1–3s
- * cold-Neon Prisma `findUnique` cost — the bulk of the post-assign hang the
- * v1.2.2 UX fix tried to mask.
+ * Pre-PR-9 (v1.2.5) the route called `invalidate(lineId)` after every write,
+ * forcing the next /api/auth/session through a cold-Neon Prisma findUnique
+ * (1–3 s) — the bulk of the post-assign hang the v1.2.2 UX fix tried to mask.
+ * PR 9 replaced that with `setCached(lineId, postWriteMapping)` — Redis as a
+ * cache pre-warm in front of Prisma.
  *
- * If a future change reverts to `invalidate(lineId)` (or drops the cache
- * write entirely), this test fails — the contract is "writes pre-warm".
+ * As of PR 16 / v1.5.0 the framing inverted: Redis is the **canonical store**
+ * for the auth lookup, not a cache. The contract this test pins is the
+ * same — write the post-write mapping (or null sentinel) on every link/
+ * unlink — but it now matters because there's no Prisma fallback in the
+ * happy path. A forgotten `setMapping` would not be self-healed by the
+ * defensive Redis-error fallback (that path only fires when Redis is
+ * unreachable, not when the key is genuinely missing).
  */
 
-// All module mocks must be hoisted above the route import. vi.mock handles that.
-
-vi.mock('@/lib/playerMappingCache', () => ({
-  setCached: vi.fn(),
-  invalidate: vi.fn(),
-  getCached: vi.fn(),
+vi.mock('@/lib/playerMappingStore', () => ({
+  setMapping: vi.fn(),
+  deleteMapping: vi.fn(),
+  getMapping: vi.fn(),
 }))
 
 vi.mock('@/lib/prisma', () => ({
@@ -59,17 +63,17 @@ vi.mock('next/cache', () => ({
 
 // Imports must come after vi.mock calls.
 import { POST, DELETE } from '@/app/api/assign-player/route'
-import { setCached, invalidate } from '@/lib/playerMappingCache'
+import { setMapping, deleteMapping } from '@/lib/playerMappingStore'
 
-const setCachedMock = vi.mocked(setCached)
-const invalidateMock = vi.mocked(invalidate)
+const setMappingMock = vi.mocked(setMapping)
+const deleteMappingMock = vi.mocked(deleteMapping)
 
 beforeEach(() => {
   vi.clearAllMocks()
 })
 
-describe('POST /api/assign-player pre-warms the JWT mapping cache (PR 9)', () => {
-  it('calls setCached(lineId, postWriteMapping) — slug-only shape, no `p-`/`t-` prefix', async () => {
+describe('POST /api/assign-player writes the post-write mapping to the store (PR 9 / PR 16)', () => {
+  it('calls setMapping(lineId, postWriteMapping) — slug-only shape, no `p-`/`t-` prefix', async () => {
     const req = new Request('http://localhost/api/assign-player', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -79,15 +83,15 @@ describe('POST /api/assign-player pre-warms the JWT mapping cache (PR 9)', () =>
     const res = await POST(req)
     expect(res.status).toBe(200)
 
-    // Pre-warm shape matches getPlayerMappingFromDb in lib/auth.ts.
-    expect(setCachedMock).toHaveBeenCalledWith('U-test', {
+    // Post-write shape matches getPlayerMappingFromDb in lib/auth.ts.
+    expect(setMappingMock).toHaveBeenCalledWith('U-test', {
       playerId: 'test-player',
       playerName: 'Test Player',
       teamId: 'test-team',
     })
   })
 
-  it('does NOT call invalidate (the pre-PR-9 cold-cache footgun)', async () => {
+  it('does NOT call deleteMapping (the pre-PR-9 cold-cache footgun)', async () => {
     const req = new Request('http://localhost/api/assign-player', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -96,19 +100,19 @@ describe('POST /api/assign-player pre-warms the JWT mapping cache (PR 9)', () =>
 
     await POST(req)
 
-    expect(invalidateMock).not.toHaveBeenCalled()
+    expect(deleteMappingMock).not.toHaveBeenCalled()
   })
 })
 
-describe('DELETE /api/assign-player pre-warms the null sentinel (PR 9)', () => {
-  it('calls setCached(lineId, null) — un-linked state served from cache', async () => {
+describe('DELETE /api/assign-player writes the null sentinel (PR 9 / PR 16)', () => {
+  it('calls setMapping(lineId, null) — un-linked state served from the store', async () => {
     const res = await DELETE()
     expect(res.status).toBe(200)
-    expect(setCachedMock).toHaveBeenCalledWith('U-test', null)
+    expect(setMappingMock).toHaveBeenCalledWith('U-test', null)
   })
 
-  it('does NOT call invalidate', async () => {
+  it('does NOT call deleteMapping', async () => {
     await DELETE()
-    expect(invalidateMock).not.toHaveBeenCalled()
+    expect(deleteMappingMock).not.toHaveBeenCalled()
   })
 })

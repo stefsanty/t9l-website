@@ -7,7 +7,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions, getPlayerMappingFromDb } from '@/lib/auth'
 import { revalidatePublicData } from '@/lib/revalidate'
 import { SETTING_IDS, type DataSource, type WriteMode } from '@/lib/settings'
-import { setCached as setCachedMapping } from '@/lib/playerMappingCache'
+import { setMapping } from '@/lib/playerMappingStore'
 
 async function assertAdmin() {
   const session = await getServerSession(authOptions)
@@ -311,7 +311,7 @@ export async function adminLinkLineToPlayer(input: {
   // `getPlayerMappingFromDb` slug-stripping logic so the cached shape stays
   // identical to what the auth path would have computed itself.
   const fresh = await getPlayerMappingFromDb(lineId)
-  await setCachedMapping(lineId, fresh)
+  await setMapping(lineId, fresh)
 
   revalidatePublicData()
   revalidatePath(`/admin/leagues/${leagueId}/players`)

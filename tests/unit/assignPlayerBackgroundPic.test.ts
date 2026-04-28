@@ -39,9 +39,9 @@ const {
 }))
 
 vi.mock('@/lib/playerMappingCache', () => ({
-  setCached: setCachedMock,
-  invalidate: vi.fn(),
-  getCached: vi.fn(),
+  setMapping: setCachedMock,
+  deleteMapping: vi.fn(),
+  getMapping: vi.fn(),
 }))
 
 vi.mock('@/lib/prisma', () => ({
