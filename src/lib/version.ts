@@ -11,4 +11,4 @@
  * tag `v<APP_VERSION>` is pushed automatically as part of the autonomy
  * post-merge sequence (separate from the rollback tag).
  */
-export const APP_VERSION = '1.7.0'
+export const APP_VERSION = '1.7.1'
