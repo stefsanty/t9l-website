@@ -4,6 +4,12 @@ import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import type { Team, Player } from '@/types';
+import {
+  assignButtonLabel,
+  assignButtonDisabled,
+  unassignButtonLabel,
+  unassignButtonDisabled,
+} from '@/lib/assignButtonLabel';
 
 interface Props {
   playersByTeam: { team: Team; players: Player[] }[];
@@ -18,6 +24,13 @@ export default function AssignPlayerClient({ playersByTeam }: Props) {
   const [searchQuery, setSearchQuery] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [unassigning, setUnassigning] = useState(false);
+  // `redirecting` is the gap between API success and AssignPlayerClient
+  // unmounting on the destination page. Under the post-cutover Prisma-on-
+  // every-JWT auth path that gap is 5–7 seconds — leaving the button on
+  // "Saving…" the whole time looks broken. Flip submitting → redirecting
+  // the moment the API write succeeds; the button stays disabled but the
+  // text becomes a clear "we're navigating" affordance.
+  const [redirecting, setRedirecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Sync selected player with session when it loads
@@ -55,18 +68,22 @@ export default function AssignPlayerClient({ playersByTeam }: Props) {
         throw new Error((body as { error?: string }).error ?? 'Assignment failed');
       }
 
+      // The API write is the only piece that warrants a "Saving…" affordance.
+      // Everything that follows (next-auth update, router.push, destination
+      // RSC render) is the "redirecting" phase — clear submit, raise redirect.
+      setSubmitting(false);
+      setRedirecting(true);
+
       await update();
-      // router.push alone leaves AssignPlayerClient mounted with submitting=true:
-      // App Router serves '/' from its client RSC cache without re-fetching, so
-      // navigation never tears down this component and the button stays stuck on
-      // "Saving…". Pair with refresh() to invalidate the cache, force a fresh
-      // RSC render of '/' (which now reflects the just-assigned playerId), and
-      // complete unmount.
+      // Pair push + refresh: push initiates client-side navigation; refresh
+      // invalidates the client RSC cache so the destination renders against
+      // the updated session/Player.lineId rather than the stale cache.
       router.push('/');
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong');
       setSubmitting(false);
+      setRedirecting(false);
     }
   }
 
@@ -85,13 +102,17 @@ export default function AssignPlayerClient({ playersByTeam }: Props) {
         throw new Error((body as { error?: string }).error ?? 'Unassignment failed');
       }
 
-      await update();
+      setUnassigning(false);
+      setRedirecting(true);
       setSelectedPlayerId(null);
+
+      await update();
       router.push('/');
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong');
       setUnassigning(false);
+      setRedirecting(false);
     }
   }
 
@@ -213,21 +234,27 @@ export default function AssignPlayerClient({ playersByTeam }: Props) {
               {"Guest"}
             </button>
             <button
+              data-testid="assign-confirm-button"
               onClick={handleConfirm}
-              disabled={!selectedPlayerId || submitting || unassigning || isAlreadyAssigned}
+              disabled={assignButtonDisabled({
+                selectedPlayerId,
+                submitting,
+                unassigning,
+                redirecting,
+                isAlreadyAssigned,
+              })}
               className={`flex-[2] py-3 rounded-xl font-display text-sm font-black uppercase tracking-widest transition-all disabled:opacity-30 disabled:cursor-not-allowed ${
-                isAlreadyAssigned
+                isAlreadyAssigned || redirecting
                   ? 'bg-surface-md text-fg-high'
                   : 'bg-electric-green text-black hover:bg-electric-green/90 active:scale-[0.98]'
               }`}
             >
-              {submitting
-                ? "Saving…"
-                : isAlreadyAssigned
-                ? "Linked"
-                : selectedPlayerId
-                ? "Confirm"
-                : "Select Player"}
+              {assignButtonLabel({
+                redirecting,
+                isAlreadyAssigned,
+                submitting,
+                selectedPlayerId,
+              })}
             </button>
           </div>
 
@@ -237,11 +264,12 @@ export default function AssignPlayerClient({ playersByTeam }: Props) {
             </p>
             {session?.playerId && (
               <button
+                data-testid="assign-unassign-button"
                 onClick={handleUnassign}
-                disabled={submitting || unassigning}
+                disabled={unassignButtonDisabled({ submitting, unassigning, redirecting })}
                 className="text-[9px] font-black uppercase tracking-widest text-primary/40 hover:text-primary transition-all"
               >
-                {unassigning ? "Removing…" : "Unassign Profile"}
+                {unassignButtonLabel({ unassigning, redirecting })}
               </button>
             )}
           </div>
