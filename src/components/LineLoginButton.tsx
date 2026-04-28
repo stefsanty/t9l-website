@@ -5,6 +5,7 @@ import { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import Image from 'next/image';
 import Link from 'next/link';
+import { APP_VERSION } from '@/lib/version';
 
 const GUEST_DISMISSED_KEY = 't9l-guest-dismissed';
 const INSTALL_DISMISSED_KEY = 't9l-install-dismissed';
@@ -468,6 +469,13 @@ export default function LineLoginButton() {
                 </div>
               </div>
             )}
+
+            <div
+              data-testid="user-menu-version"
+              className="border-t border-border-subtle px-4 py-2 text-center text-fg-low text-[10px] uppercase tracking-[0.2em] font-mono"
+            >
+              v{APP_VERSION}
+            </div>
           </div>
         )}
       </div>
