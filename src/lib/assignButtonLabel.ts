@@ -1,32 +1,32 @@
 /**
- * Pure label/affordance state machine for the public-site player-assignment
- * confirm + unassign buttons in `AssignPlayerClient`. Extracted so the bug
- * fix in PR α (1.2.2) is unit-testable without React Testing Library —
- * the state transitions are the regression target, not the JSX.
+ * Pure label/disabled state machine for the public-site player-assignment
+ * confirm + unassign buttons in `AssignPlayerClient`. Extracted so the
+ * transitions are unit-testable without React Testing Library — the state
+ * transitions are the regression target, not the JSX.
  *
- * Background — the v1.1.1 stuck-on-Saving bug, second attempt:
+ * v1.4.0 (PR 13) — optimistic UI rewrite:
  *
- *   Pre-fix the loading state spanned the entire post-click chain (API write
- *   → next-auth `update()` → router.push → destination RSC re-render → unmount).
- *   Under the post-cutover Prisma-on-every-JWT auth path that's 5–7 seconds.
- *   PR #50 added router.refresh which kept the cache fresh but didn't address
- *   the perceived hang.
+ *   The previous "Saving…" → "Done — redirecting…" sequence existed because
+ *   the destination was always `/`: the user clicked Confirm, the API ran,
+ *   the client kicked next-auth update + router.push, and the form button
+ *   needed to keep them informed across all of those phases. v1.4.0 removes
+ *   the auto-navigate. After API success the form is replaced by an inline
+ *   success view (see `AssignPlayerClient`), so the confirm button only ever
+ *   matters for the brief window between click and optimistic flip — which
+ *   is one render. The button label collapses back to the simple resting/
+ *   in-flight pair and `redirecting` no longer applies.
  *
- *   The right boundary for "Saving…" is just the API write (~500ms). After
- *   that succeeds, switch to a `redirecting` affordance so the user sees
- *   immediate confirmation and a clear "we're navigating now" message. The
- *   button stays disabled either way.
+ *   Unassign keeps a tiny in-flight label since it doesn't render a separate
+ *   success view (the form just returns to the unselected state).
  */
 
 export type ConfirmButtonState = {
-  redirecting: boolean
   isAlreadyAssigned: boolean
   submitting: boolean
   selectedPlayerId: string | null
 }
 
 export function assignButtonLabel(s: ConfirmButtonState): string {
-  if (s.redirecting) return 'Done — redirecting…'
   if (s.isAlreadyAssigned) return 'Linked'
   if (s.submitting) return 'Saving…'
   if (s.selectedPlayerId) return 'Confirm'
@@ -40,18 +40,15 @@ export function assignButtonDisabled(
     !s.selectedPlayerId ||
     s.submitting ||
     s.unassigning ||
-    s.redirecting ||
     s.isAlreadyAssigned
   )
 }
 
 export type UnassignButtonState = {
-  redirecting: boolean
   unassigning: boolean
 }
 
 export function unassignButtonLabel(s: UnassignButtonState): string {
-  if (s.redirecting) return 'Redirecting…'
   if (s.unassigning) return 'Removing…'
   return 'Unassign Profile'
 }
@@ -59,5 +56,5 @@ export function unassignButtonLabel(s: UnassignButtonState): string {
 export function unassignButtonDisabled(
   s: UnassignButtonState & { submitting: boolean },
 ): boolean {
-  return s.submitting || s.unassigning || s.redirecting
+  return s.submitting || s.unassigning
 }

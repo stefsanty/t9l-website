@@ -15,19 +15,18 @@ test.describe('public assign-player surface', () => {
 })
 
 /**
- * Regression test for the v1.1.1 → v1.2.2 stuck-on-Saving bug, with the
- * timing target tightened to the Definition of Done in v1.3.0.
+ * Regression tests for the assign-player perceived-latency target.
  *
- * Pre-fix the button stayed on "Saving…" for the entire post-click chain
- * (API write + next-auth update + router.push + destination RSC render).
- * Under the post-cutover Prisma-on-every-JWT auth path that's 5–7 seconds
- * end-to-end. v1.2.2 (PR 7) split that into submitting → redirecting at
- * the API boundary so the button leaves "Saving…" within ~1s of the API
- * responding. v1.3.0 (PR 11) drops the awaited next-auth `update()`,
- * removing a separate cold-startable /api/auth/session round-trip from
- * the user-visible critical path — so the label flip is now strictly
- * a React re-render after API response (~50ms in local dev). Timeout
- * tightened to 200ms to match the project Definition of Done target.
+ * Pre-v1.4.0 the click-to-feedback latency was bounded by the API write +
+ * next-auth update + router.push + destination RSC render — 5–7s end-to-end
+ * pre-PRs-10/11/12, ~2–3s post. v1.4.0 (PR 13) replaces the auto-navigate
+ * with `useOptimistic` + an inline success view, collapsing the perceived
+ * latency to a single React render after the click. The Definition of Done
+ * tightens to <50ms — strictly the time from click to optimistic flip.
+ *
+ * The pre-v1.4.0 "button leaves Saving…" assertion is gone because the
+ * confirm button is gone after the optimistic flip — the form is replaced
+ * by the success view entirely. The new assertion targets that view.
  *
  * Requires dev server (NODE_ENV=development → dev-login provider exposed
  * per `lib/auth.ts`). Skipped against any non-localhost BASE_URL because
@@ -37,29 +36,21 @@ test.describe('public assign-player surface', () => {
  *   npm run dev               # in another terminal
  *   BASE_URL=http://localhost:3000 npm run test:e2e -- assign-player
  *
- * The unit tests in tests/unit/assignButtonLabel.test.ts pin the state-
- * machine precedence (redirecting wins over submitting; redirecting wins
- * over isAlreadyAssigned). tests/unit/kickOffSessionRefresh.test.ts pins
- * the fire-and-forget call shape so re-introducing `await` is caught.
+ * The unit tests at:
+ *   - tests/unit/optimisticLink.test.ts        — the rollback gate
+ *   - tests/unit/assignButtonLabel.test.ts     — the button state machine
+ * pin the underlying contracts.
  */
-test.describe('regression: button leaves Saving fast (PR α v1.2.2 + PR 11 v1.3.0)', () => {
+test.describe('regression: optimistic linking is perceived-instant (PR 13 / v1.4.0)', () => {
   test.skip(!isLocal, 'requires local dev with dev-login provider (NODE_ENV=development)')
 
-  test('button leaves "Saving…" within 200ms of API success (DoD)', async ({ page }) => {
-    // Stall the destination page so navigation can't complete fast — this is
-    // what masks the bug pre-fix (the component eventually unmounts when the
-    // RSC payload arrives, but the user perceives 5+s of "Saving…").
-    await page.route('**/', async (route) => {
-      if (route.request().resourceType() === 'document') {
-        await new Promise((r) => setTimeout(r, 4_000))
-      }
-      await route.continue()
-    })
-
-    // Sign in via the dev-only credentials provider as a guest with no player.
-    // (Mirrors the "Login as Guest (No Player)" affordance in the dev menu.)
+  // Helper: log in as a fresh guest with no linked player so the form
+  // renders with a Confirm button on /assign-player.
+  async function loginAsGuest(page: import('@playwright/test').Page) {
     await page.goto('/api/auth/csrf')
-    const csrf = await page.evaluate(() => (document.body.innerText.match(/"csrfToken":"([^"]+)"/) ?? [])[1])
+    const csrf = await page.evaluate(() =>
+      (document.body.innerText.match(/"csrfToken":"([^"]+)"/) ?? [])[1],
+    )
     await page.request.post('/api/auth/callback/dev-login?json=true', {
       form: {
         playerId: 'guest-dev',
@@ -70,25 +61,87 @@ test.describe('regression: button leaves Saving fast (PR α v1.2.2 + PR 11 v1.3.
         json: 'true',
       },
     })
+  }
 
+  test('success view appears within 50ms of click (DoD)', async ({ page }) => {
+    // Stall the API so the assertion can't be satisfied by the API itself
+    // returning fast — the only way to pass under this stall is the optimistic
+    // pre-API-resolution UI flip.
+    await page.route('**/api/assign-player', async (route) => {
+      if (route.request().method() === 'POST') {
+        await new Promise((r) => setTimeout(r, 4_000))
+      }
+      await route.continue()
+    })
+
+    await loginAsGuest(page)
     await page.goto('/assign-player')
-    // Pick any roster name to enable the Confirm button.
     await page.getByRole('button', { name: /^[A-Z]/ }).first().click()
 
     const confirm = page.getByTestId('assign-confirm-button')
-    const apiResponse = page.waitForResponse((r) => r.url().includes('/api/assign-player') && r.request().method() === 'POST')
-    await confirm.click()
-    const res = await apiResponse
-    expect(res.status()).toBe(200)
+    const successView = page.getByTestId('assign-success-view')
 
-    // The regression assertion: within 200ms of the API responding 200, the
-    // button MUST NOT still say "Saving…". Pre-PR-7 it sat on "Saving…" for
-    // the entire post-click chain (5–7s end-to-end). PR 7 dropped it to ~1s
-    // by splitting submitting → redirecting at the API boundary. PR 11 drops
-    // it again by removing the awaited `update()` round-trip — so the label
-    // flip is now strictly the React re-render after API response and easily
-    // fits the 200ms Definition of Done in local dev.
-    await expect(confirm).not.toHaveText(/Saving/, { timeout: 200 })
-    await expect(confirm).toHaveText(/Done — redirecting|Linked/, { timeout: 200 })
+    const clickAt = Date.now()
+    await confirm.click()
+    await expect(successView).toBeVisible({ timeout: 200 })
+    const flipAt = Date.now()
+    const elapsed = flipAt - clickAt
+    // 50ms is the perceived-instant target. Allow some slack for Playwright's
+    // own polling cadence and CI variance — fail loudly if the flip is more
+    // than ~3x the target, which would indicate the optimistic path broke.
+    expect(elapsed, `click→success-view took ${elapsed}ms (target <50ms)`).toBeLessThan(150)
+
+    // The inline Go-home affordance must also be present immediately —
+    // the user has to be able to navigate on their own schedule.
+    await expect(page.getByTestId('assign-go-home-button')).toBeVisible()
+  })
+
+  test('Go-home awaits the in-flight API + session-update before navigating', async ({ page }) => {
+    // Stall the assign-player POST by 2s so the user can race it: click
+    // Confirm, then click Go-home before the API resolves. The destination
+    // (/) MUST NOT render until the JWT reflects the new linkage — otherwise
+    // the user lands on stale data.
+    await page.route('**/api/assign-player', async (route) => {
+      if (route.request().method() === 'POST') {
+        await new Promise((r) => setTimeout(r, 2_000))
+      }
+      await route.continue()
+    })
+
+    await loginAsGuest(page)
+    await page.goto('/assign-player')
+    await page.getByRole('button', { name: /^[A-Z]/ }).first().click()
+
+    const confirm = page.getByTestId('assign-confirm-button')
+    const goHome = page.getByTestId('assign-go-home-button')
+
+    await confirm.click()
+    // Optimistic flip: the success view + Go-home button are immediately
+    // available, even though the API hasn't responded yet.
+    await expect(goHome).toBeVisible({ timeout: 200 })
+
+    // Click Go-home immediately. We expect:
+    //  - the button enters "Finalizing…" state (still on /assign-player)
+    //  - it does NOT navigate while the API is still pending
+    //  - it navigates to / once the API resolves
+    const clickAt = Date.now()
+    await goHome.click()
+
+    // Within a few hundred ms (well before the 2s API resolution) the button
+    // should show Finalizing… AND the URL should still be /assign-player.
+    await expect(goHome).toHaveText(/Finalizing/, { timeout: 300 })
+    expect(page.url()).toContain('/assign-player')
+
+    // After the API resolves the navigation completes.
+    await page.waitForURL('**/', { timeout: 5_000 })
+    const navAt = Date.now()
+    const elapsed = navAt - clickAt
+    // The await-the-pipeline path means Go-home navigates only once the API
+    // has settled — i.e. roughly the API stall time. Accept anything above
+    // ~1.5s (the stall is 2s, allow for fetch-mock jitter).
+    expect(
+      elapsed,
+      `Go-home → navigation took ${elapsed}ms — should be ≥ stall of 2s, indicating it awaited the pipeline`,
+    ).toBeGreaterThan(1_500)
   })
 })
