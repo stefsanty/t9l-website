@@ -4,9 +4,9 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import { timingSafeEqual } from "crypto";
 import { prisma } from "@/lib/prisma";
 import {
-  getCached as getCachedMapping,
-  setCached as setCachedMapping,
-} from "@/lib/playerMappingCache";
+  getMapping,
+  setMapping,
+} from "@/lib/playerMappingStore";
 
 function safeEqual(a: string, b: string): boolean {
   const ab = Buffer.from(a);
@@ -27,16 +27,22 @@ function stripPrefix(id: string, prefix: string): string {
   return id.startsWith(prefix) ? id.slice(prefix.length) : id;
 }
 
-// Resolve session.{playerId, playerName, teamId} from Prisma. Player.lineId is
-// the canonical link as of PR 6 (B1 migration). Player.id and LeagueTeam.team.id
-// carry the "p-"/"t-" prefixes inserted by the backfill — the public-facing
-// shape (and what RSVP/schedule/banner code already consumes) uses the bare
-// slug, so strip prefixes here to keep session values stable across the cutover.
+// Resolve session.{playerId, playerName, teamId} from Prisma. As of PR 16 /
+// v1.5.0, Prisma is the **durable secondary** for the `lineId → Player`
+// mapping — Redis (`playerMappingStore`) is the canonical store consulted on
+// every JWT callback. Prisma is read here in three places: (1) admin write
+// sites that pre-warm the Redis store after a write, (2) the defensive
+// fallback inside `getPlayerMapping` when Redis is _unreachable_ (not just
+// missing — see file head of `playerMappingStore.ts`), and (3) the recovery
+// script `scripts/backfillRedisFromPrisma.ts` that rebuilds Redis from
+// Player.lineId rows on demand.
 //
-// Exported so the admin write sites in `admin/actions.ts` and
-// `admin/leagues/actions.ts` can fetch the same relation-include shape post-
-// write and pre-warm the JWT mapping cache (PR 9) — one source of truth for
-// the slug-stripping rules.
+// Player.id and LeagueTeam.team.id carry the "p-"/"t-" prefixes inserted by
+// the PR 6 backfill — the public-facing shape (and what RSVP/schedule/banner
+// code already consumes) uses the bare slug, so strip prefixes here to keep
+// session values stable across the cutover. One source of truth for the
+// slug-stripping rules; admin write sites + the v1.5.0 backfill script all
+// route through this function.
 export async function getPlayerMappingFromDb(lineId: string): Promise<PlayerMapping | null> {
   const player = await prisma.player.findUnique({
     where: { lineId },
@@ -59,61 +65,74 @@ export async function getPlayerMappingFromDb(lineId: string): Promise<PlayerMapp
   };
 }
 
-// Legacy fallback. PR 6 migrated the canonical store from Upstash Redis
-// (`line-player-map` hash) to Player.lineId in Prisma. Reads still consult Redis
-// when Prisma misses so any LINE user whose Redis row hasn't been backfilled
-// yet (or whose Player record was deleted post-link) doesn't immediately lose
-// their session. The deprecation-window console.warn marks every Redis hit so
-// the operator can confirm zero hits over a soak window before deleting the
-// fallback (target: PR 7+).
-async function getPlayerMappingFromRedis(lineId: string): Promise<PlayerMapping | null> {
-  if (!process.env.KV_REST_API_URL || !process.env.KV_REST_API_TOKEN) {
-    return null;
-  }
-  try {
-    const { Redis } = await import("@upstash/redis");
-    const redis = new Redis({
-      url: process.env.KV_REST_API_URL,
-      token: process.env.KV_REST_API_TOKEN,
-    });
-    const map = await redis.hget<PlayerMapping>("line-player-map", lineId);
-    return map ?? null;
-  } catch {
-    return null;
-  }
+/**
+ * Resolve `lineId → Player` from the v1.5.0 architecture: Redis is canonical;
+ * Prisma is the defensive fallback only when Redis is unreachable.
+ *
+ *   hit   → return value (mapping or null sentinel — both are authoritative)
+ *   miss  → return null  (orphan; pre-v1.5.0 fell through to Prisma, no more)
+ *   error → fall through to Prisma so an Upstash transient outage doesn't
+ *           null every authenticated session for the duration of the blip.
+ *           The fallback result is written back to Redis on success so the
+ *           next request hits the store directly.
+ *
+ * The legacy `getPlayerMappingFromRedis` (line-player-map hash, PR 6
+ * deprecation window) was retired in v1.5.0 — every LINE user was migrated
+ * to `Player.lineId` by the PR 6 backfill, and the v1.5.0 store reads from a
+ * different namespace (`t9l:auth:map:`) so there is no remaining role for
+ * the legacy hash. The `legacyRedisCleanup` calls in `api/assign-player`
+ * still HDEL the legacy hash defensively on every link/unlink so any
+ * residual entries decay to empty.
+ */
+// Exported under the `__` prefix as the test seam — production code reads
+// the mapping via the JWT callback which calls `getPlayerMapping` internally
+// (see line 87). Unit test in `tests/unit/getPlayerMapping.test.ts` pins the
+// tri-state branches without mounting next-auth.
+export async function __getPlayerMapping_for_testing(
+  lineId: string,
+): Promise<PlayerMapping | null> {
+  return getPlayerMapping(lineId);
 }
 
 async function getPlayerMapping(lineId: string): Promise<PlayerMapping | null> {
-  // Cache-aside: check Upstash first. Hit returns immediately and skips both
-  // Prisma and the Redis fallback. Miss falls through to the canonical reads
-  // and writes the result back (including null mappings via the sentinel).
-  // Writers in api/assign-player, admin/leagues/actions, and admin/actions
-  // call playerMappingCache.invalidate() so the cache can't outlive a write
-  // beyond the racy in-flight window. See PR 8 (v1.2.3).
-  const cached = await getCachedMapping(lineId);
-  if (cached !== undefined) return cached.value;
+  const result = await getMapping(lineId);
 
-  let resolved: PlayerMapping | null = null;
+  if (result.status === 'hit') {
+    return result.value;
+  }
+
+  if (result.status === 'miss') {
+    // Canonical "no mapping". Pre-v1.5.0 this fell through to Prisma; the
+    // v1.5.0 architecture treats the store as authoritative — orphans
+    // re-link via /assign-player or wait for an admin to assign them.
+    return null;
+  }
+
+  // Redis is unreachable / errored. Fall back to Prisma defensively to keep
+  // existing sessions alive through transient Upstash outages. On success,
+  // pre-warm the store so the next request finds it directly. Errors here
+  // (Prisma failure) are logged and the user is treated as orphan — same
+  // failure mode as pre-v1.5.0.
+  console.warn(
+    "[auth] playerMappingStore unreachable (reason=%s); falling through to Prisma for lineId=%s",
+    result.reason,
+    lineId,
+  );
   try {
     const fromDb = await getPlayerMappingFromDb(lineId);
-    if (fromDb) {
-      resolved = fromDb;
-    }
+    // Best-effort pre-warm. If Redis is still down, this is a no-op — the
+    // store helper swallows write errors. Either way, the auth callback
+    // already has the answer it needs.
+    await setMapping(lineId, fromDb);
+    return fromDb;
   } catch (err) {
-    console.error("[auth] getPlayerMappingFromDb failed for lineId=%s: %o", lineId, err);
+    console.error(
+      "[auth] getPlayerMappingFromDb failed in store-error fallback for lineId=%s: %o",
+      lineId,
+      err,
+    );
+    return null;
   }
-  if (!resolved) {
-    const fromRedis = await getPlayerMappingFromRedis(lineId);
-    if (fromRedis) {
-      console.warn("[auth] DEPRECATED Redis hit for lineId=%s — backfill row missing in Prisma", lineId);
-      resolved = fromRedis;
-    }
-  }
-
-  // Cache the outcome — including null — so unmapped LINE IDs don't re-hit
-  // Prisma every request. Invalidation at every write site keeps this honest.
-  await setCachedMapping(lineId, resolved);
-  return resolved;
 }
 
 // Upsert a LineLogin row on every authenticated request. Powers the admin

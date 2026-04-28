@@ -7,9 +7,9 @@ import { getServerSession } from 'next-auth'
 import { authOptions, getPlayerMappingFromDb } from '@/lib/auth'
 import { revalidatePublicData } from '@/lib/revalidate'
 import {
-  invalidate as invalidateMappingCache,
-  setCached as setCachedMapping,
-} from '@/lib/playerMappingCache'
+  deleteMapping,
+  setMapping,
+} from '@/lib/playerMappingStore'
 
 async function assertAdmin() {
   const session = await getServerSession(authOptions)
@@ -69,7 +69,7 @@ export async function updatePlayer(formData: FormData) {
   // choice: the next request re-reads Prisma and self-heals, and the 60s TTL
   // guards against drift either way. (See PR 9.)
   if (priorLineId && priorLineId !== lineId) {
-    await invalidateMappingCache(priorLineId)
+    await deleteMapping(priorLineId)
   }
   // NEW lineId — pre-warm with the post-write mapping so the just-linked
   // user's next /api/auth/session hits cache instead of the cold Prisma
@@ -77,7 +77,7 @@ export async function updatePlayer(formData: FormData) {
   // parity with the JWT path.
   if (lineId && lineId !== priorLineId) {
     const fresh = await getPlayerMappingFromDb(lineId)
-    await setCachedMapping(lineId, fresh)
+    await setMapping(lineId, fresh)
   }
 
   revalidatePath('/admin/players')
@@ -101,7 +101,7 @@ export async function createPlayer(formData: FormData) {
   // compute itself for an unassigned player.
   if (lineId) {
     const fresh = await getPlayerMappingFromDb(lineId)
-    await setCachedMapping(lineId, fresh)
+    await setMapping(lineId, fresh)
   }
 
   revalidatePath('/admin/players')
