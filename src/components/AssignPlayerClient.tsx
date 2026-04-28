@@ -11,8 +11,9 @@ import {
   unassignButtonLabel,
   unassignButtonDisabled,
 } from '@/lib/assignButtonLabel';
-import { attemptLink, attemptUnlink } from '@/lib/optimisticLink';
-import { notifyLinkOutcome, notifyUnlinkOutcome } from '@/lib/assignToast';
+import { attemptUnlink } from '@/lib/optimisticLink';
+import { notifyUnlinkOutcome } from '@/lib/assignToast';
+import { performAssignSubmit } from '@/lib/assignSubmit';
 
 interface Props {
   playersByTeam: { team: Team; players: Player[] }[];
@@ -54,31 +55,23 @@ export default function AssignPlayerClient({ playersByTeam }: Props) {
     setError(null);
     setSubmitting(true);
 
-    // Auto-navigate on success (v1.6.0): the inline success view + Go-home
-    // button (PR 13 / v1.4.0) added a friction step the user wanted gone.
-    // Now: API write → toast.success + router.push('/') in one go. The
-    // toast persists across navigation because <Toaster /> lives at the
-    // root layout level. On failure, the user stays on /assign-player and
-    // sees an error toast for retry.
-    const result = await attemptLink(selectedPlayerId);
-    if (!result.ok) {
-      setError(result.error);
-      setSubmitting(false);
-      notifyLinkOutcome(result, toast);
-      return;
-    }
-
-    // Fire the next-auth refresh so the destination renders with a fresh
-    // JWT (PR 11 / v1.3.0 fire-and-forget pattern). The toast + push are
-    // not gated on this — under cold-most-of-the-time, awaiting it would
-    // re-introduce the multi-second hang we removed.
-    update().catch((err) => {
-      console.warn('[assign] background session refresh failed:', err);
-    });
-
-    notifyLinkOutcome(result, toast);
-    startTransition(() => {
-      router.push('/');
+    // v1.6.1: navigate IMMEDIATELY on click — don't gate the route push on
+    // the API write. v1.6.0 awaited `attemptLink` first, which on a cold
+    // Vercel lambda left the user staring at "Saving…" for 3–5s with no
+    // perceived nav until the toast finally appeared. The fire-and-forget
+    // shape is encapsulated in `performAssignSubmit` (push synchronously,
+    // then await the link, then toast) so the order is unit-testable.
+    await performAssignSubmit(selectedPlayerId, {
+      pushHome: () =>
+        startTransition(() => {
+          router.push('/');
+        }),
+      toast,
+      refreshSession: () => update(),
+      onError: (msg) => {
+        setError(msg);
+        setSubmitting(false);
+      },
     });
   }
 
