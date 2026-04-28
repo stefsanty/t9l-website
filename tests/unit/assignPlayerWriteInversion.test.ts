@@ -63,15 +63,22 @@ vi.mock('@/lib/auth', () => ({
   authOptions: {},
 }))
 
+const { getPlayerByPublicIdMock, revalidatePathMock, revalidateTagMock } =
+  vi.hoisted(() => ({
+    getPlayerByPublicIdMock: vi
+      .fn()
+      .mockResolvedValue({ id: 'test-player', name: 'Test Player', teamId: 'test-team' }),
+    revalidatePathMock: vi.fn(),
+    revalidateTagMock: vi.fn(),
+  }))
+
 vi.mock('@/lib/publicData', () => ({
-  getPublicLeagueData: vi.fn().mockResolvedValue({
-    players: [{ id: 'test-player', name: 'Test Player', teamId: 'test-team' }],
-  }),
+  getPlayerByPublicId: getPlayerByPublicIdMock,
 }))
 
 vi.mock('next/cache', () => ({
-  revalidatePath: vi.fn(),
-  revalidateTag: vi.fn(),
+  revalidatePath: revalidatePathMock,
+  revalidateTag: revalidateTagMock,
 }))
 
 vi.mock('@vercel/functions', () => ({
@@ -250,5 +257,67 @@ describe('DELETE /api/assign-player — Redis-canonical sync, Prisma deferred', 
     const res = await DELETE()
     expect(res.status).toBe(500)
     expect(waitUntilMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('v1.8.2 — link/unlink does NOT bust the public-data static cache', () => {
+  // The link state is owned by the JWT (`session.playerId/playerName/teamId`)
+  // and Redis (`playerMappingStore`); none of it flows through the cached
+  // `getFromDb()` / `getFromSheets()` blob. Pre-v1.8.2 the route called
+  // `revalidatePath('/')` + `revalidateTag('public-data', { expire: 0 })` on
+  // every link/unlink, which forced a needless re-derivation on the user's
+  // next `/` render — measurably ~580ms warm and multi-second cold. v1.8.2
+  // drops both calls. Mirrors v1.7.0's drop of the same calls in `/api/rsvp`.
+  //
+  // The picture-mirror waitUntil callback DOES still call
+  // `revalidateTag('public-data', { expire: 0 })` once a new Blob URL is
+  // staged — that's the correct trigger because pictureUrl IS in the static
+  // cache. Tests for that path live in `assignPlayerBackgroundPic.test.ts`.
+
+  it('POST does not call revalidatePath', async () => {
+    const req = new Request('http://localhost/api/assign-player', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ playerId: 'test-player' }),
+    })
+    const res = await POST(req)
+    expect(res.status).toBe(200)
+    expect(revalidatePathMock).not.toHaveBeenCalled()
+  })
+
+  it('POST does not call revalidateTag on the synchronous response path', async () => {
+    // The pic-mirror code path inside uploadAndPersistLinePic also calls
+    // revalidateTag, but only if waitUntil's callback runs. Default test
+    // harness has no linePictureUrl + no BLOB_READ_WRITE_TOKEN, so that
+    // path is skipped — the assertion here is that the SYNCHRONOUS body
+    // of POST emits zero revalidateTag calls.
+    const req = new Request('http://localhost/api/assign-player', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ playerId: 'test-player' }),
+    })
+    const res = await POST(req)
+    expect(res.status).toBe(200)
+    expect(revalidateTagMock).not.toHaveBeenCalled()
+  })
+
+  it('DELETE does not call revalidatePath or revalidateTag', async () => {
+    const res = await DELETE()
+    expect(res.status).toBe(200)
+    expect(revalidatePathMock).not.toHaveBeenCalled()
+    expect(revalidateTagMock).not.toHaveBeenCalled()
+  })
+
+  it('uses the lighter getPlayerByPublicId helper, not the full LeagueData blob', async () => {
+    // Validation should go through getPlayerByPublicId (no RSVP fanout) — a
+    // regression to getPublicLeagueData would re-introduce the uncached
+    // 12×HGETALL fanout per write.
+    const req = new Request('http://localhost/api/assign-player', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ playerId: 'test-player' }),
+    })
+    await POST(req)
+    expect(getPlayerByPublicIdMock).toHaveBeenCalledWith('test-player')
   })
 })

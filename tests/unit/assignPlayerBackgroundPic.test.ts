@@ -64,9 +64,10 @@ vi.mock('@/lib/auth', () => ({
 }))
 
 vi.mock('@/lib/publicData', () => ({
-  getPublicLeagueData: vi.fn().mockResolvedValue({
-    players: [{ id: 'test-player', name: 'Test Player', teamId: 'test-team' }],
-  }),
+  // v1.8.2 — route uses getPlayerByPublicId. Mock returns a single record.
+  getPlayerByPublicId: vi
+    .fn()
+    .mockResolvedValue({ id: 'test-player', name: 'Test Player', teamId: 'test-team' }),
 }))
 
 vi.mock('next/cache', () => ({
