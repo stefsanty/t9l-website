@@ -15,21 +15,29 @@ test.describe('public assign-player surface', () => {
 })
 
 /**
- * Regression tests for the v1.6.0 auto-navigate + toast UX.
+ * Regression tests for the v1.6.1 navigate-immediately-then-write UX.
  *
  * v1.4.0 (PR 13) replaced the auto-navigate-on-success with `useOptimistic`
  * + an inline "✓ Linked to {Player}" success view + an explicit Go-home
- * button. v1.6.0 reverses that: the inline view is gone, the API write
- * triggers `router.push('/')` immediately, and a Sonner toast confirms the
- * outcome. The toast lives at the root layout level so it persists across
- * the route transition.
+ * button. v1.6.0 (PR 17) reversed that: the inline view was gone, the API
+ * write triggered `router.push('/')`, and a Sonner toast confirmed the
+ * outcome. But v1.6.0 awaited the API write BEFORE firing `router.push` —
+ * on cold Vercel lambdas (3–5s) that left the user staring at "Saving…"
+ * with no perceived nav until the toast appeared, which read as
+ * "navigation tied to toast dismissal" because nothing happened until the
+ * toast did.
+ *
+ * v1.6.1 (PR 18) inverts the order: `router.push('/')` fires synchronously
+ * on click, the API write runs in the background, and the toast appears on
+ * the destination once the API resolves. The toast lives at the root
+ * layout so it persists across the route transition.
  *
  * Two specs:
- *   1. Confirm → URL changes to `/` within ~1s, success toast visible with
- *      the player name, toast auto-dismisses within ~5s.
- *   2. Stalled API → user stays on /assign-player while the request is in
- *      flight (no premature push, no double-fire), and lands on / once the
- *      API resolves.
+ *   1. Confirm → URL changes to `/` within ~1s (NOT 3–5s), success toast
+ *      visible with the player name, toast auto-dismisses within ~5s.
+ *   2. Stalled API (2s) → user lands on `/` BEFORE the API resolves
+ *      (immediate nav, fire-and-forget shape), and the toast still fires
+ *      post-navigation once the write completes.
  *
  * Requires dev server (NODE_ENV=development → dev-login provider). Skipped
  * against any non-localhost BASE_URL because dev-login is absent in prod.
@@ -41,9 +49,10 @@ test.describe('public assign-player surface', () => {
  * Unit tests pin the underlying contracts:
  *   - tests/unit/optimisticLink.test.ts — the rollback gate (200/4xx/network)
  *   - tests/unit/assignToast.test.ts    — toast dispatch shape
+ *   - tests/unit/assignSubmit.test.ts   — push-before-await ordering (v1.6.1)
  *   - tests/unit/assignButtonLabel.test.ts — confirm/unassign button states
  */
-test.describe('regression: auto-navigate + toast on link success (v1.6.0)', () => {
+test.describe('regression: navigate-immediately + toast on link success (v1.6.1)', () => {
   test.skip(!isLocal, 'requires local dev with dev-login provider (NODE_ENV=development)')
 
   // Helper: log in as a fresh guest with no linked player so the form
@@ -82,14 +91,16 @@ test.describe('regression: auto-navigate + toast on link success (v1.6.0)', () =
     const clickAt = Date.now()
     await page.getByTestId('assign-confirm-button').click()
 
-    // URL changes to / within ~1s — i.e. the auto-navigate fires the moment
-    // the API resolves, no Go-home click required.
-    await page.waitForURL((url) => url.pathname === '/', { timeout: 5_000 })
+    // URL changes to / within ~1s — v1.6.1 fires `router.push('/')`
+    // synchronously on click, NOT after awaiting the API. A regression to
+    // v1.6.0's await-then-push order would push this to 3–5s on cold
+    // lambdas, so the tighter budget is the regression target.
+    await page.waitForURL((url) => url.pathname === '/', { timeout: 2_000 })
     const navAt = Date.now()
     expect(
       navAt - clickAt,
-      `click→navigation took ${navAt - clickAt}ms — should be ≤ ~3s under warm cache`,
-    ).toBeLessThan(5_000)
+      `click→navigation took ${navAt - clickAt}ms — must be ≤ ~1s; v1.6.0 await-then-push regression would put this at 3–5s on cold lambdas`,
+    ).toBeLessThan(1_500)
 
     // Toast confirms the outcome on the destination. Sonner renders toasts
     // with role="status".
@@ -102,10 +113,11 @@ test.describe('regression: auto-navigate + toast on link success (v1.6.0)', () =
     await expect(toast).toBeHidden({ timeout: 8_000 })
   })
 
-  test('Confirm with a stalled API stays on /assign-player until the write resolves', async ({
+  test('Confirm with a stalled API navigates to / immediately, toast fires post-nav', async ({
     page,
   }) => {
-    // Stall the POST by 2s so we can observe pre-resolution state.
+    // Stall the POST by 2s so we can observe that nav fires BEFORE the
+    // API resolves — that is the v1.6.1 regression target.
     await page.route('**/api/assign-player', async (route) => {
       if (route.request().method() === 'POST') {
         await new Promise((r) => setTimeout(r, 2_000))
@@ -124,26 +136,21 @@ test.describe('regression: auto-navigate + toast on link success (v1.6.0)', () =
     const clickAt = Date.now()
     await confirm.click()
 
-    // Within ~500ms the URL must still be /assign-player — auto-nav must
-    // wait for the API write rather than fire optimistically.
-    await page.waitForTimeout(500)
-    expect(page.url()).toContain('/assign-player')
-
-    // The button shows "Saving…" (the in-flight label from assignButtonLabel).
-    await expect(confirm).toHaveText(/Saving/i)
-
-    // Once the API resolves we land on /.
-    await page.waitForURL((url) => url.pathname === '/', { timeout: 6_000 })
+    // The URL must change to / well before the 2s API stall completes —
+    // v1.6.1 navigates synchronously on click, the API write is
+    // fire-and-forget. v1.6.0's await-then-push regression would keep the
+    // URL on /assign-player for the full 2s.
+    await page.waitForURL((url) => url.pathname === '/', { timeout: 1_500 })
     const navAt = Date.now()
     expect(
       navAt - clickAt,
-      `nav took ${navAt - clickAt}ms — must be ≥ ~1.5s (the 2s API stall)`,
-    ).toBeGreaterThan(1_500)
+      `nav took ${navAt - clickAt}ms — must be < 1.5s (i.e. before the 2s API stall ends); regression to await-then-push would push this to ≥2s`,
+    ).toBeLessThan(1_500)
 
-    // Toast still fires after navigation.
+    // Toast fires AFTER the API resolves (~2s later) and is visible on /.
     await expect(
       page.getByRole('status').filter({ hasText: /Linked to/i }),
-    ).toBeVisible({ timeout: 2_000 })
+    ).toBeVisible({ timeout: 4_000 })
   })
 })
 
