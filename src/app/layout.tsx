@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Inter, Barlow_Condensed, Barlow, DM_Mono } from "next/font/google";
 import Script from "next/script";
+import { Toaster } from "sonner";
 import AuthProvider from "@/components/AuthProvider";
 import ThemeProvider from "@/components/ThemeProvider";
 import VersionFooter from "@/components/VersionFooter";
@@ -91,6 +92,12 @@ export default function RootLayout({
             <VersionFooter variant="public" />
           </AuthProvider>
         </ThemeProvider>
+        <Toaster
+          position="top-center"
+          duration={4500}
+          theme="dark"
+          toastOptions={{ className: 'font-display uppercase tracking-wider text-xs' }}
+        />
       </body>
     </html>
   );

@@ -1,38 +1,15 @@
 /**
- * Pure helpers for the optimistic player-linking flow on /assign-player.
+ * Pure I/O helpers for the player-linking flow on /assign-player. These wrap
+ * the POST/DELETE against `/api/assign-player` into a discriminated union
+ * `{ ok: true, ... } | { ok: false, error }` that callers branch on.
  *
- * Why this lives outside `AssignPlayerClient.tsx` (PR 13 / v1.4.0):
- *   `useOptimistic` flips the UI before the API resolves — but we still need
- *   to bound the request boundary so the component can decide commit-vs-revert.
- *   That request boundary is the rollback gate. Pulling it into a pure async
- *   function lets vitest pin the gate without mounting React: the test fakes
- *   `fetch`, calls `attemptLink`, and asserts the returned discriminated
- *   union. Any future edit that swallows an error or returns the wrong shape
- *   breaks the test.
- *
- * The component owns the optimistic state itself (`useOptimistic`) and the
- * commit/revert wiring; this module only owns the I/O.
- *
- * Why `deps.fetch` is optional (PR 15 / v1.4.3):
- *   The previous shape REQUIRED callers to pass `{ fetch }` and then invoked
- *   `deps.fetch(...)` internally — which calls fetch as a *method of `deps`*,
- *   not as a method of the Window. Browser fetch's WebIDL brand check rejects
- *   any receiver that isn't a Window/Worker → "Illegal invocation". Vitest
- *   spies have no such brand check, so unit tests passed cleanly while every
- *   real link/unlink in production threw and rolled back the optimistic flip.
- *   The fix: make `deps` optional, and when it's omitted, default to a
- *   free-function wrapper around the global `fetch`. Free-function fetch in
- *   module scope works in browsers (the WebIDL realm-binding handles the
- *   global call). Tests still pass `{ fetch: spy }` — the seam is preserved
- *   for injection, but production callers no longer touch the fetch reference
- *   at all.
+ * Why `deps.fetch` is optional (PR 15 / v1.4.3): the previous shape required
+ * callers to pass `{ fetch }` and invoked `deps.fetch(...)` internally —
+ * which calls fetch as a method of the plain `deps` object, tripping the
+ * browser's WebIDL receiver brand check ("Illegal invocation"). The fix
+ * routes the no-deps path through a module-scope wrapper that calls the
+ * global `fetch`. Tests still inject via `{ fetch: spy }` for spying.
  */
-
-export type LinkedState = {
-  playerId: string
-  playerName: string
-  teamId: string
-}
 
 export type LinkAttemptResult =
   | { ok: true; playerId: string; playerName: string; teamId: string }
