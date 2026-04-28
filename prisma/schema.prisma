@@ -244,3 +244,21 @@ enum ParticipatedStatus {
   JOINED
   NO_SHOWED
 }
+
+// Tracks every distinct LINE user that has authenticated against the public
+// site, regardless of whether they've been linked to a Player record yet.
+// Populated upsert-on-login from the next-auth JWT callback (lib/auth.ts).
+//
+// Drives the admin "Assign Player" Flow B dropdown: orphan = LineLogin row
+// whose `lineId` does not appear on any `Player.lineId`. Composite index on
+// (lastSeenAt) supports sorting orphans by recent activity in the admin UI.
+model LineLogin {
+  id          String   @id @default(cuid())
+  lineId      String   @unique
+  name        String?
+  pictureUrl  String?
+  firstSeenAt DateTime @default(now())
+  lastSeenAt  DateTime @updatedAt
+
+  @@index([lastSeenAt])
+}

@@ -2,6 +2,7 @@ import type { AuthOptions } from "next-auth";
 import LineProvider from "next-auth/providers/line";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { timingSafeEqual } from "crypto";
+import { prisma } from "@/lib/prisma";
 
 function safeEqual(a: string, b: string): boolean {
   const ab = Buffer.from(a);
@@ -16,7 +17,47 @@ type PlayerMapping = {
   teamId: string;
 };
 
-async function getPlayerMapping(lineId: string): Promise<PlayerMapping | null> {
+const TEAM_ID_PREFIX = "t-";
+const PLAYER_ID_PREFIX = "p-";
+function stripPrefix(id: string, prefix: string): string {
+  return id.startsWith(prefix) ? id.slice(prefix.length) : id;
+}
+
+// Resolve session.{playerId, playerName, teamId} from Prisma. Player.lineId is
+// the canonical link as of PR 6 (B1 migration). Player.id and LeagueTeam.team.id
+// carry the "p-"/"t-" prefixes inserted by the backfill — the public-facing
+// shape (and what RSVP/schedule/banner code already consumes) uses the bare
+// slug, so strip prefixes here to keep session values stable across the cutover.
+async function getPlayerMappingFromDb(lineId: string): Promise<PlayerMapping | null> {
+  const player = await prisma.player.findUnique({
+    where: { lineId },
+    include: {
+      leagueAssignments: {
+        include: { leagueTeam: { include: { team: true } } },
+        orderBy: { fromGameWeek: "desc" },
+      },
+    },
+  });
+  if (!player) return null;
+  const current =
+    player.leagueAssignments.find((a) => a.toGameWeek === null) ??
+    player.leagueAssignments[0] ??
+    null;
+  return {
+    playerId: stripPrefix(player.id, PLAYER_ID_PREFIX),
+    playerName: player.name,
+    teamId: current ? stripPrefix(current.leagueTeam.team.id, TEAM_ID_PREFIX) : "",
+  };
+}
+
+// Legacy fallback. PR 6 migrated the canonical store from Upstash Redis
+// (`line-player-map` hash) to Player.lineId in Prisma. Reads still consult Redis
+// when Prisma misses so any LINE user whose Redis row hasn't been backfilled
+// yet (or whose Player record was deleted post-link) doesn't immediately lose
+// their session. The deprecation-window console.warn marks every Redis hit so
+// the operator can confirm zero hits over a soak window before deleting the
+// fallback (target: PR 7+).
+async function getPlayerMappingFromRedis(lineId: string): Promise<PlayerMapping | null> {
   if (!process.env.KV_REST_API_URL || !process.env.KV_REST_API_TOKEN) {
     return null;
   }
@@ -30,6 +71,48 @@ async function getPlayerMapping(lineId: string): Promise<PlayerMapping | null> {
     return map ?? null;
   } catch {
     return null;
+  }
+}
+
+async function getPlayerMapping(lineId: string): Promise<PlayerMapping | null> {
+  try {
+    const fromDb = await getPlayerMappingFromDb(lineId);
+    if (fromDb) return fromDb;
+  } catch (err) {
+    console.error("[auth] getPlayerMappingFromDb failed for lineId=%s: %o", lineId, err);
+  }
+  const fromRedis = await getPlayerMappingFromRedis(lineId);
+  if (fromRedis) {
+    console.warn("[auth] DEPRECATED Redis hit for lineId=%s — backfill row missing in Prisma", lineId);
+  }
+  return fromRedis;
+}
+
+// Upsert a LineLogin row on every authenticated request. Powers the admin
+// "Assign Player" Flow B orphan-user dropdown. Failure is non-fatal — auth
+// must not block on the tracking write.
+async function trackLineLogin(
+  lineId: string,
+  name: string | null | undefined,
+  pictureUrl: string | null | undefined,
+): Promise<void> {
+  try {
+    await prisma.lineLogin.upsert({
+      where: { lineId },
+      create: {
+        lineId,
+        name: name ?? null,
+        pictureUrl: pictureUrl ?? null,
+      },
+      update: {
+        // Refresh metadata when LINE returns updated values; never overwrite
+        // a known good value with null (LINE may omit fields on token refresh).
+        ...(name ? { name } : {}),
+        ...(pictureUrl ? { pictureUrl } : {}),
+      },
+    });
+  } catch (err) {
+    console.error("[auth] trackLineLogin failed for lineId=%s: %o", lineId, err);
   }
 }
 
@@ -156,9 +239,16 @@ export const authOptions: AuthOptions = {
         token.playerId = null;
         token.playerName = null;
         token.teamId = null;
+        // Track this login in Prisma — first-seen population for Flow B.
+        await trackLineLogin(
+          token.lineId as string,
+          (profile as Record<string, unknown>).name as string | undefined,
+          (profile as Record<string, unknown>).picture as string | undefined,
+        );
       }
 
-      // Always check KV to sync with the database, allowing for unassignment
+      // Always check the canonical mapping (Prisma → Redis fallback) so the
+      // session reflects admin-driven (re)assignments and unassignments.
       if (token.lineId) {
         try {
           const mapping = await getPlayerMapping(token.lineId as string);
@@ -167,7 +257,6 @@ export const authOptions: AuthOptions = {
             token.playerName = mapping.playerName;
             token.teamId = mapping.teamId;
           } else {
-            // If no mapping exists in KV, clear it from the token
             token.playerId = null;
             token.playerName = null;
             token.teamId = null;

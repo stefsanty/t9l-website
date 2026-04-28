@@ -271,6 +271,43 @@ export async function removePlayerFromLeague(playerId: string, leagueId: string)
   revalidatePath(`/admin/leagues/${leagueId}/players`)
 }
 
+/**
+ * Flow B (PR 6): admin links an orphan LINE login to a Player record.
+ *
+ * Atomic: clear `lineId` from any other Player that currently holds it (the
+ * @unique constraint would otherwise block the write), then set on the
+ * target. updateMany rather than findFirst+update keeps the no-prior-holder
+ * case as a no-op instead of throwing.
+ *
+ * The lineId belonging to a different Player should be vanishingly rare
+ * (LINE IDs are stable per user), but this guards against the case where
+ * the operator is moving a LINE link from one Player record to another
+ * after a roster correction.
+ */
+export async function adminLinkLineToPlayer(input: {
+  playerId: string
+  lineId: string
+  leagueId: string
+}) {
+  await assertAdmin()
+  const { playerId, lineId, leagueId } = input
+  if (!playerId || !lineId) throw new Error('playerId and lineId are required')
+
+  await prisma.$transaction([
+    prisma.player.updateMany({
+      where: { lineId, id: { not: playerId } },
+      data: { lineId: null },
+    }),
+    prisma.player.update({
+      where: { id: playerId },
+      data: { lineId },
+    }),
+  ])
+
+  revalidatePublicData()
+  revalidatePath(`/admin/leagues/${leagueId}/players`)
+}
+
 // ── Settings (data source / write mode toggles) ──────────────────────────────
 
 const VALID_DATA_SOURCES: DataSource[] = ['sheets', 'db']

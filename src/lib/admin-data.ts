@@ -226,3 +226,46 @@ export async function getDashboardStats() {
     ])
   return { league, teamCount, playerCount, matchCount, goalCount, recentGoals }
 }
+
+/**
+ * Orphan LINE logins for the admin "Assign Player" Flow B dropdown.
+ *
+ * An orphan is a `LineLogin` row whose `lineId` is not currently set on any
+ * `Player.lineId`. Returned newest-first by `lastSeenAt` so the most recent
+ * unmatched sign-ins surface at the top.
+ *
+ * Two-query in-memory filter rather than a SQL anti-join: the table sizes
+ * (~53 players, similar # of LINE logins) make a JOIN noisier than the
+ * round-trip cost, and Prisma's `NOT { in: [] }` pattern hits an edge case
+ * when the array is empty (no players linked yet).
+ */
+export async function getOrphanLineLogins(): Promise<
+  Array<{
+    lineId: string
+    name: string | null
+    pictureUrl: string | null
+    firstSeenAt: Date
+    lastSeenAt: Date
+  }>
+> {
+  const [linkedRows, allLogins] = await Promise.all([
+    prisma.player.findMany({
+      where: { lineId: { not: null } },
+      select: { lineId: true },
+    }),
+    prisma.lineLogin.findMany({
+      orderBy: { lastSeenAt: 'desc' },
+      select: {
+        lineId: true,
+        name: true,
+        pictureUrl: true,
+        firstSeenAt: true,
+        lastSeenAt: true,
+      },
+    }),
+  ])
+  const linked = new Set(
+    linkedRows.map((p) => p.lineId).filter((x): x is string => !!x),
+  )
+  return allLogins.filter((l) => !linked.has(l.lineId))
+}
