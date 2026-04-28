@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
-import { revalidatePath, revalidateTag } from "next/cache";
+import { revalidateTag } from "next/cache";
 import { waitUntil } from "@vercel/functions";
 import { authOptions } from "@/lib/auth";
 import { put } from "@vercel/blob";
-import { getPublicLeagueData } from "@/lib/publicData";
+import { getPlayerByPublicId } from "@/lib/publicData";
 import { prisma } from "@/lib/prisma";
 import { setMappingOrThrow } from "@/lib/playerMappingStore";
 
@@ -192,10 +192,11 @@ export async function POST(req: Request) {
 
   // Validate the player exists in the public roster (works for both Sheets
   // and DB data sources). The public id is a slug; DB Player.id is the same
-  // slug carrying a "p-" prefix. getPublicLeagueData is unstable_cache-wrapped,
-  // so this is typically <50ms even cold.
-  const data = await getPublicLeagueData();
-  const player = data.players.find((p) => p.id === playerId);
+  // slug carrying a "p-" prefix. v1.8.2 — uses `getPlayerByPublicId` instead
+  // of the full `getPublicLeagueData()` so the validation skips the
+  // (uncached) RSVP merge fanout — that read is load-bearing for dashboard
+  // renders but pure overhead for write-path validation.
+  const player = await getPlayerByPublicId(playerId);
 
   if (!player) {
     return NextResponse.json({ error: "Player not found" }, { status: 404 });
@@ -228,7 +229,9 @@ export async function POST(req: Request) {
   // ── Deferred picture mirror (independent of Prisma) ─────────────────────
   // PR 12 already moved this off the critical path. Kept independent of the
   // Prisma waitUntil above so a Prisma failure doesn't tank the picture
-  // mirror and vice versa.
+  // mirror and vice versa. The picture-upload path runs its own
+  // `revalidateTag('public-data')` once the Blob URL lands so the new avatar
+  // appears on the next dashboard render.
   if (session.linePictureUrl && process.env.BLOB_READ_WRITE_TOKEN) {
     waitUntil(
       uploadAndPersistLinePic({
@@ -240,8 +243,14 @@ export async function POST(req: Request) {
     );
   }
 
-  revalidatePath("/");
-  revalidateTag("public-data", { expire: 0 });
+  // v1.8.2 — no `revalidatePath('/')` / `revalidateTag('public-data')` here.
+  // The link state is owned by the JWT (refreshed via next-auth `update()`
+  // on the client) and Redis (canonical store consulted by `getPlayerMapping`
+  // on the next session read). Neither flows through the static `public-data`
+  // cache, so busting it would only force a needless re-derivation on the
+  // user's next `/` render. Mirrors v1.7.0's drop of these calls from
+  // `/api/rsvp` for the same reason. The picture mirror handles its own
+  // revalidate above when it actually has new data to expose.
   return NextResponse.json({ ok: true, playerId, playerName, teamId });
 }
 
@@ -265,7 +274,7 @@ export async function DELETE() {
   // ── Deferred durable write: clear Prisma Player.lineId (background) ─────
   waitUntil(persistUnassignmentToPrisma(session.lineId));
 
-  revalidatePath("/");
-  revalidateTag("public-data", { expire: 0 });
+  // v1.8.2 — see POST handler above for the rationale on dropping the
+  // public-data revalidation. Same shape applies on unlink.
   return NextResponse.json({ ok: true });
 }

@@ -231,3 +231,23 @@ export async function getPublicLeagueData(): Promise<LeagueData> {
     played: rsvp.played,
   }
 }
+
+/**
+ * Lighter validation read: returns just the player record without the RSVP
+ * merge. Used by `/api/assign-player` POST to verify the targeted slug
+ * exists in the active roster.
+ *
+ * `getPublicLeagueData` always runs `getRsvpData()` (uncached, ~12 parallel
+ * Upstash HGETALLs on the default league's GameWeeks) — that's load-bearing
+ * for dashboard renders but pure overhead for write-path validation. v1.8.2
+ * routes the route's player-existence check through this helper instead so
+ * link / unlink avoid the RSVP fanout on every call.
+ */
+export async function getPlayerByPublicId(
+  publicPlayerId: string,
+): Promise<{ id: string; name: string; teamId: string } | null> {
+  const source = await getDataSource()
+  const staticData = source === 'db' ? await getFromDb() : await getFromSheets()
+  const player = staticData.players.find((p) => p.id === publicPlayerId)
+  return player ? { id: player.id, name: player.name, teamId: player.teamId } : null
+}
