@@ -32,7 +32,12 @@ function stripPrefix(id: string, prefix: string): string {
 // carry the "p-"/"t-" prefixes inserted by the backfill — the public-facing
 // shape (and what RSVP/schedule/banner code already consumes) uses the bare
 // slug, so strip prefixes here to keep session values stable across the cutover.
-async function getPlayerMappingFromDb(lineId: string): Promise<PlayerMapping | null> {
+//
+// Exported so the admin write sites in `admin/actions.ts` and
+// `admin/leagues/actions.ts` can fetch the same relation-include shape post-
+// write and pre-warm the JWT mapping cache (PR 9) — one source of truth for
+// the slug-stripping rules.
+export async function getPlayerMappingFromDb(lineId: string): Promise<PlayerMapping | null> {
   const player = await prisma.player.findUnique({
     where: { lineId },
     include: {

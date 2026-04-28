@@ -4,10 +4,10 @@ import { prisma } from '@/lib/prisma'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
+import { authOptions, getPlayerMappingFromDb } from '@/lib/auth'
 import { revalidatePublicData } from '@/lib/revalidate'
 import { SETTING_IDS, type DataSource, type WriteMode } from '@/lib/settings'
-import { invalidate as invalidateMappingCache } from '@/lib/playerMappingCache'
+import { setCached as setCachedMapping } from '@/lib/playerMappingCache'
 
 async function assertAdmin() {
   const session = await getServerSession(authOptions)
@@ -305,9 +305,13 @@ export async function adminLinkLineToPlayer(input: {
     }),
   ])
 
-  // Bust the JWT-callback mapping cache (PR 8). The previous holder (if any)
-  // was on the same lineId, so a single invalidation covers both records.
-  await invalidateMappingCache(lineId)
+  // Pre-warm the JWT-callback mapping cache (PR 9) with the post-write
+  // relation-include shape, so the next /api/auth/session for this lineId
+  // hits cache rather than the cold Prisma findUnique. Re-uses the canonical
+  // `getPlayerMappingFromDb` slug-stripping logic so the cached shape stays
+  // identical to what the auth path would have computed itself.
+  const fresh = await getPlayerMappingFromDb(lineId)
+  await setCachedMapping(lineId, fresh)
 
   revalidatePublicData()
   revalidatePath(`/admin/leagues/${leagueId}/players`)
