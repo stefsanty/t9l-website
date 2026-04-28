@@ -3,8 +3,7 @@
 import { useState, useEffect, useTransition, useOptimistic, useRef } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import type { Team } from '@/types';
-import type { AnnotatedPlayer } from '@/lib/linkedPlayers';
+import type { Team, Player } from '@/types';
 import {
   assignButtonLabel,
   assignButtonDisabled,
@@ -19,7 +18,7 @@ import {
 } from '@/lib/optimisticLink';
 
 interface Props {
-  playersByTeam: { team: Team; players: AnnotatedPlayer[] }[];
+  playersByTeam: { team: Team; players: Player[] }[];
 }
 
 export default function AssignPlayerClient({ playersByTeam }: Props) {
@@ -100,7 +99,11 @@ export default function AssignPlayerClient({ playersByTeam }: Props) {
 
     // Kick the request off SYNCHRONOUSLY (before the transition body awaits)
     // so the ref is populated by the time any user click on Go-home runs.
-    const apiPromise = attemptLink(selectedPlayerId, { fetch });
+    // No `{ fetch }` arg — see optimisticLink.ts (PR 15 / v1.4.3): passing
+    // `{ fetch }` made the helper invoke fetch as a method of the deps
+    // object, tripping the browser's WebIDL receiver brand check ("Illegal
+    // invocation"). The helper now uses the module-scope global fetch.
+    const apiPromise = attemptLink(selectedPlayerId);
     apiPromiseRef.current = apiPromise;
 
     startTransition(async () => {
@@ -133,7 +136,7 @@ export default function AssignPlayerClient({ playersByTeam }: Props) {
     setUnassigning(true);
     setError(null);
 
-    const result = await attemptUnlink({ fetch });
+    const result = await attemptUnlink();
     if (!result.ok) {
       setError(result.error);
       setUnassigning(false);
@@ -330,36 +333,13 @@ export default function AssignPlayerClient({ playersByTeam }: Props) {
                 <div className="grid grid-cols-2 gap-2">
                   {players.map((player) => {
                     const isSelected = selectedPlayerId === player.id;
-                    // PR 14 / v1.4.2 — `player.linked` is true when another LINE
-                    // user already holds this Player.lineId. Greyed-out, non-
-                    // clickable, "Already linked" tag. This prevents the false-
-                    // success path where the optimistic UI flips, then 409s.
-                    if (player.linked) {
-                      return (
-                        <div
-                          key={player.id}
-                          data-testid={`assign-player-row-${player.id}`}
-                          data-linked="true"
-                          aria-disabled="true"
-                          className="flex items-center gap-3 px-3 py-2.5 rounded-xl border border-border-subtle bg-surface/40 text-fg-low cursor-not-allowed opacity-50 select-none"
-                        >
-                          <div className="w-1.5 h-1.5 rounded-full shrink-0 border-2 border-border-subtle bg-transparent" />
-                          <div className="min-w-0 flex-1">
-                            <p className="text-[12px] font-bold truncate line-through decoration-fg-low/40">
-                              {player.name}
-                            </p>
-                          </div>
-                          <span className="shrink-0 text-[8px] font-black uppercase tracking-[0.15em] text-fg-low">
-                            {"Already linked"}
-                          </span>
-                        </div>
-                      );
-                    }
+                    // Linked players are filtered out server-side in
+                    // src/app/assign-player/page.tsx (PR 15 / v1.4.3) — the
+                    // picker shows only players the viewer can actually pick.
                     return (
                       <button
                         key={player.id}
                         data-testid={`assign-player-row-${player.id}`}
-                        data-linked="false"
                         onClick={() => setSelectedPlayerId(player.id)}
                         className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border text-left transition-all ${
                           isSelected

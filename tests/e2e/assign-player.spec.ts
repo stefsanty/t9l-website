@@ -147,23 +147,26 @@ test.describe('regression: optimistic linking is perceived-instant (PR 13 / v1.4
 })
 
 /**
- * Filter-already-linked-players regression (PR 14 / v1.4.2).
+ * Filter-already-linked-players regression (PR 14 / v1.4.2 → PR 15 / v1.4.3).
  *
- * Before this PR, `/assign-player` listed every roster row regardless of
+ * Before PR 14, `/assign-player` listed every roster row regardless of
  * whether another LINE user already held that `Player.lineId`. The user
  * could pick a claimed player, click Confirm, and the optimistic UI would
  * flash success before the API returned 409 — a small but real false-success
- * footgun. v1.4.2 reads `Player.lineId IS NOT NULL` from Prisma at SSR time
- * and renders those rows greyed-out (a `<div>`, not a `<button>`) with an
- * "Already linked" tag, so the user can see them on the roster but cannot
- * select them.
+ * footgun. PR 14 (v1.4.2) reads `Player.lineId IS NOT NULL` from Prisma at
+ * SSR time and rendered those rows greyed-out with an "Already linked" tag.
+ *
+ * PR 15 (v1.4.3) flipped the UX: linked players are HIDDEN entirely, not
+ * greyed-out. The picker shows only what the viewer can actually pick. This
+ * test was tightened to assert the linked row is absent from the DOM (count
+ * = 0) rather than rendered-but-disabled.
  *
  * The test runs in two contexts: A links a real player via the API; B opens
  * `/assign-player` in a fresh browser context and asserts the row A linked
- * renders as a non-clickable `<div>` with `data-linked="true"`. Cleanup
- * unlinks A regardless of pass/fail so the dev DB returns to its prior state.
+ * is not present. Cleanup unlinks A regardless of pass/fail so the dev DB
+ * returns to its prior state.
  */
-test.describe('regression: already-linked players are greyed-out (PR 14 / v1.4.2)', () => {
+test.describe('regression: already-linked players are hidden (PR 15 / v1.4.3)', () => {
   test.skip(!isLocal, 'requires local dev with dev-login provider (NODE_ENV=development)')
 
   async function devLogin(
@@ -189,22 +192,24 @@ test.describe('regression: already-linked players are greyed-out (PR 14 / v1.4.2
     })
   }
 
-  test('a player linked by another LINE user appears greyed-out + non-clickable', async ({ browser }) => {
+  test('a player linked by another LINE user is absent from the picker DOM', async ({ browser }) => {
     const ctxA = await browser.newContext()
     const pageA = await ctxA.newPage()
     let linkedSlug: string | null = null
 
     try {
-      await devLogin(pageA, `pr14-a-${Date.now()}`)
+      await devLogin(pageA, `pr15-a-${Date.now()}`)
       await pageA.goto('/assign-player')
 
-      // Pick the first row currently rendered as `data-linked="false"`. The
-      // dev DB may already have many linked rows from prior runs / backfill;
-      // the test only requires ONE unlinked row to drive the scenario.
-      const unlinkedRows = pageA.locator('[data-testid^="assign-player-row-"][data-linked="false"]')
-      await expect(unlinkedRows.first()).toBeVisible({ timeout: 5_000 })
-      const testid = await unlinkedRows.first().getAttribute('data-testid')
-      expect(testid, 'expected at least one unlinked roster row in the dev DB').toBeTruthy()
+      // Pick the first roster row currently rendered for user A. Linked
+      // players are filtered out of the picker entirely (PR 15), so any row
+      // present on A's view is either A's own previously-linked player (rare
+      // for a fresh dev seed) or a genuinely unlinked one. The test only
+      // needs ONE such row to drive the scenario.
+      const allRows = pageA.locator('[data-testid^="assign-player-row-"]')
+      await expect(allRows.first()).toBeVisible({ timeout: 5_000 })
+      const testid = await allRows.first().getAttribute('data-testid')
+      expect(testid, 'expected at least one selectable row in the dev DB').toBeTruthy()
       linkedSlug = testid!.replace('assign-player-row-', '')
 
       // Link A → linkedSlug via the API directly (skip the React UX, this
@@ -217,32 +222,25 @@ test.describe('regression: already-linked players are greyed-out (PR 14 / v1.4.2
 
       // Now open a separate context (fresh cookie jar) as user B with a
       // distinct dev playerId seed → distinct lineId. B has not linked
-      // anyone, so `linkedSlug` should NOT be the viewer's own row.
+      // anyone, so `linkedSlug` is NOT the viewer's own row.
       const ctxB = await browser.newContext()
       const pageB = await ctxB.newPage()
       try {
-        await devLogin(pageB, `pr14-b-${Date.now()}`)
+        await devLogin(pageB, `pr15-b-${Date.now()}`)
         await pageB.goto('/assign-player')
 
+        // First sanity-check: the page rendered the picker (some other rows
+        // exist), so a missing target row means filtered-out, not a load
+        // failure or empty-DB false-positive.
+        await expect(
+          pageB.locator('[data-testid^="assign-player-row-"]').first(),
+        ).toBeVisible({ timeout: 5_000 })
+
+        // The linked player must NOT appear on B's view. count() === 0 is
+        // the contract: filtered out at the page layer, never reaches the
+        // client.
         const targetRow = pageB.getByTestId(`assign-player-row-${linkedSlug}`)
-        await expect(targetRow).toBeVisible({ timeout: 5_000 })
-
-        // Greyed-out container is rendered as a `<div>` with data-linked="true".
-        // The selector below also confirms the row is NOT a `<button>`, so the
-        // browser's pointer-events / role semantics already disable it.
-        await expect(targetRow).toHaveAttribute('data-linked', 'true')
-        await expect(targetRow).toHaveAttribute('aria-disabled', 'true')
-        await expect(targetRow.locator('xpath=self::div')).toHaveCount(1)
-        await expect(targetRow.locator('xpath=self::button')).toHaveCount(0)
-
-        // The "Already linked" tag is visible on the row — UX transparency.
-        await expect(targetRow).toContainText(/Already linked/i)
-
-        // Clicking the row must not select it: the Confirm button stays in
-        // its "no selection" disabled state. (We confirm by checking that
-        // selecting via the row didn't move us to the success view.)
-        await targetRow.click({ trial: true }).catch(() => {})
-        await expect(pageB.getByTestId('assign-success-view')).toHaveCount(0)
+        await expect(targetRow).toHaveCount(0)
       } finally {
         await ctxB.close()
       }
