@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils'
 import StatusBadge from './StatusBadge'
 import InlineEditCell from './InlineEditCell'
 import ConfirmDialog from './ConfirmDialog'
+import MatchScoreEditor from './MatchScoreEditor'
 import { useToast } from './ToastProvider'
 import {
   createGameWeek,
@@ -615,27 +616,8 @@ interface MobileMatchRowProps {
   onDelete: () => void
 }
 
-function MobileMatchRow({ match, index, leagueId, leagueTeams, onDelete }: MobileMatchRowProps) {
+function MobileMatchRow({ match, index, leagueId, onDelete }: MobileMatchRowProps) {
   const { toast } = useToast()
-  const [editingScore, setEditingScore] = useState(false)
-  const [homeScore, setHomeScore] = useState(String(match.homeScore))
-  const [awayScore, setAwayScore] = useState(String(match.awayScore))
-  const [pending, startTransition] = useTransition()
-
-  function saveScore() {
-    setEditingScore(false)
-    const hs = parseInt(homeScore, 10)
-    const as = parseInt(awayScore, 10)
-    if (isNaN(hs) || isNaN(as)) return
-    startTransition(async () => {
-      try {
-        await updateMatch(match.id, leagueId, { homeScore: hs, awayScore: as, status: 'COMPLETED' })
-        toast('Score updated')
-      } catch {
-        toast('Failed to update score', 'error')
-      }
-    })
-  }
 
   return (
     <div className="px-4 py-3 border-b border-admin-border/50 last:border-b-0">
@@ -670,48 +652,7 @@ function MobileMatchRow({ match, index, leagueId, leagueTeams, onDelete }: Mobil
       </div>
       <div className="flex items-center gap-2">
         <span className="flex-1 text-sm text-admin-text truncate">{match.homeTeam.team.name}</span>
-        {editingScore ? (
-          <div className="flex items-center gap-1 shrink-0">
-            <input
-              autoFocus
-              type="number"
-              min={0}
-              value={homeScore}
-              onChange={(e) => setHomeScore(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') saveScore()
-                if (e.key === 'Escape') setEditingScore(false)
-              }}
-              className="w-10 bg-admin-surface3 border border-admin-green/50 text-admin-text text-xs rounded px-1 py-1 text-center font-mono outline-none"
-            />
-            <span className="text-admin-text3 text-xs">–</span>
-            <input
-              type="number"
-              min={0}
-              value={awayScore}
-              onChange={(e) => setAwayScore(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') saveScore()
-                if (e.key === 'Escape') setEditingScore(false)
-              }}
-              onBlur={saveScore}
-              className="w-10 bg-admin-surface3 border border-admin-green/50 text-admin-text text-xs rounded px-1 py-1 text-center font-mono outline-none"
-            />
-          </div>
-        ) : (
-          <span
-            className="font-mono text-admin-text2 text-sm cursor-pointer px-2 py-1 rounded hover:bg-admin-surface3 transition-colors shrink-0"
-            onClick={() => {
-              setHomeScore(String(match.homeScore))
-              setAwayScore(String(match.awayScore))
-              setEditingScore(true)
-            }}
-          >
-            {match.status === 'COMPLETED'
-              ? `${match.homeScore}–${match.awayScore}`
-              : <span className="text-admin-text3">vs</span>}
-          </span>
-        )}
+        <MatchScoreEditor key={match.id} match={match} leagueId={leagueId} variant="mobile" />
         <span className="flex-1 text-sm text-admin-text truncate text-right">{match.awayTeam.team.name}</span>
       </div>
     </div>
@@ -730,29 +671,6 @@ interface MatchSubrowProps {
 
 function MatchSubrow({ match, index, leagueId, leagueTeams, onDelete }: MatchSubrowProps) {
   const { toast } = useToast()
-  const [editingScore, setEditingScore] = useState(false)
-  const [homeScore, setHomeScore] = useState(String(match.homeScore))
-  const [awayScore, setAwayScore] = useState(String(match.awayScore))
-  const [pending, startTransition] = useTransition()
-
-  function saveScore() {
-    setEditingScore(false)
-    const hs = parseInt(homeScore, 10)
-    const as = parseInt(awayScore, 10)
-    if (isNaN(hs) || isNaN(as)) return
-    startTransition(async () => {
-      try {
-        await updateMatch(match.id, leagueId, {
-          homeScore: hs,
-          awayScore: as,
-          status: 'COMPLETED',
-        })
-        toast('Score updated')
-      } catch {
-        toast('Failed to update score', 'error')
-      }
-    })
-  }
 
   return (
     <div
@@ -817,38 +735,7 @@ function MatchSubrow({ match, index, leagueId, leagueTeams, onDelete }: MatchSub
       </span>
 
       <span>
-        {editingScore ? (
-          <div className="flex items-center gap-1">
-            <input
-              autoFocus
-              type="number"
-              min={0}
-              value={homeScore}
-              onChange={(e) => setHomeScore(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') saveScore(); if (e.key === 'Escape') setEditingScore(false) }}
-              className="w-10 bg-admin-surface3 border border-admin-green/50 text-admin-text text-xs rounded px-1 py-0.5 text-center font-mono outline-none"
-            />
-            <span className="text-admin-text3 text-xs">–</span>
-            <input
-              type="number"
-              min={0}
-              value={awayScore}
-              onChange={(e) => setAwayScore(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') saveScore(); if (e.key === 'Escape') setEditingScore(false) }}
-              onBlur={saveScore}
-              className="w-10 bg-admin-surface3 border border-admin-green/50 text-admin-text text-xs rounded px-1 py-0.5 text-center font-mono outline-none"
-            />
-          </div>
-        ) : (
-          <span
-            className="cursor-pointer transition-colors"
-            onClick={() => { setHomeScore(String(match.homeScore)); setAwayScore(String(match.awayScore)); setEditingScore(true) }}
-          >
-            {match.status === 'COMPLETED'
-              ? <span className="font-condensed font-bold text-base tracking-[1px] text-admin-text">{match.homeScore} – {match.awayScore}</span>
-              : <span className="font-mono text-xs text-admin-text3">vs</span>}
-          </span>
-        )}
+        <MatchScoreEditor key={match.id} match={match} leagueId={leagueId} variant="desktop" />
       </span>
 
       <span><StatusBadge status={match.status} /></span>
