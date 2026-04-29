@@ -11,7 +11,6 @@ import { useToast } from './ToastProvider'
 import {
   createGameWeek,
   updateGameWeek,
-  updateGameWeekVenue,
   deleteGameWeek,
   createMatch,
   updateMatch,
@@ -456,17 +455,21 @@ export default function ScheduleTab({ leagueId, gameWeeks, leagueTeams, venues }
                     />
                   </span>
                   <span className="text-admin-text2 text-sm pr-4" onClick={(e) => e.stopPropagation()}>
-                    <InlineEditCell
-                      value={gw.venue?.name ?? ''}
-                      displayValue={gw.venue?.name || <span className="text-admin-text3">—</span>}
-                      type="text"
-                      placeholder="Venue name…"
-                      onSave={async (val) => {
-                        await updateGameWeekVenue(gw.id, leagueId, val)
+                    <select
+                      data-venue-select
+                      value={gw.venue?.id ?? ''}
+                      onChange={async (e) => {
+                        const venueId = e.target.value || null
+                        await updateGameWeek(gw.id, leagueId, { venueId })
                         toast('Venue updated')
                       }}
-                      className="text-admin-text2 text-sm"
-                    />
+                      className="bg-transparent border border-admin-border2 text-admin-text2 text-sm rounded px-2 py-0.5 hover:border-admin-green/50 focus:border-admin-green outline-none cursor-pointer max-w-full"
+                    >
+                      <option value="">—</option>
+                      {venues.map((v) => (
+                        <option key={v.id} value={v.id}>{v.name}</option>
+                      ))}
+                    </select>
                   </span>
                   <span className="text-admin-text2 text-sm font-mono">{gw.matches.length}</span>
                   <span><StatusBadge status={status} /></span>

@@ -15,6 +15,7 @@ const navLinks = [
   { href: '/admin', label: 'Dashboard', exact: true },
   { href: '/admin/teams-all', label: 'All Teams' },
   { href: '/admin/players-all', label: 'All Players' },
+  { href: '/admin/venues', label: 'Venues' },
 ]
 
 export default function AdminNav({ adminName }: AdminNavProps) {
@@ -41,6 +42,7 @@ export default function AdminNav({ adminName }: AdminNavProps) {
           <NavLink href="/admin" exact={true} pathname={pathname} label="Dashboard" />
           <NavLink href="/admin/teams-all" exact={false} pathname={pathname} label="All Teams" />
           <NavLink href="/admin/players-all" exact={false} pathname={pathname} label="All Players" />
+          <NavLink href="/admin/venues" exact={false} pathname={pathname} label="Venues" />
         </div>
 
         {/* Spacer on mobile */}

@@ -137,20 +137,6 @@ export async function createGameWeek(leagueId: string, data: {
   revalidate({ domain: 'admin', paths: [`/admin/leagues/${leagueId}/schedule`] })
 }
 
-export async function updateGameWeekVenue(id: string, leagueId: string, venueName: string) {
-  await assertAdmin()
-  if (!venueName.trim()) {
-    await prisma.gameWeek.update({ where: { id }, data: { venueId: null } })
-  } else {
-    let venue = await prisma.venue.findFirst({ where: { name: { equals: venueName.trim(), mode: 'insensitive' } } })
-    if (!venue) {
-      venue = await prisma.venue.create({ data: { name: venueName.trim() } })
-    }
-    await prisma.gameWeek.update({ where: { id }, data: { venueId: venue.id } })
-  }
-  revalidate({ domain: 'admin', paths: [`/admin/leagues/${leagueId}/schedule`] })
-}
-
 export async function updateGameWeek(id: string, leagueId: string, data: {
   startDate?: string
   endDate?:   string
