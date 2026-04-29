@@ -6,11 +6,13 @@ import { cn } from '@/lib/utils'
 import StatusBadge from './StatusBadge'
 import ConfirmDialog from './ConfirmDialog'
 import AssignLineDialog from './AssignLineDialog'
+import PillEditor from './PillEditor'
 import { useToast } from './ToastProvider'
 import {
   transferPlayer,
   removePlayerFromLeague,
   adminClearLineLink,
+  adminUpdatePlayerName,
 } from '@/app/admin/leagues/actions'
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -116,6 +118,16 @@ export default function PlayersTab({
     }
   }
 
+  async function handleRenamePlayer(playerId: string, name: string) {
+    try {
+      await adminUpdatePlayerName({ playerId, leagueId, name })
+      toast('Player name updated')
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Failed to rename', 'error')
+      throw err // surface to PillEditor so it rolls back the draft
+    }
+  }
+
   const remapTarget = remapPlayerId ? players.find((p) => p.id === remapPlayerId) ?? null : null
 
   return (
@@ -155,7 +167,15 @@ export default function PlayersTab({
             <div key={player.id}>
               <div className="flex items-start gap-3 px-4 py-3.5">
                 <div className="flex-1 min-w-0">
-                  <p className="text-admin-text font-medium text-sm">{player.name}</p>
+                  <PillEditor
+                    variant="text"
+                    value={player.name}
+                    display={player.name}
+                    ariaLabel={`Edit name for ${player.name}`}
+                    placeholder="Player name"
+                    maxLength={100}
+                    onSave={(next) => handleRenamePlayer(player.id, next)}
+                  />
                   <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                     {hasPrevious && (
                       <span className="text-admin-text3 line-through text-xs font-mono">
@@ -253,7 +273,17 @@ export default function PlayersTab({
                 className="grid items-center px-5 py-3 hover:bg-admin-surface2/50 transition-colors"
                 style={{ gridTemplateColumns: '1fr 140px 220px 100px 80px 140px' }}
               >
-                <span className="text-admin-text font-medium text-sm">{player.name}</span>
+                <span>
+                  <PillEditor
+                    variant="text"
+                    value={player.name}
+                    display={player.name}
+                    ariaLabel={`Edit name for ${player.name}`}
+                    placeholder="Player name"
+                    maxLength={100}
+                    onSave={(next) => handleRenamePlayer(player.id, next)}
+                  />
+                </span>
 
                 <div className="flex items-center gap-1.5 text-sm">
                   {hasPrevious && (
