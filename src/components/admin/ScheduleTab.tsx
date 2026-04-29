@@ -4,9 +4,9 @@ import { useState, useTransition } from 'react'
 import { ChevronRight, Plus, Trash2, Upload } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import StatusBadge from './StatusBadge'
-import InlineEditCell from './InlineEditCell'
 import ConfirmDialog from './ConfirmDialog'
 import MatchScoreEditor from './MatchScoreEditor'
+import PillEditor from './PillEditor'
 import { useToast } from './ToastProvider'
 import {
   createGameWeek,
@@ -257,12 +257,34 @@ export default function ScheduleTab({ leagueId, gameWeeks, leagueTeams, venues }
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-condensed font-bold text-admin-text text-base">MD{gw.weekNumber}</span>
-                      <span className="font-mono text-admin-text3 text-xs">{fmtDate(gw.startDate)}</span>
+                      <span onClick={(e) => e.stopPropagation()}>
+                        <PillEditor
+                          variant="date"
+                          value={fmtDate(gw.startDate)}
+                          display={fmtDate(gw.startDate)}
+                          ariaLabel={`MD${gw.weekNumber} date`}
+                          onSave={async (val) => {
+                            await updateGameWeek(gw.id, leagueId, { startDate: val, endDate: val })
+                            toast('Date updated')
+                          }}
+                        />
+                      </span>
                       <StatusBadge status={status} />
                     </div>
-                    {gw.venue && (
-                      <p className="text-admin-text3 text-xs mt-0.5 truncate">{gw.venue.name}</p>
-                    )}
+                    <div className="mt-1.5" onClick={(e) => e.stopPropagation()}>
+                      <PillEditor
+                        variant="venue"
+                        value={gw.venue?.id ?? ''}
+                        display={gw.venue?.name ?? 'Venue'}
+                        muted={!gw.venue}
+                        options={venues}
+                        ariaLabel={`MD${gw.weekNumber} venue`}
+                        onSave={async (venueId) => {
+                          await updateGameWeek(gw.id, leagueId, { venueId })
+                          toast('Venue updated')
+                        }}
+                      />
+                    </div>
                   </div>
                   <div
                     className="flex items-center gap-1 shrink-0"
@@ -441,35 +463,33 @@ export default function ScheduleTab({ leagueId, gameWeeks, leagueTeams, venues }
                     MD{gw.weekNumber}
                   </span>
                   <span
-                    className="font-mono text-admin-text2 text-sm"
+                    className="text-admin-text2 text-sm"
                     onClick={(e) => e.stopPropagation()}
                   >
-                    <InlineEditCell
+                    <PillEditor
+                      variant="date"
                       value={fmtDate(gw.startDate)}
-                      type="date"
+                      display={fmtDate(gw.startDate)}
+                      ariaLabel={`MD${gw.weekNumber} date`}
                       onSave={async (val) => {
                         await updateGameWeek(gw.id, leagueId, { startDate: val, endDate: val })
                         toast('Date updated')
                       }}
-                      className="font-mono text-admin-text2"
                     />
                   </span>
                   <span className="text-admin-text2 text-sm pr-4" onClick={(e) => e.stopPropagation()}>
-                    <select
-                      data-venue-select
+                    <PillEditor
+                      variant="venue"
                       value={gw.venue?.id ?? ''}
-                      onChange={async (e) => {
-                        const venueId = e.target.value || null
+                      display={gw.venue?.name ?? 'Venue'}
+                      muted={!gw.venue}
+                      options={venues}
+                      ariaLabel={`MD${gw.weekNumber} venue`}
+                      onSave={async (venueId) => {
                         await updateGameWeek(gw.id, leagueId, { venueId })
                         toast('Venue updated')
                       }}
-                      className="bg-transparent border border-admin-border2 text-admin-text2 text-sm rounded px-2 py-0.5 hover:border-admin-green/50 focus:border-admin-green outline-none cursor-pointer max-w-full"
-                    >
-                      <option value="">—</option>
-                      {venues.map((v) => (
-                        <option key={v.id} value={v.id}>{v.name}</option>
-                      ))}
-                    </select>
+                    />
                   </span>
                   <span className="text-admin-text2 text-sm font-mono">{gw.matches.length}</span>
                   <span><StatusBadge status={status} /></span>
@@ -626,18 +646,16 @@ function MobileMatchRow({ match, index, leagueId, onDelete }: MobileMatchRowProp
     <div className="px-4 py-3 border-b border-admin-border/50 last:border-b-0">
       <div className="flex items-center gap-2 mb-2">
         <span className="text-admin-text3 font-mono text-xs">#{index}</span>
-        <span className="font-mono text-admin-text3 text-xs">
-          <InlineEditCell
-            value={fmtDatetime(match.playedAt)}
-            displayValue={fmtTime(match.playedAt)}
-            type="datetime-local"
-            onSave={async (val) => {
-              await updateMatch(match.id, leagueId, { playedAt: val })
-              toast('Kickoff updated')
-            }}
-            className="font-mono text-admin-text3 text-xs"
-          />
-        </span>
+        <PillEditor
+          variant="datetime-local"
+          value={fmtDatetime(match.playedAt)}
+          display={`${fmtTime(match.playedAt)} JST`}
+          ariaLabel="Kickoff"
+          onSave={async (val) => {
+            await updateMatch(match.id, leagueId, { playedAt: val })
+            toast('Kickoff updated')
+          }}
+        />
         <StatusBadge status={match.status} />
         <div className="ml-auto">
           <ConfirmDialog
@@ -682,25 +700,26 @@ function MatchSubrow({ match, index, leagueId, leagueTeams, onDelete }: MatchSub
     >
       <span className="text-admin-text3 font-mono text-xs">{index}</span>
 
-      <span className="font-mono text-admin-text2">
-        <InlineEditCell
+      <span>
+        <PillEditor
+          variant="datetime-local"
           value={fmtDatetime(match.playedAt)}
-          displayValue={fmtTime(match.playedAt)}
-          type="datetime-local"
+          display={`${fmtTime(match.playedAt)} JST`}
+          ariaLabel="Kickoff"
           onSave={async (val) => {
             await updateMatch(match.id, leagueId, { playedAt: val })
             toast('Kickoff updated')
           }}
-          className="font-mono text-admin-text2 text-sm"
         />
       </span>
 
-      <span className="font-mono text-admin-text2">
-        <InlineEditCell
+      <span>
+        <PillEditor
+          variant="time"
           value={match.endedAt ? fmtTime(match.endedAt) : ''}
-          displayValue={match.endedAt ? fmtTime(match.endedAt) : <span className="text-admin-text3">—</span>}
-          type="time"
-          placeholder="HH:MM"
+          display={match.endedAt ? `${fmtTime(match.endedAt)} JST` : '—'}
+          muted={!match.endedAt}
+          ariaLabel="Full time"
           onSave={async (timeStr) => {
             if (!timeStr) {
               await updateMatch(match.id, leagueId, { endedAt: null })
@@ -709,7 +728,6 @@ function MatchSubrow({ match, index, leagueId, leagueTeams, onDelete }: MatchSub
             }
             toast('Full time updated')
           }}
-          className="font-mono text-admin-text2 text-sm"
         />
       </span>
 
