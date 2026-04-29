@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { prisma } from '@/lib/prisma'
 import { ArrowLeft } from 'lucide-react'
+import { formatJstDayMonth } from '@/lib/jst'
 import TabNav from './TabNav'
 
 function toSlug(name: string) {
@@ -43,10 +44,8 @@ export default async function LeagueLayout({ params, children }: Props) {
 
   const subdomain = toSlug(league.name)
 
-  // `unstable_cache` round-trips Date objects through JSON, so cached values
-  // come back as ISO strings. Coerce to Date before formatting.
-  const formatDate = (d: Date | string) =>
-    new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+  // All admin display goes through canonical JST helpers — see lib/jst.ts.
+  const formatDate = formatJstDayMonth
 
   return (
     <div className="flex flex-col min-h-full">

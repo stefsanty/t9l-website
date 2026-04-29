@@ -86,11 +86,16 @@ function computeStandings(league: LeagueData): StandingRow[] {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function fmt(d: Date | string, opts?: Intl.DateTimeFormatOptions) {
-  return new Date(d).toLocaleDateString('en-GB', opts ?? { day:'numeric', month:'short', year:'numeric' })
+  // All public-site date renders go through `Asia/Tokyo` — see lib/jst.ts and
+  // CLAUDE.md "Time handling".
+  return new Intl.DateTimeFormat(
+    'en-GB',
+    { ...(opts ?? { day:'numeric', month:'short', year:'numeric' }), timeZone:'Asia/Tokyo' },
+  ).format(new Date(d))
 }
 
 function fmtTime(d: Date | string) {
-  return new Date(d).toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit', timeZone:'Asia/Tokyo' })
+  return new Intl.DateTimeFormat('en-GB', { hour:'2-digit', minute:'2-digit', hour12:false, timeZone:'Asia/Tokyo' }).format(new Date(d))
 }
 
 function statusBadge(status: string) {

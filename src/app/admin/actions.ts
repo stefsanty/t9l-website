@@ -10,6 +10,7 @@ import {
   deleteMapping,
   setMapping,
 } from '@/lib/playerMappingStore'
+import { parseJstDateOnly } from '@/lib/jst'
 
 async function assertAdmin() {
   const session = await getServerSession(authOptions)
@@ -28,8 +29,8 @@ export async function updateLeague(formData: FormData) {
     data: {
       name:      (formData.get('name')     as string) || undefined,
       location:  (formData.get('location') as string) || '',
-      startDate: startDateStr ? new Date(startDateStr) : undefined,
-      endDate:   endDateStr   ? new Date(endDateStr)   : null,
+      startDate: startDateStr ? parseJstDateOnly(startDateStr) : undefined,
+      endDate:   endDateStr   ? parseJstDateOnly(endDateStr)   : null,
     },
   })
   revalidatePath('/admin/settings')

@@ -9,6 +9,7 @@ import { revalidatePublicData } from '@/lib/revalidate'
 import { SETTING_IDS, type DataSource, type WriteMode } from '@/lib/settings'
 import { setMapping } from '@/lib/playerMappingStore'
 import { seedGameWeek, deleteGameWeek as deleteGameWeekFromRedis } from '@/lib/rsvpStore'
+import { parseJstDateTimeLocal, parseJstDateOnly } from '@/lib/jst'
 
 async function assertAdmin() {
   const session = await getServerSession(authOptions)
@@ -26,14 +27,16 @@ export async function createLeague(formData: FormData) {
   const endDate     = formData.get('endDate')      as string | null
   const subdomain   = (formData.get('subdomain')   as string | null)?.trim() || null
 
+  // League startDate/endDate are JST calendar dates (date-only `<input type="date">`).
+  // Stored as UTC midnight; see lib/jst.ts.
   const league = await prisma.league.create({
     data: {
       name,
       location,
       description,
       subdomain,
-      startDate: new Date(startDate),
-      endDate:   endDate ? new Date(endDate) : null,
+      startDate: parseJstDateOnly(startDate),
+      endDate:   endDate ? parseJstDateOnly(endDate) : null,
     },
   })
 
@@ -58,8 +61,8 @@ export async function updateLeagueInfo(id: string, data: {
       description: data.description !== undefined ? (data.description || null) : undefined,
       subdomain:   data.subdomain   !== undefined ? (data.subdomain   || null) : undefined,
       location:    data.location,
-      startDate:   data.startDate ? new Date(data.startDate) : undefined,
-      endDate:     data.endDate !== undefined ? (data.endDate ? new Date(data.endDate) : null) : undefined,
+      startDate:   data.startDate ? parseJstDateOnly(data.startDate) : undefined,
+      endDate:     data.endDate !== undefined ? (data.endDate ? parseJstDateOnly(data.endDate) : null) : undefined,
     },
   })
   revalidatePublicData()
@@ -88,12 +91,14 @@ export async function createGameWeek(leagueId: string, data: {
   venueId?:   string | null
 }) {
   await assertAdmin()
+  // GameWeek startDate/endDate come from `<input type="date">` (JST calendar
+  // date stored as UTC midnight). See lib/jst.ts.
   const gw = await prisma.gameWeek.create({
     data: {
       leagueId,
       weekNumber: data.weekNumber,
-      startDate:  new Date(data.startDate),
-      endDate:    new Date(data.endDate),
+      startDate:  parseJstDateOnly(data.startDate),
+      endDate:    parseJstDateOnly(data.endDate),
       venueId:    data.venueId || null,
     },
   })
@@ -130,8 +135,8 @@ export async function updateGameWeek(id: string, leagueId: string, data: {
   await prisma.gameWeek.update({
     where: { id },
     data: {
-      startDate: data.startDate ? new Date(data.startDate) : undefined,
-      endDate:   data.endDate   ? new Date(data.endDate)   : undefined,
+      startDate: data.startDate ? parseJstDateOnly(data.startDate) : undefined,
+      endDate:   data.endDate   ? parseJstDateOnly(data.endDate)   : undefined,
       venueId:   data.venueId !== undefined ? (data.venueId || null) : undefined,
     },
   })
@@ -161,13 +166,17 @@ export async function createMatch(gameWeekId: string, leagueId: string, data: {
   playedAt:   string
 }) {
   await assertAdmin()
+  // Match playedAt comes from `<input type="datetime-local">` (JST clock
+  // string). Use parseJstDateTimeLocal — never `new Date(str)`, which on
+  // Vercel (TZ=UTC) would skew JST 14:30 → UTC 14:30 (= JST 23:30).
+  // See lib/jst.ts and CLAUDE.md "Time handling".
   await prisma.match.create({
     data: {
       leagueId,
       gameWeekId,
       homeTeamId: data.homeTeamId,
       awayTeamId: data.awayTeamId,
-      playedAt:   new Date(data.playedAt),
+      playedAt:   parseJstDateTimeLocal(data.playedAt),
       status:     'SCHEDULED',
     },
   })
@@ -188,8 +197,9 @@ export async function updateMatch(id: string, leagueId: string, data: {
   const updateData: Record<string, unknown> = {}
   if (data.homeScore  !== undefined) updateData.homeScore  = data.homeScore
   if (data.awayScore  !== undefined) updateData.awayScore  = data.awayScore
-  if (data.playedAt)                 updateData.playedAt   = new Date(data.playedAt)
-  if (data.endedAt !== undefined)    updateData.endedAt    = data.endedAt ? new Date(data.endedAt) : null
+  // playedAt + endedAt are JST clock strings — parse with the JST helper.
+  if (data.playedAt)                 updateData.playedAt   = parseJstDateTimeLocal(data.playedAt)
+  if (data.endedAt !== undefined)    updateData.endedAt    = data.endedAt ? parseJstDateTimeLocal(data.endedAt) : null
   if (data.homeTeamId)               updateData.homeTeamId = data.homeTeamId
   if (data.awayTeamId)               updateData.awayTeamId = data.awayTeamId
   if (data.status) {

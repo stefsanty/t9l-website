@@ -1,4 +1,5 @@
 import { prisma } from './prisma'
+import { formatJstDate, formatJstTime } from './jst'
 import type {
   Team,
   Player,
@@ -15,28 +16,6 @@ const GUEST_ID = 'p-guest'
 
 function stripPrefix(id: string, prefix: string): string {
   return id.startsWith(prefix) ? id.slice(prefix.length) : id
-}
-
-function fmtDateJST(d: Date): string {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    timeZone: 'Asia/Tokyo',
-  }).formatToParts(d)
-  const y = parts.find((p) => p.type === 'year')?.value
-  const m = parts.find((p) => p.type === 'month')?.value
-  const day = parts.find((p) => p.type === 'day')?.value
-  return `${y}-${m}-${day}`
-}
-
-function fmtTimeJST(d: Date): string {
-  return new Intl.DateTimeFormat('en-GB', {
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-    timeZone: 'Asia/Tokyo',
-  }).format(d)
 }
 
 const EMPTY_DATA: LeagueData = {
@@ -154,7 +133,7 @@ export async function dbToPublicLeagueData(): Promise<LeagueData> {
   for (const gw of league.gameWeeks) {
     const mdId = `md${gw.weekNumber}`
     const mdLabel = `MD${gw.weekNumber}`
-    const date = fmtDateJST(gw.startDate)
+    const date = formatJstDate(gw.startDate)
 
     // Sitting-out team: the league team not appearing as home/away this MD
     const playingLtIds = new Set<string>()
@@ -176,8 +155,8 @@ export async function dbToPublicLeagueData(): Promise<LeagueData> {
       return {
         id: publicId,
         matchNumber: idx + 1,
-        kickoff: fmtTimeJST(m.playedAt),
-        fullTime: m.endedAt ? fmtTimeJST(m.endedAt) : '',
+        kickoff: formatJstTime(m.playedAt),
+        fullTime: m.endedAt ? formatJstTime(m.endedAt) : '',
         homeTeamId,
         awayTeamId,
         homeGoals: isPlayed ? m.homeScore : null,
@@ -237,4 +216,4 @@ export async function dbToPublicLeagueData(): Promise<LeagueData> {
 }
 
 // Exported for unit tests.
-export const __test = { stripPrefix, fmtDateJST, fmtTimeJST }
+export const __test = { stripPrefix }
