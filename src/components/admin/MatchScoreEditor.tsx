@@ -5,16 +5,24 @@ import { updateMatch } from '@/app/admin/leagues/actions'
 import { useToast } from './ToastProvider'
 
 /**
- * Inline score editor for the admin schedule view (v1.15.0 — extracted from
- * ScheduleTab). Mobile and desktop rows used to maintain duplicate score
- * state + Enter / Escape / onBlur / parse-int / updateMatch logic; the
- * shared owner is here.
+ * Inline score editor for the admin schedule view.
  *
- * Both variants share: state ownership, save flow (Enter or onBlur), cancel
- * flow (Escape), parse-int validation, the updateMatch call shape, the
- * toast on success / failure. They differ only in the static class names
- * applied to the inputs and the display surface — encoded as a single
- * `variant` prop.
+ * v1.15.0 extracted this component out of `ScheduleTab`; mobile and desktop
+ * rows used to maintain duplicate score state + Enter / Escape / onBlur /
+ * parse-int / updateMatch logic. The shared owner is here.
+ *
+ * v1.21.0 visual taxonomy update:
+ *   - Number-edit appearance: subtle bg `admin-surface2`, Barlow Condensed
+ *     bold for the score, no chevron (matches the "Number edit" entry in
+ *     the visual taxonomy).
+ *   - Empty state: transparent bg, dotted outline, "enter" placeholder
+ *     (replaces the old quiet `vs` text-only affordance, which the v1.20
+ *     audit flagged as not legibly editable).
+ *   - Saving a score still implies status=COMPLETED — that's the natural
+ *     read of "I'm entering a final score." But v1.21.0 also exposes
+ *     status changes via the new `MatchOverflowMenu` kebab, so admins can
+ *     mark a match Complete (e.g. 0-0 with no goals), Cancelled, or
+ *     Postponed without going through the score editor at all.
  *
  * Re-keyed externally on `match.id` if the parent ever swaps which match
  * the editor renders for, so internal state doesn't bleed across rows.
@@ -67,9 +75,7 @@ export default function MatchScoreEditor({
 
   if (editing) {
     const inputClass =
-      variant === 'desktop'
-        ? 'w-10 bg-admin-surface3 border border-admin-green/50 text-admin-text text-xs rounded px-1 py-0.5 text-center font-mono outline-none'
-        : 'w-10 bg-admin-surface3 border border-admin-green/50 text-admin-text text-xs rounded px-1 py-1 text-center font-mono outline-none'
+      'w-9 bg-admin-surface3 border border-admin-green/50 text-admin-text text-sm rounded px-1 py-0.5 text-center font-condensed font-bold outline-none'
     const wrapperClass =
       variant === 'mobile' ? 'flex items-center gap-1 shrink-0' : 'flex items-center gap-1'
     return (
@@ -111,35 +117,33 @@ export default function MatchScoreEditor({
     setEditing(true)
   }
 
-  if (variant === 'mobile') {
+  // Number-edit display (filled state) — subtle bg, Barlow Condensed bold.
+  // Per v1.21.0 taxonomy: status===COMPLETED renders the score; otherwise
+  // shows the empty-number placeholder with dotted outline.
+  if (match.status === 'COMPLETED') {
     return (
-      <span
-        className="font-mono text-admin-text2 text-sm cursor-pointer px-2 py-1 rounded hover:bg-admin-surface3 transition-colors shrink-0"
+      <button
+        type="button"
         onClick={startEdit}
         data-testid="match-score-editor-display"
+        aria-label="Edit score"
+        className="inline-flex items-center justify-center min-w-[48px] px-2 py-0.5 rounded bg-admin-surface2 hover:bg-admin-surface3 transition-colors font-condensed font-bold text-base tracking-[1px] text-admin-text"
       >
-        {match.status === 'COMPLETED' ? (
-          `${match.homeScore}–${match.awayScore}`
-        ) : (
-          <span className="text-admin-text3">vs</span>
-        )}
-      </span>
+        {match.homeScore} - {match.awayScore}
+      </button>
     )
   }
 
+  // Empty-number placeholder.
   return (
-    <span
-      className="cursor-pointer transition-colors"
+    <button
+      type="button"
       onClick={startEdit}
       data-testid="match-score-editor-display"
+      aria-label="Enter score"
+      className="inline-flex items-center justify-center min-w-[48px] px-2 py-0.5 rounded border border-dotted border-admin-text3 bg-transparent text-admin-text3 hover:text-admin-text2 hover:border-admin-text2 transition-colors text-xs font-mono"
     >
-      {match.status === 'COMPLETED' ? (
-        <span className="font-condensed font-bold text-base tracking-[1px] text-admin-text">
-          {match.homeScore} – {match.awayScore}
-        </span>
-      ) : (
-        <span className="font-mono text-xs text-admin-text3">vs</span>
-      )}
-    </span>
+      enter
+    </button>
   )
 }

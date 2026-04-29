@@ -57,10 +57,15 @@ describe('v1.15.0 — MatchScoreEditor extraction', () => {
     expect(text).toMatch(/import\s+MatchScoreEditor\s+from\s+['"]\.\/MatchScoreEditor['"]/)
   })
 
-  it('ScheduleTab.tsx renders MatchScoreEditor with both variants', () => {
+  it('ScheduleTab.tsx renders MatchScoreEditor in the unified card row', () => {
     const text = readFileSync(SCHEDULE_TAB, 'utf8')
-    expect(text).toMatch(/variant="mobile"/)
-    expect(text).toMatch(/variant="desktop"/)
+    // v1.21.0 — the v3 mockup unifies the mobile/desktop trees into a
+    // single card layout. Only the desktop variant is rendered now (the
+    // mobile/desktop split was a class-name difference; the card layout
+    // works at both breakpoints with the desktop variant). The variant
+    // prop on MatchScoreEditor is kept so a future split (e.g. compact
+    // density) can re-introduce a mobile variant without an API change.
+    expect(text).toMatch(/<MatchScoreEditor[^/>]*variant="desktop"/)
   })
 
   it('MatchScoreEditor calls updateMatch with status=COMPLETED on save', () => {

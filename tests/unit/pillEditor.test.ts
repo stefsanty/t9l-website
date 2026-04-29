@@ -122,21 +122,16 @@ describe('v1.19.0 — ScheduleTab uses PillEditor for date/venue/time on mobile 
     expect(text).toMatch(/variant="datetime-local"/)
   })
 
-  it('renders PillEditor variant="time" for match full time (FT)', () => {
-    const text = readFileSync(SCHEDULE_TAB, 'utf8')
-    expect(text).toMatch(/variant="time"/)
-  })
+  // v1.21.0 — FT (full time) field is no longer surfaced in the schedule
+  // tab UI per the v3 mockup. The data still exists on Match.endedAt but
+  // editing has been removed pending a redesign of how it's surfaced
+  // (likely via the match kebab in a future PR).
 
   it('match kickoff pill display includes the JST suffix', () => {
     const text = readFileSync(SCHEDULE_TAB, 'utf8')
     // Per CLAUDE.md "Time handling": every displayed time must read as
     // JST clock time. The pill makes that explicit on the visible label.
     expect(text).toMatch(/`\$\{fmtTime\(match\.playedAt\)\} JST`/)
-  })
-
-  it('match FT pill display includes the JST suffix when set', () => {
-    const text = readFileSync(SCHEDULE_TAB, 'utf8')
-    expect(text).toMatch(/`\$\{fmtTime\(match\.endedAt\)\} JST`/)
   })
 
   it('matchday date pill onSave uses the canonical updateGameWeek action', () => {
