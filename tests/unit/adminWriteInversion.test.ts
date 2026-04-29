@@ -29,8 +29,7 @@ const {
   deleteMappingMock,
   getPlayerMappingFromDbMock,
   waitUntilMock,
-  revalidatePathMock,
-  revalidatePublicDataMock,
+  revalidateMock,
 } = vi.hoisted(() => ({
   findUniqueMock: vi.fn(),
   updateMock: vi.fn().mockResolvedValue({}),
@@ -45,8 +44,7 @@ const {
     teamId: 't-team',
   }),
   waitUntilMock: vi.fn(),
-  revalidatePathMock: vi.fn(),
-  revalidatePublicDataMock: vi.fn(),
+  revalidateMock: vi.fn(),
 }))
 
 vi.mock('@/lib/prisma', () => ({
@@ -72,7 +70,7 @@ vi.mock('@/lib/auth', () => ({
 }))
 
 vi.mock('@/lib/revalidate', () => ({
-  revalidatePublicData: revalidatePublicDataMock,
+  revalidate: revalidateMock,
 }))
 
 vi.mock('@/lib/rsvpStore', () => ({
@@ -81,10 +79,7 @@ vi.mock('@/lib/rsvpStore', () => ({
 }))
 
 vi.mock('next/cache', () => ({
-  revalidatePath: revalidatePathMock,
-  revalidateTag: vi.fn(),
   unstable_cache: <T extends (...args: unknown[]) => unknown>(fn: T) => fn,
-  updateTag: vi.fn(),
 }))
 
 vi.mock('next-auth', () => ({

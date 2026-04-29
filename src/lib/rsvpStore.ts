@@ -8,7 +8,7 @@
  *   rows lived in Postgres only; the public dashboard read them via the
  *   `dbToPublicLeagueData` adapter, which is wrapped in a 30s
  *   `unstable_cache`. RSVP writes had to bust the cache via
- *   `revalidateTag('public-data')` to surface — read-your-own-write
+ *   `revalidate({ domain: 'public' })` to surface — read-your-own-write
  *   consistency cost a full re-derivation of the entire LeagueData blob.
  *   v1.7.0 inverts that: Redis is the canonical read store for RSVP; Prisma
  *   `Availability` is the durable secondary that backs admin queries and
