@@ -26,9 +26,9 @@ import {
 import {
   formatJstDate as fmtDate,
   formatJstTime as fmtTime,
-  formatJstDateTimeLocal as fmtDatetime,
   formatJstFriendly,
 } from '@/lib/jst'
+import { defaultMatchKickoffTime } from '@/lib/scheduleStagger'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -333,6 +333,7 @@ export default function ScheduleTab({ leagueId, gameWeeks, leagueTeams, venues }
                     match={match}
                     leagueId={leagueId}
                     leagueTeams={leagueTeams}
+                    gwStartDate={gw.startDate}
                     onDelete={() => handleDeleteMatch(match.id)}
                     onSetStatus={(s) => handleUpdateMatchStatus(match.id, s)}
                   />
@@ -347,7 +348,9 @@ export default function ScheduleTab({ leagueId, gameWeeks, leagueTeams, venues }
                         gwId: gw.id,
                         homeTeamId: '',
                         awayTeamId: '',
-                        playedAt: fmtDatetime(gw.startDate),
+                        // v1.21.1 — pre-stagger the kickoff per match index;
+                        // first match defaults to 19:05 JST.
+                        playedAt: `${fmtDate(gw.startDate)}T${defaultMatchKickoffTime(0)}`,
                       })
                     }
                     className="w-full flex items-center justify-center gap-1.5 min-h-[36px] rounded-lg border border-admin-green bg-transparent px-3 text-sm font-medium text-admin-green hover:bg-admin-green-dim transition-colors"
@@ -390,7 +393,12 @@ export default function ScheduleTab({ leagueId, gameWeeks, leagueTeams, venues }
                       name="playedAt"
                       type="datetime-local"
                       required
-                      defaultValue={fmtDatetime(gw.startDate)}
+                      // v1.21.1 — read from addMatchForm.playedAt so the
+                      // staggered default (19:05 / 19:40 / 20:15…) lands
+                      // in the input. Pre-fix this was hardcoded to
+                      // `${gw.startDate}T00:00` (midnight) and admins had
+                      // to fix the time on every add.
+                      defaultValue={addMatchForm.playedAt}
                       className="w-full bg-admin-surface3 border border-admin-border2 text-admin-text text-sm rounded-md px-3 py-[9px] font-mono"
                     />
                     <div className="flex gap-2">
@@ -419,7 +427,9 @@ export default function ScheduleTab({ leagueId, gameWeeks, leagueTeams, venues }
                           gwId: gw.id,
                           homeTeamId: '',
                           awayTeamId: '',
-                          playedAt: fmtDatetime(gw.startDate),
+                          // v1.21.1 — stagger by current match count: 2nd
+                          // match → 19:40, 3rd → 20:15.
+                          playedAt: `${fmtDate(gw.startDate)}T${defaultMatchKickoffTime(gw.matches.length)}`,
                         })
                       }
                       className="w-full flex items-center justify-center gap-1.5 min-h-[30px] rounded-lg border border-admin-green/60 bg-transparent px-3 text-xs font-medium text-admin-green hover:bg-admin-green-dim transition-colors"
@@ -444,11 +454,17 @@ interface MatchCardRowProps {
   match: MatchRow
   leagueId: string
   leagueTeams: TeamRef[]
+  /**
+   * Matchday's startDate. The match's date is implicit — it's the parent
+   * matchday's date — so the time pill needs the GW date to construct the
+   * full datetime when the user picks a new time.
+   */
+  gwStartDate: Date
   onDelete: () => void
   onSetStatus: (status: MatchStatus) => void
 }
 
-function MatchCardRow({ match, leagueId, leagueTeams, onDelete, onSetStatus }: MatchCardRowProps) {
+function MatchCardRow({ match, leagueId, leagueTeams, gwStartDate, onDelete, onSetStatus }: MatchCardRowProps) {
   const { toast } = useToast()
 
   const teamOptions = leagueTeams.map((lt) => ({ id: lt.id, name: lt.team.name }))
@@ -461,14 +477,17 @@ function MatchCardRow({ match, leagueId, leagueTeams, onDelete, onSetStatus }: M
       )}
     >
       <PillEditor
-        variant="datetime-local"
-        value={fmtDatetime(match.playedAt)}
+        variant="time"
+        value={fmtTime(match.playedAt)}
         display={`${fmtTime(match.playedAt)} JST`}
         icon={<Clock className="w-3 h-3" />}
         ariaLabel="Kickoff"
         className="shrink-0"
         onSave={async (val) => {
-          await updateMatch(match.id, leagueId, { playedAt: val })
+          // v1.21.1 — combine the new HH:MM with the matchday's date.
+          // updateMatch parses `playedAt` via parseJstDateTimeLocal on the
+          // server, so we send the canonical "YYYY-MM-DDTHH:MM" shape.
+          await updateMatch(match.id, leagueId, { playedAt: `${fmtDate(gwStartDate)}T${val}` })
           toast('Kickoff updated')
         }}
       />
