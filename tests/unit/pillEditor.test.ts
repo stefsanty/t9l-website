@@ -117,9 +117,15 @@ describe('v1.19.0 — ScheduleTab uses PillEditor for date/venue/time on mobile 
     expect(text).toMatch(/variant="venue"/)
   })
 
-  it('renders PillEditor variant="datetime-local" for match kickoff', () => {
+  it('renders PillEditor variant="time" for match kickoff (v1.21.1 — match date is implicit from the parent matchday)', () => {
     const text = readFileSync(SCHEDULE_TAB, 'utf8')
-    expect(text).toMatch(/variant="datetime-local"/)
+    // v1.21.1 changed the match-row time pill from datetime-local to
+    // time-only. The match date is the parent matchday's date; admins
+    // editing kickoff only need to pick a time, and the component
+    // combines the new HH:MM with the GW startDate before saving.
+    // A regression that re-introduces datetime-local on the match row
+    // would force the admin to repick the date on every kickoff edit.
+    expect(text).toMatch(/variant="time"/)
   })
 
   // v1.21.0 — FT (full time) field is no longer surfaced in the schedule
