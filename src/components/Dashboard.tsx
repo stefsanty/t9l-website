@@ -10,6 +10,7 @@ import GuestLoginBanner from './GuestLoginBanner';
 import MatchdayAvailability from './MatchdayAvailability';
 import Header from './Header';
 import RsvpBar from './RsvpBar';
+import UserTeamBadge from './UserTeamBadge';
 
 interface DashboardProps {
   teams: Team[];
@@ -61,6 +62,7 @@ export default function Dashboard({
           {nextMd ? (
             <>
               <GuestLoginBanner />
+              <UserTeamBadge teams={teams} />
               <NextMatchdayBanner
                 matchdays={matchdays}
                 selectedMatchdayId={selectedMatchdayId}
