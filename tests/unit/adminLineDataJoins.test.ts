@@ -67,17 +67,60 @@ describe('getLeaguePlayers v1.10.0 4-tuple shape', () => {
 
     const [, , , lineLoginsByLineId] = await getLeaguePlayers('l-spring')
 
+    // v1.17.1 — lastSeenAt is serialized to ISO string at this boundary
+    // because the function is wrapped in `unstable_cache` (which JSON
+    // round-trips Date → string). The contract is now string-not-Date.
     expect(lineLoginsByLineId['U-alice']).toEqual({
       name: 'Alice',
       pictureUrl: 'https://line.cdn/alice.jpg',
-      lastSeenAt: new Date('2026-04-15T10:00:00Z'),
+      lastSeenAt: '2026-04-15T10:00:00.000Z',
     })
     expect(lineLoginsByLineId['U-bob']).toEqual({
       name: 'Bob',
       pictureUrl: null,
-      lastSeenAt: new Date('2026-04-16T10:00:00Z'),
+      lastSeenAt: '2026-04-16T10:00:00.000Z',
     })
     expect(lineLoginsByLineId['U-charlie']).toBeUndefined()
+  })
+
+  it('regression v1.17.1 — lineLoginsByLineId.lastSeenAt is a string so consumers do not need .toISOString()', async () => {
+    // Reproduces the v1.17.0 prod bug:
+    //   TypeError: b?.lastSeenAt.toISOString is not a function
+    // at /admin/leagues/[id]/players. `unstable_cache` JSON-round-trips
+    // its return value, which converts Date → string. Pre-fix the page
+    // called `ll?.lastSeenAt.toISOString()` on the cached result and
+    // crashed because the value was already a string.
+    //
+    // Post-fix `getLeaguePlayers` serializes to ISO string at the source,
+    // so the page can pass the value through unchanged regardless of
+    // whether the result came from a fresh fetch or the cache.
+    findManyAssignmentsMock.mockResolvedValueOnce([])
+    findManyLeagueTeamsMock.mockResolvedValueOnce([])
+    findManyGameWeeksMock.mockResolvedValueOnce([])
+    findManyLineLoginsMock.mockResolvedValueOnce([
+      {
+        lineId: 'U-alice',
+        name: 'Alice',
+        pictureUrl: null,
+        lastSeenAt: new Date('2026-04-15T10:00:00Z'),
+      },
+    ])
+
+    const [, , , map] = await getLeaguePlayers('l-spring')
+
+    // Contract: typeof string at the source.
+    expect(typeof map['U-alice'].lastSeenAt).toBe('string')
+    expect(map['U-alice'].lastSeenAt).toBe('2026-04-15T10:00:00.000Z')
+
+    // Simulate the cache JSON round-trip — even after that, the page-level
+    // pass-through `ll?.lastSeenAt ?? null` still produces a usable ISO
+    // string. (Pre-fix the page did `ll?.lastSeenAt.toISOString() ?? null`,
+    // which would throw on the already-a-string value below.)
+    const cacheRoundTripped = JSON.parse(JSON.stringify(map)) as typeof map
+    const ll = cacheRoundTripped['U-alice']
+    expect(typeof ll.lastSeenAt).toBe('string')
+    const lineLastSeenAt = ll?.lastSeenAt ?? null
+    expect(lineLastSeenAt).toBe('2026-04-15T10:00:00.000Z')
   })
 
   it('returns empty record when no LineLogin rows exist', async () => {

@@ -70,6 +70,12 @@ export const getLeagueTeams = unstable_cache(
  * Prisma `Player.lineId` doesn't carry a foreign-key relation to LineLogin
  * (LineLogin is a sidecar audit table populated from the JWT callback —
  * see PR 6 / `lib/auth.ts#trackLineLogin`).
+ *
+ * `lastSeenAt` is serialized to an ISO string at this boundary because the
+ * function is wrapped in `unstable_cache`, which JSON-round-trips its
+ * return value. Calling `.toISOString()` on a value that has been through
+ * that round-trip throws (it's already a string). Same shape of bug as
+ * PR #44; v1.17.1 closes it at the source so consumers can't trip on it.
  */
 export const getLeaguePlayers = unstable_cache(
   async (leagueId: string) => {
@@ -103,13 +109,13 @@ export const getLeaguePlayers = unstable_cache(
     ])
     const lineLoginsByLineId: Record<
       string,
-      { name: string | null; pictureUrl: string | null; lastSeenAt: Date }
+      { name: string | null; pictureUrl: string | null; lastSeenAt: string }
     > = {}
     for (const ll of allLineLogins) {
       lineLoginsByLineId[ll.lineId] = {
         name: ll.name,
         pictureUrl: ll.pictureUrl,
-        lastSeenAt: ll.lastSeenAt,
+        lastSeenAt: ll.lastSeenAt.toISOString(),
       }
     }
     return [assignments, leagueTeams, gameWeeks, lineLoginsByLineId] as const
