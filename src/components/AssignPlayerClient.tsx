@@ -12,7 +12,7 @@ import {
   unassignButtonDisabled,
 } from '@/lib/assignButtonLabel';
 import { attemptUnlink } from '@/lib/optimisticLink';
-import { notifyUnlinkOutcome } from '@/lib/assignToast';
+import { notifyUnlinkOutcome, notifyUnlinkPending } from '@/lib/assignToast';
 import { performAssignSubmit } from '@/lib/assignSubmit';
 
 interface Props {
@@ -52,6 +52,14 @@ export default function AssignPlayerClient({ playersByTeam }: Props) {
   async function handleConfirm() {
     if (!selectedPlayerId || isAlreadyAssigned) return;
 
+    // v1.17.0 — surface the player name in the loading toast. Look up from
+    // the (already-loaded) playersByTeam list so the user sees "Linking to
+    // {name}…" the instant they click Confirm.
+    const selected = playersByTeam
+      .flatMap((g) => g.players)
+      .find((p) => p.id === selectedPlayerId);
+    const playerName = selected?.name ?? 'your player';
+
     setError(null);
     setSubmitting(true);
 
@@ -59,9 +67,11 @@ export default function AssignPlayerClient({ playersByTeam }: Props) {
     // the API write. v1.6.0 awaited `attemptLink` first, which on a cold
     // Vercel lambda left the user staring at "Saving…" for 3–5s with no
     // perceived nav until the toast finally appeared. The fire-and-forget
-    // shape is encapsulated in `performAssignSubmit` (push synchronously,
-    // then await the link, then toast) so the order is unit-testable.
+    // shape is encapsulated in `performAssignSubmit` (loading toast →
+    // push synchronously → await link → replace toast in-place) so the
+    // order is unit-testable.
     await performAssignSubmit(selectedPlayerId, {
+      playerName,
       pushHome: () =>
         startTransition(() => {
           router.push('/');
@@ -80,11 +90,15 @@ export default function AssignPlayerClient({ playersByTeam }: Props) {
     setUnassigning(true);
     setError(null);
 
+    // v1.17.0 — loading toast for the cold-lambda window. Replaced
+    // in-place by notifyUnlinkOutcome on resolve.
+    const toastId = notifyUnlinkPending(toast);
+
     const result = await attemptUnlink();
     if (!result.ok) {
       setError(result.error);
       setUnassigning(false);
-      notifyUnlinkOutcome(result, toast);
+      notifyUnlinkOutcome(result, toast, toastId);
       return;
     }
 
@@ -95,7 +109,7 @@ export default function AssignPlayerClient({ playersByTeam }: Props) {
       console.warn('[assign] background session refresh failed:', err);
     });
 
-    notifyUnlinkOutcome(result, toast);
+    notifyUnlinkOutcome(result, toast, toastId);
   }
 
   return (
