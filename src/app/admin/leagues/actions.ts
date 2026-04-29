@@ -7,7 +7,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions, getPlayerMappingFromDb } from '@/lib/auth'
 import { revalidatePublicData } from '@/lib/revalidate'
 import { SETTING_IDS, type DataSource, type WriteMode } from '@/lib/settings'
-import { setMapping } from '@/lib/playerMappingStore'
+import { setMapping, deleteMapping } from '@/lib/playerMappingStore'
 import { seedGameWeek, deleteGameWeek as deleteGameWeekFromRedis } from '@/lib/rsvpStore'
 import { parseJstDateTimeLocal, parseJstDateOnly } from '@/lib/jst'
 
@@ -313,6 +313,17 @@ export async function adminLinkLineToPlayer(input: {
   const { playerId, lineId, leagueId } = input
   if (!playerId || !lineId) throw new Error('playerId and lineId are required')
 
+  // v1.10.0 / PR B — read the TARGET player's prior lineId so we can
+  // clean up its Redis mapping after the remap. Without this, if admin
+  // remaps lineId X from player A to player B (where B already had
+  // lineId Y), Y would remain in Redis pointing at B. Y becomes orphan
+  // but the Redis entry doesn't decay until the 24h sliding TTL.
+  const targetBefore = await prisma.player.findUnique({
+    where: { id: playerId },
+    select: { lineId: true },
+  })
+  const targetPriorLineId = targetBefore?.lineId ?? null
+
   await prisma.$transaction([
     prisma.player.updateMany({
       where: { lineId, id: { not: playerId } },
@@ -331,6 +342,55 @@ export async function adminLinkLineToPlayer(input: {
   // identical to what the auth path would have computed itself.
   const fresh = await getPlayerMappingFromDb(lineId)
   await setMapping(lineId, fresh)
+
+  // If we just clobbered a prior lineId on the target player, also clear
+  // its Redis mapping — that LINE user is now an orphan from this player's
+  // perspective and a stale Redis hit would resolve them to the wrong
+  // player on their next session refresh.
+  if (targetPriorLineId && targetPriorLineId !== lineId) {
+    await deleteMapping(targetPriorLineId)
+  }
+
+  revalidatePublicData()
+  revalidatePath(`/admin/leagues/${leagueId}/players`)
+}
+
+/**
+ * v1.10.0 / PR B — admin clears the LINE link from a Player record.
+ *
+ * Inverse of `adminLinkLineToPlayer`: sets `Player.lineId = null` and
+ * invalidates the Redis mapping for the cleared lineId so the LINE user
+ * is treated as orphan on their next JWT callback (and surfaces in the
+ * `getOrphanLineLogins()` list, which is the dropdown the admin uses to
+ * re-link them somewhere else).
+ *
+ * No-op if the player has no lineId (returns silently rather than
+ * throwing — admin clicking "Unlink" twice should be safe).
+ */
+export async function adminClearLineLink(input: {
+  playerId: string
+  leagueId: string
+}) {
+  await assertAdmin()
+  const { playerId, leagueId } = input
+  if (!playerId) throw new Error('playerId is required')
+
+  const before = await prisma.player.findUnique({
+    where: { id: playerId },
+    select: { lineId: true },
+  })
+  if (!before?.lineId) return // already unlinked
+
+  await prisma.player.update({
+    where: { id: playerId },
+    data: { lineId: null },
+  })
+
+  // Invalidate the Redis mapping rather than `setMapping(lineId, null)` —
+  // the v1.5.0 store treats `null` as a sentinel for "known orphan" but
+  // `deleteMapping` is the cleaner reset (next read returns miss → orphan
+  // via the v1.5.0 policy, identical observable behavior).
+  await deleteMapping(before.lineId)
 
   revalidatePublicData()
   revalidatePath(`/admin/leagues/${leagueId}/players`)
