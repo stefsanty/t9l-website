@@ -3,7 +3,6 @@ import type {
   Player,
   Matchday,
   Goal,
-  PlayerRating,
   Availability,
   AvailabilityStatuses,
   PlayedStatus,
@@ -363,63 +362,12 @@ export function computeMatchScores(
   });
 }
 
-export function parseRatings(
-  rows: string[][],
-  matchdays: Matchday[],
-  teams: Team[]
-): PlayerRating[] {
-  if (rows.length < 2) return [];
-
-  const header = rows[0];
-  const teamNameToId = new Map(teams.map((t) => [t.name, t.id]));
-  const ratings: PlayerRating[] = [];
-
-  // Meta ratings are in BE:BH (indices 56, 57, 58, 59)
-  // Player columns are between index 3 and the first meta column
-  const metaStartIndex = 56;
-
-  for (let i = 1; i < rows.length; i++) {
-    const row = rows[i];
-    const mdRaw = row[0]?.trim() || "";
-    const timestampRaw = row[1]?.trim() || "";
-    const respondentTeamRaw = normalizeTeamName(row[2]?.trim() || "");
-    const respondentTeamId =
-      teamNameToId.get(respondentTeamRaw) || slugify(respondentTeamRaw);
-
-    const matchdayId = resolveMatchdayId(mdRaw, timestampRaw, matchdays);
-
-    const playerRatings: Record<string, number> = {};
-    // Player names are headers from index 3 up to BE
-    for (let col = 3; col < metaStartIndex; col++) {
-      const playerName = header[col]?.trim();
-      if (!playerName) continue;
-      const val = parseInt(row[col], 10);
-      if (!isNaN(val) && val >= 1 && val <= 5) {
-        playerRatings[slugify(playerName)] = val;
-      }
-    }
-
-    ratings.push({
-      matchdayId,
-      respondentTeamId,
-      playerRatings,
-      refereeing: parseInt(row[metaStartIndex], 10) || 0,
-      gamesClose: parseInt(row[metaStartIndex + 1], 10) || 0,
-      teamwork: parseInt(row[metaStartIndex + 2], 10) || 0,
-      enjoyment: parseInt(row[metaStartIndex + 3], 10) || 0,
-    });
-  }
-
-  return ratings;
-}
-
 export function parseAllData(raw: RawSheetData): LeagueData {
   const teams = parseTeams(raw.teams);
   const { players, availability, availabilityStatuses, played } = parsePlayers(raw.roster, teams);
   let matchdays = parseSchedule(raw.schedule, raw.scheduleFormula, raw.mdSchedule, teams);
   const goals = parseGoals(raw.goals, matchdays, teams);
   matchdays = computeMatchScores(matchdays, goals);
-  const ratings = parseRatings(raw.ratings, matchdays, teams);
 
-  return { teams, players, matchdays, goals, ratings, availability, availabilityStatuses, played };
+  return { teams, players, matchdays, goals, availability, availabilityStatuses, played };
 }

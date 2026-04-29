@@ -7,19 +7,38 @@ import type {
   Match,
   Matchday,
   Goal,
-  PlayerRating,
   LeagueData,
 } from '@/types'
 
-const EMPTY_DATA: LeagueData = {
-  teams: [],
-  players: [],
-  matchdays: [],
-  goals: [],
-  ratings: [],
-  availability: {},
-  availabilityStatuses: {},
-  played: {},
+/**
+ * Internal metadata co-cached with the public LeagueData blob: the DB-side
+ * GameWeek list (id + weekNumber + startDate) the RSVP merge in
+ * `lib/publicData.ts#getRsvpData` needs. Co-cached here rather than via a
+ * separate `getDefaultLeagueGameWeeks` query so the two reads share a single
+ * Prisma round-trip. v1.14.0 dedupe.
+ */
+export type GameWeekMeta = {
+  id: string
+  weekNumber: number
+  startDate: Date
+}
+
+export type DbToPublicLeagueDataResult = {
+  data: LeagueData
+  gameWeeks: GameWeekMeta[]
+}
+
+const EMPTY_RESULT: DbToPublicLeagueDataResult = {
+  data: {
+    teams: [],
+    players: [],
+    matchdays: [],
+    goals: [],
+    availability: {},
+    availabilityStatuses: {},
+    played: {},
+  },
+  gameWeeks: [],
 }
 
 /**
@@ -39,6 +58,11 @@ const EMPTY_DATA: LeagueData = {
  * `lib/publicData.ts#getPublicLeagueData`. Consumers see the same shape;
  * the construction path is split.
  *
+ * v1.14.0 — Returns `{ data, gameWeeks }`. The GameWeek list metadata is the
+ * bridge between Redis (keys by `gameWeekId`) and the public matchday id
+ * shape (`md<weekNumber>`); co-cached here so the RSVP merge doesn't need a
+ * separate Prisma query (`getDefaultLeagueGameWeeks` was deleted in v1.14.0).
+ *
  * Notes on contract preservation (regression-prone areas — see CLAUDE.md "Important Notes"):
  *  - Match.kickoff / Match.fullTime are JST "HH:MM" strings, not ISO timestamps.
  *  - Team/Player ids in the public shape are slugs ("mariners-fc", "ian-noseda"),
@@ -46,9 +70,8 @@ const EMPTY_DATA: LeagueData = {
  *  - Goal.scorer / Goal.assister are player NAMES (not ids) — stats.ts indexes by name.
  *  - sittingOutTeamId is derived (the team in the league that doesn't appear in any
  *    of this matchday's matches), not stored in DB.
- *  - ratings: [] (paused for the migration; Stats page handles empty gracefully).
  */
-export async function dbToPublicLeagueData(): Promise<LeagueData> {
+export async function dbToPublicLeagueData(): Promise<DbToPublicLeagueDataResult> {
   const league = await prisma.league.findFirst({
     where: { isDefault: true },
     include: {
@@ -79,7 +102,7 @@ export async function dbToPublicLeagueData(): Promise<LeagueData> {
     },
   })
 
-  if (!league) return EMPTY_DATA
+  if (!league) return EMPTY_RESULT
 
   // ── teams[] ──────────────────────────────────────────────────────────────
   const teams: Team[] = league.leagueTeams.map((lt) => {
@@ -193,17 +216,24 @@ export async function dbToPublicLeagueData(): Promise<LeagueData> {
   // v1.7.0: availability/availabilityStatuses/played are merged in by
   // `lib/publicData.ts#getPublicLeagueData` from the Redis rsvpStore.
 
-  // Per migration plan §2 / S3 — ratings paused, not dropped.
-  const ratings: PlayerRating[] = []
+  // v1.14.0 — co-cache the DB-side GameWeek metadata so the RSVP merge can
+  // read it from the same Prisma round-trip rather than re-querying.
+  const gameWeeks: GameWeekMeta[] = league.gameWeeks.map((gw) => ({
+    id: gw.id,
+    weekNumber: gw.weekNumber,
+    startDate: gw.startDate,
+  }))
 
   return {
-    teams,
-    players,
-    matchdays,
-    goals,
-    ratings,
-    availability: {},
-    availabilityStatuses: {},
-    played: {},
+    data: {
+      teams,
+      players,
+      matchdays,
+      goals,
+      availability: {},
+      availabilityStatuses: {},
+      played: {},
+    },
+    gameWeeks,
   }
 }

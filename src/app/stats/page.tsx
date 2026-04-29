@@ -2,7 +2,6 @@ import {
   computeLeagueTable,
   computePlayerStats,
   findNextMatchday,
-  computeMatchdayVibes,
 } from "@/lib/stats";
 import StatsDashboard from "@/components/StatsDashboard";
 import { getPublicLeagueData } from "@/lib/publicData";
@@ -56,10 +55,8 @@ export default async function StatsPage() {
     data.teams,
     data.players,
     data.goals,
-    data.ratings,
     data.played,
   );
-  const matchdayVibes = computeMatchdayVibes(data.ratings, data.matchdays);
 
   const playerPictures = await fetchPlayerPictures(data.players.map((p) => p.id));
 
@@ -71,7 +68,6 @@ export default async function StatsPage() {
       availabilityStatuses={data.availabilityStatuses}
       leagueTable={leagueTable}
       playerStats={playerStats}
-      matchdayVibes={matchdayVibes}
       nextMatchdayId={nextMd?.matchday.id ?? "md1"}
       nextMatchdayLabel={nextMd?.matchday.label ?? "MD1"}
       playerPictures={playerPictures}

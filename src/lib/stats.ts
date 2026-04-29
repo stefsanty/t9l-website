@@ -3,60 +3,12 @@ import type {
   Player,
   Matchday,
   Goal,
-  PlayerRating,
   LeagueTableRow,
   TopScorer,
   TopAssister,
-  TopRated,
   PlayerStats,
   PlayedStatus,
 } from "@/types";
-
-export interface MatchdayVibes {
-  matchdayId: string;
-  label: string;
-  refereeing: number;
-  gamesClose: number;
-  teamwork: number;
-  enjoyment: number;
-  responseCount: number;
-}
-
-export function computeMatchdayVibes(ratings: PlayerRating[], matchdays: Matchday[]): MatchdayVibes[] {
-  const mdLabelMap = new Map(matchdays.map(md => [md.id, md.label]));
-  const byMd = new Map<string, { refereeing: number[]; gamesClose: number[]; teamwork: number[]; enjoyment: number[] }>();
-
-  for (const r of ratings) {
-    if (!byMd.has(r.matchdayId)) {
-      byMd.set(r.matchdayId, { refereeing: [], gamesClose: [], teamwork: [], enjoyment: [] });
-    }
-    const md = byMd.get(r.matchdayId)!;
-    if (r.refereeing > 0) md.refereeing.push(r.refereeing);
-    if (r.gamesClose > 0) md.gamesClose.push(r.gamesClose);
-    if (r.teamwork > 0) md.teamwork.push(r.teamwork);
-    if (r.enjoyment > 0) md.enjoyment.push(r.enjoyment);
-  }
-
-  const avg = (arr: number[]) =>
-    arr.length > 0 ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
-
-  return Array.from(byMd.entries())
-    .map(([matchdayId, { refereeing, gamesClose, teamwork, enjoyment }]) => ({
-      matchdayId,
-      label: mdLabelMap.get(matchdayId) || matchdayId.toUpperCase(),
-      refereeing: avg(refereeing),
-      gamesClose: avg(gamesClose),
-      teamwork: avg(teamwork),
-      enjoyment: avg(enjoyment),
-      responseCount: enjoyment.length,
-    }))
-    .filter(v => v.responseCount > 0)
-    .sort((a, b) => {
-      const aNum = parseInt(a.matchdayId.replace('md', ''), 10);
-      const bNum = parseInt(b.matchdayId.replace('md', ''), 10);
-      return bNum - aNum;
-    });
-}
 
 export function computeLeagueTable(
   teams: Team[],
@@ -174,46 +126,10 @@ export function computeTopAssisters(
     .sort((a, b) => b.assists - a.assists);
 }
 
-export function computeTopRated(
-  ratings: PlayerRating[],
-  players: Player[]
-): TopRated[] {
-  // Aggregate: playerId → { totalRating, count }
-  const agg = new Map<string, { total: number; count: number; mds: Set<string> }>();
-
-  for (const response of ratings) {
-    for (const [playerId, rating] of Object.entries(response.playerRatings)) {
-      if (!agg.has(playerId)) {
-        agg.set(playerId, { total: 0, count: 0, mds: new Set() });
-      }
-      const entry = agg.get(playerId)!;
-      entry.total += rating;
-      entry.count++;
-      entry.mds.add(response.matchdayId);
-    }
-  }
-
-  const playerById = new Map(players.map((p) => [p.id, p]));
-
-  return Array.from(agg.entries())
-    .map(([playerId, { total, count, mds }]) => {
-      const player = playerById.get(playerId);
-      return {
-        playerId,
-        playerName: player?.name || playerId,
-        teamId: player?.teamId || "",
-        avgRating: Math.round((total / count) * 2 * 100) / 100,
-        matchdaysRated: mds.size,
-      };
-    })
-    .sort((a, b) => b.avgRating - a.avgRating);
-}
-
 export function computePlayerStats(
   teams: Team[],
   players: Player[],
   goals: Goal[],
-  ratings: PlayerRating[],
   played: PlayedStatus
 ): PlayerStats[] {
   const statsMap = new Map<string, PlayerStats>();
@@ -235,15 +151,13 @@ export function computePlayerStats(
       matchesPlayed: 0,
       goals: 0,
       assists: 0,
-      avgRating: 0,
-      matchdaysRated: 0,
       gaPerGame: 0,
     });
   }
 
   // Calculate matches played (each gameweek played = 2 matches)
-  for (const [mdId, teams] of Object.entries(played)) {
-    for (const [teamId, playerIds] of Object.entries(teams)) {
+  for (const teams of Object.values(played)) {
+    for (const playerIds of Object.values(teams)) {
       for (const playerId of playerIds) {
         if (statsMap.has(playerId)) {
           statsMap.get(playerId)!.matchesPlayed += 2;
@@ -268,28 +182,6 @@ export function computePlayerStats(
     }
   }
 
-  // Ratings aggregation
-  const ratingAgg = new Map<string, { total: number; count: number; mds: Set<string> }>();
-  for (const response of ratings) {
-    for (const [playerId, rating] of Object.entries(response.playerRatings)) {
-      if (!ratingAgg.has(playerId)) {
-        ratingAgg.set(playerId, { total: 0, count: 0, mds: new Set() });
-      }
-      const aggEntry = ratingAgg.get(playerId)!;
-      aggEntry.total += rating;
-      aggEntry.count++;
-      aggEntry.mds.add(response.matchdayId);
-    }
-  }
-
-  for (const [playerId, { total, count, mds }] of ratingAgg.entries()) {
-    const pStats = statsMap.get(playerId);
-    if (pStats) {
-      pStats.avgRating = Math.round((total / count) * 2 * 100) / 100;
-      pStats.matchdaysRated = mds.size;
-    }
-  }
-
   // Calculate G/A per game
   for (const stats of statsMap.values()) {
     if (stats.matchesPlayed > 0) {
@@ -299,8 +191,7 @@ export function computePlayerStats(
 
   return Array.from(statsMap.values()).sort((a, b) => {
     if (b.goals !== a.goals) return b.goals - a.goals;
-    if (b.assists !== a.assists) return b.assists - a.assists;
-    return b.avgRating - a.avgRating;
+    return b.assists - a.assists;
   });
 }
 

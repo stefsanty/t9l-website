@@ -2,7 +2,7 @@ import { unstable_cache } from 'next/cache'
 import type { LeagueData } from '@/types'
 import { fetchSheetData } from './sheets'
 import { parseAllData } from './data'
-import { dbToPublicLeagueData } from './dbToPublicLeagueData'
+import { dbToPublicLeagueData, type GameWeekMeta } from './dbToPublicLeagueData'
 import { getDataSource } from './settings'
 import { prisma } from './prisma'
 import {
@@ -29,6 +29,11 @@ import { playerIdToSlug } from './ids'
  * from Redis at dispatch time via `getRsvpData()` and merged into the same
  * `LeagueData` shape consumers expect. RSVP writes are read-your-own-writes
  * consistent without a cache-bust round-trip.
+ *
+ * v1.14.0 — `getFromDb` now returns `{ data, gameWeeks }`. The DB-side
+ * GameWeek metadata (id + weekNumber + startDate) the RSVP merge needs is
+ * co-cached with the LeagueData blob, sharing the same Prisma round-trip
+ * instead of running a separate `getDefaultLeagueGameWeeks` query.
  */
 
 const getFromSheets = unstable_cache(
@@ -38,35 +43,8 @@ const getFromSheets = unstable_cache(
 )
 
 const getFromDb = unstable_cache(
-  async (): Promise<LeagueData> => dbToPublicLeagueData(),
+  async () => dbToPublicLeagueData(),
   ['public-data:db'],
-  { revalidate: 30, tags: ['public-data', 'leagues'] },
-)
-
-/**
- * Cached projection of the Default League's GameWeek list — just the fields
- * we need to bridge Redis (keys by gameWeekId) and the public matchday id
- * shape (`md<weekNumber>`). Cached separately from the full LeagueData so
- * the RSVP merge can run without re-deriving the entire blob.
- *
- * Same TTL as `getFromDb`. Both share the `leagues` tag so admin actions
- * that mutate the GameWeek list (createGameWeek / deleteGameWeek) bust both
- * caches together.
- */
-const getDefaultLeagueGameWeeks = unstable_cache(
-  async (): Promise<{ id: string; weekNumber: number; startDate: Date }[]> => {
-    const league = await prisma.league.findFirst({
-      where: { isDefault: true },
-      select: {
-        gameWeeks: {
-          select: { id: true, weekNumber: true, startDate: true },
-          orderBy: { weekNumber: 'asc' },
-        },
-      },
-    })
-    return league?.gameWeeks ?? []
-  },
-  ['public-data:db:gameweeks'],
   { revalidate: 30, tags: ['public-data', 'leagues'] },
 )
 
@@ -179,8 +157,8 @@ async function backfillMissesFromPrisma(
  */
 async function getRsvpData(
   staticData: LeagueData,
+  gws: GameWeekMeta[],
 ): Promise<Pick<LeagueData, 'availability' | 'availabilityStatuses' | 'played'>> {
-  const gws = await getDefaultLeagueGameWeeks()
   if (gws.length === 0) {
     return { availability: {}, availabilityStatuses: {}, played: {} }
   }
@@ -217,8 +195,8 @@ export async function getPublicLeagueData(): Promise<LeagueData> {
   if (source !== 'db') {
     return getFromSheets()
   }
-  const staticData = await getFromDb()
-  const rsvp = await getRsvpData(staticData)
+  const { data: staticData, gameWeeks } = await getFromDb()
+  const rsvp = await getRsvpData(staticData, gameWeeks)
   return {
     ...staticData,
     availability: rsvp.availability,
@@ -242,7 +220,10 @@ export async function getPlayerByPublicId(
   publicPlayerId: string,
 ): Promise<{ id: string; name: string; teamId: string } | null> {
   const source = await getDataSource()
-  const staticData = source === 'db' ? await getFromDb() : await getFromSheets()
-  const player = staticData.players.find((p) => p.id === publicPlayerId)
+  const players =
+    source === 'db'
+      ? (await getFromDb()).data.players
+      : (await getFromSheets()).players
+  const player = players.find((p) => p.id === publicPlayerId)
   return player ? { id: player.id, name: player.name, teamId: player.teamId } : null
 }

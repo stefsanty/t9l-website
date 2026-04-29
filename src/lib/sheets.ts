@@ -37,7 +37,6 @@ export interface RawSheetData {
   roster: string[][];
   schedule: string[][];
   goals: string[][];
-  ratings: string[][];
   scheduleFormula: string[][];
   mdSchedule: string[][];
 }
@@ -58,7 +57,6 @@ export async function fetchSheetData(): Promise<RawSheetData> {
       "RosterRaw!A:L",
       "ScheduleRaw!A:F",
       "GoalsRaw!A:F",
-      "RatingsRaw!A:BH",
       "Schedule Formula!A:E",
       "MDScheduleRaw!A:E",
     ],
@@ -71,9 +69,8 @@ export async function fetchSheetData(): Promise<RawSheetData> {
     roster: (ranges[1]?.values as string[][]) || [],
     schedule: (ranges[2]?.values as string[][]) || [],
     goals: (ranges[3]?.values as string[][]) || [],
-    ratings: (ranges[4]?.values as string[][]) || [],
-    scheduleFormula: (ranges[5]?.values as string[][]) || [],
-    mdSchedule: (ranges[6]?.values as string[][]) || [],
+    scheduleFormula: (ranges[4]?.values as string[][]) || [],
+    mdSchedule: (ranges[5]?.values as string[][]) || [],
   };
 }
 
