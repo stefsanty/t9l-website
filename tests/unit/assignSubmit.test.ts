@@ -44,6 +44,10 @@ describe('performAssignSubmit — navigate-immediately-then-write order', () => 
       return linkResult.promise
     })
     const toast = {
+      loading: vi.fn(() => {
+        order.push('toast.loading')
+        return 'toast-id'
+      }),
       success: vi.fn(() => order.push('toast.success')),
       error: vi.fn(() => order.push('toast.error')),
     }
@@ -52,11 +56,14 @@ describe('performAssignSubmit — navigate-immediately-then-write order', () => 
       pushHome,
       link,
       toast,
+      playerName: 'Ian Noseda',
     })
 
     // Allow microtasks to drain — pushHome must have already fired.
+    // v1.17.0: the loading toast also fires synchronously, BEFORE the push,
+    // so the user gets immediate feedback while the route transition starts.
     await Promise.resolve()
-    expect(order).toEqual(['push', 'link-start:ian-noseda'])
+    expect(order).toEqual(['toast.loading', 'push', 'link-start:ian-noseda'])
     expect(toast.success).not.toHaveBeenCalled()
 
     // Now resolve the API. Toast fires AFTER, not before.
@@ -69,11 +76,16 @@ describe('performAssignSubmit — navigate-immediately-then-write order', () => 
     await submitPromise
 
     expect(order).toEqual([
+      'toast.loading',
       'push',
       'link-start:ian-noseda',
       'toast.success',
     ])
-    expect(toast.success).toHaveBeenCalledWith('Linked to Ian Noseda')
+    // v1.17.0: success replaces the loading toast in-place via { id }.
+    expect(toast.loading).toHaveBeenCalledWith('Linking to Ian Noseda…')
+    expect(toast.success).toHaveBeenCalledWith('Linked to Ian Noseda', {
+      id: 'toast-id',
+    })
   })
 
   it('still navigates immediately on a stalled API and toasts after it resolves', async () => {
@@ -86,6 +98,10 @@ describe('performAssignSubmit — navigate-immediately-then-write order', () => 
       return linkResult.promise
     })
     const toast = {
+      loading: vi.fn(() => {
+        order.push('toast.loading')
+        return 'toast-id'
+      }),
       success: vi.fn(() => order.push('toast.success')),
       error: vi.fn(() => order.push('toast.error')),
     }
@@ -94,13 +110,15 @@ describe('performAssignSubmit — navigate-immediately-then-write order', () => 
       pushHome,
       link,
       toast,
+      playerName: 'Ian Noseda',
     })
 
     // Simulate the cold-lambda 3–5s stall: drain microtasks, push has
     // already fired even though the API hasn't.
     await Promise.resolve()
     await Promise.resolve()
-    expect(order).toEqual(['push', 'link-start'])
+    // v1.17.0: loading toast also fires synchronously (before push).
+    expect(order).toEqual(['toast.loading', 'push', 'link-start'])
 
     linkResult.resolve({
       ok: true,
@@ -111,7 +129,10 @@ describe('performAssignSubmit — navigate-immediately-then-write order', () => 
     await submitPromise
 
     // Toast comes after the resolution — it does NOT precede navigation.
-    expect(order[0]).toBe('push')
+    // v1.17.0: the loading toast precedes navigation (immediate feedback);
+    // the success toast (which replaces it) still comes after the API.
+    expect(order[0]).toBe('toast.loading')
+    expect(order[1]).toBe('push')
     expect(order.indexOf('toast.success')).toBeGreaterThan(
       order.indexOf('link-start'),
     )
@@ -128,7 +149,11 @@ describe('performAssignSubmit — navigate-immediately-then-write order', () => 
       playerName: 'P',
       teamId: 't',
     } satisfies LinkAttemptResult)
-    const toast = { success: vi.fn(), error: vi.fn() }
+    const toast = {
+      loading: vi.fn(() => 'toast-id'),
+      success: vi.fn(),
+      error: vi.fn(),
+    }
 
     // submit must resolve even though refreshSession's promise is still
     // pending — the destination cannot block on the next-auth refresh.
@@ -137,6 +162,7 @@ describe('performAssignSubmit — navigate-immediately-then-write order', () => 
       link,
       toast,
       refreshSession,
+      playerName: 'P',
     })
 
     expect(result.ok).toBe(true)
@@ -155,11 +181,21 @@ describe('performAssignSubmit — navigate-immediately-then-write order', () => 
       playerName: 'P',
       teamId: 't',
     } satisfies LinkAttemptResult)
-    const toast = { success: vi.fn(), error: vi.fn() }
+    const toast = {
+      loading: vi.fn(() => 'toast-id'),
+      success: vi.fn(),
+      error: vi.fn(),
+    }
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
 
     await expect(
-      performAssignSubmit('p', { pushHome, link, toast, refreshSession }),
+      performAssignSubmit('p', {
+        pushHome,
+        link,
+        toast,
+        refreshSession,
+        playerName: 'P',
+      }),
     ).resolves.toMatchObject({ ok: true })
 
     // Let the rejection settle so the .catch handler fires.
@@ -175,13 +211,18 @@ describe('performAssignSubmit — navigate-immediately-then-write order', () => 
       ok: false,
       error: 'Player already linked to another LINE user',
     } satisfies LinkAttemptResult)
-    const toast = { success: vi.fn(), error: vi.fn() }
+    const toast = {
+      loading: vi.fn(() => 'toast-id'),
+      success: vi.fn(),
+      error: vi.fn(),
+    }
 
     const result = await performAssignSubmit('p', {
       pushHome,
       link,
       toast,
       onError,
+      playerName: 'P',
     })
 
     expect(result).toEqual({
@@ -189,8 +230,10 @@ describe('performAssignSubmit — navigate-immediately-then-write order', () => 
       error: 'Player already linked to another LINE user',
     })
     expect(pushHome).toHaveBeenCalledTimes(1) // still navigated immediately
+    // v1.17.0: error replaces the loading toast in-place via { id }.
     expect(toast.error).toHaveBeenCalledWith(
       'Player already linked to another LINE user',
+      { id: 'toast-id' },
     )
     expect(toast.success).not.toHaveBeenCalled()
     expect(onError).toHaveBeenCalledWith(
@@ -207,9 +250,60 @@ describe('performAssignSubmit — navigate-immediately-then-write order', () => 
       playerName: 'P',
       teamId: 't',
     } satisfies LinkAttemptResult)
-    const toast = { success: vi.fn(), error: vi.fn() }
+    const toast = {
+      loading: vi.fn(() => 'toast-id'),
+      success: vi.fn(),
+      error: vi.fn(),
+    }
 
-    await performAssignSubmit('p', { pushHome, link, toast, onError })
+    await performAssignSubmit('p', {
+      pushHome,
+      link,
+      toast,
+      onError,
+      playerName: 'P',
+    })
     expect(onError).not.toHaveBeenCalled()
+  })
+
+  it('v1.17.0 — fires toast.loading SYNCHRONOUSLY before pushHome (immediate feedback)', async () => {
+    const order: string[] = []
+    const linkResult = deferred<LinkAttemptResult>()
+
+    const pushHome = vi.fn(() => order.push('push'))
+    const link = vi.fn(() => {
+      order.push('link-start')
+      return linkResult.promise
+    })
+    const toast = {
+      loading: vi.fn(() => {
+        order.push('toast.loading')
+        return 'toast-id'
+      }),
+      success: vi.fn(),
+      error: vi.fn(),
+    }
+
+    const submitPromise = performAssignSubmit('p', {
+      pushHome,
+      link,
+      toast,
+      playerName: 'P',
+    })
+
+    // The loading toast must fire BEFORE the route push. Drain microtasks
+    // and assert the order — a regression that moves toast.loading after
+    // pushHome would break this assertion.
+    await Promise.resolve()
+    expect(order.indexOf('toast.loading')).toBeLessThan(order.indexOf('push'))
+    expect(toast.loading).toHaveBeenCalledWith('Linking to P…')
+
+    linkResult.resolve({
+      ok: true,
+      playerId: 'p',
+      playerName: 'P',
+      teamId: 't',
+    })
+    await submitPromise
   })
 })

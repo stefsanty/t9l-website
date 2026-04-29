@@ -23,7 +23,11 @@ import {
   attemptLink,
   type LinkAttemptResult,
 } from './optimisticLink'
-import { notifyLinkOutcome, type ToastApi } from './assignToast'
+import {
+  notifyLinkOutcome,
+  notifyLinkPending,
+  type ToastApi,
+} from './assignToast'
 
 export type AssignSubmitDeps = {
   pushHome: () => void
@@ -31,20 +35,28 @@ export type AssignSubmitDeps = {
   toast: ToastApi
   refreshSession?: () => Promise<unknown>
   onError?: (error: string) => void
+  /** v1.17.0 — used by the loading toast so the user sees feedback during
+   * the cold-lambda window between Confirm-click and the API resolve. */
+  playerName: string
 }
 
 /**
- * Orchestrates the v1.6.1 navigate-immediately-then-write flow.
+ * Orchestrates the v1.6.1 navigate-immediately-then-write flow with the
+ * v1.17.0 loading-toast layer on top.
  *
  * Order of operations (load-bearing — pinned by `tests/unit/assignSubmit.test.ts`):
- *   1. `pushHome()` — fires synchronously BEFORE the API write begins.
- *   2. `link(playerId)` — runs in the background (the function awaits, but
- *      the caller has already navigated by step 1).
- *   3. `notifyLinkOutcome(result, toast)` — success or error toast.
- *   4. `refreshSession()` — fire-and-forget, only on success.
- *   5. `onError(error)` — if provided, called only on failure (the
- *      component uses this to render the inline error text for the rare
- *      case where the user navigates back to `/assign-player`).
+ *   1. `notifyLinkPending(playerName, toast)` — fires `toast.loading(...)`
+ *      synchronously so the user gets immediate feedback. Sonner's
+ *      Toaster sits at the root layout so this toast survives the
+ *      route push that follows.
+ *   2. `pushHome()` — synchronously, before any await. Browser starts
+ *      transitioning while the API write is in flight.
+ *   3. `link(playerId)` — runs in the background.
+ *   4. `notifyLinkOutcome(result, toast, id)` — replaces the loading
+ *      toast in-place via the captured id (success → checkmark with
+ *      "Linked to {name}", error → X with the error message).
+ *   5. `refreshSession()` — fire-and-forget on success.
+ *   6. `onError(error)` — if provided, called on failure.
  *
  * Returns the final `LinkAttemptResult` so callers can branch on it for
  * additional bookkeeping (e.g. clearing `submitting`).
@@ -55,20 +67,24 @@ export async function performAssignSubmit(
 ): Promise<LinkAttemptResult> {
   const linkImpl = deps.link ?? attemptLink
 
-  // Step 1: navigate IMMEDIATELY. This must happen before any await so the
+  // Step 1: loading toast IMMEDIATELY (synchronously). Captures the id so
+  // step 4 can replace it in-place once the API resolves.
+  const toastId = notifyLinkPending(deps.playerName, deps.toast)
+
+  // Step 2: navigate IMMEDIATELY. Must happen before any await so the
   // browser starts the route transition while the API write is in flight.
   deps.pushHome()
 
-  // Step 2: fire the API write. The caller has already navigated; this just
+  // Step 3: fire the API write. The caller has already navigated; this just
   // resolves the actual link state.
   const result = await linkImpl(playerId)
 
-  // Step 3: toast on the destination. The Sonner provider lives at the root
-  // layout so the toast survives the navigation.
-  notifyLinkOutcome(result, deps.toast)
+  // Step 4: replace the loading toast in-place via the captured id. Sonner
+  // transitions spinner→checkmark/X without flashing or stacking.
+  notifyLinkOutcome(result, deps.toast, toastId)
 
   if (result.ok) {
-    // Step 4: refresh next-auth so the destination's `useSession` cache
+    // Step 5: refresh next-auth so the destination's `useSession` cache
     // picks up the new `playerId` without a full reload. Fire-and-forget —
     // awaiting it would re-introduce a multi-second hang we just removed.
     deps.refreshSession?.().catch((err) => {
