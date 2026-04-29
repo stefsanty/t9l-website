@@ -4,12 +4,43 @@ import { prisma } from '@/lib/prisma'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { getServerSession } from 'next-auth'
+import { waitUntil } from '@vercel/functions'
 import { authOptions, getPlayerMappingFromDb } from '@/lib/auth'
 import { revalidatePublicData } from '@/lib/revalidate'
 import { SETTING_IDS, type DataSource, type WriteMode } from '@/lib/settings'
-import { setMapping, deleteMapping } from '@/lib/playerMappingStore'
+import {
+  setMapping,
+  deleteMapping,
+  type PlayerMapping,
+} from '@/lib/playerMappingStore'
 import { seedGameWeek, deleteGameWeek as deleteGameWeekFromRedis } from '@/lib/rsvpStore'
 import { parseJstDateTimeLocal, parseJstDateOnly } from '@/lib/jst'
+
+/**
+ * v1.13.0 — defer the Redis pre-warm off the admin response critical path.
+ *
+ * Mirror of the v1.8.0 inversion that ships the public hot paths
+ * (`/api/assign-player`, `/api/rsvp`): Redis is a secondary store on the
+ * admin path (admin pages re-read Prisma directly via `revalidatePath`), so
+ * the pre-warm can run in `waitUntil`. Drift on Redis failure surfaces in
+ * the structured log; recoverable via `scripts/auditRedisVsPrisma.ts`.
+ */
+function deferSetMapping(
+  op: 'admin-link' | 'admin-update' | 'admin-create',
+  lineId: string,
+  mapping: PlayerMapping | null,
+): void {
+  waitUntil(
+    setMapping(lineId, mapping).catch((err) =>
+      console.error(
+        '[v1.13.0 DRIFT] kind=playerMapping op=%s lineId=%s err=%o',
+        op,
+        lineId,
+        err,
+      ),
+    ),
+  )
+}
 
 async function assertAdmin() {
   const session = await getServerSession(authOptions)
@@ -339,9 +370,11 @@ export async function adminLinkLineToPlayer(input: {
   // relation-include shape, so the next /api/auth/session for this lineId
   // hits cache rather than the cold Prisma findUnique. Re-uses the canonical
   // `getPlayerMappingFromDb` slug-stripping logic so the cached shape stays
-  // identical to what the auth path would have computed itself.
+  // identical to what the auth path would have computed itself. Deferred via
+  // `waitUntil` (v1.13.0) — admin pages re-read Prisma directly so the Redis
+  // pre-warm doesn't need to block the response.
   const fresh = await getPlayerMappingFromDb(lineId)
-  await setMapping(lineId, fresh)
+  deferSetMapping('admin-link', lineId, fresh)
 
   // If we just clobbered a prior lineId on the target player, also clear
   // its Redis mapping — that LINE user is now an orphan from this player's

@@ -4,13 +4,37 @@ import { prisma } from '@/lib/prisma'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { getServerSession } from 'next-auth'
+import { waitUntil } from '@vercel/functions'
 import { authOptions, getPlayerMappingFromDb } from '@/lib/auth'
 import { revalidatePublicData } from '@/lib/revalidate'
 import {
   deleteMapping,
   setMapping,
+  type PlayerMapping,
 } from '@/lib/playerMappingStore'
 import { parseJstDateOnly } from '@/lib/jst'
+
+/**
+ * v1.13.0 — defer the Redis pre-warm off the admin response critical path.
+ * Mirror of v1.8.0's public-hot-path inversion. See same helper in
+ * `app/admin/leagues/actions.ts` for full rationale.
+ */
+function deferSetMapping(
+  op: 'admin-update' | 'admin-create',
+  lineId: string,
+  mapping: PlayerMapping | null,
+): void {
+  waitUntil(
+    setMapping(lineId, mapping).catch((err) =>
+      console.error(
+        '[v1.13.0 DRIFT] kind=playerMapping op=%s lineId=%s err=%o',
+        op,
+        lineId,
+        err,
+      ),
+    ),
+  )
+}
 
 async function assertAdmin() {
   const session = await getServerSession(authOptions)
@@ -75,10 +99,11 @@ export async function updatePlayer(formData: FormData) {
   // NEW lineId — pre-warm with the post-write mapping so the just-linked
   // user's next /api/auth/session hits cache instead of the cold Prisma
   // relation-include. Uses the canonical slug-stripping helper for shape
-  // parity with the JWT path.
+  // parity with the JWT path. Deferred via `waitUntil` (v1.13.0) — admin
+  // re-reads Prisma directly so the Redis pre-warm doesn't need to block.
   if (lineId && lineId !== priorLineId) {
     const fresh = await getPlayerMappingFromDb(lineId)
-    await setMapping(lineId, fresh)
+    deferSetMapping('admin-update', lineId, fresh)
   }
 
   revalidatePath('/admin/players')
@@ -99,10 +124,11 @@ export async function createPlayer(formData: FormData) {
   // than re-running the cold Prisma findUnique that would otherwise replace
   // the prior null sentinel. createPlayer doesn't assign a LeagueTeam yet so
   // the resolved teamId is the empty string — same as what the JWT path would
-  // compute itself for an unassigned player.
+  // compute itself for an unassigned player. Deferred via `waitUntil`
+  // (v1.13.0) — see updatePlayer above.
   if (lineId) {
     const fresh = await getPlayerMappingFromDb(lineId)
-    await setMapping(lineId, fresh)
+    deferSetMapping('admin-create', lineId, fresh)
   }
 
   revalidatePath('/admin/players')
