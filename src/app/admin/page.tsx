@@ -2,12 +2,7 @@ import Link from 'next/link'
 import { ArrowRight } from 'lucide-react'
 import { getAllLeagues } from '@/lib/admin-data'
 import NewLeagueButton from '@/components/admin/NewLeagueButton'
-
-// `unstable_cache` round-trips Date objects through JSON, so cached values come
-// back as ISO strings. Coerce to Date before formatting.
-function formatShortDate(d: Date | string) {
-  return new Date(d).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
-}
+import { formatJstShort } from '@/lib/jst'
 
 function toSlug(name: string) {
   return name
@@ -84,7 +79,7 @@ export default async function AdminDashboard() {
                     Next Matchday
                   </p>
                   <p className="font-condensed text-[26px] font-bold leading-tight text-admin-text">
-                    MD{nextGW.weekNumber} · {formatShortDate(nextGW.startDate)}
+                    MD{nextGW.weekNumber} · {formatJstShort(nextGW.startDate)}
                   </p>
                   <div className="mt-1.5 flex flex-col gap-0.5 text-xs text-admin-text2">
                     {venueName && <span>{venueName}</span>}

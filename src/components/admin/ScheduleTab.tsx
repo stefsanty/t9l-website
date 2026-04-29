@@ -16,6 +16,18 @@ import {
   updateMatch,
   deleteMatch,
 } from '@/app/admin/leagues/actions'
+// All admin-schedule date/time goes through the canonical JST helpers in
+// `lib/jst.ts`. The previous local fmtTime used `Date#getHours/getMinutes`
+// (browser-local TZ) and fmtDatetime used `toISOString().slice(0,16)`
+// (UTC) — under the V8/Vercel TZ=UTC trap that meant a JST admin who typed
+// "14:30" had it stored as 14:30 UTC = 23:30 JST (a 9-hour skew). All
+// inputs and displays here represent JST clock time regardless of the
+// admin's local timezone. See CLAUDE.md "Time handling".
+import {
+  formatJstDate as fmtDate,
+  formatJstTime as fmtTime,
+  formatJstDateTimeLocal as fmtDatetime,
+} from '@/lib/jst'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -59,19 +71,6 @@ interface ScheduleTabProps {
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
-
-function fmtDate(d: Date) {
-  return new Date(d).toISOString().split('T')[0]
-}
-
-function fmtTime(d: Date) {
-  const dt = new Date(d)
-  return `${String(dt.getHours()).padStart(2, '0')}:${String(dt.getMinutes()).padStart(2, '0')}`
-}
-
-function fmtDatetime(d: Date) {
-  return new Date(d).toISOString().slice(0, 16)
-}
 
 type GwBadgeStatus = 'COMPLETED' | 'IN_PROGRESS' | 'UPCOMING' | 'SCHEDULED'
 

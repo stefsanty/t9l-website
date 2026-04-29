@@ -12,6 +12,7 @@ import {
   setWriteMode,
 } from '@/app/admin/leagues/actions'
 import type { DataSource, WriteMode } from '@/lib/settings'
+import { formatJstDate } from '@/lib/jst'
 
 interface League {
   id: string
@@ -23,9 +24,10 @@ interface League {
   endDate: Date | null
 }
 
+// JST calendar date as YYYY-MM-DD for `<input type="date">`. See lib/jst.ts.
 function fmtDate(d: Date | null) {
   if (!d) return ''
-  return new Date(d).toISOString().split('T')[0]
+  return formatJstDate(d)
 }
 
 type SubdomainStatus = 'idle' | 'checking' | 'available' | 'taken' | 'invalid'
@@ -108,14 +110,14 @@ export default function SettingsTab({
 
   function handleStartSeason() {
     startTransition(async () => {
-      await updateLeagueInfo(league.id, { startDate: new Date().toISOString().split('T')[0] })
+      await updateLeagueInfo(league.id, { startDate: formatJstDate(new Date()) })
       toast('Season started')
     })
   }
 
   function handleEndSeason() {
     startTransition(async () => {
-      await updateLeagueInfo(league.id, { endDate: new Date().toISOString().split('T')[0] })
+      await updateLeagueInfo(league.id, { endDate: formatJstDate(new Date()) })
       toast('Season ended')
     })
   }

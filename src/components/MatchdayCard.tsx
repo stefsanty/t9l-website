@@ -1,38 +1,11 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import type { Matchday, Team, Goal } from '@/types';
+import { formatJstFriendly } from '@/lib/jst';
 import MatchdayCountdown from './MatchdayCountdown';
 
 const DEFAULT_VENUE_NAME = 'Tennozu Park C';
 const DEFAULT_VENUE_MAP_URL = 'https://maps.google.com/maps?q=Tennozu+Park+C,+Shinagawa,+Tokyo,+Japan';
-
-function formatMatchDate(dateStr: string, locale: 'en' | 'ja' = 'en') {
-  // dateStr is "YYYY-MM-DD" (UTC-stable from normalizeDate)
-  // We treat it as UTC midnight and format it in JST.
-  // UTC 00:00 = JST 09:00, which keeps the date the same.
-  const d = new Date(dateStr);
-  if (locale === 'ja') {
-    // ja-JP numeric format already appends 月/日 (e.g. "4月", "16日"), so use
-    // getUTC* to get plain numbers and append the suffixes ourselves.
-    // dateStr is "YYYY-MM-DD" UTC midnight = JST 09:00, same calendar date.
-    const month = d.getUTCMonth() + 1;
-    const day = d.getUTCDate();
-    const weekday = new Intl.DateTimeFormat('ja-JP', {
-      weekday: 'short',
-      timeZone: 'Asia/Tokyo',
-    }).format(d); // "木" etc.
-    return `${month}月${day}日（${weekday}）`;
-  }
-  const parts = new Intl.DateTimeFormat('en-US', {
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric',
-    timeZone: 'Asia/Tokyo',
-  }).formatToParts(d);
-  const get = (type: Intl.DateTimeFormatPartTypes) =>
-    parts.find((p) => p.type === type)?.value ?? '';
-  return `${get('month')} ${get('day')} (${get('weekday')})`;
-}
 
 function MatchScorers({
   matchId,
@@ -170,7 +143,7 @@ export default function MatchdayCard({
               </span>
             </div>
             <h2 className="font-display text-4xl font-black uppercase tracking-tighter text-fg-high leading-tight">
-              {matchday.date ? formatMatchDate(matchday.date, locale) : 'TBD'}
+              {matchday.date ? formatJstFriendly(matchday.date, locale) : 'TBD'}
             </h2>
             {showCountdown && (
               <div className="mt-0.5">

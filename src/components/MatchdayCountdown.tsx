@@ -2,11 +2,11 @@
 
 import { useEffect, useState } from 'react';
 import type { Matchday } from '@/types';
+import { jstIsoString } from '@/lib/jst';
 
 function toJSTDate(dateStr: string, timeStr: string): Date | null {
   if (!dateStr || !timeStr) return null;
-  // Construct ISO 8601 with JST offset so Date.parse is timezone-aware
-  return new Date(`${dateStr}T${timeStr}+09:00`);
+  return new Date(jstIsoString(dateStr, timeStr));
 }
 
 function formatCountdown(ms: number): string {
