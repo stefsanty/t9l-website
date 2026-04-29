@@ -59,9 +59,21 @@ export const getLeagueTeams = unstable_cache(
   { revalidate: 30, tags: ['leagues'] },
 )
 
+/**
+ * Admin Players tab data fetch. As of v1.10.0 / PR B, returns a 4-tuple:
+ * `[assignments, leagueTeams, gameWeeks, lineLoginsByLineId]`.
+ *
+ * `lineLoginsByLineId` is a Record keyed by `LineLogin.lineId` that the UI
+ * uses to surface (a) the LINE display name, (b) the LINE picture URL, and
+ * (c) `lastSeenAt` for every Player whose `lineId` matches a LineLogin row.
+ * Fetched as a parallel query rather than a SQL relation include because
+ * Prisma `Player.lineId` doesn't carry a foreign-key relation to LineLogin
+ * (LineLogin is a sidecar audit table populated from the JWT callback —
+ * see PR 6 / `lib/auth.ts#trackLineLogin`).
+ */
 export const getLeaguePlayers = unstable_cache(
-  async (leagueId: string) =>
-    Promise.all([
+  async (leagueId: string) => {
+    const [assignments, leagueTeams, gameWeeks, allLineLogins] = await Promise.all([
       prisma.playerLeagueAssignment.findMany({
         where: { leagueTeam: { leagueId } },
         include: {
@@ -80,7 +92,28 @@ export const getLeaguePlayers = unstable_cache(
         orderBy: { weekNumber: 'desc' },
         take: 1,
       }),
-    ]),
+      prisma.lineLogin.findMany({
+        select: {
+          lineId: true,
+          name: true,
+          pictureUrl: true,
+          lastSeenAt: true,
+        },
+      }),
+    ])
+    const lineLoginsByLineId: Record<
+      string,
+      { name: string | null; pictureUrl: string | null; lastSeenAt: Date }
+    > = {}
+    for (const ll of allLineLogins) {
+      lineLoginsByLineId[ll.lineId] = {
+        name: ll.name,
+        pictureUrl: ll.pictureUrl,
+        lastSeenAt: ll.lastSeenAt,
+      }
+    }
+    return [assignments, leagueTeams, gameWeeks, lineLoginsByLineId] as const
+  },
   ['league-players'],
   { revalidate: 30, tags: ['leagues'] },
 )
@@ -268,4 +301,46 @@ export async function getOrphanLineLogins(): Promise<
     linkedRows.map((p) => p.lineId).filter((x): x is string => !!x),
   )
   return allLogins.filter((l) => !linked.has(l.lineId))
+}
+
+/**
+ * v1.10.0 / PR B — full LineLogin list with the player they're currently
+ * linked to (if any). Drives the admin "Remap" dialog where the operator
+ * may deliberately pick a currently-linked LINE user and move them to a
+ * different player. Newest-first by `lastSeenAt`.
+ */
+export async function getAllLineLoginsWithLinkedPlayer(): Promise<
+  Array<{
+    lineId: string
+    name: string | null
+    pictureUrl: string | null
+    firstSeenAt: Date
+    lastSeenAt: Date
+    linkedPlayer: { id: string; name: string } | null
+  }>
+> {
+  const [allLogins, linkedRows] = await Promise.all([
+    prisma.lineLogin.findMany({
+      orderBy: { lastSeenAt: 'desc' },
+      select: {
+        lineId: true,
+        name: true,
+        pictureUrl: true,
+        firstSeenAt: true,
+        lastSeenAt: true,
+      },
+    }),
+    prisma.player.findMany({
+      where: { lineId: { not: null } },
+      select: { id: true, name: true, lineId: true },
+    }),
+  ])
+  const playerByLineId = new Map<string, { id: string; name: string }>()
+  for (const p of linkedRows) {
+    if (p.lineId) playerByLineId.set(p.lineId, { id: p.id, name: p.name })
+  }
+  return allLogins.map((l) => ({
+    ...l,
+    linkedPlayer: playerByLineId.get(l.lineId) ?? null,
+  }))
 }

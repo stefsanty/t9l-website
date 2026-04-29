@@ -1,13 +1,17 @@
 'use client'
 
 import { useState, useTransition } from 'react'
-import { ArrowRight, X, ChevronDown } from 'lucide-react'
+import { ArrowRight, X, ChevronDown, Link2, Link2Off, RefreshCw } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import StatusBadge from './StatusBadge'
 import ConfirmDialog from './ConfirmDialog'
 import AssignLineDialog from './AssignLineDialog'
 import { useToast } from './ToastProvider'
-import { transferPlayer, removePlayerFromLeague } from '@/app/admin/leagues/actions'
+import {
+  transferPlayer,
+  removePlayerFromLeague,
+  adminClearLineLink,
+} from '@/app/admin/leagues/actions'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -27,6 +31,9 @@ interface PlayerRow {
   id: string
   name: string
   lineId: string | null
+  lineDisplayName: string | null
+  linePictureUrl: string | null
+  lineLastSeenAt: string | null
   assignments: Assignment[]
 }
 
@@ -38,12 +45,17 @@ interface OrphanLineLogin {
   lastSeenAt: string
 }
 
+interface AllLineLogin extends OrphanLineLogin {
+  linkedPlayer: { id: string; name: string } | null
+}
+
 interface PlayersTabProps {
   leagueId: string
   players: PlayerRow[]
   leagueTeams: LeagueTeamRef[]
   maxGameWeek: number
   orphans: OrphanLineLogin[]
+  allLineLogins: AllLineLogin[]
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -52,11 +64,39 @@ function currentTeam(player: PlayerRow): Assignment | null {
   return player.assignments.find((a) => a.toGameWeek === null) ?? player.assignments[0] ?? null
 }
 
+/**
+ * Truncate a LINE user ID to its first 8 chars + ellipsis. Full ID
+ * appears on the surrounding element's `title=` attribute for hover.
+ */
+function shortLineId(lineId: string): string {
+  return lineId.length > 10 ? `${lineId.slice(0, 8)}…` : lineId
+}
+
+/**
+ * One-letter avatar fallback when the LINE picture URL is missing or
+ * fails to load. First letter of the LINE display name, or `?` if the
+ * display name is also missing.
+ */
+function avatarInitial(name: string | null): string {
+  return (name?.trim()?.[0] ?? '?').toUpperCase()
+}
+
 // ── Component ────────────────────────────────────────────────────────────────
 
-export default function PlayersTab({ leagueId, players, leagueTeams, maxGameWeek, orphans }: PlayersTabProps) {
+export default function PlayersTab({
+  leagueId,
+  players,
+  leagueTeams,
+  maxGameWeek,
+  orphans,
+  allLineLogins,
+}: PlayersTabProps) {
   const { toast } = useToast()
   const [transferPanelId, setTransferPanelId] = useState<string | null>(null)
+  // v1.10.0 / PR B — when remapPlayerId is non-null, the AssignLineDialog
+  // opens in "remap" mode locked to this player and lets the operator
+  // pick from the FULL list of LINE logins (orphan + already-linked).
+  const [remapPlayerId, setRemapPlayerId] = useState<string | null>(null)
 
   async function handleRemove(playerId: string, playerName: string) {
     try {
@@ -66,6 +106,17 @@ export default function PlayersTab({ leagueId, players, leagueTeams, maxGameWeek
       toast(err instanceof Error ? err.message : 'Failed to remove', 'error')
     }
   }
+
+  async function handleClearLine(playerId: string, playerName: string) {
+    try {
+      await adminClearLineLink({ playerId, leagueId })
+      toast(`Cleared LINE link from ${playerName}`)
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Failed to clear', 'error')
+    }
+  }
+
+  const remapTarget = remapPlayerId ? players.find((p) => p.id === remapPlayerId) ?? null : null
 
   return (
     <>
@@ -126,6 +177,11 @@ export default function PlayersTab({ leagueId, players, leagueTeams, maxGameWeek
                         : '—'}
                     </span>
                   </div>
+                  <LineInfoMobile
+                    player={player}
+                    onClearLine={() => handleClearLine(player.id, player.name)}
+                    onRemap={() => setRemapPlayerId(player.id)}
+                  />
                 </div>
                 <div className="flex items-center gap-1 shrink-0 pt-0.5">
                   <button
@@ -173,13 +229,14 @@ export default function PlayersTab({ leagueId, players, leagueTeams, maxGameWeek
 
       {/* ── Desktop: table ───────────────────────────────────────────────── */}
       <div className="hidden md:block bg-admin-surface rounded-xl border border-admin-border overflow-hidden">
-        {/* Table header */}
+        {/* Table header — note v1.10.0 added the LINE column */}
         <div
           className="grid text-admin-text3 text-xs uppercase tracking-wider px-5 py-2.5 border-b border-admin-border bg-admin-surface2"
-          style={{ gridTemplateColumns: '1fr 160px 120px 100px 100px' }}
+          style={{ gridTemplateColumns: '1fr 140px 220px 100px 80px 140px' }}
         >
           <span>Name</span>
           <span>Team</span>
+          <span>LINE</span>
           <span>Assignment</span>
           <span>Status</span>
           <span />
@@ -191,10 +248,10 @@ export default function PlayersTab({ leagueId, players, leagueTeams, maxGameWeek
           const hasPrevious = player.assignments.length > 1
 
           return (
-            <div key={player.id} className="border-b border-admin-border last:border-b-0">
+            <div key={player.id} className="border-b border-admin-border last:border-b-0" data-testid={`player-row-${player.id}`}>
               <div
                 className="grid items-center px-5 py-3 hover:bg-admin-surface2/50 transition-colors"
-                style={{ gridTemplateColumns: '1fr 160px 120px 100px 100px' }}
+                style={{ gridTemplateColumns: '1fr 140px 220px 100px 80px 140px' }}
               >
                 <span className="text-admin-text font-medium text-sm">{player.name}</span>
 
@@ -209,6 +266,12 @@ export default function PlayersTab({ leagueId, players, leagueTeams, maxGameWeek
                     {current?.leagueTeam.team.name ?? '—'}
                   </span>
                 </div>
+
+                <LineInfoCell
+                  player={player}
+                  onClearLine={() => handleClearLine(player.id, player.name)}
+                  onRemap={() => setRemapPlayerId(player.id)}
+                />
 
                 <span className="text-admin-text3 text-xs font-mono">
                   {current
@@ -266,7 +329,201 @@ export default function PlayersTab({ leagueId, players, leagueTeams, maxGameWeek
       </div>
         </>
       )}
+
+      {/* v1.10.0 / PR B — remap dialog. Mounts when an admin clicks the
+          per-row "Remap" button. Surfaces the FULL LINE-login list
+          (orphan + linked-elsewhere) and reuses adminLinkLineToPlayer
+          to do the atomic clear-then-set. */}
+      {remapTarget && (
+        <AssignLineDialog
+          mode="remap"
+          leagueId={leagueId}
+          orphans={orphans}
+          allLineLogins={allLineLogins}
+          players={players.map((p) => ({
+            id: p.id,
+            name: p.name,
+            hasLineLink: !!p.lineId,
+          }))}
+          remapTarget={{
+            id: remapTarget.id,
+            name: remapTarget.name,
+            currentLineId: remapTarget.lineId,
+            currentLineName: remapTarget.lineDisplayName,
+          }}
+          onClose={() => setRemapPlayerId(null)}
+        />
+      )}
     </>
+  )
+}
+
+// ── LINE info cell (desktop) ─────────────────────────────────────────────────
+
+interface LineInfoCellProps {
+  player: PlayerRow
+  onClearLine: () => Promise<void>
+  onRemap: () => void
+}
+
+function LineInfoCell({ player, onClearLine, onRemap }: LineInfoCellProps) {
+  if (!player.lineId) {
+    return (
+      <div className="flex items-center gap-2 text-admin-text3 text-xs">
+        <Link2Off className="w-3.5 h-3.5 opacity-60" />
+        <span>Not linked</span>
+      </div>
+    )
+  }
+  return (
+    <div className="flex items-center gap-2 min-w-0" data-testid="line-info">
+      <LineAvatar
+        pictureUrl={player.linePictureUrl}
+        displayName={player.lineDisplayName}
+      />
+      <div className="flex flex-col min-w-0 flex-1">
+        <span className="text-admin-text text-xs font-medium truncate" data-testid="line-display-name">
+          {player.lineDisplayName ?? <span className="text-admin-text3 italic">no name</span>}
+        </span>
+        <span
+          className="text-admin-text3 text-[10px] font-mono truncate"
+          title={player.lineId}
+          data-testid="line-id"
+        >
+          {shortLineId(player.lineId)}
+        </span>
+      </div>
+      <div className="flex items-center gap-1 shrink-0">
+        <button
+          type="button"
+          onClick={onRemap}
+          title="Remap to a different LINE user"
+          className="p-1.5 rounded text-admin-text3 hover:text-admin-text hover:bg-admin-surface3 transition-colors"
+          data-testid="remap-button"
+        >
+          <RefreshCw className="w-3.5 h-3.5" />
+        </button>
+        <ConfirmDialog
+          trigger={
+            <button
+              type="button"
+              title="Unlink LINE user from this player"
+              className="p-1.5 rounded text-admin-text3 hover:text-admin-red hover:bg-admin-red-dim transition-colors"
+              data-testid="unlink-button"
+            >
+              <Link2Off className="w-3.5 h-3.5" />
+            </button>
+          }
+          title={`Unlink LINE from ${player.name}?`}
+          description={
+            player.lineDisplayName
+              ? `${player.lineDisplayName} (${shortLineId(player.lineId)}) will need to be re-linked from the orphan dropdown to play again.`
+              : `LINE user ${shortLineId(player.lineId)} will need to be re-linked from the orphan dropdown to play again.`
+          }
+          confirmLabel="Unlink"
+          onConfirm={onClearLine}
+        />
+      </div>
+    </div>
+  )
+}
+
+// ── LINE info row (mobile) ───────────────────────────────────────────────────
+
+interface LineInfoMobileProps {
+  player: PlayerRow
+  onClearLine: () => Promise<void>
+  onRemap: () => void
+}
+
+function LineInfoMobile({ player, onClearLine, onRemap }: LineInfoMobileProps) {
+  if (!player.lineId) {
+    return (
+      <div className="mt-2 flex items-center gap-1.5 text-admin-text3 text-[10px]">
+        <Link2Off className="w-3 h-3 opacity-60" />
+        <span>Not linked to LINE</span>
+      </div>
+    )
+  }
+  return (
+    <div className="mt-2 flex items-center gap-2" data-testid="line-info-mobile">
+      <LineAvatar
+        pictureUrl={player.linePictureUrl}
+        displayName={player.lineDisplayName}
+      />
+      <div className="flex-1 min-w-0">
+        <p className="text-admin-text2 text-[11px] font-medium truncate">
+          {player.lineDisplayName ?? <span className="italic text-admin-text3">no LINE name</span>}
+        </p>
+        <p
+          className="text-admin-text3 text-[10px] font-mono truncate"
+          title={player.lineId}
+        >
+          {shortLineId(player.lineId)}
+        </p>
+      </div>
+      <div className="flex items-center gap-0.5 shrink-0">
+        <button
+          type="button"
+          onClick={onRemap}
+          title="Remap"
+          className="p-1.5 rounded text-admin-text3 hover:text-admin-text hover:bg-admin-surface3 transition-colors"
+        >
+          <RefreshCw className="w-3.5 h-3.5" />
+        </button>
+        <ConfirmDialog
+          trigger={
+            <button
+              type="button"
+              title="Unlink"
+              className="p-1.5 rounded text-admin-text3 hover:text-admin-red hover:bg-admin-red-dim transition-colors"
+            >
+              <Link2Off className="w-3.5 h-3.5" />
+            </button>
+          }
+          title={`Unlink LINE from ${player.name}?`}
+          description={
+            player.lineDisplayName
+              ? `${player.lineDisplayName} (${shortLineId(player.lineId)}) will need to be re-linked.`
+              : `LINE user ${shortLineId(player.lineId)} will need to be re-linked.`
+          }
+          confirmLabel="Unlink"
+          onConfirm={onClearLine}
+        />
+      </div>
+    </div>
+  )
+}
+
+// ── Avatar component ─────────────────────────────────────────────────────────
+
+interface LineAvatarProps {
+  pictureUrl: string | null
+  displayName: string | null
+}
+
+function LineAvatar({ pictureUrl, displayName }: LineAvatarProps) {
+  // <img> rather than next/image because LINE CDN URLs are stored without
+  // configuration in next.config and we don't want to crash the row on a
+  // hostname not allowed by the loader. Fallback to initial-letter on
+  // load error via onError handler.
+  const [errored, setErrored] = useState(false)
+  if (!pictureUrl || errored) {
+    return (
+      <div className="w-7 h-7 shrink-0 rounded-full bg-admin-surface3 border border-admin-border flex items-center justify-center text-admin-text2 text-[11px] font-bold">
+        {avatarInitial(displayName)}
+      </div>
+    )
+  }
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={pictureUrl}
+      alt={displayName ?? 'LINE avatar'}
+      onError={() => setErrored(true)}
+      className="w-7 h-7 shrink-0 rounded-full bg-admin-surface3 border border-admin-border object-cover"
+      data-testid="line-avatar-img"
+    />
   )
 }
 
