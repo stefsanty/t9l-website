@@ -46,16 +46,6 @@ export interface Goal {
   assister: string | null;
 }
 
-export interface PlayerRating {
-  matchdayId: string;
-  respondentTeamId: string;
-  playerRatings: Record<string, number>;
-  refereeing: number;
-  gamesClose: number;
-  teamwork: number;
-  enjoyment: number;
-}
-
 export interface Availability {
   [matchdayId: string]: {
     [teamId: string]: string[];
@@ -102,14 +92,6 @@ export interface TopAssister {
   assists: number;
 }
 
-export interface TopRated {
-  playerId: string;
-  playerName: string;
-  teamId: string;
-  avgRating: number;
-  matchdaysRated: number;
-}
-
 export interface PlayerStats {
   playerId: string;
   playerName: string;
@@ -121,8 +103,6 @@ export interface PlayerStats {
   matchesPlayed: number;
   goals: number;
   assists: number;
-  avgRating: number;
-  matchdaysRated: number;
   gaPerGame: number;
 }
 
@@ -131,7 +111,6 @@ export interface LeagueData {
   players: Player[];
   matchdays: Matchday[];
   goals: Goal[];
-  ratings: PlayerRating[];
   availability: Availability;
   availabilityStatuses: AvailabilityStatuses;
   played: PlayedStatus;

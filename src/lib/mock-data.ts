@@ -123,20 +123,6 @@ export function getMockData(): RawSheetData {
       ["MD1", "2026-04-03T11:40:00", "Fenix FC", "Hygge SC", "Shu Yoshimura", "Ryuusei"],
       ["MD1", "2026-04-03T11:43:00", "Hygge SC", "Fenix FC", "Nikolai Akira Kawabata", "Sebastien Gaboriau"],
     ],
-    ratings: [
-      // Header: MD, Timestamp, Team, then player names (simplified for mock), then 4 meta cols
-      ["MD", "Timestamp", "Team",
-        "Yas Makita", "Isen", "Ken Hirami", "Kevin Chang", "Merck", "Stefan",
-        "Ian Noseda", "Nathan Chang", "Laurence", "Vernieri Luca",
-        "Refereeing", "Games Close", "Teamwork", "Enjoyment"],
-      // A Mariners player rating their own team
-      ["MD1", "2026-04-03T12:00:00", "Blue Mariners FC",
-        "4", "4", "4", "3", "3", "3", "5", "4", "4", "5",
-        "4", "5", "4", "5"],
-      ["MD1", "2026-04-03T12:05:00", "Blue Mariners FC",
-        "3", "4", "3", "4", "3", "4", "5", "4", "3", "4",
-        "4", "4", "4", "5"],
-    ],
     scheduleFormula: [
       ["Matchday", "First", "Middle", "Last", "Sits Out"],
       ["MD1", "Mariners FC", "Hygge SC", "Fenix FC", "FC Torpedo"],

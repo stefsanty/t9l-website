@@ -96,13 +96,12 @@ async function main() {
         'RosterRaw!A:L',      // [picUrl, name, team, position, MD1-MD8]
         'ScheduleRaw!A:F',    // [matchday, matchNum, kickoff, fullTime, homeTeam, awayTeam]
         'GoalsRaw!A:F',       // [matchday, timestamp, scoringTeam, concedingTeam, scorer, assister]
-        'RatingsRaw!A:A',     // fetched but not imported (ratings model removed)
         'MDScheduleRaw!A:B',  // [label, YYYY-MM-DD]
       ],
     })
 
     const rows = (data.valueRanges ?? []).map(vr => (vr.values as string[][]) ?? [])
-    const [teamRaw, rosterRaw, scheduleRaw, goalsRaw, , mdScheduleRaw] = rows
+    const [teamRaw, rosterRaw, scheduleRaw, goalsRaw, mdScheduleRaw] = rows
 
     const teamRows     = (teamRaw       ?? []).slice(1).filter(r => r[0]?.trim())
     const rosterRows   = (rosterRaw     ?? []).slice(1).filter(r => r[1]?.trim())
@@ -362,9 +361,6 @@ async function main() {
       }
     }
     console.log(`✓ Scores updated (${completedWks.size} completed week(s))`)
-
-    // Ratings model removed — no ratings import.
-    // Availability model removed — no availability import.
 
     console.log('\n✅  Import complete.\n')
   } finally {

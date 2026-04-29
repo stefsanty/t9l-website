@@ -138,7 +138,6 @@ interface RawSheetData {
   roster: string[][]
   schedule: string[][]
   goals: string[][]
-  ratings: string[][]
   scheduleFormula: string[][]
   mdSchedule: string[][]
 }
@@ -168,7 +167,6 @@ async function fetchSheetData(): Promise<RawSheetData> {
       'RosterRaw!A:L',
       'ScheduleRaw!A:F',
       'GoalsRaw!A:F',
-      'RatingsRaw!A:BH',
       'Schedule Formula!A:E',
       'MDScheduleRaw!A:E',
     ],
@@ -179,9 +177,8 @@ async function fetchSheetData(): Promise<RawSheetData> {
     roster: rows[1] ?? [],
     schedule: rows[2] ?? [],
     goals: rows[3] ?? [],
-    ratings: rows[4] ?? [],
-    scheduleFormula: rows[5] ?? [],
-    mdSchedule: rows[6] ?? [],
+    scheduleFormula: rows[4] ?? [],
+    mdSchedule: rows[5] ?? [],
   }
 }
 
