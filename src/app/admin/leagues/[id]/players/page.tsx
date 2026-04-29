@@ -50,7 +50,11 @@ export default async function PlayersPage({ params }: Props) {
         lineId: a.player.lineId ?? null,
         lineDisplayName: ll?.name ?? null,
         linePictureUrl: ll?.pictureUrl ?? null,
-        lineLastSeenAt: ll?.lastSeenAt.toISOString() ?? null,
+        // `lastSeenAt` is already serialized to an ISO string inside
+        // `getLeaguePlayers` (see admin-data.ts) — the function is wrapped in
+        // `unstable_cache`, which JSON-round-trips its return value. Calling
+        // `.toISOString()` here would crash post-cache. v1.17.1.
+        lineLastSeenAt: ll?.lastSeenAt ?? null,
         assignments: [a],
       })
     }
