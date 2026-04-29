@@ -1,11 +1,11 @@
 'use client'
 
 import { useState, useTransition } from 'react'
-import { ChevronRight, Plus, Trash2, Upload } from 'lucide-react'
+import { Plus, Upload, Calendar, MapPin, Clock } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import StatusBadge from './StatusBadge'
-import ConfirmDialog from './ConfirmDialog'
 import MatchScoreEditor from './MatchScoreEditor'
+import MatchOverflowMenu from './MatchOverflowMenu'
 import PillEditor from './PillEditor'
 import { useToast } from './ToastProvider'
 import {
@@ -27,6 +27,7 @@ import {
   formatJstDate as fmtDate,
   formatJstTime as fmtTime,
   formatJstDateTimeLocal as fmtDatetime,
+  formatJstFriendly,
 } from '@/lib/jst'
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -72,20 +73,26 @@ interface ScheduleTabProps {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-type GwBadgeStatus = 'COMPLETED' | 'IN_PROGRESS' | 'UPCOMING' | 'SCHEDULED'
+// v1.21.0 status taxonomy: Empty / Pending / Live / Done.
+//   - EMPTY   → no matches scheduled yet
+//   - PENDING → matches scheduled, none played
+//   - LIVE    → at least one match in progress
+//   - DONE    → every match completed (or cancelled/postponed terminally)
+type GwBadgeStatus = 'EMPTY' | 'PENDING' | 'LIVE' | 'DONE'
 
-function gwStatus(gw: GameWeekRow): GwBadgeStatus {
-  if (gw.matches.length === 0) return 'SCHEDULED'
-  if (gw.matches.every((m) => m.status === 'COMPLETED')) return 'COMPLETED'
-  if (gw.matches.some((m) => m.status === 'IN_PROGRESS')) return 'IN_PROGRESS'
-  return 'UPCOMING'
+export function gwStatus(gw: GameWeekRow): GwBadgeStatus {
+  if (gw.matches.length === 0) return 'EMPTY'
+  if (gw.matches.some((m) => m.status === 'IN_PROGRESS')) return 'LIVE'
+  if (gw.matches.every((m) => m.status === 'COMPLETED' || m.status === 'CANCELLED' || m.status === 'POSTPONED')) {
+    return 'DONE'
+  }
+  return 'PENDING'
 }
 
 // ── Main component ───────────────────────────────────────────────────────────
 
 export default function ScheduleTab({ leagueId, gameWeeks, leagueTeams, venues }: ScheduleTabProps) {
   const { toast } = useToast()
-  const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [showAddMatchday, setShowAddMatchday] = useState(false)
   const [addMatchForm, setAddMatchForm] = useState<{
     gwId: string
@@ -94,14 +101,6 @@ export default function ScheduleTab({ leagueId, gameWeeks, leagueTeams, venues }
     playedAt: string
   } | null>(null)
   const [pending, startTransition] = useTransition()
-
-  function toggleExpand(id: string) {
-    setExpanded((prev) => {
-      const next = new Set(prev)
-      next.has(id) ? next.delete(id) : next.add(id)
-      return next
-    })
-  }
 
   async function handleAddMatchday(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -158,668 +157,375 @@ export default function ScheduleTab({ leagueId, gameWeeks, leagueTeams, venues }
     }
   }
 
+  async function handleUpdateMatchStatus(matchId: string, newStatus: MatchStatus) {
+    try {
+      await updateMatch(matchId, leagueId, { status: newStatus })
+      toast(`Match ${newStatus.toLowerCase()}`)
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Failed to update status', 'error')
+    }
+  }
+
   const nextMDNum = (gameWeeks[gameWeeks.length - 1]?.weekNumber ?? 0) + 1
 
-  // Shared add-matchday form (used in both mobile and desktop)
-  const AddMatchdayForm = ({ mobile }: { mobile?: boolean }) =>
-    showAddMatchday ? (
-      <form
-        onSubmit={handleAddMatchday}
-        className={cn(
-          mobile
-            ? 'bg-admin-surface rounded-xl border border-admin-border p-4 space-y-3'
-            : 'px-4 py-3 border-t border-admin-border flex items-center gap-3',
-        )}
+  // Add-matchday form (rendered at the top of the list, per the v1.20 audit
+  // — pre-fix the form was rendered at the BOTTOM on mobile so tapping
+  // "+ Add" appeared to do nothing without a scroll).
+  const addMatchdayForm = showAddMatchday ? (
+    <form
+      onSubmit={handleAddMatchday}
+      className="bg-admin-surface rounded-xl border border-admin-border p-4 space-y-3"
+    >
+      <p className="font-condensed font-bold text-admin-text text-base">MD{nextMDNum}</p>
+      <input
+        name="startDate"
+        type="date"
+        required
+        className="w-full bg-admin-surface2 border border-admin-border2 text-admin-text text-sm rounded-md px-3 py-[9px] font-mono"
+      />
+      <select
+        name="venueId"
+        className="w-full bg-admin-surface2 border border-admin-border2 text-admin-text text-sm rounded-md px-3 py-[9px]"
       >
-        {mobile ? (
-          <>
-            <p className="font-condensed font-bold text-admin-text text-sm">MD{nextMDNum}</p>
-            <input
-              name="startDate"
-              type="date"
-              required
-              className="w-full bg-admin-surface2 border border-admin-border2 text-admin-text text-sm rounded-md px-3 py-[9px] font-mono"
-            />
-            <select
-              name="venueId"
-              className="w-full bg-admin-surface2 border border-admin-border2 text-admin-text text-sm rounded-md px-3 py-[9px]"
-            >
-              <option value="">Venue (optional)</option>
-              {venues.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
-            </select>
-            <div className="flex gap-2">
-              <button type="submit" disabled={pending} className="flex-1 px-3 py-2.5 bg-admin-green text-admin-ink text-sm font-medium rounded hover:opacity-90 disabled:opacity-50">
-                Create
-              </button>
-              <button type="button" onClick={() => setShowAddMatchday(false)} className="px-3 py-2.5 border border-admin-border text-admin-text2 text-sm rounded hover:border-admin-border2">
-                Cancel
-              </button>
-            </div>
-          </>
-        ) : (
-          <>
-            <span className="font-condensed font-bold text-admin-text text-sm shrink-0">MD{nextMDNum}</span>
-            <input name="startDate" type="date" required className="bg-admin-surface2 border border-admin-border2 text-admin-text text-sm rounded-md px-3 py-[9px] font-mono" />
-            <select name="venueId" className="bg-admin-surface2 border border-admin-border2 text-admin-text text-sm rounded-md px-3 py-[9px] flex-1">
-              <option value="">Venue (optional)</option>
-              {venues.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
-            </select>
-            <button type="submit" disabled={pending} className="px-3 py-1.5 bg-admin-green text-admin-ink text-sm font-medium rounded hover:opacity-90 disabled:opacity-50">
-              Create
-            </button>
-            <button type="button" onClick={() => setShowAddMatchday(false)} className="px-3 py-1.5 border border-admin-border text-admin-text2 text-sm rounded hover:border-admin-border2">
-              Cancel
-            </button>
-          </>
-        )}
-      </form>
-    ) : null
+        <option value="">Venue (optional)</option>
+        {venues.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
+      </select>
+      <div className="flex gap-2">
+        <button
+          type="submit"
+          disabled={pending}
+          className="flex-1 px-3 min-h-[40px] bg-admin-green text-admin-ink text-sm font-medium rounded hover:opacity-90 disabled:opacity-50"
+        >
+          Create
+        </button>
+        <button
+          type="button"
+          onClick={() => setShowAddMatchday(false)}
+          className="px-3 min-h-[40px] border border-admin-border text-admin-text2 text-sm rounded hover:border-admin-border2"
+        >
+          Cancel
+        </button>
+      </div>
+    </form>
+  ) : null
 
   return (
     <div>
-      {/* ── Mobile view ───────────────────────────────────────────────────── */}
-      <div className="md:hidden">
-        {/* Mobile toolbar */}
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="font-condensed font-bold text-admin-text text-xl">Match Schedule</h2>
-          {!showAddMatchday && (
-            <button
-              onClick={() => setShowAddMatchday(true)}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-admin-green text-admin-ink text-sm font-medium hover:opacity-90 transition-opacity"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              Add
-            </button>
-          )}
+      {/* Toolbar — mirrors the mockup top row */}
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h2 className="font-condensed font-bold text-[13px] uppercase tracking-[2px] text-admin-text2">
+            Match Schedule
+          </h2>
         </div>
-
-        <div className="space-y-2">
-          {gameWeeks.length === 0 && !showAddMatchday && (
-            <div className="flex items-center justify-center py-12 text-admin-text3 text-sm bg-admin-surface rounded-xl border border-admin-border">
-              No matchdays yet. Tap &quot;Add&quot; to create one.
-            </div>
-          )}
-
-          {gameWeeks.map((gw) => {
-            const isExpanded = expanded.has(gw.id)
-            const status = gwStatus(gw)
-
-            return (
-              <div key={gw.id} className="bg-admin-surface rounded-xl border border-admin-border overflow-hidden">
-                {/* GW row */}
-                <div
-                  className="flex items-center gap-3 px-4 min-h-[52px] cursor-pointer hover:bg-admin-surface2 transition-colors"
-                  onClick={() => toggleExpand(gw.id)}
-                >
-                  <ChevronRight
-                    className={cn('w-4 h-4 text-admin-text3 transition-transform shrink-0', isExpanded && 'rotate-90')}
-                  />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-condensed font-bold text-admin-text text-base">MD{gw.weekNumber}</span>
-                      <span onClick={(e) => e.stopPropagation()}>
-                        <PillEditor
-                          variant="date"
-                          value={fmtDate(gw.startDate)}
-                          display={fmtDate(gw.startDate)}
-                          ariaLabel={`MD${gw.weekNumber} date`}
-                          onSave={async (val) => {
-                            await updateGameWeek(gw.id, leagueId, { startDate: val, endDate: val })
-                            toast('Date updated')
-                          }}
-                        />
-                      </span>
-                      <StatusBadge status={status} />
-                    </div>
-                    <div className="mt-1.5" onClick={(e) => e.stopPropagation()}>
-                      <PillEditor
-                        variant="venue"
-                        value={gw.venue?.id ?? ''}
-                        display={gw.venue?.name ?? 'Venue'}
-                        muted={!gw.venue}
-                        options={venues}
-                        ariaLabel={`MD${gw.weekNumber} venue`}
-                        onSave={async (venueId) => {
-                          await updateGameWeek(gw.id, leagueId, { venueId })
-                          toast('Venue updated')
-                        }}
-                      />
-                    </div>
-                  </div>
-                  <div
-                    className="flex items-center gap-1 shrink-0"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <span className="text-admin-text3 text-xs font-mono">{gw.matches.length}</span>
-                    <ConfirmDialog
-                      trigger={
-                        <button className="p-2 rounded text-admin-text3 hover:text-admin-red hover:bg-admin-red-dim transition-colors">
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      }
-                      title={`Delete MD${gw.weekNumber}?`}
-                      description="This will permanently delete this matchday and all its matches."
-                      confirmLabel={`Delete MD${gw.weekNumber}`}
-                      onConfirm={() => handleDeleteGW(gw.id)}
-                    />
-                  </div>
-                </div>
-
-                {/* Expanded matches */}
-                {isExpanded && (
-                  <div className="border-t border-admin-border">
-                    {gw.matches.map((match, idx) => (
-                      <MobileMatchRow
-                        key={match.id}
-                        match={match}
-                        index={idx + 1}
-                        leagueId={leagueId}
-                        leagueTeams={leagueTeams}
-                        onDelete={() => handleDeleteMatch(match.id)}
-                      />
-                    ))}
-
-                    {/* Add match */}
-                    {addMatchForm?.gwId === gw.id ? (
-                      <form
-                        onSubmit={handleAddMatch}
-                        className="p-4 space-y-3 border-t border-admin-border bg-admin-surface2/30"
-                      >
-                        <input type="hidden" name="gwId" value={gw.id} />
-                        <select
-                          name="homeTeamId"
-                          required
-                          className="w-full bg-admin-surface2 border border-admin-border2 text-admin-text text-sm rounded-md px-3 py-[9px]"
-                        >
-                          <option value="">Home team…</option>
-                          {leagueTeams.map((lt) => (
-                            <option key={lt.id} value={lt.id}>{lt.team.name}</option>
-                          ))}
-                        </select>
-                        <select
-                          name="awayTeamId"
-                          required
-                          className="w-full bg-admin-surface2 border border-admin-border2 text-admin-text text-sm rounded-md px-3 py-[9px]"
-                        >
-                          <option value="">Away team…</option>
-                          {leagueTeams.map((lt) => (
-                            <option key={lt.id} value={lt.id}>{lt.team.name}</option>
-                          ))}
-                        </select>
-                        <input
-                          name="playedAt"
-                          type="datetime-local"
-                          required
-                          defaultValue={fmtDatetime(gw.startDate)}
-                          className="w-full bg-admin-surface2 border border-admin-border2 text-admin-text text-sm rounded-md px-3 py-[9px] font-mono"
-                        />
-                        <div className="flex gap-2">
-                          <button
-                            type="submit"
-                            disabled={pending}
-                            className="flex-1 px-3 py-2.5 bg-admin-green text-admin-ink text-sm font-medium rounded hover:opacity-90 disabled:opacity-50"
-                          >
-                            Add
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setAddMatchForm(null)}
-                            className="px-3 py-2.5 border border-admin-border text-admin-text2 text-sm rounded hover:border-admin-border2"
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      </form>
-                    ) : (
-                      <div className="px-4 py-3 border-t border-admin-border">
-                        <button
-                          onClick={() =>
-                            setAddMatchForm({
-                              gwId: gw.id,
-                              homeTeamId: '',
-                              awayTeamId: '',
-                              playedAt: fmtDatetime(gw.startDate),
-                            })
-                          }
-                          className="flex items-center gap-1.5 text-admin-text3 text-sm hover:text-admin-green transition-colors py-1"
-                        >
-                          <Plus className="w-3.5 h-3.5" />
-                          Add Match
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            )
-          })}
-
-          <AddMatchdayForm mobile />
-        </div>
+        <span className="font-condensed text-[11px] uppercase tracking-[1px] text-admin-text3">
+          {gameWeeks.length} {gameWeeks.length === 1 ? 'matchday' : 'matchdays'}
+        </span>
       </div>
 
-      {/* ── Desktop view ──────────────────────────────────────────────────── */}
-      <div className="hidden md:block">
-        {/* Toolbar */}
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="font-condensed font-bold text-[13px] uppercase tracking-[2px] text-admin-text2">
-            Matchday Schedule
-          </h2>
-          <div className="flex items-center gap-2">
-            <button className="flex items-center gap-1.5 rounded-[6px] border border-admin-border bg-transparent px-2.5 py-1 text-xs text-admin-text2 transition-colors hover:border-admin-border2 hover:text-admin-text">
-              <Upload className="w-3 h-3" />
-              Import Schedule
-            </button>
-            <button
-              onClick={() => setShowAddMatchday(true)}
-              className="flex items-center gap-1.5 rounded-[6px] bg-admin-green px-2.5 py-1 text-xs font-semibold text-admin-ink hover:opacity-90"
-            >
-              <Plus className="w-3 h-3" />
-              Add Matchday
-            </button>
-          </div>
-        </div>
-
-        {/* Table */}
-        <div className="bg-admin-surface rounded-xl border border-admin-border overflow-hidden">
-          {/* Table header */}
-          <div
-            className="grid text-admin-text3 text-xs uppercase tracking-wider px-4 py-2.5 border-b border-admin-border bg-admin-surface2"
-            style={{ gridTemplateColumns: '32px 120px 140px 1fr 80px 110px 80px' }}
+      <div className="flex items-center gap-2 mb-4">
+        {!showAddMatchday && (
+          <button
+            onClick={() => setShowAddMatchday(true)}
+            className="flex items-center gap-1.5 rounded-lg bg-admin-green px-3 min-h-[40px] text-sm font-semibold text-admin-ink hover:opacity-90 transition-opacity"
           >
-            <span />
-            <span>Matchday</span>
-            <span>Date</span>
-            <span>Venue</span>
-            <span>Matches</span>
-            <span>Status</span>
-            <span />
+            <Plus className="w-3.5 h-3.5" />
+            Add matchday
+          </button>
+        )}
+        <button
+          type="button"
+          disabled
+          aria-disabled
+          title="Import is not yet wired up"
+          className="flex items-center gap-1.5 rounded-lg border border-admin-border bg-transparent px-3 min-h-[40px] text-sm text-admin-text3 cursor-not-allowed opacity-60"
+        >
+          <Upload className="w-3.5 h-3.5" />
+          Import
+        </button>
+      </div>
+
+      {addMatchdayForm}
+
+      <div className="space-y-3 mt-3">
+        {gameWeeks.length === 0 && !showAddMatchday && (
+          <div className="flex items-center justify-center py-12 text-admin-text3 text-sm bg-admin-surface rounded-xl border border-admin-border">
+            No matchdays yet. Tap &quot;Add matchday&quot; to create one.
           </div>
+        )}
 
-          {gameWeeks.length === 0 && !showAddMatchday && (
-            <div className="flex items-center justify-center py-12 text-admin-text3 text-sm">
-              No matchdays yet. Click &quot;Add Matchday&quot; to create one.
-            </div>
-          )}
+        {gameWeeks.map((gw) => {
+          const status = gwStatus(gw)
 
-          {gameWeeks.map((gw) => {
-            const isExpanded = expanded.has(gw.id)
-            const status = gwStatus(gw)
-
-            return (
-              <div key={gw.id} className="border-b border-admin-border last:border-b-0">
-                <div
-                  className="grid items-center px-4 py-3 hover:bg-admin-surface2 cursor-pointer transition-colors"
-                  style={{ gridTemplateColumns: '32px 120px 140px 1fr 80px 110px 80px' }}
-                  onClick={() => toggleExpand(gw.id)}
-                >
-                  <ChevronRight
-                    className={cn(
-                      'w-4 h-4 text-admin-text3 transition-transform',
-                      isExpanded && 'rotate-90',
-                    )}
+          return (
+            <div key={gw.id} className="bg-admin-surface rounded-xl border border-admin-border overflow-hidden">
+              {/* MD header row */}
+              <div className="flex items-center justify-between gap-3 px-4 pt-4 pb-3">
+                <div className="flex items-center gap-2">
+                  <span className="font-condensed font-bold text-admin-text text-xl">MD{gw.weekNumber}</span>
+                  <StatusBadge status={status} />
+                </div>
+                {status !== 'DONE' && (
+                  <MatchOverflowMenu
+                    ariaLabel={`MD${gw.weekNumber} actions`}
+                    items={[
+                      {
+                        label: 'Delete matchday',
+                        tone: 'danger',
+                        onSelect: () => {
+                          // ConfirmDialog wraps the delete; surface it via a
+                          // window confirm fallback if the user doesn't have
+                          // a destructive-action policy. Keep it consistent
+                          // with the existing per-match delete affordance:
+                          // we use the same ConfirmDialog there.
+                          if (typeof window !== 'undefined' && window.confirm(`Delete MD${gw.weekNumber}? This will permanently delete this matchday and all its matches.`)) {
+                            handleDeleteGW(gw.id)
+                          }
+                        },
+                      },
+                    ]}
                   />
-                  <span className="font-condensed font-bold text-admin-text text-base">
-                    MD{gw.weekNumber}
-                  </span>
-                  <span
-                    className="text-admin-text2 text-sm"
-                    onClick={(e) => e.stopPropagation()}
+                )}
+              </div>
+
+              {/* Header pills: date + venue */}
+              <div className="px-4 pb-3 flex items-center gap-2 flex-wrap">
+                <PillEditor
+                  variant="date"
+                  value={fmtDate(gw.startDate)}
+                  display={formatJstFriendly(gw.startDate, 'en')}
+                  icon={<Calendar className="w-3 h-3" />}
+                  ariaLabel={`MD${gw.weekNumber} date`}
+                  className="min-h-[30px] text-[12px] px-3"
+                  onSave={async (val) => {
+                    await updateGameWeek(gw.id, leagueId, { startDate: val, endDate: val })
+                    toast('Date updated')
+                  }}
+                />
+                <PillEditor
+                  variant="venue"
+                  value={gw.venue?.id ?? ''}
+                  display={gw.venue?.name ?? ''}
+                  placeholder="Set venue"
+                  icon={<MapPin className="w-3 h-3" />}
+                  options={venues}
+                  ariaLabel={`MD${gw.weekNumber} venue`}
+                  className="min-h-[30px] text-[12px] px-3"
+                  onSave={async (venueId) => {
+                    await updateGameWeek(gw.id, leagueId, { venueId })
+                    toast('Venue updated')
+                  }}
+                />
+              </div>
+
+              {/* Matches divider */}
+              <div className="px-4 flex items-center gap-2">
+                <div className="flex-1 h-px bg-admin-border" />
+                <span className="font-condensed text-[10px] uppercase tracking-[2px] text-admin-text3">Matches</span>
+                <div className="flex-1 h-px bg-admin-border" />
+              </div>
+
+              {/* Match rows */}
+              <div className="px-4 py-3 space-y-2">
+                {gw.matches.map((match) => (
+                  <MatchCardRow
+                    key={match.id}
+                    match={match}
+                    leagueId={leagueId}
+                    leagueTeams={leagueTeams}
+                    onDelete={() => handleDeleteMatch(match.id)}
+                    onSetStatus={(s) => handleUpdateMatchStatus(match.id, s)}
+                  />
+                ))}
+
+                {/* Empty + add affordance */}
+                {gw.matches.length === 0 && addMatchForm?.gwId !== gw.id && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setAddMatchForm({
+                        gwId: gw.id,
+                        homeTeamId: '',
+                        awayTeamId: '',
+                        playedAt: fmtDatetime(gw.startDate),
+                      })
+                    }
+                    className="w-full flex items-center justify-center gap-1.5 min-h-[36px] rounded-lg border border-admin-green bg-transparent px-3 text-sm font-medium text-admin-green hover:bg-admin-green-dim transition-colors"
                   >
-                    <PillEditor
-                      variant="date"
-                      value={fmtDate(gw.startDate)}
-                      display={fmtDate(gw.startDate)}
-                      ariaLabel={`MD${gw.weekNumber} date`}
-                      onSave={async (val) => {
-                        await updateGameWeek(gw.id, leagueId, { startDate: val, endDate: val })
-                        toast('Date updated')
-                      }}
-                    />
-                  </span>
-                  <span className="text-admin-text2 text-sm pr-4" onClick={(e) => e.stopPropagation()}>
-                    <PillEditor
-                      variant="venue"
-                      value={gw.venue?.id ?? ''}
-                      display={gw.venue?.name ?? 'Venue'}
-                      muted={!gw.venue}
-                      options={venues}
-                      ariaLabel={`MD${gw.weekNumber} venue`}
-                      onSave={async (venueId) => {
-                        await updateGameWeek(gw.id, leagueId, { venueId })
-                        toast('Venue updated')
-                      }}
-                    />
-                  </span>
-                  <span className="text-admin-text2 text-sm font-mono">{gw.matches.length}</span>
-                  <span><StatusBadge status={status} /></span>
-                  <div
-                    className="flex items-center justify-end gap-1.5"
-                    onClick={(e) => e.stopPropagation()}
+                    <Plus className="w-3.5 h-3.5" />
+                    Add match
+                  </button>
+                )}
+
+                {/* Add match (inline, when toggled) */}
+                {addMatchForm?.gwId === gw.id ? (
+                  <form
+                    onSubmit={handleAddMatch}
+                    className="space-y-2 p-3 rounded-lg bg-admin-surface2 border border-admin-border"
                   >
+                    <input type="hidden" name="gwId" value={gw.id} />
+                    <div className="flex flex-col sm:flex-row gap-2">
+                      <select
+                        name="homeTeamId"
+                        required
+                        className="flex-1 bg-admin-surface3 border border-admin-border2 text-admin-text text-sm rounded-md px-3 py-[9px]"
+                      >
+                        <option value="">Home team…</option>
+                        {leagueTeams.map((lt) => (
+                          <option key={lt.id} value={lt.id}>{lt.team.name}</option>
+                        ))}
+                      </select>
+                      <select
+                        name="awayTeamId"
+                        required
+                        className="flex-1 bg-admin-surface3 border border-admin-border2 text-admin-text text-sm rounded-md px-3 py-[9px]"
+                      >
+                        <option value="">Away team…</option>
+                        {leagueTeams.map((lt) => (
+                          <option key={lt.id} value={lt.id}>{lt.team.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <input
+                      name="playedAt"
+                      type="datetime-local"
+                      required
+                      defaultValue={fmtDatetime(gw.startDate)}
+                      className="w-full bg-admin-surface3 border border-admin-border2 text-admin-text text-sm rounded-md px-3 py-[9px] font-mono"
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        type="submit"
+                        disabled={pending}
+                        className="flex-1 px-3 min-h-[36px] bg-admin-green text-admin-ink text-sm font-medium rounded hover:opacity-90 disabled:opacity-50"
+                      >
+                        Add
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setAddMatchForm(null)}
+                        className="px-3 min-h-[36px] border border-admin-border text-admin-text2 text-sm rounded hover:border-admin-border2"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </form>
+                ) : (
+                  gw.matches.length > 0 && (
                     <button
                       type="button"
-                      onClick={() => toggleExpand(gw.id)}
-                      className="rounded-[6px] border border-admin-border bg-transparent px-2.5 py-1 text-xs text-admin-text2 transition-colors hover:border-admin-border2 hover:text-admin-text"
+                      onClick={() =>
+                        setAddMatchForm({
+                          gwId: gw.id,
+                          homeTeamId: '',
+                          awayTeamId: '',
+                          playedAt: fmtDatetime(gw.startDate),
+                        })
+                      }
+                      className="w-full flex items-center justify-center gap-1.5 min-h-[30px] rounded-lg border border-admin-green/60 bg-transparent px-3 text-xs font-medium text-admin-green hover:bg-admin-green-dim transition-colors"
                     >
-                      Edit
+                      <Plus className="w-3 h-3" />
+                      Add match
                     </button>
-                    {status !== 'COMPLETED' && (
-                      <ConfirmDialog
-                        trigger={
-                          <button className="rounded-[6px] border border-admin-red bg-admin-red-dim px-2.5 py-1 text-xs font-semibold text-admin-red transition-colors hover:opacity-90">
-                            Delete
-                          </button>
-                        }
-                        title={`Delete MD${gw.weekNumber}?`}
-                        description="This will permanently delete this matchday and all its matches."
-                        confirmLabel={`Delete MD${gw.weekNumber}`}
-                        onConfirm={() => handleDeleteGW(gw.id)}
-                      />
-                    )}
-                  </div>
-                </div>
-
-                {isExpanded && (
-                  <div className="border-t border-admin-border bg-admin-surface2/50">
-                    {gw.matches.length > 0 && (
-                      <div
-                        className="grid text-admin-text3 text-xs uppercase tracking-wider px-8 py-2 border-b border-admin-border"
-                        style={{ gridTemplateColumns: '32px 100px 90px 1fr 1fr 80px 110px 60px' }}
-                      >
-                        <span>#</span>
-                        <span>Kickoff</span>
-                        <span>FT</span>
-                        <span>Home</span>
-                        <span>Away</span>
-                        <span>Score</span>
-                        <span>Status</span>
-                        <span />
-                      </div>
-                    )}
-
-                    {gw.matches.map((match, idx) => (
-                      <MatchSubrow
-                        key={match.id}
-                        match={match}
-                        index={idx + 1}
-                        leagueId={leagueId}
-                        leagueTeams={leagueTeams}
-                        onDelete={() => handleDeleteMatch(match.id)}
-                      />
-                    ))}
-
-                    {addMatchForm?.gwId === gw.id ? (
-                      <form
-                        onSubmit={handleAddMatch}
-                        className="px-8 py-3 flex items-center gap-3 border-t border-admin-border"
-                      >
-                        <input type="hidden" name="gwId" value={gw.id} />
-                        <select
-                          name="homeTeamId"
-                          required
-                          className="bg-admin-surface2 border border-admin-border2 text-admin-text text-sm rounded-md px-3 py-[9px] flex-1"
-                        >
-                          <option value="">Home team…</option>
-                          {leagueTeams.map((lt) => (
-                            <option key={lt.id} value={lt.id}>{lt.team.name}</option>
-                          ))}
-                        </select>
-                        <span className="text-admin-text3 text-sm">vs</span>
-                        <select
-                          name="awayTeamId"
-                          required
-                          className="bg-admin-surface2 border border-admin-border2 text-admin-text text-sm rounded-md px-3 py-[9px] flex-1"
-                        >
-                          <option value="">Away team…</option>
-                          {leagueTeams.map((lt) => (
-                            <option key={lt.id} value={lt.id}>{lt.team.name}</option>
-                          ))}
-                        </select>
-                        <input
-                          name="playedAt"
-                          type="datetime-local"
-                          required
-                          defaultValue={fmtDatetime(gw.startDate)}
-                          className="bg-admin-surface2 border border-admin-border2 text-admin-text text-sm rounded-md px-3 py-[9px] font-mono"
-                        />
-                        <button
-                          type="submit"
-                          disabled={pending}
-                          className="px-3 py-1.5 bg-admin-green text-admin-ink text-sm font-medium rounded hover:opacity-90 disabled:opacity-50"
-                        >
-                          Add
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setAddMatchForm(null)}
-                          className="px-3 py-1.5 border border-admin-border text-admin-text2 text-sm rounded hover:border-admin-border2"
-                        >
-                          Cancel
-                        </button>
-                      </form>
-                    ) : (
-                      <div className="px-8 py-2.5 border-t border-admin-border">
-                        <button
-                          onClick={() =>
-                            setAddMatchForm({
-                              gwId: gw.id,
-                              homeTeamId: '',
-                              awayTeamId: '',
-                              playedAt: fmtDatetime(gw.startDate),
-                            })
-                          }
-                          className="flex items-center gap-1.5 text-admin-text3 text-xs hover:text-admin-green transition-colors"
-                        >
-                          <Plus className="w-3.5 h-3.5" />
-                          Add Match
-                        </button>
-                      </div>
-                    )}
-                  </div>
+                  )
                 )}
               </div>
-            )
-          })}
-
-          <AddMatchdayForm />
-        </div>
+            </div>
+          )
+        })}
       </div>
     </div>
   )
 }
 
-// ── Mobile match row ─────────────────────────────────────────────────────────
+// ── Match card row ───────────────────────────────────────────────────────────
 
-interface MobileMatchRowProps {
+interface MatchCardRowProps {
   match: MatchRow
-  index: number
   leagueId: string
   leagueTeams: TeamRef[]
   onDelete: () => void
+  onSetStatus: (status: MatchStatus) => void
 }
 
-function MobileMatchRow({ match, index, leagueId, onDelete }: MobileMatchRowProps) {
+function MatchCardRow({ match, leagueId, leagueTeams, onDelete, onSetStatus }: MatchCardRowProps) {
   const { toast } = useToast()
 
-  return (
-    <div className="px-4 py-3 border-b border-admin-border/50 last:border-b-0">
-      <div className="flex items-center gap-2 mb-2">
-        <span className="text-admin-text3 font-mono text-xs">#{index}</span>
-        <PillEditor
-          variant="datetime-local"
-          value={fmtDatetime(match.playedAt)}
-          display={`${fmtTime(match.playedAt)} JST`}
-          ariaLabel="Kickoff"
-          onSave={async (val) => {
-            await updateMatch(match.id, leagueId, { playedAt: val })
-            toast('Kickoff updated')
-          }}
-        />
-        <StatusBadge status={match.status} />
-        <div className="ml-auto">
-          <ConfirmDialog
-            trigger={
-              <button className="p-2 text-admin-text3 hover:text-admin-red hover:bg-admin-red-dim rounded transition-colors">
-                <Trash2 className="w-4 h-4" />
-              </button>
-            }
-            title="Delete match?"
-            description={`${match.homeTeam.team.name} vs ${match.awayTeam.team.name} will be permanently deleted.`}
-            confirmLabel="Delete match"
-            onConfirm={async () => onDelete()}
-          />
-        </div>
-      </div>
-      <div className="flex items-center gap-2">
-        <span className="flex-1 text-sm text-admin-text truncate">{match.homeTeam.team.name}</span>
-        <MatchScoreEditor key={match.id} match={match} leagueId={leagueId} variant="mobile" />
-        <span className="flex-1 text-sm text-admin-text truncate text-right">{match.awayTeam.team.name}</span>
-      </div>
-    </div>
-  )
-}
-
-// ── Desktop match sub-row ────────────────────────────────────────────────────
-
-interface MatchSubrowProps {
-  match: MatchRow
-  index: number
-  leagueId: string
-  leagueTeams: TeamRef[]
-  onDelete: () => void
-}
-
-function MatchSubrow({ match, index, leagueId, leagueTeams, onDelete }: MatchSubrowProps) {
-  const { toast } = useToast()
+  const teamOptions = leagueTeams.map((lt) => ({ id: lt.id, name: lt.team.name }))
 
   return (
     <div
-      className="grid items-center px-8 py-2.5 border-b border-admin-border/50 last:border-b-0 hover:bg-admin-surface2 transition-colors text-sm"
-      style={{ gridTemplateColumns: '32px 100px 90px 1fr 1fr 80px 110px 60px' }}
+      className={cn(
+        'flex items-center gap-2 py-1.5',
+        (match.status === 'CANCELLED' || match.status === 'POSTPONED') && 'opacity-60',
+      )}
     >
-      <span className="text-admin-text3 font-mono text-xs">{index}</span>
-
-      <span>
-        <PillEditor
-          variant="datetime-local"
-          value={fmtDatetime(match.playedAt)}
-          display={`${fmtTime(match.playedAt)} JST`}
-          ariaLabel="Kickoff"
-          onSave={async (val) => {
-            await updateMatch(match.id, leagueId, { playedAt: val })
-            toast('Kickoff updated')
-          }}
-        />
-      </span>
-
-      <span>
-        <PillEditor
-          variant="time"
-          value={match.endedAt ? fmtTime(match.endedAt) : ''}
-          display={match.endedAt ? `${fmtTime(match.endedAt)} JST` : '—'}
-          muted={!match.endedAt}
-          ariaLabel="Full time"
-          onSave={async (timeStr) => {
-            if (!timeStr) {
-              await updateMatch(match.id, leagueId, { endedAt: null })
-            } else {
-              await updateMatch(match.id, leagueId, { endedAt: `${fmtDate(match.playedAt)}T${timeStr}` })
-            }
-            toast('Full time updated')
-          }}
-        />
-      </span>
-
-      <span className="text-admin-text pr-2">
-        <TeamSelectCell
-          value={match.homeTeam.id}
-          displayValue={match.homeTeam.team.name}
-          teams={leagueTeams}
-          onSave={async (val) => {
-            await updateMatch(match.id, leagueId, { homeTeamId: val })
-            toast('Home team updated')
-          }}
-        />
-      </span>
-
-      <span className="text-admin-text pr-2">
-        <TeamSelectCell
-          value={match.awayTeam.id}
-          displayValue={match.awayTeam.team.name}
-          teams={leagueTeams}
-          onSave={async (val) => {
-            await updateMatch(match.id, leagueId, { awayTeamId: val })
-            toast('Away team updated')
-          }}
-        />
-      </span>
-
-      <span>
-        <MatchScoreEditor key={match.id} match={match} leagueId={leagueId} variant="desktop" />
-      </span>
-
-      <span><StatusBadge status={match.status} /></span>
-
-      <div className="flex justify-end">
-        <ConfirmDialog
-          trigger={
-            <button className="p-1.5 rounded text-admin-text3 hover:text-admin-red hover:bg-admin-red-dim transition-colors">
-              <Trash2 className="w-3 h-3" />
-            </button>
-          }
-          title="Delete match?"
-          description={`${match.homeTeam.team.name} vs ${match.awayTeam.team.name} will be permanently deleted.`}
-          confirmLabel="Delete match"
-          onConfirm={async () => onDelete()}
-        />
-      </div>
-    </div>
-  )
-}
-
-// ── Team select inline cell ──────────────────────────────────────────────────
-
-function TeamSelectCell({
-  value,
-  displayValue,
-  teams,
-  onSave,
-}: {
-  value: string
-  displayValue: string
-  teams: TeamRef[]
-  onSave: (id: string) => Promise<void>
-}) {
-  const [editing, setEditing] = useState(false)
-  const [pending, startTransition] = useTransition()
-
-  if (editing) {
-    return (
-      <select
-        autoFocus
-        defaultValue={value}
-        onChange={(e) => {
-          const newVal = e.target.value
-          setEditing(false)
-          startTransition(async () => { await onSave(newVal) })
+      <PillEditor
+        variant="datetime-local"
+        value={fmtDatetime(match.playedAt)}
+        display={`${fmtTime(match.playedAt)} JST`}
+        icon={<Clock className="w-3 h-3" />}
+        ariaLabel="Kickoff"
+        className="shrink-0"
+        onSave={async (val) => {
+          await updateMatch(match.id, leagueId, { playedAt: val })
+          toast('Kickoff updated')
         }}
-        onBlur={() => setEditing(false)}
-        className="bg-admin-surface3 border border-admin-green/50 text-admin-text text-sm rounded px-2 py-0.5 outline-none"
-      >
-        {teams.map((lt) => (
-          <option key={lt.id} value={lt.id}>{lt.team.name}</option>
-        ))}
-      </select>
-    )
-  }
-
-  return (
-    <span
-      className="cursor-pointer hover:text-admin-text2 transition-colors"
-      onClick={() => setEditing(true)}
-    >
-      {displayValue}
-    </span>
+      />
+      <PillEditor
+        variant="team"
+        value={match.homeTeam.id}
+        display={match.homeTeam.team.name}
+        options={teamOptions}
+        ariaLabel="Home team"
+        className="flex-1 min-w-0 truncate"
+        onSave={async (teamId) => {
+          await updateMatch(match.id, leagueId, { homeTeamId: teamId })
+          toast('Home team updated')
+        }}
+      />
+      <MatchScoreEditor key={match.id} match={match} leagueId={leagueId} variant="desktop" />
+      <PillEditor
+        variant="team"
+        value={match.awayTeam.id}
+        display={match.awayTeam.team.name}
+        options={teamOptions}
+        ariaLabel="Away team"
+        className="flex-1 min-w-0 truncate text-right justify-end"
+        onSave={async (teamId) => {
+          await updateMatch(match.id, leagueId, { awayTeamId: teamId })
+          toast('Away team updated')
+        }}
+      />
+      <MatchOverflowMenu
+        ariaLabel="Match actions"
+        items={[
+          {
+            label: 'Mark complete',
+            disabled: match.status === 'COMPLETED',
+            onSelect: () => onSetStatus('COMPLETED'),
+          },
+          {
+            label: 'Cancel match',
+            disabled: match.status === 'CANCELLED',
+            onSelect: () => onSetStatus('CANCELLED'),
+          },
+          {
+            label: 'Postpone match',
+            disabled: match.status === 'POSTPONED',
+            onSelect: () => onSetStatus('POSTPONED'),
+          },
+          {
+            label: 'Delete match',
+            tone: 'danger',
+            onSelect: () => {
+              if (typeof window !== 'undefined' && window.confirm(`Delete match? ${match.homeTeam.team.name} vs ${match.awayTeam.team.name} will be permanently deleted.`)) {
+                onDelete()
+              }
+            },
+          },
+        ]}
+      />
+    </div>
   )
 }
