@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { decideLink } from '../../scripts/backfillRedisLineMap'
+import { decideLink } from '../../scripts/_archive/backfillRedisLineMap'
 
 const baseMapping = { playerId: 'ian-noseda', playerName: 'Ian Noseda', teamId: 'mariners-fc' }
 

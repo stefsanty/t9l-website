@@ -69,12 +69,16 @@
  *   rebuild" in the runbook.
  */
 
-const KEY_PREFIX = 't9l:rsvp:gw:'
-const SEEDED_FIELD = '__seeded'
-const SEEDED_VALUE = '1'
-const RSVP_SUFFIX = ':rsvp'
-const PARTICIPATED_SUFFIX = ':p'
-const TTL_DAYS_AFTER_MATCH = 90
+import {
+  RSVP_KEY_PREFIX as KEY_PREFIX,
+  RSVP_SEEDED_FIELD as SEEDED_FIELD,
+  RSVP_SEEDED_VALUE as SEEDED_VALUE,
+  RSVP_FIELD_SUFFIX as RSVP_SUFFIX,
+  PARTICIPATED_FIELD_SUFFIX as PARTICIPATED_SUFFIX,
+  computeRsvpExpireAt,
+} from './rsvpStoreSchema'
+
+export { computeRsvpExpireAt }
 
 export type RsvpValue = 'GOING' | 'UNDECIDED' | 'NOT_GOING'
 export type ParticipatedValue = 'JOINED' | 'NO_SHOWED'
@@ -140,26 +144,6 @@ async function getClient(): Promise<RedisLike | null> {
 
 function key(gameWeekId: string): string {
   return `${KEY_PREFIX}${gameWeekId}`
-}
-
-/**
- * Compute the absolute Unix timestamp (seconds) at which a GameWeek's RSVP
- * hash should expire. Exported for unit testing.
- *
- * `max(gwStartDate, now) + TTL_DAYS_AFTER_MATCH`. Past matchdays anchor on
- * the matchday itself (so MD1 expires ~90 days after MD1 happened, not 90
- * days after we last wrote to it); future matchdays anchor on now (the
- * RSVP started flowing today, so the 90-day clock runs from today even if
- * the match itself is months away — uses the longer of the two windows
- * implicitly via the `max`).
- */
-export function computeRsvpExpireAt(
-  gwStartDate: Date,
-  now: Date = new Date(),
-): number {
-  const base = Math.max(gwStartDate.getTime(), now.getTime())
-  const expireMs = base + TTL_DAYS_AFTER_MATCH * 24 * 60 * 60 * 1000
-  return Math.floor(expireMs / 1000)
 }
 
 /**

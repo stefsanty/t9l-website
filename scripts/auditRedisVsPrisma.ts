@@ -40,6 +40,13 @@ import * as dotenv from 'dotenv'
 import * as path from 'path'
 import { PrismaClient, type RsvpStatus, type ParticipatedStatus } from '@prisma/client'
 import { Redis } from '@upstash/redis'
+import { playerIdToSlug, slugToPlayerId } from '../src/lib/ids'
+import {
+  RSVP_KEY_PREFIX,
+  RSVP_SEEDED_FIELD as SEEDED_FIELD,
+  RSVP_FIELD_SUFFIX as RSVP_SUFFIX,
+  PARTICIPATED_FIELD_SUFFIX as PARTICIPATED_SUFFIX,
+} from '../src/lib/rsvpStoreSchema'
 
 dotenv.config({ path: path.resolve(process.cwd(), '.env.preview') })
 dotenv.config({ path: path.resolve(process.cwd(), '.env.production') })
@@ -47,11 +54,6 @@ dotenv.config({ path: path.resolve(process.cwd(), '.env.local') })
 dotenv.config()
 
 const PLAYER_MAP_KEY_PREFIX = 't9l:auth:map:'
-const RSVP_KEY_PREFIX = 't9l:rsvp:gw:'
-const SEEDED_FIELD = '__seeded'
-const RSVP_SUFFIX = ':rsvp'
-const PARTICIPATED_SUFFIX = ':p'
-const PLAYER_ID_PREFIX = 'p-'
 const NULL_SENTINEL = '__null__'
 
 interface Flags {
@@ -156,7 +158,7 @@ export function decidePlayerMappingAudit(
   if (redisMapping === null && prismaPlayerId === null) return { kind: 'match' }
   if (redisMapping !== null && prismaPlayerId !== null) {
     // Both populated; check the player slug matches.
-    const redisDbId = `${PLAYER_ID_PREFIX}${redisMapping.playerId}`
+    const redisDbId = slugToPlayerId(redisMapping.playerId)
     if (redisDbId === prismaPlayerId) return { kind: 'match' }
     // Both populated but pointing at different players — Redis says lineId →
     // player A, Prisma has lineId → player B. Treat as redis-only with the
@@ -175,7 +177,7 @@ export function decidePlayerMappingAudit(
   return {
     kind: 'redis-only',
     redisMapping: redisMapping as PlayerMapping,
-    targetDbPlayerId: `${PLAYER_ID_PREFIX}${(redisMapping as PlayerMapping).playerId}`,
+    targetDbPlayerId: slugToPlayerId((redisMapping as PlayerMapping).playerId),
   }
 }
 
@@ -254,9 +256,7 @@ export function decideRsvpAudit(
   // Index Prisma rows by slug.
   const prismaBySlug = new Map<string, { rsvp: RsvpStatus | null; participated: ParticipatedStatus | null }>()
   for (const row of prismaRows) {
-    const slug = row.playerId.startsWith(PLAYER_ID_PREFIX)
-      ? row.playerId.slice(PLAYER_ID_PREFIX.length)
-      : row.playerId
+    const slug = playerIdToSlug(row.playerId)
     prismaBySlug.set(slug, { rsvp: row.rsvp, participated: row.participated })
   }
 
@@ -495,7 +495,7 @@ async function auditRsvp(
 
       if (flags.repairPrisma) {
         for (const r of decision.redisOnly) {
-          const dbPlayerId = `${PLAYER_ID_PREFIX}${r.playerSlug}`
+          const dbPlayerId = slugToPlayerId(r.playerSlug)
           try {
             await prisma.availability.upsert({
               where: { playerId_gameWeekId: { playerId: dbPlayerId, gameWeekId } },
@@ -536,7 +536,7 @@ async function auditRsvp(
 
       if (flags.repairPrisma) {
         for (const d of decision.differing) {
-          const dbPlayerId = `${PLAYER_ID_PREFIX}${d.playerSlug}`
+          const dbPlayerId = slugToPlayerId(d.playerSlug)
           try {
             await prisma.availability.update({
               where: { playerId_gameWeekId: { playerId: dbPlayerId, gameWeekId } },

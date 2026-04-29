@@ -7,8 +7,7 @@ import { put } from "@vercel/blob";
 import { getPlayerByPublicId } from "@/lib/publicData";
 import { prisma } from "@/lib/prisma";
 import { setMappingOrThrow } from "@/lib/playerMappingStore";
-
-const PLAYER_ID_PREFIX = "p-";
+import { playerIdToSlug, slugToPlayerId } from "@/lib/ids";
 
 function slugify(name: string): string {
   return name
@@ -155,9 +154,7 @@ async function persistUnassignmentToPrisma(lineId: string): Promise<void> {
     });
     let unlinkedSlug: string | null = null;
     if (current) {
-      unlinkedSlug = current.id.startsWith(PLAYER_ID_PREFIX)
-        ? current.id.slice(PLAYER_ID_PREFIX.length)
-        : current.id;
+      unlinkedSlug = playerIdToSlug(current.id);
       await prisma.player.update({
         where: { id: current.id },
         data: { lineId: null },
@@ -204,7 +201,7 @@ export async function POST(req: Request) {
 
   const playerName = player.name;
   const teamId = player.teamId;
-  const dbPlayerId = `${PLAYER_ID_PREFIX}${playerId}`;
+  const dbPlayerId = slugToPlayerId(playerId);
 
   // ── Synchronous canonical write: Redis ──────────────────────────────────
   // v1.8.0: Redis is the canonical store consulted by the JWT callback on

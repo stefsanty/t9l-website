@@ -34,20 +34,21 @@ import * as dotenv from 'dotenv'
 import * as path from 'path'
 import { PrismaClient, type RsvpStatus, type ParticipatedStatus } from '@prisma/client'
 import { Redis } from '@upstash/redis'
+import { playerIdToSlug } from '../src/lib/ids'
+import {
+  RSVP_KEY_PREFIX as KEY_PREFIX,
+  RSVP_SEEDED_FIELD as SEEDED_FIELD,
+  RSVP_SEEDED_VALUE as SEEDED_VALUE,
+  RSVP_FIELD_SUFFIX as RSVP_SUFFIX,
+  PARTICIPATED_FIELD_SUFFIX as PARTICIPATED_SUFFIX,
+  RSVP_TTL_DAYS_AFTER_MATCH as TTL_DAYS_AFTER_MATCH,
+  computeRsvpExpireAt,
+} from '../src/lib/rsvpStoreSchema'
 
 dotenv.config({ path: path.resolve(process.cwd(), '.env.preview') })
 dotenv.config({ path: path.resolve(process.cwd(), '.env.production') })
 dotenv.config({ path: path.resolve(process.cwd(), '.env.local') })
 dotenv.config()
-
-// Mirrors `rsvpStore.ts` — same prefix, same field naming, same TTL math.
-const KEY_PREFIX = 't9l:rsvp:gw:'
-const SEEDED_FIELD = '__seeded'
-const SEEDED_VALUE = '1'
-const RSVP_SUFFIX = ':rsvp'
-const PARTICIPATED_SUFFIX = ':p'
-const TTL_DAYS_AFTER_MATCH = 90
-const PLAYER_ID_PREFIX = 'p-'
 
 interface Flags {
   dryRun: boolean
@@ -129,19 +130,10 @@ export function decideBackfillAction(
   }
 }
 
-function stripPrefix(id: string, prefix: string): string {
-  return id.startsWith(prefix) ? id.slice(prefix.length) : id
-}
-
-export function computeExpireAt(
-  gwStartDate: Date,
-  now: Date = new Date(),
-): number {
-  const base = Math.max(gwStartDate.getTime(), now.getTime())
-  return Math.floor(
-    (base + TTL_DAYS_AFTER_MATCH * 24 * 60 * 60 * 1000) / 1000,
-  )
-}
+// Re-exported for back-compat with tests/unit/backfillRedisRsvpFromPrisma.test.ts;
+// the implementation lives in `src/lib/rsvpStoreSchema.ts` so the store and the
+// recovery script can never drift on TTL math.
+export const computeExpireAt = computeRsvpExpireAt
 
 /**
  * Build the desired Redis hash content for a GameWeek from a list of
@@ -154,7 +146,7 @@ export function buildTargetFields(
 ): Record<string, string> {
   const fields: Record<string, string> = { [SEEDED_FIELD]: SEEDED_VALUE }
   for (const row of rows) {
-    const slug = stripPrefix(row.playerId, PLAYER_ID_PREFIX)
+    const slug = playerIdToSlug(row.playerId)
     if (row.rsvp !== null) {
       fields[`${slug}${RSVP_SUFFIX}`] = row.rsvp
     }
