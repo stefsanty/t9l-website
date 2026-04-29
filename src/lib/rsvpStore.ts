@@ -147,6 +147,39 @@ function key(gameWeekId: string): string {
 }
 
 /**
+ * Shared write primitive for the four field-write paths (setRsvp,
+ * setRsvpOrThrow, setParticipated, and the null-clear branches of each).
+ * Always re-asserts the `__seeded` sentinel and re-sets the absolute TTL —
+ * so a write to a previously-unseeded GameWeek naturally promotes it to
+ * initialized state, and the TTL stays anchored to the matchday + 90 days.
+ *
+ * Stays unaware of error policy: callers wrap in try/catch (silent variants)
+ * or let throws propagate (Or-Throw variants).
+ */
+async function writeRsvpField(
+  client: RedisLike,
+  gameWeekId: string,
+  gwStartDate: Date,
+  field: string,
+  value: string | null,
+): Promise<void> {
+  const k = key(gameWeekId)
+  if (value === null) {
+    await client.hdel(k, field)
+    // Reassert the sentinel so a pure-clear on a fresh hash still marks it
+    // initialized. Upstash auto-deletes a hash that becomes empty after HDEL;
+    // the HSET below recreates it.
+    await client.hset(k, { [SEEDED_FIELD]: SEEDED_VALUE })
+  } else {
+    await client.hset(k, {
+      [SEEDED_FIELD]: SEEDED_VALUE,
+      [field]: value,
+    })
+  }
+  await client.expireat(k, computeRsvpExpireAt(gwStartDate))
+}
+
+/**
  * Parse a HGETALL result into the (playerSlug → RsvpEntry) map. Skips the
  * `__seeded` sentinel and any field whose suffix doesn't match the schema.
  *
@@ -252,22 +285,14 @@ export async function setRsvp(
 ): Promise<void> {
   const client = await getClient()
   if (!client) return
-  const k = key(gameWeekId)
-  const field = `${playerSlug}${RSVP_SUFFIX}`
   try {
-    if (rsvp === null) {
-      await client.hdel(k, field)
-      // Always reassert the sentinel so a pure-clear on a fresh hash still
-      // marks it initialized. (Upstash auto-deletes a hash that becomes
-      // empty after HDEL; the HSET below recreates it.)
-      await client.hset(k, { [SEEDED_FIELD]: SEEDED_VALUE })
-    } else {
-      await client.hset(k, {
-        [SEEDED_FIELD]: SEEDED_VALUE,
-        [field]: rsvp,
-      })
-    }
-    await client.expireat(k, computeRsvpExpireAt(gwStartDate))
+    await writeRsvpField(
+      client,
+      gameWeekId,
+      gwStartDate,
+      `${playerSlug}${RSVP_SUFFIX}`,
+      rsvp,
+    )
   } catch (err) {
     console.warn(
       '[rsvpStore] redis write errored for gw=%s player=%s: %o',
@@ -296,18 +321,13 @@ export async function setRsvpOrThrow(
 ): Promise<void> {
   const client = await getClient()
   if (!client) return
-  const k = key(gameWeekId)
-  const field = `${playerSlug}${RSVP_SUFFIX}`
-  if (rsvp === null) {
-    await client.hdel(k, field)
-    await client.hset(k, { [SEEDED_FIELD]: SEEDED_VALUE })
-  } else {
-    await client.hset(k, {
-      [SEEDED_FIELD]: SEEDED_VALUE,
-      [field]: rsvp,
-    })
-  }
-  await client.expireat(k, computeRsvpExpireAt(gwStartDate))
+  await writeRsvpField(
+    client,
+    gameWeekId,
+    gwStartDate,
+    `${playerSlug}${RSVP_SUFFIX}`,
+    rsvp,
+  )
 }
 
 /**
@@ -323,19 +343,14 @@ export async function setParticipated(
 ): Promise<void> {
   const client = await getClient()
   if (!client) return
-  const k = key(gameWeekId)
-  const field = `${playerSlug}${PARTICIPATED_SUFFIX}`
   try {
-    if (participated === null) {
-      await client.hdel(k, field)
-      await client.hset(k, { [SEEDED_FIELD]: SEEDED_VALUE })
-    } else {
-      await client.hset(k, {
-        [SEEDED_FIELD]: SEEDED_VALUE,
-        [field]: participated,
-      })
-    }
-    await client.expireat(k, computeRsvpExpireAt(gwStartDate))
+    await writeRsvpField(
+      client,
+      gameWeekId,
+      gwStartDate,
+      `${playerSlug}${PARTICIPATED_SUFFIX}`,
+      participated,
+    )
   } catch (err) {
     console.warn(
       '[rsvpStore] redis participated write errored for gw=%s player=%s: %o',
