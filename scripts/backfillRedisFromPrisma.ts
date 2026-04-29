@@ -30,6 +30,7 @@ import * as dotenv from 'dotenv'
 import * as path from 'path'
 import { PrismaClient } from '@prisma/client'
 import { Redis } from '@upstash/redis'
+import { playerIdToSlug, teamIdToSlug } from '../src/lib/ids'
 
 dotenv.config({ path: path.resolve(process.cwd(), '.env.preview') })
 dotenv.config({ path: path.resolve(process.cwd(), '.env.production') })
@@ -40,8 +41,6 @@ dotenv.config()
 const KEY_PREFIX = 't9l:auth:map:'
 const TTL_SECONDS = 60 * 60 * 24
 const NULL_SENTINEL = '__null__'
-const PLAYER_ID_PREFIX = 'p-'
-const TEAM_ID_PREFIX = 't-'
 
 interface Flags {
   dryRun: boolean
@@ -119,10 +118,6 @@ function mappingEqual(a: PlayerMapping, b: PlayerMapping): boolean {
   )
 }
 
-function stripPrefix(id: string, prefix: string): string {
-  return id.startsWith(prefix) ? id.slice(prefix.length) : id
-}
-
 interface BackfillResult {
   scanned: number
   created: number
@@ -197,9 +192,9 @@ async function main() {
       p.leagueAssignments[0] ??
       null
     const prismaMapping: PlayerMapping = {
-      playerId: stripPrefix(p.id, PLAYER_ID_PREFIX),
+      playerId: playerIdToSlug(p.id),
       playerName: p.name,
-      teamId: current ? stripPrefix(current.leagueTeam.team.id, TEAM_ID_PREFIX) : '',
+      teamId: current ? teamIdToSlug(current.leagueTeam.team.id) : '',
     }
 
     const key = `${KEY_PREFIX}${p.lineId}`

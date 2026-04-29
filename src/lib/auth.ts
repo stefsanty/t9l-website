@@ -7,6 +7,7 @@ import {
   getMapping,
   setMapping,
 } from "@/lib/playerMappingStore";
+import { playerIdToSlug, teamIdToSlug } from "@/lib/ids";
 
 function safeEqual(a: string, b: string): boolean {
   const ab = Buffer.from(a);
@@ -20,12 +21,6 @@ type PlayerMapping = {
   playerName: string;
   teamId: string;
 };
-
-const TEAM_ID_PREFIX = "t-";
-const PLAYER_ID_PREFIX = "p-";
-function stripPrefix(id: string, prefix: string): string {
-  return id.startsWith(prefix) ? id.slice(prefix.length) : id;
-}
 
 // Resolve session.{playerId, playerName, teamId} from Prisma. As of PR 16 /
 // v1.5.0, Prisma is the **durable secondary** for the `lineId → Player`
@@ -59,9 +54,9 @@ export async function getPlayerMappingFromDb(lineId: string): Promise<PlayerMapp
     player.leagueAssignments[0] ??
     null;
   return {
-    playerId: stripPrefix(player.id, PLAYER_ID_PREFIX),
+    playerId: playerIdToSlug(player.id),
     playerName: player.name,
-    teamId: current ? stripPrefix(current.leagueTeam.team.id, TEAM_ID_PREFIX) : "",
+    teamId: current ? teamIdToSlug(current.leagueTeam.team.id) : "",
   };
 }
 

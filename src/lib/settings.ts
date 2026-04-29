@@ -15,8 +15,24 @@ export const SETTING_IDS = {
 } as const
 
 /**
- * Returns the current public-site data source, falling back to 'sheets' if
- * the Setting row is absent (first-deploy default).
+ * Pure resolver for the dataSource setting. Pulled out so the
+ * fallback-on-missing-row contract can be unit-tested without Prisma mocking.
+ *
+ * Pre-v1.12 the fallback was `'sheets'` — that mirrored the pre-cutover
+ * default during the migration, but post-cutover (PR 4 / 2026-04-27) every
+ * environment runs on `'db'`. Leaving `'sheets'` as the fallback meant a
+ * misconfigured restore — Setting row deleted, missing seed migration,
+ * pointed at a fresh Neon branch — would silently route the public site at
+ * the legacy Sheets parser. v1.12 inverts the default so a missing row
+ * fails-safe to the Postgres path; operators flipping back to Sheets must
+ * do so explicitly via the admin Settings UI.
+ */
+export function resolveDataSource(value: string | null | undefined): DataSource {
+  return value === 'sheets' ? 'sheets' : 'db'
+}
+
+/**
+ * Returns the current public-site data source.
  *
  * Cached 30s under tag 'settings'. Toggle flips call `revalidateTag('settings')`.
  */
@@ -25,8 +41,7 @@ export const getDataSource = unstable_cache(
     const row = await prisma.setting.findUnique({
       where: { id: SETTING_IDS.publicDataSource },
     })
-    const v = row?.value
-    return v === 'db' ? 'db' : 'sheets'
+    return resolveDataSource(row?.value)
   },
   ['setting:public:dataSource:global'],
   { revalidate: 30, tags: ['settings'] },

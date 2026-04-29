@@ -1,5 +1,6 @@
 import { prisma } from './prisma'
 import { formatJstDate, formatJstTime } from './jst'
+import { GUEST_ID, playerIdToSlug, teamIdToSlug } from './ids'
 import type {
   Team,
   Player,
@@ -9,14 +10,6 @@ import type {
   PlayerRating,
   LeagueData,
 } from '@/types'
-
-const TEAM_ID_PREFIX = 't-'
-const PLAYER_ID_PREFIX = 'p-'
-const GUEST_ID = 'p-guest'
-
-function stripPrefix(id: string, prefix: string): string {
-  return id.startsWith(prefix) ? id.slice(prefix.length) : id
-}
 
 const EMPTY_DATA: LeagueData = {
   teams: [],
@@ -90,7 +83,7 @@ export async function dbToPublicLeagueData(): Promise<LeagueData> {
 
   // ── teams[] ──────────────────────────────────────────────────────────────
   const teams: Team[] = league.leagueTeams.map((lt) => {
-    const slug = stripPrefix(lt.team.id, TEAM_ID_PREFIX)
+    const slug = teamIdToSlug(lt.team.id)
     return {
       id: slug,
       name: lt.team.name,
@@ -102,7 +95,7 @@ export async function dbToPublicLeagueData(): Promise<LeagueData> {
 
   // LeagueTeam.id → public team slug (e.g. 'lt-...' → 'mariners-fc')
   const ltToSlug = new Map<string, string>(
-    league.leagueTeams.map((lt) => [lt.id, stripPrefix(lt.team.id, TEAM_ID_PREFIX)]),
+    league.leagueTeams.map((lt) => [lt.id, teamIdToSlug(lt.team.id)]),
   )
 
   // ── players[] (via PlayerLeagueAssignment) ───────────────────────────────
@@ -115,7 +108,7 @@ export async function dbToPublicLeagueData(): Promise<LeagueData> {
   const players: Player[] = []
   for (const pla of plas) {
     if (pla.player.id === GUEST_ID) continue
-    const slug = stripPrefix(pla.player.id, PLAYER_ID_PREFIX)
+    const slug = playerIdToSlug(pla.player.id)
     const teamSlug = ltToSlug.get(pla.leagueTeamId) ?? ''
     players.push({
       id: slug,
@@ -214,6 +207,3 @@ export async function dbToPublicLeagueData(): Promise<LeagueData> {
     played: {},
   }
 }
-
-// Exported for unit tests.
-export const __test = { stripPrefix }

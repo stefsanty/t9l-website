@@ -14,6 +14,7 @@ import {
   type RsvpReadResult,
 } from './rsvpStore'
 import { mergeRsvpData, buildGwToMdMap } from './rsvpMerge'
+import { playerIdToSlug } from './ids'
 
 /**
  * Two separately-cached source readers + a dispatcher.
@@ -29,8 +30,6 @@ import { mergeRsvpData, buildGwToMdMap } from './rsvpMerge'
  * `LeagueData` shape consumers expect. RSVP writes are read-your-own-writes
  * consistent without a cache-bust round-trip.
  */
-
-const PLAYER_ID_PREFIX = 'p-'
 
 const getFromSheets = unstable_cache(
   async (): Promise<LeagueData> => parseAllData(await fetchSheetData()),
@@ -70,10 +69,6 @@ const getDefaultLeagueGameWeeks = unstable_cache(
   ['public-data:db:gameweeks'],
   { revalidate: 30, tags: ['public-data', 'leagues'] },
 )
-
-function stripPrefix(id: string, prefix: string): string {
-  return id.startsWith(prefix) ? id.slice(prefix.length) : id
-}
 
 /**
  * For each GameWeek where the Redis read missed, fall back to Prisma
@@ -129,7 +124,7 @@ async function backfillMissesFromPrisma(
   for (const row of rows) {
     const m = byGw.get(row.gameWeekId)
     if (!m) continue
-    const slug = stripPrefix(row.playerId, PLAYER_ID_PREFIX)
+    const slug = playerIdToSlug(row.playerId)
     m.set(slug, {
       rsvp: row.rsvp ?? undefined,
       participated: row.participated ?? undefined,

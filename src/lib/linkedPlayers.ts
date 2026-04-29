@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma'
+import { playerIdToSlug } from '@/lib/ids'
 
 /**
  * Public-slug ids of every Player whose `lineId` is held by another LINE
@@ -7,15 +8,14 @@ import { prisma } from '@/lib/prisma'
  * render at all, so the user can only see what they can actually pick.
  *
  * DB-side `Player.id` carries a `p-` prefix inserted by the PR 6 backfill;
- * the public-side slug doesn't. Mirrors `stripPrefix` in `lib/auth.ts`.
+ * the public-side slug doesn't. v1.12 routes through the canonical
+ * `playerIdToSlug` helper in `lib/ids.ts`.
  *
  * Returns an empty set on Prisma failure rather than throwing — a stale
  * "everyone selectable" picker is strictly less harmful than a 500 on
  * /assign-player. The legitimate-conflict case still 409s on the API write;
  * this filter is a UX hint, not a security boundary.
  */
-const PLAYER_ID_PREFIX = 'p-'
-
 export async function getLinkedPlayerIds(
   viewerLineId: string | null,
 ): Promise<Set<string>> {
@@ -27,13 +27,7 @@ export async function getLinkedPlayerIds(
       },
       select: { id: true },
     })
-    return new Set(
-      rows.map((r) =>
-        r.id.startsWith(PLAYER_ID_PREFIX)
-          ? r.id.slice(PLAYER_ID_PREFIX.length)
-          : r.id,
-      ),
-    )
+    return new Set(rows.map((r) => playerIdToSlug(r.id)))
   } catch (err) {
     console.warn('[linkedPlayers] Prisma findMany failed; returning empty set:', err)
     return new Set()
