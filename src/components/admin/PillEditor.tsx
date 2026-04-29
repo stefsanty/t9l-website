@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useEffect, useRef, useState, useTransition } from 'react'
 import { cn } from '@/lib/utils'
 
 /**
@@ -58,15 +58,46 @@ interface VenuePillProps extends BasePillProps {
   onSave: (venueId: string | null) => Promise<void>
 }
 
+/**
+ * v1.20.0 — text variant for inline editing free-text fields (e.g.
+ * Player.name on the admin Players tab). Unlike the date/time/venue
+ * variants there is no platform-native picker, so this variant uses a
+ * click-to-swap-input pattern: pill displays the value; click → input
+ * appears in-place; Enter or blur saves; Escape cancels.
+ *
+ * Validation lives at the consumer onSave (server action throws on
+ * empty / too-long; the pill catches and rolls back).
+ */
+interface TextPillProps extends BasePillProps {
+  variant: 'text'
+  value: string
+  onSave: (value: string) => Promise<void>
+  /** Soft client-side cap matched to the server-side validation. */
+  maxLength?: number
+  placeholder?: string
+}
+
 export type PillEditorProps =
   | DatePillProps
   | TimePillProps
   | DateTimePillProps
   | VenuePillProps
+  | TextPillProps
 
 export default function PillEditor(props: PillEditorProps) {
   const [draft, setDraft] = useState(props.value)
   const [pending, startTransition] = useTransition()
+  // Text-variant click-to-swap-input editor state. Only used by the text
+  // branch; date/time/venue use the overlaid native picker pattern and
+  // never need a separate "editing" flag.
+  const [editing, setEditing] = useState(false)
+  const inputRef = useRef<HTMLInputElement | null>(null)
+
+  // Keep the draft in sync if the source value changes (e.g. parent
+  // re-renders with a fresh server-side value after revalidatePath).
+  useEffect(() => {
+    if (!editing) setDraft(props.value)
+  }, [props.value, editing])
 
   function handleChange(newValue: string) {
     setDraft(newValue)
@@ -82,6 +113,28 @@ export default function PillEditor(props: PillEditorProps) {
         setDraft(props.value)
       }
     })
+  }
+
+  function commitText() {
+    setEditing(false)
+    const next = draft.trim()
+    if (next === props.value) {
+      setDraft(props.value)
+      return
+    }
+    startTransition(async () => {
+      try {
+        if (props.variant !== 'text') return
+        await props.onSave(next)
+      } catch {
+        setDraft(props.value)
+      }
+    })
+  }
+
+  function cancelText() {
+    setEditing(false)
+    setDraft(props.value)
   }
 
   const wrapperClasses = cn(
@@ -119,6 +172,59 @@ export default function PillEditor(props: PillEditorProps) {
           ))}
         </select>
       </label>
+    )
+  }
+
+  if (props.variant === 'text') {
+    if (editing) {
+      return (
+        <span
+          className={cn(wrapperClasses, 'p-0')}
+          data-pill-editor="text"
+          data-editing="true"
+        >
+          <input
+            ref={inputRef}
+            autoFocus
+            type="text"
+            value={draft}
+            maxLength={props.maxLength ?? 100}
+            placeholder={props.placeholder}
+            disabled={pending}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={commitText}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault()
+                commitText()
+              }
+              if (e.key === 'Escape') cancelText()
+            }}
+            aria-label={props.ariaLabel}
+            className="bg-transparent outline-none border-none px-3 py-1.5 md:py-0.5 min-h-[40px] md:min-h-[28px] w-full text-admin-text text-xs"
+          />
+        </span>
+      )
+    }
+    return (
+      <button
+        type="button"
+        onClick={() => {
+          setDraft(props.value)
+          setEditing(true)
+          // Focus is handled by autoFocus on the input; the timeout select
+          // gives a "tap = full-text-selected" UX so re-typing is one
+          // gesture instead of two.
+          setTimeout(() => inputRef.current?.select(), 0)
+        }}
+        className={wrapperClasses}
+        data-pill-editor="text"
+        aria-label={props.ariaLabel}
+      >
+        <span className="truncate max-w-[220px]">
+          {props.display}
+        </span>
+      </button>
     )
   }
 

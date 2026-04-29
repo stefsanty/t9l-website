@@ -397,6 +397,38 @@ export async function adminClearLineLink(input: {
   revalidate({ domain: 'admin', paths: [`/admin/leagues/${leagueId}/players`] })
 }
 
+/**
+ * v1.20.0 — admin renames a Player record from the league Players tab.
+ *
+ * Trims, requires non-empty, caps at 100 chars (no DB-level limit on
+ * `Player.name` — String column — but a sane client/server cap prevents
+ * the field from being abused as a free-form text dump). Admin-only via
+ * `assertAdmin`. Cache invalidation via `revalidate({ domain: 'admin' })`
+ * which busts both `public-data` + `leagues` tags AND the per-league
+ * admin path — the player name is reachable from `dbToPublicLeagueData`,
+ * so the public dashboard re-derives on next render.
+ */
+export async function adminUpdatePlayerName(input: {
+  playerId: string
+  leagueId: string
+  name: string
+}): Promise<void> {
+  await assertAdmin()
+  const { playerId, leagueId } = input
+  if (!playerId) throw new Error('playerId is required')
+
+  const trimmed = input.name?.trim() ?? ''
+  if (!trimmed) throw new Error('Player name is required')
+  if (trimmed.length > 100) throw new Error('Player name must be 100 characters or fewer')
+
+  await prisma.player.update({
+    where: { id: playerId },
+    data: { name: trimmed },
+  })
+
+  revalidate({ domain: 'admin', paths: [`/admin/leagues/${leagueId}/players`] })
+}
+
 // ── Settings (data source / write mode toggles) ──────────────────────────────
 
 const VALID_DATA_SOURCES: DataSource[] = ['sheets', 'db']
