@@ -31,9 +31,8 @@ const { setMappingMock, deleteMappingMock } = vi.hoisted(() => ({
   deleteMappingMock: vi.fn().mockResolvedValue(undefined),
 }))
 
-const { revalidatePublicDataMock, revalidatePathMock } = vi.hoisted(() => ({
-  revalidatePublicDataMock: vi.fn(),
-  revalidatePathMock: vi.fn(),
+const { revalidateMock } = vi.hoisted(() => ({
+  revalidateMock: vi.fn(),
 }))
 
 const { getPlayerMappingFromDbMock } = vi.hoisted(() => ({
@@ -61,14 +60,11 @@ vi.mock('@/lib/playerMappingStore', () => ({
 }))
 
 vi.mock('@/lib/revalidate', () => ({
-  revalidatePublicData: revalidatePublicDataMock,
+  revalidate: revalidateMock,
 }))
 
 vi.mock('next/cache', () => ({
-  revalidatePath: revalidatePathMock,
-  revalidateTag: vi.fn(),
   unstable_cache: <T extends (...args: unknown[]) => unknown>(fn: T) => fn,
-  updateTag: vi.fn(),
 }))
 
 vi.mock('next-auth', () => ({
@@ -109,8 +105,10 @@ describe('adminClearLineLink (v1.10.0 / PR B)', () => {
       data: { lineId: null },
     })
     expect(deleteMappingMock).toHaveBeenCalledWith('U-old-line-id')
-    expect(revalidatePublicDataMock).toHaveBeenCalled()
-    expect(revalidatePathMock).toHaveBeenCalledWith('/admin/leagues/l-spring/players')
+    expect(revalidateMock).toHaveBeenCalledWith({
+      domain: 'admin',
+      paths: ['/admin/leagues/l-spring/players'],
+    })
   })
 
   it('is idempotent: no Prisma update + no Redis call when player already has lineId=null', async () => {
@@ -209,7 +207,9 @@ describe('adminLinkLineToPlayer remap path (v1.10.0 / PR B)', () => {
     // The transaction is opaque to the test (Prisma's $transaction takes
     // an array of operations); we just assert it was invoked.
     expect(transactionMock).toHaveBeenCalledTimes(1)
-    expect(revalidatePublicDataMock).toHaveBeenCalled()
-    expect(revalidatePathMock).toHaveBeenCalledWith('/admin/leagues/l-spring/players')
+    expect(revalidateMock).toHaveBeenCalledWith({
+      domain: 'admin',
+      paths: ['/admin/leagues/l-spring/players'],
+    })
   })
 })

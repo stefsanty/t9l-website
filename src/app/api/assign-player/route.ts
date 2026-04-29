@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
-import { revalidateTag } from "next/cache";
 import { waitUntil } from "@vercel/functions";
 import { authOptions } from "@/lib/auth";
 import { put } from "@vercel/blob";
 import { getPlayerByPublicId } from "@/lib/publicData";
 import { prisma } from "@/lib/prisma";
+import { revalidate } from "@/lib/revalidate";
 import { setMappingOrThrow } from "@/lib/playerMappingStore";
 import { playerIdToSlug, slugToPlayerId } from "@/lib/ids";
 
@@ -50,7 +50,7 @@ async function legacyRedisCleanup(
 // after the response is sent, via waitUntil. The destination renders with a
 // fallback avatar (PlayerAvatar's chain handles missing pictureUrl
 // gracefully) until this completes — typically <1s in the background — at
-// which point revalidateTag('public-data') busts the page cache and the
+// which point `revalidate({ domain: 'public', mode: 'route' })` busts the page cache and the
 // real picture appears on the next render. Failure is non-fatal: the link
 // itself is already persisted.
 async function uploadAndPersistLinePic(args: {
@@ -89,7 +89,10 @@ async function uploadAndPersistLinePic(args: {
 
     // Bust the public-data cache so the page renders with the new URL on the
     // next request instead of waiting up to 30s for unstable_cache to expire.
-    revalidateTag("public-data", { expire: 0 });
+    // Route-handler context — uses `mode: 'route'` (the helper's
+    // route-handler dispatch) since the read-your-own-writes path is
+    // server-action-only.
+    revalidate({ domain: "public", mode: "route" });
   } catch (err) {
     console.warn("[assign-player] background pic upload failed: %o", err);
   }
@@ -227,8 +230,8 @@ export async function POST(req: Request) {
   // PR 12 already moved this off the critical path. Kept independent of the
   // Prisma waitUntil above so a Prisma failure doesn't tank the picture
   // mirror and vice versa. The picture-upload path runs its own
-  // `revalidateTag('public-data')` once the Blob URL lands so the new avatar
-  // appears on the next dashboard render.
+  // `revalidate({ domain: 'public', mode: 'route' })` once the Blob URL lands
+  // so the new avatar appears on the next dashboard render.
   if (session.linePictureUrl && process.env.BLOB_READ_WRITE_TOKEN) {
     waitUntil(
       uploadAndPersistLinePic({
@@ -240,7 +243,7 @@ export async function POST(req: Request) {
     );
   }
 
-  // v1.8.2 — no `revalidatePath('/')` / `revalidateTag('public-data')` here.
+  // v1.8.2 — no public-data revalidate here on the synchronous path.
   // The link state is owned by the JWT (refreshed via next-auth `update()`
   // on the client) and Redis (canonical store consulted by `getPlayerMapping`
   // on the next session read). Neither flows through the static `public-data`

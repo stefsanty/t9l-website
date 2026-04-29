@@ -1,12 +1,11 @@
 'use server'
 
 import { prisma } from '@/lib/prisma'
-import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { getServerSession } from 'next-auth'
 import { waitUntil } from '@vercel/functions'
 import { authOptions, getPlayerMappingFromDb } from '@/lib/auth'
-import { revalidatePublicData } from '@/lib/revalidate'
+import { revalidate } from '@/lib/revalidate'
 import {
   deleteMapping,
   setMapping,
@@ -57,9 +56,7 @@ export async function updateLeague(formData: FormData) {
       endDate:   endDateStr   ? parseJstDateOnly(endDateStr)   : null,
     },
   })
-  revalidatePath('/admin/settings')
-  revalidatePath('/admin')
-  revalidatePublicData()
+  revalidate({ domain: 'admin', paths: ['/admin/settings', '/admin'] })
 }
 
 // ── Players ────────────────────────────────────────────────────────────────────
@@ -106,9 +103,7 @@ export async function updatePlayer(formData: FormData) {
     deferSetMapping('admin-update', lineId, fresh)
   }
 
-  revalidatePath('/admin/players')
-  revalidatePath(`/admin/players/${id}`)
-  revalidatePublicData()
+  revalidate({ domain: 'admin', paths: ['/admin/players', `/admin/players/${id}`] })
 }
 
 export async function createPlayer(formData: FormData) {
@@ -131,8 +126,7 @@ export async function createPlayer(formData: FormData) {
     deferSetMapping('admin-create', lineId, fresh)
   }
 
-  revalidatePath('/admin/players')
-  revalidatePublicData()
+  revalidate({ domain: 'admin', paths: ['/admin/players'] })
   redirect('/admin/players')
 }
 
@@ -151,9 +145,7 @@ export async function updateMatchScore(formData: FormData) {
       status: 'COMPLETED',
     },
   })
-  revalidatePath('/admin/matches')
-  revalidatePath(`/admin/matches/${id}`)
-  revalidatePublicData()
+  revalidate({ domain: 'admin', paths: ['/admin/matches', `/admin/matches/${id}`] })
 }
 
 export async function addGoal(formData: FormData) {
@@ -173,9 +165,7 @@ export async function addGoal(formData: FormData) {
     })
   }
 
-  revalidatePath(`/admin/matches/${matchId}`)
-  revalidatePath('/admin/matches')
-  revalidatePublicData()
+  revalidate({ domain: 'admin', paths: [`/admin/matches/${matchId}`, '/admin/matches'] })
 }
 
 export async function deleteGoal(formData: FormData) {
@@ -185,7 +175,5 @@ export async function deleteGoal(formData: FormData) {
   // Goal→Assist has no cascade; delete assist first to satisfy the FK constraint
   await prisma.assist.deleteMany({ where: { goalId } })
   await prisma.goal.delete({ where: { id: goalId } })
-  revalidatePath(`/admin/matches/${matchId}`)
-  revalidatePath('/admin/matches')
-  revalidatePublicData()
+  revalidate({ domain: 'admin', paths: [`/admin/matches/${matchId}`, '/admin/matches'] })
 }

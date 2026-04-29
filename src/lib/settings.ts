@@ -34,7 +34,7 @@ export function resolveDataSource(value: string | null | undefined): DataSource 
 /**
  * Returns the current public-site data source.
  *
- * Cached 30s under tag 'settings'. Toggle flips call `revalidateTag('settings')`.
+ * Cached 30s under tag 'settings'. Toggle flips call `revalidate({ domain: 'settings' })`.
  */
 export const getDataSource = unstable_cache(
   async (): Promise<DataSource> => {

@@ -1,12 +1,11 @@
 'use server'
 
 import { prisma } from '@/lib/prisma'
-import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { getServerSession } from 'next-auth'
 import { waitUntil } from '@vercel/functions'
 import { authOptions, getPlayerMappingFromDb } from '@/lib/auth'
-import { revalidatePublicData } from '@/lib/revalidate'
+import { revalidate } from '@/lib/revalidate'
 import { SETTING_IDS, type DataSource, type WriteMode } from '@/lib/settings'
 import {
   setMapping,
@@ -21,7 +20,8 @@ import { parseJstDateTimeLocal, parseJstDateOnly } from '@/lib/jst'
  *
  * Mirror of the v1.8.0 inversion that ships the public hot paths
  * (`/api/assign-player`, `/api/rsvp`): Redis is a secondary store on the
- * admin path (admin pages re-read Prisma directly via `revalidatePath`), so
+ * admin path (admin pages re-read Prisma directly via the canonical
+ * `revalidate` helper's path bust), so
  * the pre-warm can run in `waitUntil`. Drift on Redis failure surfaces in
  * the structured log; recoverable via `scripts/auditRedisVsPrisma.ts`.
  */
@@ -71,8 +71,7 @@ export async function createLeague(formData: FormData) {
     },
   })
 
-  revalidatePublicData()
-  revalidatePath('/admin')
+  revalidate({ domain: 'admin', paths: ['/admin'] })
   redirect(`/admin/leagues/${league.id}/schedule`)
 }
 
@@ -96,9 +95,7 @@ export async function updateLeagueInfo(id: string, data: {
       endDate:     data.endDate !== undefined ? (data.endDate ? parseJstDateOnly(data.endDate) : null) : undefined,
     },
   })
-  revalidatePublicData()
-  revalidatePath(`/admin/leagues/${id}`)
-  revalidatePath('/admin')
+  revalidate({ domain: 'admin', paths: [`/admin/leagues/${id}`, '/admin'] })
 }
 
 export async function deleteLeague(id: string) {
@@ -108,8 +105,7 @@ export async function deleteLeague(id: string) {
   })
   if (completedMatches > 0) throw new Error('Cannot delete league with completed matches')
   await prisma.league.delete({ where: { id } })
-  revalidatePublicData()
-  revalidatePath('/admin')
+  revalidate({ domain: 'admin', paths: ['/admin'] })
   redirect('/admin')
 }
 
@@ -138,8 +134,7 @@ export async function createGameWeek(leagueId: string, data: {
   // miss-then-Prisma-fallthrough. Failure is swallowed by the store helper;
   // a missing seed self-heals on first read via the publicData backfill.
   await seedGameWeek(gw.id, gw.startDate)
-  revalidatePublicData()
-  revalidatePath(`/admin/leagues/${leagueId}/schedule`)
+  revalidate({ domain: 'admin', paths: [`/admin/leagues/${leagueId}/schedule`] })
 }
 
 export async function updateGameWeekVenue(id: string, leagueId: string, venueName: string) {
@@ -153,8 +148,7 @@ export async function updateGameWeekVenue(id: string, leagueId: string, venueNam
     }
     await prisma.gameWeek.update({ where: { id }, data: { venueId: venue.id } })
   }
-  revalidatePublicData()
-  revalidatePath(`/admin/leagues/${leagueId}/schedule`)
+  revalidate({ domain: 'admin', paths: [`/admin/leagues/${leagueId}/schedule`] })
 }
 
 export async function updateGameWeek(id: string, leagueId: string, data: {
@@ -171,8 +165,7 @@ export async function updateGameWeek(id: string, leagueId: string, data: {
       venueId:   data.venueId !== undefined ? (data.venueId || null) : undefined,
     },
   })
-  revalidatePublicData()
-  revalidatePath(`/admin/leagues/${leagueId}/schedule`)
+  revalidate({ domain: 'admin', paths: [`/admin/leagues/${leagueId}/schedule`] })
 }
 
 export async function deleteGameWeek(id: string, leagueId: string) {
@@ -185,8 +178,7 @@ export async function deleteGameWeek(id: string, leagueId: string) {
   // Cleanup-only: orphan Redis hashes would expire on their own (matchday +
   // 90d), but eager deletion keeps the namespace tidy.
   await deleteGameWeekFromRedis(id)
-  revalidatePublicData()
-  revalidatePath(`/admin/leagues/${leagueId}/schedule`)
+  revalidate({ domain: 'admin', paths: [`/admin/leagues/${leagueId}/schedule`] })
 }
 
 // ── Match ────────────────────────────────────────────────────────────────────
@@ -211,8 +203,7 @@ export async function createMatch(gameWeekId: string, leagueId: string, data: {
       status:     'SCHEDULED',
     },
   })
-  revalidatePublicData()
-  revalidatePath(`/admin/leagues/${leagueId}/schedule`)
+  revalidate({ domain: 'admin', paths: [`/admin/leagues/${leagueId}/schedule`] })
 }
 
 export async function updateMatch(id: string, leagueId: string, data: {
@@ -241,15 +232,13 @@ export async function updateMatch(id: string, leagueId: string, data: {
     }
   }
   await prisma.match.update({ where: { id }, data: updateData })
-  revalidatePublicData()
-  revalidatePath(`/admin/leagues/${leagueId}/schedule`)
+  revalidate({ domain: 'admin', paths: [`/admin/leagues/${leagueId}/schedule`] })
 }
 
 export async function deleteMatch(id: string, leagueId: string) {
   await assertAdmin()
   await prisma.match.delete({ where: { id } })
-  revalidatePublicData()
-  revalidatePath(`/admin/leagues/${leagueId}/schedule`)
+  revalidate({ domain: 'admin', paths: [`/admin/leagues/${leagueId}/schedule`] })
 }
 
 // ── Teams ────────────────────────────────────────────────────────────────────
@@ -257,8 +246,7 @@ export async function deleteMatch(id: string, leagueId: string) {
 export async function enrollTeam(leagueId: string, teamId: string) {
   await assertAdmin()
   await prisma.leagueTeam.create({ data: { leagueId, teamId } })
-  revalidatePublicData()
-  revalidatePath(`/admin/leagues/${leagueId}/teams`)
+  revalidate({ domain: 'admin', paths: [`/admin/leagues/${leagueId}/teams`] })
 }
 
 export async function removeTeamFromLeague(leagueTeamId: string, leagueId: string) {
@@ -271,8 +259,7 @@ export async function removeTeamFromLeague(leagueTeamId: string, leagueId: strin
   })
   if (completedMatches > 0) throw new Error('Cannot remove team with completed matches')
   await prisma.leagueTeam.delete({ where: { id: leagueTeamId } })
-  revalidatePublicData()
-  revalidatePath(`/admin/leagues/${leagueId}/teams`)
+  revalidate({ domain: 'admin', paths: [`/admin/leagues/${leagueId}/teams`] })
 }
 
 // ── Players ──────────────────────────────────────────────────────────────────
@@ -284,8 +271,7 @@ export async function assignPlayer(playerId: string, leagueTeamId: string, fromG
   })
   const lt = await prisma.leagueTeam.findUnique({ where: { id: leagueTeamId }, select: { leagueId: true } })
   if (lt) {
-    revalidatePublicData()
-    revalidatePath(`/admin/leagues/${lt.leagueId}/players`)
+    revalidate({ domain: 'admin', paths: [`/admin/leagues/${lt.leagueId}/players`] })
   }
 }
 
@@ -306,8 +292,7 @@ export async function transferPlayer(
       data: { playerId, leagueTeamId: toLeagueTeamId, fromGameWeek },
     })
   })
-  revalidatePublicData()
-  revalidatePath(`/admin/leagues/${leagueId}/players`)
+  revalidate({ domain: 'admin', paths: [`/admin/leagues/${leagueId}/players`] })
 }
 
 export async function removePlayerFromLeague(playerId: string, leagueId: string) {
@@ -318,8 +303,7 @@ export async function removePlayerFromLeague(playerId: string, leagueId: string)
   await prisma.playerLeagueAssignment.deleteMany({
     where: { playerId, leagueTeamId: { in: leagueTeamIds } },
   })
-  revalidatePublicData()
-  revalidatePath(`/admin/leagues/${leagueId}/players`)
+  revalidate({ domain: 'admin', paths: [`/admin/leagues/${leagueId}/players`] })
 }
 
 /**
@@ -384,8 +368,7 @@ export async function adminLinkLineToPlayer(input: {
     await deleteMapping(targetPriorLineId)
   }
 
-  revalidatePublicData()
-  revalidatePath(`/admin/leagues/${leagueId}/players`)
+  revalidate({ domain: 'admin', paths: [`/admin/leagues/${leagueId}/players`] })
 }
 
 /**
@@ -425,8 +408,7 @@ export async function adminClearLineLink(input: {
   // via the v1.5.0 policy, identical observable behavior).
   await deleteMapping(before.lineId)
 
-  revalidatePublicData()
-  revalidatePath(`/admin/leagues/${leagueId}/players`)
+  revalidate({ domain: 'admin', paths: [`/admin/leagues/${leagueId}/players`] })
 }
 
 // ── Settings (data source / write mode toggles) ──────────────────────────────
@@ -437,11 +419,9 @@ const VALID_WRITE_MODES: WriteMode[] = ['sheets-only', 'dual', 'db-only']
 /**
  * Flip the apex public site's source-of-truth between Google Sheets and DB.
  *
- * Cache buster path:
- *   1. updateTag('settings') invalidates getDataSource()'s 30s cache, so the
- *      next public-page render reads the new value
- *   2. revalidatePublicData() invalidates 'public-data' so the next render
- *      doesn't serve a stale getFromSheets() / getFromDb() result
+ * The `settings` domain busts both the settings cache (which `getDataSource`
+ * sits behind) and the public-data cache (so the next render serves the new
+ * source). See `lib/revalidate.ts`.
  */
 export async function setDataSource(value: DataSource) {
   await assertAdmin()
@@ -459,12 +439,7 @@ export async function setDataSource(value: DataSource) {
     },
     update: { value },
   })
-  // updateTag is server-action only; revalidatePublicData uses it under the
-  // hood. Tag chain: settings (own helper cache) + public-data (dispatcher).
-  const { updateTag: _updateTag } = await import('next/cache')
-  _updateTag('settings')
-  revalidatePublicData()
-  revalidatePath('/admin')
+  revalidate({ domain: 'settings', paths: ['/admin'] })
 }
 
 /**
@@ -487,8 +462,5 @@ export async function setWriteMode(value: WriteMode) {
     },
     update: { value },
   })
-  const { updateTag: _updateTag } = await import('next/cache')
-  _updateTag('settings')
-  revalidatePublicData()
-  revalidatePath('/admin')
+  revalidate({ domain: 'settings', paths: ['/admin'] })
 }
