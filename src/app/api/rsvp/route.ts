@@ -6,12 +6,11 @@ import { writeRosterAvailability } from '@/lib/sheets'
 import { getWriteMode, type WriteMode } from '@/lib/settings'
 import { prisma } from '@/lib/prisma'
 import { setRsvpOrThrow } from '@/lib/rsvpStore'
+import { getLeagueIdFromRequest } from '@/lib/getLeagueFromHost'
 import type { RsvpStatus } from '@prisma/client'
 
 type IncomingStatus = 'GOING' | 'UNDECIDED' | ''
 const VALID_STATUSES: IncomingStatus[] = ['GOING', 'UNDECIDED', '']
-
-const LEAGUE_ID = 'l-minato-2025' // default league; per-league RSVP routing is post-PR-5
 
 /**
  * Map the public-API RSVP status string to the DB enum + JOINED reset.
@@ -140,6 +139,18 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Invalid matchdayId' }, { status: 400 })
   }
 
+  // v1.22.0 — resolve the active league from the request's Host header so
+  // subdomain RSVPs (e.g. tamachi.t9l.me) write to the correct League's
+  // GameWeeks. Pre-v1.22.0 this hardcoded `l-minato-2025`, silently
+  // mis-routing any non-default subdomain RSVP to the default league.
+  const leagueId = await getLeagueIdFromRequest()
+  if (!leagueId) {
+    return NextResponse.json(
+      { error: 'League not found for this host' },
+      { status: 404 },
+    )
+  }
+
   const writeMode = await getWriteMode()
   const dbStatus = mapStatusToDb(status as IncomingStatus)
   // session.playerId is the public slug (e.g. "ian-noseda"); DB ids carry "p-" prefix.
@@ -172,12 +183,12 @@ export async function POST(req: Request) {
   let gameWeek: { id: string; startDate: Date }
   try {
     const gw = await prisma.gameWeek.findUnique({
-      where: { leagueId_weekNumber: { leagueId: LEAGUE_ID, weekNumber } },
+      where: { leagueId_weekNumber: { leagueId, weekNumber } },
       select: { id: true, startDate: true },
     })
     if (!gw) {
       return NextResponse.json(
-        { error: `GameWeek not found for ${matchdayId} in ${LEAGUE_ID}` },
+        { error: `GameWeek not found for ${matchdayId} in ${leagueId}` },
         { status: 404 },
       )
     }

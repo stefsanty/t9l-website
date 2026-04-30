@@ -22,9 +22,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
  *      gate.
  */
 
-const { setRsvpOrThrowMock, waitUntilMock } = vi.hoisted(() => ({
+const { setRsvpOrThrowMock, waitUntilMock, getLeagueIdFromRequestMock } = vi.hoisted(() => ({
   setRsvpOrThrowMock: vi.fn(),
   waitUntilMock: vi.fn(),
+  getLeagueIdFromRequestMock: vi.fn(),
 }))
 
 vi.mock('@/lib/rsvpStore', () => ({
@@ -77,6 +78,10 @@ vi.mock('@vercel/functions', () => ({
   waitUntil: waitUntilMock,
 }))
 
+vi.mock('@/lib/getLeagueFromHost', () => ({
+  getLeagueIdFromRequest: getLeagueIdFromRequestMock,
+}))
+
 // Imports must come after vi.mock calls.
 import { POST } from '@/app/api/rsvp/route'
 import { prisma } from '@/lib/prisma'
@@ -86,6 +91,7 @@ const upsertMock = vi.mocked(prisma.availability.upsert)
 beforeEach(() => {
   vi.clearAllMocks()
   setRsvpOrThrowMock.mockResolvedValue(undefined)
+  getLeagueIdFromRequestMock.mockResolvedValue('l-minato-2025')
   // Eagerly invoke the deferred callback so the Prisma upsert runs in the test.
   waitUntilMock.mockImplementation((p: unknown) => {
     ;(p as Promise<unknown>).catch(() => {})
@@ -161,6 +167,34 @@ describe('POST /api/rsvp — v1.8.0 Redis-canonical sync, Prisma deferred', () =
     expect(res.status).toBe(500)
     // Critical: Prisma must NOT be scheduled when Redis fails — bailing out
     // before waitUntil keeps both stores in lockstep (neither has the write).
+    expect(waitUntilMock).not.toHaveBeenCalled()
+  })
+
+  it('threads the resolved leagueId from getLeagueIdFromRequest into gameWeek.findUnique (v1.22.0 regression)', async () => {
+    // Pre-v1.22.0 the route hardcoded leagueId='l-minato-2025'. This test
+    // pins the inversion: a subdomain RSVP routes to the per-subdomain
+    // league's GameWeeks, not the default league's.
+    getLeagueIdFromRequestMock.mockResolvedValueOnce('l-tamachi-2026')
+
+    await POST(makeRequest('md3', 'GOING'))
+
+    const findUniqueMock = vi.mocked(
+      (await import('@/lib/prisma')).prisma.gameWeek.findUnique,
+    )
+    expect(findUniqueMock).toHaveBeenCalledWith({
+      where: { leagueId_weekNumber: { leagueId: 'l-tamachi-2026', weekNumber: 3 } },
+      select: { id: true, startDate: true },
+    })
+  })
+
+  it('returns 404 when getLeagueIdFromRequest returns null (unknown subdomain)', async () => {
+    getLeagueIdFromRequestMock.mockResolvedValueOnce(null)
+
+    const res = await POST(makeRequest('md3', 'GOING'))
+
+    expect(res.status).toBe(404)
+    // No writes should fire when the league cannot be resolved.
+    expect(setRsvpOrThrowMock).not.toHaveBeenCalled()
     expect(waitUntilMock).not.toHaveBeenCalled()
   })
 })
