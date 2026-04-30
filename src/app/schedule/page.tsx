@@ -5,6 +5,7 @@ import Link from "next/link";
 import MatchdayCard from "@/components/MatchdayCard";
 import Header from "@/components/Header";
 import { getPublicLeagueData } from "@/lib/publicData";
+import { getLeagueIdFromRequest } from "@/lib/getLeagueFromHost";
 
 export const metadata = {
   title: "Schedule | T9L",
@@ -14,9 +15,14 @@ export default async function SchedulePage() {
   const session = await getServerSession(authOptions);
   const userTeamId = session?.teamId;
 
+  // v1.23.0 — resolve the active league from the request Host header so
+  // /schedule rendered at tamachi.t9l.me shows tamachi's matchdays, not
+  // the default league's. Pre-v1.23.0 every render hit the default league.
+  const leagueId = await getLeagueIdFromRequest();
+
   let data;
   try {
-    data = await getPublicLeagueData();
+    data = await getPublicLeagueData(leagueId ?? undefined);
   } catch {
     return (
       <div className="flex items-center justify-center min-h-dvh bg-midnight text-white px-6 text-center">

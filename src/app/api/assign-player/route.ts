@@ -8,6 +8,7 @@ import { prisma } from "@/lib/prisma";
 import { revalidate } from "@/lib/revalidate";
 import { setMappingOrThrow } from "@/lib/playerMappingStore";
 import { playerIdToSlug, slugToPlayerId } from "@/lib/ids";
+import { getLeagueIdFromRequest } from "@/lib/getLeagueFromHost";
 
 function slugify(name: string): string {
   return name
@@ -190,13 +191,25 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "playerId required" }, { status: 400 });
   }
 
+  // v1.23.0 — resolve the active league from the request Host so subdomain
+  // link flows validate against the per-subdomain league's roster. Pre-fix
+  // every link checked against the default league regardless of the host
+  // the user was on.
+  const leagueId = await getLeagueIdFromRequest();
+  if (!leagueId) {
+    return NextResponse.json(
+      { error: "League not found for this host" },
+      { status: 404 },
+    );
+  }
+
   // Validate the player exists in the public roster (works for both Sheets
   // and DB data sources). The public id is a slug; DB Player.id is the same
   // slug carrying a "p-" prefix. v1.8.2 — uses `getPlayerByPublicId` instead
   // of the full `getPublicLeagueData()` so the validation skips the
   // (uncached) RSVP merge fanout — that read is load-bearing for dashboard
   // renders but pure overhead for write-path validation.
-  const player = await getPlayerByPublicId(playerId);
+  const player = await getPlayerByPublicId(playerId, leagueId);
 
   if (!player) {
     return NextResponse.json({ error: "Player not found" }, { status: 404 });

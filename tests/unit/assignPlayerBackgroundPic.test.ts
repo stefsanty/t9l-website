@@ -73,6 +73,11 @@ vi.mock('@/lib/publicData', () => ({
 vi.mock('next/cache', () => ({
   revalidatePath: vi.fn(),
   revalidateTag: vi.fn(),
+  unstable_cache: <T extends (...args: unknown[]) => unknown>(fn: T) => fn,
+}))
+
+vi.mock('@/lib/getLeagueFromHost', () => ({
+  getLeagueIdFromRequest: vi.fn().mockResolvedValue('l-minato-2025'),
 }))
 
 vi.mock('@vercel/functions', () => ({

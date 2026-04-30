@@ -1,7 +1,7 @@
 import { findNextMatchday } from "@/lib/stats";
 import Dashboard from "@/components/Dashboard";
 import LeaguePublicView from "@/components/LeaguePublicView";
-import { getLeagueFromHost } from "@/lib/getLeagueFromHost";
+import { getLeagueFromHost, getLeagueIdFromRequest } from "@/lib/getLeagueFromHost";
 import { getLeagueBySubdomain } from "@/lib/admin-data";
 import { getPublicLeagueData } from "@/lib/publicData";
 
@@ -19,9 +19,12 @@ export default async function Home() {
   // Apex: source-of-truth dispatcher. Default reads Sheets per
   // Setting.public.dataSource (PR 4 flips this to 'db'); both paths
   // produce the same `LeagueData` shape so consumers don't change.
+  // v1.23.0 — pass through the resolved leagueId so the cache key matches
+  // the subdomain-aware /schedule, /stats, /assign-player call sites.
+  const leagueId = await getLeagueIdFromRequest();
   let data;
   try {
-    data = await getPublicLeagueData();
+    data = await getPublicLeagueData(leagueId ?? undefined);
   } catch {
     return (
       <div className="flex items-center justify-center min-h-dvh bg-midnight text-white px-6 text-center">

@@ -5,6 +5,7 @@ import {
 } from "@/lib/stats";
 import StatsDashboard from "@/components/StatsDashboard";
 import { getPublicLeagueData } from "@/lib/publicData";
+import { getLeagueIdFromRequest } from "@/lib/getLeagueFromHost";
 
 async function fetchPlayerPictures(
   playerIds: string[],
@@ -35,9 +36,13 @@ async function fetchPlayerPictures(
 }
 
 export default async function StatsPage() {
+  // v1.23.0 — resolve active league from the request Host so subdomain
+  // dashboards show their league's stats, not the default league's.
+  const leagueId = await getLeagueIdFromRequest();
+
   let data;
   try {
-    data = await getPublicLeagueData();
+    data = await getPublicLeagueData(leagueId ?? undefined);
   } catch {
     return (
       <div className="flex items-center justify-center min-h-dvh bg-midnight text-white px-6 text-center">
