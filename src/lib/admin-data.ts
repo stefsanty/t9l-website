@@ -202,35 +202,10 @@ export async function getLeague() {
   return prisma.league.findFirst({ orderBy: { createdAt: 'asc' } })
 }
 
-export const getLeagueBySubdomain = unstable_cache(
-  async (subdomain: string) =>
-    prisma.league.findUnique({
-      where: { subdomain },
-      include: {
-        leagueTeams: {
-          include: {
-            team: true,
-            playerAssignments: { include: { player: true } },
-          },
-        },
-        gameWeeks: {
-          include: {
-            matches: {
-              include: {
-                homeTeam: { include: { team: true } },
-                awayTeam: { include: { team: true } },
-                goals: { include: { scoringTeam: true } },
-              },
-              orderBy: { playedAt: 'asc' },
-            },
-          },
-          orderBy: { weekNumber: 'asc' },
-        },
-      },
-    }),
-  ['league-by-subdomain'],
-  { revalidate: 60, tags: ['leagues'] },
-)
+// `getLeagueBySubdomain` was removed in v1.25.0 — its only caller was the
+// now-deleted `LeaguePublicView`. Subdomain rendering now goes through
+// `Dashboard` fed by `getPublicLeagueData(leagueId)`, where the leagueId
+// comes from `lib/getLeagueFromHost.ts#getLeagueIdFromRequest()`.
 
 export async function getAllPlayers() {
   return prisma.player.findMany({

@@ -38,20 +38,13 @@ export function extractSubdomain(host: string): string | null {
   return candidate
 }
 
-/**
- * Reads the Host header from the incoming request and resolves the matching
- * League from the database via the subdomain field.
- *
- * Returns the League row if found, otherwise null (caller should fall back to
- * default Google Sheets-backed league or default DB league as appropriate).
- */
-export async function getLeagueFromHost() {
-  const hdrs = await headers()
-  const host = (hdrs.get('host') ?? '').split(':')[0] // strip port
-  const subdomain = extractSubdomain(host)
-  if (!subdomain) return null
-  return prisma.league.findFirst({ where: { subdomain } })
-}
+// `getLeagueFromHost` (returning the full League row) was removed in v1.25.0
+// — its only caller was the apex `app/page.tsx` deciding between the
+// default-league `Dashboard` and the subdomain `LeaguePublicView`. v1.25.0
+// converges both paths onto `Dashboard` via `getLeagueIdFromRequest()`
+// below + `getPublicLeagueData(leagueId)`, so the full-League fetch at the
+// page boundary became redundant. Use `getLeagueIdFromRequest()` for any
+// future "what league does this request belong to" decision.
 
 const getLeagueIdBySubdomainCached = unstable_cache(
   async (subdomain: string): Promise<string | null> => {
