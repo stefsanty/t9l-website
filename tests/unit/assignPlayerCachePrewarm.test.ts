@@ -87,8 +87,8 @@ beforeEach(() => {
   waitUntilMock.mockImplementation(() => {})
 })
 
-describe('POST /api/assign-player writes the post-write mapping to the store (PR 9 / PR 16 / PR 20)', () => {
-  it('calls setMappingOrThrow(lineId, postWriteMapping) — slug-only shape, no `p-`/`t-` prefix', async () => {
+describe('POST /api/assign-player writes the post-write mapping to the store (PR 9 / PR 16 / PR 20 / v1.26.0)', () => {
+  it('calls setMappingOrThrow(lineId, leagueId, postWriteMapping) — slug-only shape, per-league key', async () => {
     const req = new Request('http://localhost/api/assign-player', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -98,8 +98,9 @@ describe('POST /api/assign-player writes the post-write mapping to the store (PR
     const res = await POST(req)
     expect(res.status).toBe(200)
 
-    // Post-write shape matches getPlayerMappingFromDb in lib/auth.ts.
-    expect(setMappingOrThrowMock).toHaveBeenCalledWith('U-test', {
+    // v1.26.0 — leagueId threads through. Post-write shape matches
+    // getPlayerMappingFromDb in lib/auth.ts.
+    expect(setMappingOrThrowMock).toHaveBeenCalledWith('U-test', 'l-minato-2025', {
       playerId: 'test-player',
       playerName: 'Test Player',
       teamId: 'test-team',
@@ -107,10 +108,10 @@ describe('POST /api/assign-player writes the post-write mapping to the store (PR
   })
 })
 
-describe('DELETE /api/assign-player writes the null sentinel (PR 9 / PR 16 / PR 20)', () => {
-  it('calls setMappingOrThrow(lineId, null) — un-linked state served from the store', async () => {
+describe('DELETE /api/assign-player writes the null sentinel (PR 9 / PR 16 / PR 20 / v1.26.0)', () => {
+  it('calls setMappingOrThrow(lineId, leagueId, null) — un-linked state served from the store at the per-league key', async () => {
     const res = await DELETE()
     expect(res.status).toBe(200)
-    expect(setMappingOrThrowMock).toHaveBeenCalledWith('U-test', null)
+    expect(setMappingOrThrowMock).toHaveBeenCalledWith('U-test', 'l-minato-2025', null)
   })
 })

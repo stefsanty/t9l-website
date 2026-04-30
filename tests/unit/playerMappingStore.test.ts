@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import {
   __setRedisClientForTesting,
+  buildKey,
   getMapping,
   setMapping,
   setMappingOrThrow,
@@ -12,11 +13,19 @@ import {
 const KEY_PREFIX = 't9l:auth:map:'
 const TTL = 60 * 60 * 24 // 24h sliding window
 const NULL_SENTINEL = '__null__'
+const LEAGUE = 'l-default'
+const LEAGUE_OTHER = 'l-tamachi'
 
 const SAMPLE: PlayerMapping = {
   playerId: 'ian-noseda',
   playerName: 'Ian Noseda',
   teamId: 'mariners-fc',
+}
+
+const SAMPLE_OTHER_LEAGUE: PlayerMapping = {
+  playerId: 'ian-noseda',
+  playerName: 'Ian Noseda',
+  teamId: 'fenix-fc',
 }
 
 function makeFakeRedis(initial: Record<string, string> = {}) {
@@ -31,52 +40,100 @@ function makeFakeRedis(initial: Record<string, string> = {}) {
     return had ? 1 : 0
   })
   const expireMock = vi.fn(async (_k: string, _s: number) => 1)
+  // SCAN — yields all matching keys in a single batch then cursor=0. Tests
+  // can override per-case if they want to exercise the multi-batch loop.
+  const scanMock = vi.fn(
+    async (_cursor: string | number, opts?: { match?: string; count?: number }) => {
+      const pat = opts?.match ?? '*'
+      const re = new RegExp('^' + pat.replace(/\*/g, '.*') + '$')
+      const keys = [...store.keys()].filter((k) => re.test(k))
+      // @upstash/redis returns the tuple shape; either is acceptable.
+      return ['0', keys] as [string, string[]]
+    },
+  )
   const client: RedisLike = {
     get: getMock,
     set: setMock,
     del: delMock,
     expire: expireMock,
+    scan: scanMock,
   }
-  return { client, store, getMock, setMock, delMock, expireMock }
+  return { client, store, getMock, setMock, delMock, expireMock, scanMock }
 }
 
 beforeEach(() => {
   __setRedisClientForTesting(null)
 })
 
-describe('playerMappingStore.getMapping — tri-state result (PR 16 / v1.5.0)', () => {
-  it('returns { status: hit, value } for a real mapping (string-encoded JSON)', async () => {
+// ─────────────────────────────────────────────────────────────────────────────
+// v1.26.0 — per-league key shape
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('playerMappingStore.buildKey — v1.26.0 per-league key shape', () => {
+  it('produces "t9l:auth:map:<leagueId>:<lineId>"', () => {
+    expect(buildKey('U1', 'l-default')).toBe('t9l:auth:map:l-default:U1')
+    expect(buildKey('U2', 'l-tamachi')).toBe('t9l:auth:map:l-tamachi:U2')
+  })
+
+  it('keeps the t9l:auth:map: namespace prefix (regression target)', () => {
+    expect(buildKey('U1', LEAGUE).startsWith(KEY_PREFIX)).toBe(true)
+  })
+
+  it('different leagues for the same lineId produce different keys (so reads / writes are isolated)', () => {
+    expect(buildKey('U1', LEAGUE)).not.toBe(buildKey('U1', LEAGUE_OTHER))
+  })
+})
+
+describe('playerMappingStore.getMapping — tri-state result (v1.26.0)', () => {
+  it('returns { status: hit, value } for a real per-league mapping', async () => {
     const { client, getMock } = makeFakeRedis({
-      [`${KEY_PREFIX}U1`]: JSON.stringify(SAMPLE),
+      [`${KEY_PREFIX}${LEAGUE}:U1`]: JSON.stringify(SAMPLE),
     })
     __setRedisClientForTesting(client)
 
-    const result = await getMapping('U1')
+    const result = await getMapping('U1', LEAGUE)
 
     expect(result).toEqual({ status: 'hit', value: SAMPLE })
-    expect(getMock).toHaveBeenCalledWith(`${KEY_PREFIX}U1`)
+    expect(getMock).toHaveBeenCalledWith(`${KEY_PREFIX}${LEAGUE}:U1`)
     expect(getMock).toHaveBeenCalledTimes(1)
   })
 
-  it('returns { status: hit, value: null } for the null sentinel (orphan cached)', async () => {
+  it('returns { status: hit, value: null } for the null sentinel (orphan cached for this league)', async () => {
     const { client } = makeFakeRedis({
-      [`${KEY_PREFIX}U-orphan`]: NULL_SENTINEL,
+      [`${KEY_PREFIX}${LEAGUE}:U-orphan`]: NULL_SENTINEL,
     })
     __setRedisClientForTesting(client)
 
-    const result = await getMapping('U-orphan')
+    const result = await getMapping('U-orphan', LEAGUE)
     expect(result).toEqual({ status: 'hit', value: null })
   })
 
-  it('returns { status: miss } when the key is not in Redis (key not present)', async () => {
-    // The CRITICAL behavioral change for v1.5.0: miss is now distinct from
-    // error. The auth callback uses miss → null (no Prisma fallback) and
-    // error → Prisma fallback. Pre-v1.5.0 they were both `undefined`.
+  it('returns { status: miss } when the per-league key is not in Redis', async () => {
+    // v1.26.0 — miss now means "cold per-(leagueId, lineId) cache OR genuine
+    // orphan in this league". The auth callback's miss policy: fall through
+    // to Prisma + write back. Pre-v1.26.0 miss meant "definitely orphan"
+    // because the key was league-blind; that semantic is gone.
     const { client } = makeFakeRedis({})
     __setRedisClientForTesting(client)
 
-    const result = await getMapping('U-never-stored')
+    const result = await getMapping('U-never-stored', LEAGUE)
     expect(result).toEqual({ status: 'miss' })
+  })
+
+  it('isolates reads across leagues — a hit in League X does not surface in League Y', async () => {
+    // Regression target for v1.26.0 — pre-v1.26.0 the namespace was
+    // league-blind, so this test would have failed with both reads hitting
+    // the same key.
+    const { client } = makeFakeRedis({
+      [`${KEY_PREFIX}${LEAGUE}:U1`]: JSON.stringify(SAMPLE),
+    })
+    __setRedisClientForTesting(client)
+
+    const inDefault = await getMapping('U1', LEAGUE)
+    const inTamachi = await getMapping('U1', LEAGUE_OTHER)
+
+    expect(inDefault).toEqual({ status: 'hit', value: SAMPLE })
+    expect(inTamachi).toEqual({ status: 'miss' })
   })
 
   it('returns { status: error, reason: "redis-error" } when Redis throws (transient outage)', async () => {
@@ -87,11 +144,11 @@ describe('playerMappingStore.getMapping — tri-state result (PR 16 / v1.5.0)', 
       set: vi.fn(),
       del: vi.fn(),
       expire: vi.fn(async () => 1),
+      scan: vi.fn(async () => ['0', []] as [string, string[]]),
     }
     __setRedisClientForTesting(fakeRedis)
 
-    const result = await getMapping('U1')
-
+    const result = await getMapping('U1', LEAGUE)
     expect(result).toEqual({ status: 'error', reason: 'redis-error' })
   })
 
@@ -105,7 +162,7 @@ describe('playerMappingStore.getMapping — tri-state result (PR 16 / v1.5.0)', 
     __setRedisClientForTesting(null)
 
     try {
-      const result = await getMapping('U1')
+      const result = await getMapping('U1', LEAGUE)
       expect(result).toEqual({ status: 'error', reason: 'no-client' })
     } finally {
       if (original.url) process.env.KV_REST_API_URL = original.url
@@ -119,10 +176,11 @@ describe('playerMappingStore.getMapping — tri-state result (PR 16 / v1.5.0)', 
       set: vi.fn(),
       del: vi.fn(),
       expire: vi.fn(async () => 1),
+      scan: vi.fn(async () => ['0', []] as [string, string[]]),
     }
     __setRedisClientForTesting(fakeRedis)
 
-    const result = await getMapping('U-auto-parsed')
+    const result = await getMapping('U-auto-parsed', LEAGUE)
     expect(result).toEqual({ status: 'hit', value: SAMPLE })
   })
 
@@ -132,27 +190,26 @@ describe('playerMappingStore.getMapping — tri-state result (PR 16 / v1.5.0)', 
       set: vi.fn(),
       del: vi.fn(),
       expire: vi.fn(async () => 1),
+      scan: vi.fn(async () => ['0', []] as [string, string[]]),
     }
     __setRedisClientForTesting(fakeRedis)
 
-    const result = await getMapping('U-malformed')
+    const result = await getMapping('U-malformed', LEAGUE)
     expect(result.status).toBe('miss')
   })
 })
 
-describe('playerMappingStore.getMapping — sliding TTL (PR 16 / v1.5.0)', () => {
-  it('fires expire(key, 24h) on every hit (sliding window — active users never expire)', async () => {
+describe('playerMappingStore.getMapping — sliding TTL (v1.26.0)', () => {
+  it('fires expire(per-league key, 24h) on every hit', async () => {
     const { client, expireMock } = makeFakeRedis({
-      [`${KEY_PREFIX}U1`]: JSON.stringify(SAMPLE),
+      [`${KEY_PREFIX}${LEAGUE}:U1`]: JSON.stringify(SAMPLE),
     })
     __setRedisClientForTesting(client)
 
-    await getMapping('U1')
-
-    // The expire is fire-and-forget; allow the microtask queue to drain.
+    await getMapping('U1', LEAGUE)
     await new Promise((r) => setImmediate(r))
 
-    expect(expireMock).toHaveBeenCalledWith(`${KEY_PREFIX}U1`, TTL)
+    expect(expireMock).toHaveBeenCalledWith(`${KEY_PREFIX}${LEAGUE}:U1`, TTL)
     expect(expireMock).toHaveBeenCalledTimes(1)
   })
 
@@ -160,7 +217,7 @@ describe('playerMappingStore.getMapping — sliding TTL (PR 16 / v1.5.0)', () =>
     const { client, expireMock } = makeFakeRedis({})
     __setRedisClientForTesting(client)
 
-    await getMapping('U-never-stored')
+    await getMapping('U-never-stored', LEAGUE)
     await new Promise((r) => setImmediate(r))
 
     expect(expireMock).not.toHaveBeenCalled()
@@ -174,55 +231,68 @@ describe('playerMappingStore.getMapping — sliding TTL (PR 16 / v1.5.0)', () =>
       expire: vi.fn(async () => {
         throw new Error('expire failed')
       }),
+      scan: vi.fn(async () => ['0', []] as [string, string[]]),
     }
     __setRedisClientForTesting(fakeRedis)
 
-    // The .catch is on the fire-and-forget Promise. The hit must still
-    // return successfully; the rejection is swallowed.
-    const result = await getMapping('U1')
+    const result = await getMapping('U1', LEAGUE)
     expect(result).toEqual({ status: 'hit', value: SAMPLE })
   })
 })
 
-describe('playerMappingStore.setMapping', () => {
-  it('writes a JSON-stringified mapping with the 24h TTL', async () => {
+describe('playerMappingStore.setMapping — v1.26.0 per-league write', () => {
+  it('writes a JSON-stringified mapping under the per-league key with the 24h TTL', async () => {
     const { client, setMock, store } = makeFakeRedis({})
     __setRedisClientForTesting(client)
 
-    await setMapping('U1', SAMPLE)
+    await setMapping('U1', LEAGUE, SAMPLE)
 
     expect(setMock).toHaveBeenCalledWith(
-      `${KEY_PREFIX}U1`,
+      `${KEY_PREFIX}${LEAGUE}:U1`,
       JSON.stringify(SAMPLE),
       { ex: TTL },
     )
-    expect(store.get(`${KEY_PREFIX}U1`)).toBe(JSON.stringify(SAMPLE))
+    expect(store.get(`${KEY_PREFIX}${LEAGUE}:U1`)).toBe(JSON.stringify(SAMPLE))
   })
 
-  it('writes the null sentinel for a null mapping (so unmapped lineIds resolve fast)', async () => {
+  it('writes the null sentinel for a null mapping (per-league orphan cache)', async () => {
     const { client, setMock, store } = makeFakeRedis({})
     __setRedisClientForTesting(client)
 
-    await setMapping('U-orphan', null)
+    await setMapping('U-orphan', LEAGUE, null)
 
     expect(setMock).toHaveBeenCalledWith(
-      `${KEY_PREFIX}U-orphan`,
+      `${KEY_PREFIX}${LEAGUE}:U-orphan`,
       NULL_SENTINEL,
       { ex: TTL },
     )
-    expect(store.get(`${KEY_PREFIX}U-orphan`)).toBe(NULL_SENTINEL)
+    expect(store.get(`${KEY_PREFIX}${LEAGUE}:U-orphan`)).toBe(NULL_SENTINEL)
+  })
+
+  it('different leagues for the same lineId persist independently — writes are isolated', async () => {
+    const { client } = makeFakeRedis({})
+    __setRedisClientForTesting(client)
+
+    await setMapping('U1', LEAGUE, SAMPLE)
+    await setMapping('U1', LEAGUE_OTHER, SAMPLE_OTHER_LEAGUE)
+
+    expect(await getMapping('U1', LEAGUE)).toEqual({ status: 'hit', value: SAMPLE })
+    expect(await getMapping('U1', LEAGUE_OTHER)).toEqual({
+      status: 'hit',
+      value: SAMPLE_OTHER_LEAGUE,
+    })
   })
 
   it('round-trips through getMapping for both real and null values', async () => {
     const { client } = makeFakeRedis({})
     __setRedisClientForTesting(client)
 
-    await setMapping('U-real', SAMPLE)
-    await setMapping('U-null', null)
+    await setMapping('U-real', LEAGUE, SAMPLE)
+    await setMapping('U-null', LEAGUE, null)
 
-    expect(await getMapping('U-real')).toEqual({ status: 'hit', value: SAMPLE })
-    expect(await getMapping('U-null')).toEqual({ status: 'hit', value: null })
-    expect(await getMapping('U-untouched')).toEqual({ status: 'miss' })
+    expect(await getMapping('U-real', LEAGUE)).toEqual({ status: 'hit', value: SAMPLE })
+    expect(await getMapping('U-null', LEAGUE)).toEqual({ status: 'hit', value: null })
+    expect(await getMapping('U-untouched', LEAGUE)).toEqual({ status: 'miss' })
   })
 
   it('swallows Redis errors (write failures must not break auth or admin actions)', async () => {
@@ -233,49 +303,124 @@ describe('playerMappingStore.setMapping', () => {
       }),
       del: vi.fn(),
       expire: vi.fn(async () => 1),
+      scan: vi.fn(async () => ['0', []] as [string, string[]]),
     }
     __setRedisClientForTesting(fakeRedis)
 
-    await expect(setMapping('U1', SAMPLE)).resolves.toBeUndefined()
+    await expect(setMapping('U1', LEAGUE, SAMPLE)).resolves.toBeUndefined()
   })
 })
 
-describe('playerMappingStore.deleteMapping', () => {
-  it('deletes the key for the given lineId', async () => {
+describe('playerMappingStore.deleteMapping — v1.26.0 per-league + SCAN-and-DEL', () => {
+  it('with leagueId: deletes the single per-league key', async () => {
     const { client, delMock, store } = makeFakeRedis({
-      [`${KEY_PREFIX}U1`]: JSON.stringify(SAMPLE),
+      [`${KEY_PREFIX}${LEAGUE}:U1`]: JSON.stringify(SAMPLE),
+      [`${KEY_PREFIX}${LEAGUE_OTHER}:U1`]: JSON.stringify(SAMPLE_OTHER_LEAGUE),
+    })
+    __setRedisClientForTesting(client)
+
+    await deleteMapping('U1', LEAGUE)
+
+    expect(delMock).toHaveBeenCalledWith(`${KEY_PREFIX}${LEAGUE}:U1`)
+    expect(store.has(`${KEY_PREFIX}${LEAGUE}:U1`)).toBe(false)
+    // The other league's key MUST NOT be touched.
+    expect(store.has(`${KEY_PREFIX}${LEAGUE_OTHER}:U1`)).toBe(true)
+  })
+
+  it('without leagueId: SCANs and DELs every league this lineId is cached in', async () => {
+    const { client, scanMock, store } = makeFakeRedis({
+      [`${KEY_PREFIX}${LEAGUE}:U1`]: JSON.stringify(SAMPLE),
+      [`${KEY_PREFIX}${LEAGUE_OTHER}:U1`]: JSON.stringify(SAMPLE_OTHER_LEAGUE),
+      // Other LINE users in same leagues — must not be touched.
+      [`${KEY_PREFIX}${LEAGUE}:U2`]: JSON.stringify(SAMPLE),
+      [`${KEY_PREFIX}${LEAGUE_OTHER}:U-other`]: JSON.stringify(SAMPLE),
     })
     __setRedisClientForTesting(client)
 
     await deleteMapping('U1')
 
-    expect(delMock).toHaveBeenCalledWith(`${KEY_PREFIX}U1`)
-    expect(store.has(`${KEY_PREFIX}U1`)).toBe(false)
+    expect(scanMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ match: `${KEY_PREFIX}*:U1` }),
+    )
+    // Both U1 entries gone; the unrelated entries survive.
+    expect(store.has(`${KEY_PREFIX}${LEAGUE}:U1`)).toBe(false)
+    expect(store.has(`${KEY_PREFIX}${LEAGUE_OTHER}:U1`)).toBe(false)
+    expect(store.has(`${KEY_PREFIX}${LEAGUE}:U2`)).toBe(true)
+    expect(store.has(`${KEY_PREFIX}${LEAGUE_OTHER}:U-other`)).toBe(true)
   })
 
-  it('after deleteMapping, getMapping returns miss (not the sentinel)', async () => {
+  it('after deleteMapping with leagueId, getMapping returns miss for that league only', async () => {
     const { client } = makeFakeRedis({})
     __setRedisClientForTesting(client)
 
-    await setMapping('U1', SAMPLE)
-    expect(await getMapping('U1')).toEqual({ status: 'hit', value: SAMPLE })
+    await setMapping('U1', LEAGUE, SAMPLE)
+    await setMapping('U1', LEAGUE_OTHER, SAMPLE_OTHER_LEAGUE)
+    await deleteMapping('U1', LEAGUE)
 
-    await deleteMapping('U1')
-    expect(await getMapping('U1')).toEqual({ status: 'miss' })
+    expect(await getMapping('U1', LEAGUE)).toEqual({ status: 'miss' })
+    expect(await getMapping('U1', LEAGUE_OTHER)).toEqual({
+      status: 'hit',
+      value: SAMPLE_OTHER_LEAGUE,
+    })
   })
 
-  it('is a no-op for null/undefined/empty lineId', async () => {
-    const { client, delMock } = makeFakeRedis({})
+  it('is a no-op for null/undefined/empty lineId (with or without leagueId)', async () => {
+    const { client, delMock, scanMock } = makeFakeRedis({})
     __setRedisClientForTesting(client)
 
     await deleteMapping(null)
     await deleteMapping(undefined)
     await deleteMapping('')
+    await deleteMapping(null, LEAGUE)
 
     expect(delMock).not.toHaveBeenCalled()
+    expect(scanMock).not.toHaveBeenCalled()
   })
 
-  it('swallows Redis errors (delete failures must not break the write site)', async () => {
+  it('SCAN walks multi-batch cursors until cursor=0 (real Upstash protocol)', async () => {
+    // Force the SCAN to yield two batches so the cursor loop is exercised.
+    let call = 0
+    const scanMock = vi.fn(
+      async (_cursor: string | number, _opts?: { match?: string; count?: number }) => {
+        call++
+        if (call === 1) return ['42', [`${KEY_PREFIX}${LEAGUE}:U1`]] as [string, string[]]
+        return ['0', [`${KEY_PREFIX}${LEAGUE_OTHER}:U1`]] as [string, string[]]
+      },
+    )
+    const delMock = vi.fn(async () => 1)
+    const client: RedisLike = {
+      get: vi.fn(),
+      set: vi.fn(),
+      del: delMock,
+      expire: vi.fn(async () => 1),
+      scan: scanMock,
+    }
+    __setRedisClientForTesting(client)
+
+    await deleteMapping('U1')
+
+    expect(scanMock).toHaveBeenCalledTimes(2)
+    expect(delMock).toHaveBeenCalledWith(`${KEY_PREFIX}${LEAGUE}:U1`)
+    expect(delMock).toHaveBeenCalledWith(`${KEY_PREFIX}${LEAGUE_OTHER}:U1`)
+  })
+
+  it('swallows Redis errors during SCAN (delete failures must not break the write site)', async () => {
+    const fakeRedis: RedisLike = {
+      get: vi.fn(),
+      set: vi.fn(),
+      del: vi.fn(),
+      expire: vi.fn(async () => 1),
+      scan: vi.fn(async () => {
+        throw new Error('scan boom')
+      }),
+    }
+    __setRedisClientForTesting(fakeRedis)
+
+    await expect(deleteMapping('U1')).resolves.toBeUndefined()
+  })
+
+  it('swallows Redis errors during single-key DEL', async () => {
     const fakeRedis: RedisLike = {
       get: vi.fn(),
       set: vi.fn(),
@@ -283,19 +428,16 @@ describe('playerMappingStore.deleteMapping', () => {
         throw new Error('boom')
       }),
       expire: vi.fn(async () => 1),
+      scan: vi.fn(async () => ['0', []] as [string, string[]]),
     }
     __setRedisClientForTesting(fakeRedis)
 
-    await expect(deleteMapping('U1')).resolves.toBeUndefined()
+    await expect(deleteMapping('U1', LEAGUE)).resolves.toBeUndefined()
   })
 })
 
 describe('playerMappingStore when Redis is not configured', () => {
   it('getMapping returns error/no-client; setMapping/deleteMapping are no-ops', async () => {
-    // No KV env vars + no test override → getClient() returns null. Under
-    // v1.5.0 this is treated as `error: no-client` so the auth callback
-    // falls through to the defensive Prisma path. Writes are silent no-ops
-    // (typical local-dev-without-Upstash story).
     const original = {
       url: process.env.KV_REST_API_URL,
       token: process.env.KV_REST_API_TOKEN,
@@ -305,11 +447,12 @@ describe('playerMappingStore when Redis is not configured', () => {
     __setRedisClientForTesting(null)
 
     try {
-      expect(await getMapping('U1')).toEqual({
+      expect(await getMapping('U1', LEAGUE)).toEqual({
         status: 'error',
         reason: 'no-client',
       })
-      await expect(setMapping('U1', SAMPLE)).resolves.toBeUndefined()
+      await expect(setMapping('U1', LEAGUE, SAMPLE)).resolves.toBeUndefined()
+      await expect(deleteMapping('U1', LEAGUE)).resolves.toBeUndefined()
       await expect(deleteMapping('U1')).resolves.toBeUndefined()
     } finally {
       if (original.url) process.env.KV_REST_API_URL = original.url
@@ -319,41 +462,42 @@ describe('playerMappingStore when Redis is not configured', () => {
 })
 
 describe('namespace isolation', () => {
-  it('uses a t9l:auth:map: prefix that does not collide with i18n or legacy keys', async () => {
+  it('uses a t9l:auth:map: prefix that does not collide with other namespaces', async () => {
     const { client, setMock } = makeFakeRedis({})
     __setRedisClientForTesting(client)
 
-    await setMapping('U1', SAMPLE)
+    await setMapping('U1', LEAGUE, SAMPLE)
 
     const writtenKey = setMock.mock.calls[0][0] as string
     expect(writtenKey.startsWith('t9l:auth:map:')).toBe(true)
     expect(writtenKey.startsWith('t9l:i18n:')).toBe(false)
+    expect(writtenKey.startsWith('t9l:rsvp:')).toBe(false)
     expect(writtenKey).not.toBe('line-player-map')
   })
 })
 
-describe('playerMappingStore.setMappingOrThrow — v1.8.0 throwing variant', () => {
-  it('writes the mapping with the same shape as setMapping on success', async () => {
+describe('playerMappingStore.setMappingOrThrow — v1.8.0 throwing variant + v1.26.0 per-league', () => {
+  it('writes the per-league mapping with the same shape as setMapping on success', async () => {
     const { client, setMock } = makeFakeRedis({})
     __setRedisClientForTesting(client)
 
-    await setMappingOrThrow('U1', SAMPLE)
+    await setMappingOrThrow('U1', LEAGUE, SAMPLE)
 
     expect(setMock).toHaveBeenCalledWith(
-      `${KEY_PREFIX}U1`,
+      `${KEY_PREFIX}${LEAGUE}:U1`,
       JSON.stringify(SAMPLE),
       { ex: TTL },
     )
   })
 
-  it('writes the null sentinel for unlinks', async () => {
+  it('writes the null sentinel for unlinks at the per-league key', async () => {
     const { client, setMock } = makeFakeRedis({})
     __setRedisClientForTesting(client)
 
-    await setMappingOrThrow('U-orphan', null)
+    await setMappingOrThrow('U-orphan', LEAGUE, null)
 
     expect(setMock).toHaveBeenCalledWith(
-      `${KEY_PREFIX}U-orphan`,
+      `${KEY_PREFIX}${LEAGUE}:U-orphan`,
       NULL_SENTINEL,
       { ex: TTL },
     )
@@ -364,7 +508,7 @@ describe('playerMappingStore.setMappingOrThrow — v1.8.0 throwing variant', () 
     setMock.mockRejectedValueOnce(new Error('Upstash unreachable'))
     __setRedisClientForTesting(client)
 
-    await expect(setMappingOrThrow('U1', SAMPLE)).rejects.toThrow(
+    await expect(setMappingOrThrow('U1', LEAGUE, SAMPLE)).rejects.toThrow(
       'Upstash unreachable',
     )
   })
@@ -379,7 +523,9 @@ describe('playerMappingStore.setMappingOrThrow — v1.8.0 throwing variant', () 
     __setRedisClientForTesting(null)
 
     try {
-      await expect(setMappingOrThrow('U1', SAMPLE)).resolves.toBeUndefined()
+      await expect(
+        setMappingOrThrow('U1', LEAGUE, SAMPLE),
+      ).resolves.toBeUndefined()
     } finally {
       if (original.url) process.env.KV_REST_API_URL = original.url
       if (original.token) process.env.KV_REST_API_TOKEN = original.token

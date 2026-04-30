@@ -21,21 +21,28 @@ import { parseJstDateTimeLocal, parseJstDateOnly } from '@/lib/jst'
  * Mirror of the v1.8.0 inversion that ships the public hot paths
  * (`/api/assign-player`, `/api/rsvp`): Redis is a secondary store on the
  * admin path (admin pages re-read Prisma directly via the canonical
- * `revalidate` helper's path bust), so
- * the pre-warm can run in `waitUntil`. Drift on Redis failure surfaces in
- * the structured log; recoverable via `scripts/auditRedisVsPrisma.ts`.
+ * `revalidate` helper's path bust), so the pre-warm can run in
+ * `waitUntil`. Drift on Redis failure surfaces in the structured log;
+ * recoverable via `scripts/auditRedisVsPrisma.ts`.
+ *
+ * v1.26.0 — per-league key. `adminLinkLineToPlayer` operates within an
+ * explicit leagueId so we pre-warm just that league's key. The other
+ * leagues this lineId might be cached in are deliberately left alone —
+ * an admin link in League X shouldn't churn League Y's cache.
  */
 function deferSetMapping(
   op: 'admin-link' | 'admin-update' | 'admin-create',
   lineId: string,
+  leagueId: string,
   mapping: PlayerMapping | null,
 ): void {
   waitUntil(
-    setMapping(lineId, mapping).catch((err) =>
+    setMapping(lineId, leagueId, mapping).catch((err) =>
       console.error(
-        '[v1.13.0 DRIFT] kind=playerMapping op=%s lineId=%s err=%o',
+        '[v1.13.0 DRIFT] kind=playerMapping op=%s lineId=%s leagueId=%s err=%o',
         op,
         lineId,
+        leagueId,
         err,
       ),
     ),
@@ -338,18 +345,19 @@ export async function adminLinkLineToPlayer(input: {
 
   // Pre-warm the JWT-callback mapping cache (PR 9) with the post-write
   // relation-include shape, so the next /api/auth/session for this lineId
-  // hits cache rather than the cold Prisma findUnique. Re-uses the canonical
-  // `getPlayerMappingFromDb` slug-stripping logic so the cached shape stays
-  // identical to what the auth path would have computed itself. Deferred via
-  // `waitUntil` (v1.13.0) — admin pages re-read Prisma directly so the Redis
-  // pre-warm doesn't need to block the response.
-  const fresh = await getPlayerMappingFromDb(lineId)
-  deferSetMapping('admin-link', lineId, fresh)
+  // hits cache rather than the cold Prisma findUnique. v1.26.0 — pass the
+  // leagueId to both the Prisma resolver (so the right per-league
+  // assignment is picked) AND the cache write (per-league key).
+  const fresh = await getPlayerMappingFromDb(lineId, leagueId)
+  deferSetMapping('admin-link', lineId, leagueId, fresh)
 
   // If we just clobbered a prior lineId on the target player, also clear
   // its Redis mapping — that LINE user is now an orphan from this player's
   // perspective and a stale Redis hit would resolve them to the wrong
-  // player on their next session refresh.
+  // player on their next session refresh. v1.26.0 — clear across ALL
+  // leagues the prior lineId might be cached in (admin remap is a
+  // global change to the lineId-to-Player binding, not specific to this
+  // league).
   if (targetPriorLineId && targetPriorLineId !== lineId) {
     await deleteMapping(targetPriorLineId)
   }
@@ -388,11 +396,14 @@ export async function adminClearLineLink(input: {
     data: { lineId: null },
   })
 
-  // Invalidate the Redis mapping rather than `setMapping(lineId, null)` —
+  // Invalidate the Redis mapping rather than `setMapping(lineId, leagueId, null)` —
   // the v1.5.0 store treats `null` as a sentinel for "known orphan" but
-  // `deleteMapping` is the cleaner reset (next read returns miss → orphan
-  // via the v1.5.0 policy, identical observable behavior).
-  await deleteMapping(before.lineId)
+  // `deleteMapping` is the cleaner reset (next read returns miss → Prisma
+  // fallthrough → write back per the v1.26.0 policy, identical observable
+  // behavior). v1.26.0 — pass the explicit leagueId so we only invalidate
+  // THIS league's per-key entry; the user remains linked in any other
+  // leagues they have assignments in.
+  await deleteMapping(before.lineId, leagueId)
 
   revalidate({ domain: 'admin', paths: [`/admin/leagues/${leagueId}/players`] })
 }

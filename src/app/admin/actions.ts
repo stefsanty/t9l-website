@@ -4,29 +4,26 @@ import { prisma } from '@/lib/prisma'
 import { redirect } from 'next/navigation'
 import { getServerSession } from 'next-auth'
 import { waitUntil } from '@vercel/functions'
-import { authOptions, getPlayerMappingFromDb } from '@/lib/auth'
+import { authOptions } from '@/lib/auth'
 import { revalidate } from '@/lib/revalidate'
-import {
-  deleteMapping,
-  setMapping,
-  type PlayerMapping,
-} from '@/lib/playerMappingStore'
+import { deleteMapping } from '@/lib/playerMappingStore'
 import { parseJstDateOnly } from '@/lib/jst'
 
 /**
- * v1.13.0 — defer the Redis pre-warm off the admin response critical path.
- * Mirror of v1.8.0's public-hot-path inversion. See same helper in
- * `app/admin/leagues/actions.ts` for full rationale.
+ * v1.26.0 — admin write paths that don't operate within a single league
+ * context (`updatePlayer`, `createPlayer`) use this to invalidate the
+ * per-league cache for `lineId` across every league it might be cached
+ * in. Lazy-fill on next read per league. SCAN protocol bounded by the
+ * actual per-(leagueId, lineId) cardinality (typically <5 keys).
  */
-function deferSetMapping(
-  op: 'admin-update' | 'admin-create',
+function deferDeleteMappingAcrossLeagues(
+  op: 'admin-update' | 'admin-update-prior',
   lineId: string,
-  mapping: PlayerMapping | null,
 ): void {
   waitUntil(
-    setMapping(lineId, mapping).catch((err) =>
+    deleteMapping(lineId).catch((err) =>
       console.error(
-        '[v1.13.0 DRIFT] kind=playerMapping op=%s lineId=%s err=%o',
+        '[v1.26.0 DRIFT] kind=playerMapping op=%s lineId=%s err=%o',
         op,
         lineId,
         err,
@@ -86,21 +83,17 @@ export async function updatePlayer(formData: FormData) {
     },
   })
 
-  // OLD lineId — the previous holder no longer maps to this player. Could in
-  // principle be pre-warmed with null, but invalidate is the conservative
-  // choice: the next request re-reads Prisma and self-heals, and the 60s TTL
-  // guards against drift either way. (See PR 9.)
+  // v1.26.0 — `updatePlayer` operates on a global `Player` record without a
+  // single league context (the player may be in N leagues via
+  // PlayerLeagueAssignment). Both the OLD and NEW lineId need their
+  // per-league caches invalidated across every league they might be cached
+  // in. Lazy-fill on next read per league via the v1.26.0 miss policy —
+  // first JWT callback per (leagueId, lineId) hits Prisma + writes back.
   if (priorLineId && priorLineId !== lineId) {
-    await deleteMapping(priorLineId)
+    deferDeleteMappingAcrossLeagues('admin-update-prior', priorLineId)
   }
-  // NEW lineId — pre-warm with the post-write mapping so the just-linked
-  // user's next /api/auth/session hits cache instead of the cold Prisma
-  // relation-include. Uses the canonical slug-stripping helper for shape
-  // parity with the JWT path. Deferred via `waitUntil` (v1.13.0) — admin
-  // re-reads Prisma directly so the Redis pre-warm doesn't need to block.
   if (lineId && lineId !== priorLineId) {
-    const fresh = await getPlayerMappingFromDb(lineId)
-    deferSetMapping('admin-update', lineId, fresh)
+    deferDeleteMappingAcrossLeagues('admin-update', lineId)
   }
 
   revalidate({ domain: 'admin', paths: ['/admin/players', `/admin/players/${id}`] })
@@ -114,16 +107,13 @@ export async function createPlayer(formData: FormData) {
   // TODO: team assignment requires selecting a LeagueTeam (not a bare Team)
   await prisma.player.create({ data: { name, lineId } })
 
-  // If a lineId was supplied, pre-warm the JWT mapping cache (PR 9) with the
-  // post-write shape so the LINE user's next session read hits cache rather
-  // than re-running the cold Prisma findUnique that would otherwise replace
-  // the prior null sentinel. createPlayer doesn't assign a LeagueTeam yet so
-  // the resolved teamId is the empty string — same as what the JWT path would
-  // compute itself for an unassigned player. Deferred via `waitUntil`
-  // (v1.13.0) — see updatePlayer above.
+  // v1.26.0 — `createPlayer` creates a Player with no league assignment, so
+  // there's no per-league cache to pre-warm. If the lineId previously held a
+  // null sentinel in some league's cache, invalidate across all leagues so
+  // the next read picks up the new mapping (still teamId="" until an
+  // assignment is created, but with the new playerId).
   if (lineId) {
-    const fresh = await getPlayerMappingFromDb(lineId)
-    deferSetMapping('admin-create', lineId, fresh)
+    deferDeleteMappingAcrossLeagues('admin-update', lineId)
   }
 
   revalidate({ domain: 'admin', paths: ['/admin/players'] })

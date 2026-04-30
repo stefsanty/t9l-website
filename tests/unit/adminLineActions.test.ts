@@ -104,7 +104,11 @@ describe('adminClearLineLink (v1.10.0 / PR B)', () => {
       where: { id: 'p-test' },
       data: { lineId: null },
     })
-    expect(deleteMappingMock).toHaveBeenCalledWith('U-old-line-id')
+    // v1.26.0 — adminClearLineLink operates within an explicit leagueId
+    // (the league the operator clicked Unlink from), so we DEL just that
+    // league's per-key entry. Prior leagues stay untouched — the user
+    // remains linked there if they had assignments.
+    expect(deleteMappingMock).toHaveBeenCalledWith('U-old-line-id', 'l-spring')
     expect(revalidateMock).toHaveBeenCalledWith({
       domain: 'admin',
       paths: ['/admin/leagues/l-spring/players'],
@@ -149,8 +153,10 @@ describe('adminLinkLineToPlayer remap path (v1.10.0 / PR B)', () => {
 
     // The new lineId is set on the target via setMapping (post-write
     // pre-warm of the JWT cache).
+    // v1.26.0 — per-league setMapping(lineId, leagueId, mapping).
     expect(setMappingMock).toHaveBeenCalledWith(
       'U-new',
+      'l-spring',
       expect.objectContaining({ playerId: 'p-fresh' }),
     )
 
@@ -159,6 +165,11 @@ describe('adminLinkLineToPlayer remap path (v1.10.0 / PR B)', () => {
     // JWT callback for that LINE user, even though Prisma now says U-prior
     // is unlinked. This is the regression target — the v1.9.x code did
     // not call deleteMapping on the target's prior lineId.
+    //
+    // v1.26.0 — admin remap is a global change to the lineId-to-Player
+    // binding (not specific to one league), so the prior lineId's stale
+    // entry is invalidated across ALL leagues via SCAN-and-DEL. Pass
+    // `undefined` (or no second arg) for the league-wildcard path.
     expect(deleteMappingMock).toHaveBeenCalledWith('U-prior')
   })
 
@@ -171,8 +182,10 @@ describe('adminLinkLineToPlayer remap path (v1.10.0 / PR B)', () => {
       leagueId: 'l-spring',
     })
 
+    // v1.26.0 — per-league setMapping(lineId, leagueId, mapping).
     expect(setMappingMock).toHaveBeenCalledWith(
       'U-new',
+      'l-spring',
       expect.objectContaining({ playerId: 'p-fresh' }),
     )
     expect(deleteMappingMock).not.toHaveBeenCalled()
@@ -187,8 +200,10 @@ describe('adminLinkLineToPlayer remap path (v1.10.0 / PR B)', () => {
       leagueId: 'l-spring',
     })
 
+    // v1.26.0 — per-league setMapping(lineId, leagueId, mapping).
     expect(setMappingMock).toHaveBeenCalledWith(
       'U-new',
+      'l-spring',
       expect.objectContaining({ playerId: 'p-fresh' }),
     )
     // Same lineId — no prior mapping to invalidate.

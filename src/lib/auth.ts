@@ -80,7 +80,24 @@ type PlayerMapping = {
 // session values stable across the cutover. One source of truth for the
 // slug-stripping rules; admin write sites + the v1.5.0 backfill script all
 // route through this function.
-export async function getPlayerMappingFromDb(lineId: string): Promise<PlayerMapping | null> {
+//
+// v1.26.0 — `leagueId` parameter resolves the per-league
+// `PlayerLeagueAssignment`. When supplied, the function picks the open
+// assignment (`toGameWeek IS NULL`) within that league, falling back to the
+// most-recent past assignment for that league, falling back to `teamId: ""`
+// (player exists globally but has no roster slot in this league — the
+// caller should treat them as "linked but team-less for this league"; the
+// Dashboard's existing render-null branches handle this gracefully).
+//
+// When `leagueId` is omitted, the legacy "first open assignment" behavior
+// is preserved (only used by the admin write paths that don't know a single
+// league context — e.g. `updatePlayer` / `createPlayer` — and which call
+// `deleteMapping(lineId)` to invalidate the per-league cache and lazy-fill
+// on next read).
+export async function getPlayerMappingFromDb(
+  lineId: string,
+  leagueId?: string | null,
+): Promise<PlayerMapping | null> {
   const player = await prisma.player.findUnique({
     where: { lineId },
     include: {
@@ -91,14 +108,34 @@ export async function getPlayerMappingFromDb(lineId: string): Promise<PlayerMapp
     },
   });
   if (!player) return null;
-  const current =
-    player.leagueAssignments.find((a) => a.toGameWeek === null) ??
-    player.leagueAssignments[0] ??
-    null;
+
+  let assignment;
+  if (leagueId) {
+    // Per-league resolution. Prefer the open assignment for this league;
+    // fall back to the most-recent past assignment in this league. Past
+    // assignments give a sensible "your previous team in this league" view
+    // even after the player rotates out — better than the empty-string
+    // fallback for a player who's still associated with the league.
+    assignment =
+      player.leagueAssignments.find(
+        (a) => a.leagueTeam.leagueId === leagueId && a.toGameWeek === null,
+      ) ??
+      player.leagueAssignments.find((a) => a.leagueTeam.leagueId === leagueId) ??
+      null;
+  } else {
+    // Legacy / league-blind: pre-v1.26.0 behavior. Used only by admin write
+    // paths that need the player's "primary" team for a generic Redis
+    // pre-warm (and even those are migrating to per-league at write time).
+    assignment =
+      player.leagueAssignments.find((a) => a.toGameWeek === null) ??
+      player.leagueAssignments[0] ??
+      null;
+  }
+
   return {
     playerId: playerIdToSlug(player.id),
     playerName: player.name,
-    teamId: current ? teamIdToSlug(current.leagueTeam.team.id) : "",
+    teamId: assignment ? teamIdToSlug(assignment.leagueTeam.team.id) : "",
   };
 }
 
@@ -122,50 +159,70 @@ export async function getPlayerMappingFromDb(lineId: string): Promise<PlayerMapp
  * residual entries decay to empty.
  */
 // Exported under the `__` prefix as the test seam — production code reads
-// the mapping via the JWT callback which calls `getPlayerMapping` internally
-// (see line 87). Unit test in `tests/unit/getPlayerMapping.test.ts` pins the
-// tri-state branches without mounting next-auth.
+// the mapping via the JWT callback which calls `getPlayerMapping` internally.
+// Unit test in `tests/unit/getPlayerMapping.test.ts` pins the tri-state
+// branches without mounting next-auth.
+//
+// v1.26.0 — `leagueId` is required because the read path is now per-league.
+// Tests that ran without a leagueId pre-v1.26.0 got league-blind data;
+// post-v1.26.0 they need to pass an explicit league context.
 export async function __getPlayerMapping_for_testing(
   lineId: string,
+  leagueId: string,
 ): Promise<PlayerMapping | null> {
-  return getPlayerMapping(lineId);
+  return getPlayerMapping(lineId, leagueId);
 }
 
-async function getPlayerMapping(lineId: string): Promise<PlayerMapping | null> {
-  const result = await getMapping(lineId);
+async function getPlayerMapping(
+  lineId: string,
+  leagueId: string,
+): Promise<PlayerMapping | null> {
+  const result = await getMapping(lineId, leagueId);
 
   if (result.status === 'hit') {
     return result.value;
   }
 
   if (result.status === 'miss') {
-    // Canonical "no mapping". Pre-v1.5.0 this fell through to Prisma; the
-    // v1.5.0 architecture treats the store as authoritative — orphans
-    // re-link via /assign-player or wait for an admin to assign them.
-    return null;
+    // v1.26.0 — per-league key namespace. A miss is now ambiguous (cold
+    // per-(leagueId, lineId) cache vs genuine orphan in this league), so
+    // fall through to Prisma + write back. Mirror of v1.7.0's RSVP store
+    // miss policy (per-GameWeek key, miss → Prisma + write-back).
+    try {
+      const fromDb = await getPlayerMappingFromDb(lineId, leagueId);
+      // Pre-warm Redis with the result so the next request hits the store
+      // directly. Best-effort — silent on Redis failure (the auth callback
+      // has the answer it needs regardless).
+      await setMapping(lineId, leagueId, fromDb);
+      return fromDb;
+    } catch (err) {
+      console.error(
+        "[auth] getPlayerMappingFromDb failed in miss-fallthrough for lineId=%s leagueId=%s: %o",
+        lineId,
+        leagueId,
+        err,
+      );
+      return null;
+    }
   }
 
   // Redis is unreachable / errored. Fall back to Prisma defensively to keep
-  // existing sessions alive through transient Upstash outages. On success,
-  // pre-warm the store so the next request finds it directly. Errors here
-  // (Prisma failure) are logged and the user is treated as orphan — same
-  // failure mode as pre-v1.5.0.
+  // existing sessions alive through transient Upstash outages. Do NOT write
+  // back on error — don't amplify an Upstash blip into a write storm
+  // against the same unhealthy endpoint.
   console.warn(
-    "[auth] playerMappingStore unreachable (reason=%s); falling through to Prisma for lineId=%s",
+    "[auth] playerMappingStore unreachable (reason=%s); falling through to Prisma for lineId=%s leagueId=%s",
     result.reason,
     lineId,
+    leagueId,
   );
   try {
-    const fromDb = await getPlayerMappingFromDb(lineId);
-    // Best-effort pre-warm. If Redis is still down, this is a no-op — the
-    // store helper swallows write errors. Either way, the auth callback
-    // already has the answer it needs.
-    await setMapping(lineId, fromDb);
-    return fromDb;
+    return await getPlayerMappingFromDb(lineId, leagueId);
   } catch (err) {
     console.error(
-      "[auth] getPlayerMappingFromDb failed in store-error fallback for lineId=%s: %o",
+      "[auth] getPlayerMappingFromDb failed in store-error fallback for lineId=%s leagueId=%s: %o",
       lineId,
+      leagueId,
       err,
     );
     return null;
@@ -370,22 +427,59 @@ export const authOptions: AuthOptions = {
         );
       }
 
-      // Always check the canonical mapping (Prisma → Redis fallback) so the
-      // session reflects admin-driven (re)assignments and unassignments.
+      // v1.26.0 — resolve the active league from the request host on every
+      // JWT callback so navigating across subdomains updates the per-league
+      // mapping deterministically. apex / dev base / localhost / Vercel
+      // preview → default league id; known subdomain → that league's id;
+      // unknown subdomain → null (no league context — null out player/team
+      // fields rather than serving cross-league data).
+      //
+      // Lazy import to keep the helper out of the static import graph for
+      // non-request-context callers (the recovery script, etc.).
+      let requestLeagueId: string | null = null;
+      try {
+        const { getLeagueIdFromRequest } = await import("@/lib/getLeagueFromHost");
+        requestLeagueId = await getLeagueIdFromRequest();
+      } catch (err) {
+        console.error("[auth] getLeagueIdFromRequest failed in JWT callback: %o", err);
+      }
+      token.leagueId = requestLeagueId;
+
+      // Always check the canonical mapping (Redis-canonical, Prisma fallback
+      // on miss/error per v1.26.0 semantics) so the session reflects
+      // admin-driven (re)assignments and unassignments.
       if (token.lineId) {
-        try {
-          const mapping = await getPlayerMapping(token.lineId as string);
-          if (mapping) {
-            token.playerId = mapping.playerId;
-            token.playerName = mapping.playerName;
-            token.teamId = mapping.teamId;
-          } else {
-            token.playerId = null;
-            token.playerName = null;
-            token.teamId = null;
+        if (!requestLeagueId) {
+          // No league context (apex with no default-league flag set, or
+          // unknown subdomain). Serve the linked user as logged-in but with
+          // no team — Dashboard's render-null branches treat this as
+          // "guest" for in-team affordances, which is the safest behavior.
+          token.playerId = null;
+          token.playerName = null;
+          token.teamId = null;
+        } else {
+          try {
+            const mapping = await getPlayerMapping(
+              token.lineId as string,
+              requestLeagueId,
+            );
+            if (mapping) {
+              token.playerId = mapping.playerId;
+              token.playerName = mapping.playerName;
+              token.teamId = mapping.teamId;
+            } else {
+              token.playerId = null;
+              token.playerName = null;
+              token.teamId = null;
+            }
+          } catch (err) {
+            console.error(
+              "[auth] getPlayerMapping failed for lineId=%s leagueId=%s: %o",
+              token.lineId,
+              requestLeagueId,
+              err,
+            );
           }
-        } catch (err) {
-          console.error('[auth] getPlayerMapping failed for lineId=%s: %o', token.lineId, err);
         }
       }
 
@@ -407,6 +501,11 @@ export const authOptions: AuthOptions = {
       session.teamId = (token.teamId as string | null) ?? null;
       session.linePictureUrl = (token.linePictureUrl as string) ?? "";
       session.isAdmin = (token.isAdmin as boolean) ?? false;
+      // v1.26.0 — surface the league context the JWT was resolved against
+      // so client components can verify which league their session.teamId
+      // refers to. Optional consumer convenience; the playerId/teamId
+      // fields are already per-league correct.
+      session.leagueId = (token.leagueId as string | null) ?? null;
       return session;
     },
   },

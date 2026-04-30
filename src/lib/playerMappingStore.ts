@@ -17,14 +17,37 @@
  *   Upstash REST round-trip (~50–100ms) instead of a possible cold-Neon
  *   relation-include (~1–3s).
  *
+ * Per-league keying (PR β / v1.26.0):
+ *   Pre-v1.26.0 the namespace was a single key per LINE user, league-blind:
+ *   `t9l:auth:map:<lineId>`. With multi-tenant a single LINE user can be
+ *   assigned to different teams in different leagues, so the JWT
+ *   `playerId`/`teamId` resolution is per-league. v1.26.0 namespaces keys
+ *   by leagueId: `t9l:auth:map:<leagueId>:<lineId>`. The old single-key
+ *   namespace is no longer read; existing entries decay over the 24h
+ *   sliding TTL after deploy (no migration required — first-render miss
+ *   per (leagueId, lineId) falls through to Prisma + writes back).
+ *
+ *   Miss policy changes accordingly: pre-v1.26.0 a miss meant "no mapping
+ *   exists for this LINE user" → orphan. Post-v1.26.0 a miss is ambiguous
+ *   (cold per-league cache vs genuine orphan), so the read path falls
+ *   through to Prisma + writes back to Redis on miss. Mirror of the v1.7.0
+ *   RSVP store's miss policy. Error policy stays the same: Prisma fallback
+ *   without write-back (don't amplify Upstash blips into write storms).
+ *
+ *   The function-level signatures gain a required `leagueId` parameter on
+ *   the read + per-league write paths. `deleteMapping(lineId)` retains its
+ *   single-arg shape but now SCANs the per-league namespace internally and
+ *   DELs every match — admin write sites that don't operate within a single
+ *   league context (`updatePlayer`, `createPlayer`) call this for invalidate.
+ *
  * Sliding TTL (24h):
  *   Every read that hits fires an `expire` to bump the key for another 24h.
  *   Active users (any auth refresh inside 24h) effectively never expire.
- *   Long-inactive users → key expires → next access → cache miss → null
- *   (orphan, must re-link). The 24h sliding window also serves as a self-
- *   healing safety net for write-path bugs: if a write site forgets to
- *   update Redis, the stale entry expires within 24h instead of persisting
- *   indefinitely.
+ *   Long-inactive users → key expires → next access → cache miss → fall
+ *   through to Prisma → write back. The 24h sliding window also serves as
+ *   a self-healing safety net for write-path bugs: if a write site forgets
+ *   to update Redis, the stale entry expires within 24h instead of
+ *   persisting indefinitely.
  *
  *   The TTL refresh is fire-and-forget (`expire(...).catch(() => {})`) so it
  *   doesn't add a round-trip to the auth critical path. Worst case: the
@@ -33,16 +56,14 @@
  *
  * Miss vs error semantics:
  *   `getMapping` returns a discriminated union — `hit` / `miss` / `error` —
- *   so the caller (`getPlayerMapping` in `auth.ts`) can apply the v1.5.0
+ *   so the caller (`getPlayerMapping` in `auth.ts`) can apply the v1.26.0
  *   policy:
  *     - `hit`   → return the value (mapping or null sentinel)
- *     - `miss`  → return null (orphan, no mapping)  ← NEW: no Prisma fallback
+ *     - `miss`  → fall through to Prisma + write back (NEW in v1.26.0; was
+ *                 "orphan" pre-v1.26.0 because the key was league-blind)
  *     - `error` → fall through to Prisma defensively (Upstash transient
- *                 outage must NOT null every authenticated session)
- *   The pre-v1.5.0 shape collapsed miss and error into a single `undefined`
- *   return, which the caller couldn't distinguish — both fell through to
- *   Prisma. The new shape preserves Upstash-outage resilience while
- *   removing the steady-state Prisma fallback.
+ *                 outage must NOT null every authenticated session); do NOT
+ *                 write back (don't amplify the outage into a write storm)
  *
  * Recovery:
  *   If Upstash data loss / accidental wipe ever happens, run
@@ -74,6 +95,16 @@ export type RedisLike = {
   set: (key: string, value: string, opts: { ex: number }) => Promise<unknown>
   del: (key: string) => Promise<unknown>
   expire: (key: string, seconds: number) => Promise<unknown>
+  /**
+   * SCAN-style iteration. v1.26.0 uses this when invalidating a lineId
+   * across all leagues (admin write paths that don't operate in a single
+   * league context). Returns `{ cursor, keys }` per call; the helper loops
+   * until cursor is back to '0'.
+   *
+   * `@upstash/redis` exposes `scan(cursor, opts)`; we model it loosely so
+   * tests can implement a deterministic fake.
+   */
+  scan: (cursor: string | number, opts?: { match?: string; count?: number }) => Promise<[string, string[]] | { cursor: string; keys: string[] }>
 }
 
 let testClientOverride: RedisLike | null = null
@@ -107,26 +138,53 @@ async function getClient(): Promise<RedisLike | null> {
   }
 }
 
-function key(lineId: string): string {
-  return `${KEY_PREFIX}${lineId}`
+/**
+ * v1.26.0 — per-league key shape: `t9l:auth:map:<leagueId>:<lineId>`. The
+ * old single-key namespace (`t9l:auth:map:<lineId>`) is no longer read; old
+ * entries decay over the 24h sliding TTL.
+ *
+ * Exported pure helper for unit testing the key shape.
+ */
+export function buildKey(lineId: string, leagueId: string): string {
+  return `${KEY_PREFIX}${leagueId}:${lineId}`
 }
 
 /**
- * Read the stored mapping for a lineId. Returns a discriminated union so
- * the caller can distinguish miss from error — see file head for the
- * v1.5.0 semantics.
+ * Pattern for SCAN-based wildcard invalidation across all leagues a given
+ * lineId is cached in. Used by admin write paths (`updatePlayer` etc.)
+ * that change a player's lineId without operating within a single league
+ * context.
+ */
+function scanPatternForLineId(lineId: string): string {
+  return `${KEY_PREFIX}*:${lineId}`
+}
+
+/**
+ * Read the stored mapping for a (lineId, leagueId) pair. Returns a
+ * discriminated union so the caller can distinguish miss from error —
+ * see file head for the v1.26.0 semantics (miss → Prisma fallthrough +
+ * write-back; error → Prisma fallthrough without write-back).
  *
  * On a hit, fires a fire-and-forget `expire` to bump the sliding TTL by
  * another 24h. The bump runs in the background; the caller doesn't wait.
  */
-export async function getMapping(lineId: string): Promise<StoreReadResult> {
+export async function getMapping(
+  lineId: string,
+  leagueId: string,
+): Promise<StoreReadResult> {
   const client = await getClient()
   if (!client) return { status: 'error', reason: 'no-client' }
+  const k = buildKey(lineId, leagueId)
   let raw: string | null
   try {
-    raw = await client.get(key(lineId))
+    raw = await client.get(k)
   } catch (err) {
-    console.warn('[playerMappingStore] redis GET errored for lineId=%s: %o', lineId, err)
+    console.warn(
+      '[playerMappingStore] redis GET errored for lineId=%s leagueId=%s: %o',
+      lineId,
+      leagueId,
+      err,
+    )
     return { status: 'error', reason: 'redis-error' }
   }
   if (raw === null || raw === undefined) {
@@ -134,15 +192,14 @@ export async function getMapping(lineId: string): Promise<StoreReadResult> {
   }
   // Parse first; only fire the sliding-TTL refresh on a real hit. Refreshing
   // a malformed/unparseable entry is wasted work — it'll be overwritten on
-  // the next `setMapping` for that lineId anyway. Refreshing on `miss` is
-  // impossible (no key) and on `error` we don't even reach this point.
+  // the next `setMapping` for that pair anyway.
   const parsed = parseStoredValue(raw)
   if (parsed.status === 'miss') {
     return { status: 'miss' }
   }
   // Sliding TTL: bump expiry on every confirmed hit. Fire-and-forget so the
   // auth critical path never waits on it.
-  client.expire(key(lineId), TTL_SECONDS).catch(() => {
+  client.expire(k, TTL_SECONDS).catch(() => {
     /* non-fatal — entry will simply expire on its original schedule */
   })
   return parsed
@@ -195,15 +252,21 @@ function parseStoredValue(
  */
 export async function setMapping(
   lineId: string,
+  leagueId: string,
   mapping: PlayerMapping | null,
 ): Promise<void> {
   const client = await getClient()
   if (!client) return
   try {
     const value = mapping === null ? NULL_SENTINEL : JSON.stringify(mapping)
-    await client.set(key(lineId), value, { ex: TTL_SECONDS })
+    await client.set(buildKey(lineId, leagueId), value, { ex: TTL_SECONDS })
   } catch (err) {
-    console.warn('[playerMappingStore] redis SET errored for lineId=%s: %o', lineId, err)
+    console.warn(
+      '[playerMappingStore] redis SET errored for lineId=%s leagueId=%s: %o',
+      lineId,
+      leagueId,
+      err,
+    )
   }
 }
 
@@ -221,31 +284,101 @@ export async function setMapping(
  */
 export async function setMappingOrThrow(
   lineId: string,
+  leagueId: string,
   mapping: PlayerMapping | null,
 ): Promise<void> {
   const client = await getClient()
   if (!client) return
   const value = mapping === null ? NULL_SENTINEL : JSON.stringify(mapping)
-  await client.set(key(lineId), value, { ex: TTL_SECONDS })
+  await client.set(buildKey(lineId, leagueId), value, { ex: TTL_SECONDS })
 }
 
 /**
- * Delete the entry for `lineId`. Used by admin un-link flows where the
- * desired post-write state is "no mapping" but we'd rather have a fresh
- * miss than a stale null sentinel.
+ * Delete the cached mapping(s) for `lineId`. Used by admin un-link flows
+ * where the desired post-write state is "no mapping" but we'd rather have
+ * a fresh miss → Prisma fallthrough than a stale value.
  *
- * Pass `undefined` for a no-op (handy when callers conditionally remove
- * a previous-value lineId that may not exist).
+ * v1.26.0 — two modes:
+ *   - `deleteMapping(lineId, leagueId)` → DEL the single per-league key.
+ *     Used when the admin write path knows the league context (e.g.
+ *     `adminLinkLineToPlayer` clearing the target player's prior lineId
+ *     within a specific league's write surface).
+ *   - `deleteMapping(lineId)` → SCAN and DEL every per-league entry for
+ *     this lineId. Used when the admin path doesn't operate within a
+ *     single league context (`updatePlayer`, `createPlayer` — the affected
+ *     Player may be in 0..N leagues).
+ *
+ * Pass `undefined`/`null` lineId for a no-op (handy when callers
+ * conditionally remove a previous-value lineId that may not exist).
+ *
+ * SCAN mode walks the entire `t9l:auth:map:*:<lineId>` namespace via
+ * Upstash's SCAN cursor protocol. With at most ~30 active LINE users and
+ * a small number of leagues, the scan is bounded — under 100 keys total
+ * even at the multi-league cap.
  */
 export async function deleteMapping(
   lineId: string | null | undefined,
+  leagueId?: string,
 ): Promise<void> {
   if (!lineId) return
   const client = await getClient()
   if (!client) return
+  if (leagueId) {
+    try {
+      await client.del(buildKey(lineId, leagueId))
+    } catch (err) {
+      console.warn(
+        '[playerMappingStore] redis DEL errored for lineId=%s leagueId=%s: %o',
+        lineId,
+        leagueId,
+        err,
+      )
+    }
+    return
+  }
+  // SCAN-and-DEL across all leagues — admin invalidate.
+  const pattern = scanPatternForLineId(lineId)
+  let cursor: string | number = '0'
+  const allKeys: string[] = []
+  // Bounded by namespace size; avoid an infinite loop if the SCAN protocol
+  // never converges. 100 iterations × default count(10) = 1000 keys cap is
+  // well above realistic cardinality.
+  for (let i = 0; i < 100; i++) {
+    let result: [string, string[]] | { cursor: string; keys: string[] }
+    try {
+      result = await client.scan(cursor, { match: pattern, count: 100 })
+    } catch (err) {
+      console.warn(
+        '[playerMappingStore] redis SCAN errored for lineId=%s: %o',
+        lineId,
+        err,
+      )
+      return
+    }
+    let nextCursor: string
+    let keys: string[]
+    if (Array.isArray(result)) {
+      nextCursor = String(result[0])
+      keys = result[1]
+    } else {
+      nextCursor = String(result.cursor)
+      keys = result.keys
+    }
+    allKeys.push(...keys)
+    if (nextCursor === '0') break
+    cursor = nextCursor
+  }
+  if (allKeys.length === 0) return
   try {
-    await client.del(key(lineId))
+    // Issue per-key DELs in parallel; @upstash/redis supports varargs DEL
+    // but the RedisLike interface stays minimal so tests can model a fake
+    // without growing the surface.
+    await Promise.all(allKeys.map((k) => client.del(k)))
   } catch (err) {
-    console.warn('[playerMappingStore] redis DEL errored for lineId=%s: %o', lineId, err)
+    console.warn(
+      '[playerMappingStore] redis bulk-DEL errored for lineId=%s: %o',
+      lineId,
+      err,
+    )
   }
 }
