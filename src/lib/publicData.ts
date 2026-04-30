@@ -43,7 +43,12 @@ const getFromSheets = unstable_cache(
 )
 
 const getFromDb = unstable_cache(
-  async () => dbToPublicLeagueData(),
+  // v1.23.0 — accepts optional leagueId so per-league caches are isolated.
+  // When the param is undefined, the underlying adapter falls back to the
+  // `isDefault: true` league. Next.js's unstable_cache automatically encodes
+  // the parameters into the cache key, so calling `getFromDb()` and
+  // `getFromDb('l-foo')` produce distinct cache entries.
+  async (leagueId?: string) => dbToPublicLeagueData(leagueId),
   ['public-data:db'],
   { revalidate: 30, tags: ['public-data', 'leagues'] },
 )
@@ -180,22 +185,28 @@ async function getRsvpData(
 }
 
 /**
- * Returns the public `LeagueData` from the configured source. Default
- * (`Setting.public.dataSource`) is `'sheets'` — preserves existing behavior
- * until the operator flips the toggle in admin Settings (PR 3 lands the UI;
- * PR 4 is the operational flip).
+ * Returns the public `LeagueData` from the configured source.
+ *
+ * v1.23.0 — accepts optional `leagueId`. When supplied, scopes the read to
+ * that league (per-league cache entry). When omitted, falls back to the
+ * league flagged `isDefault: true` — preserves pre-v1.23.0 behavior. Apex
+ * dashboard renders pass no argument; subdomain-aware consumers
+ * (`/schedule`, `/stats`, `/assign-player`) resolve the leagueId via
+ * `lib/getLeagueFromHost.ts#getLeagueIdFromRequest()` and pass it through.
+ *
+ * The Sheets path is single-league only (legacy). When `dataSource='sheets'`
+ * the leagueId argument is ignored and the legacy default-league Sheets
+ * data is returned regardless.
  *
  * v1.7.0 — On the DB path, the cached static blob and the live Redis RSVP
- * read run in parallel; merge produces the consumer-facing shape. The
- * Sheets path is unchanged — RSVP for that path comes from RosterRaw
- * cells, parsed inline.
+ * read run in parallel; merge produces the consumer-facing shape.
  */
-export async function getPublicLeagueData(): Promise<LeagueData> {
+export async function getPublicLeagueData(leagueId?: string): Promise<LeagueData> {
   const source = await getDataSource()
   if (source !== 'db') {
     return getFromSheets()
   }
-  const { data: staticData, gameWeeks } = await getFromDb()
+  const { data: staticData, gameWeeks } = await getFromDb(leagueId)
   const rsvp = await getRsvpData(staticData, gameWeeks)
   return {
     ...staticData,
@@ -210,6 +221,10 @@ export async function getPublicLeagueData(): Promise<LeagueData> {
  * merge. Used by `/api/assign-player` POST to verify the targeted slug
  * exists in the active roster.
  *
+ * v1.23.0 — accepts optional `leagueId` so subdomain-scoped link flows
+ * validate against the per-subdomain league's roster, not the default
+ * league. When omitted, falls back to default-league behavior.
+ *
  * `getPublicLeagueData` always runs `getRsvpData()` (uncached, ~12 parallel
  * Upstash HGETALLs on the default league's GameWeeks) — that's load-bearing
  * for dashboard renders but pure overhead for write-path validation. v1.8.2
@@ -218,11 +233,12 @@ export async function getPublicLeagueData(): Promise<LeagueData> {
  */
 export async function getPlayerByPublicId(
   publicPlayerId: string,
+  leagueId?: string,
 ): Promise<{ id: string; name: string; teamId: string } | null> {
   const source = await getDataSource()
   const players =
     source === 'db'
-      ? (await getFromDb()).data.players
+      ? (await getFromDb(leagueId)).data.players
       : (await getFromSheets()).players
   const player = players.find((p) => p.id === publicPlayerId)
   return player ? { id: player.id, name: player.name, teamId: player.teamId } : null

@@ -5,14 +5,19 @@ import AssignPlayerClient from '@/components/AssignPlayerClient';
 import { authOptions } from '@/lib/auth';
 import { getPublicLeagueData } from '@/lib/publicData';
 import { getLinkedPlayerIds } from '@/lib/linkedPlayers';
+import { getLeagueIdFromRequest } from '@/lib/getLeagueFromHost';
 
 export default async function AssignPlayerPage() {
+  // v1.23.0 — resolve the active league from the request Host so subdomain
+  // viewers pick from their league's roster, not the default league's.
+  const leagueId = await getLeagueIdFromRequest();
+
   // Both reads are in the SSR critical path. They're independent so we run
   // them in parallel — the Prisma findMany is cheap (few-dozen-row scan on
   // an indexed nullable column) and `getPublicLeagueData` already pays its
   // own cold-Neon cost when the data source is `db`.
   const [data, session] = await Promise.all([
-    getPublicLeagueData(),
+    getPublicLeagueData(leagueId ?? undefined),
     getServerSession(authOptions),
   ]);
 

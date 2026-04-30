@@ -42,15 +42,14 @@ const EMPTY_RESULT: DbToPublicLeagueDataResult = {
 }
 
 /**
- * Adapter: read the Default League's data from Postgres via Prisma and reshape
- * into the public `LeagueData` contract — the same shape `parseAllData()`
- * produces from Google Sheets, so consumer components don't have to change.
+ * Adapter: read a League's data from Postgres via Prisma and reshape into the
+ * public `LeagueData` contract — the same shape `parseAllData()` produces
+ * from Google Sheets, so consumer components don't have to change.
  *
- * Selects the single league flagged `isDefault: true` (T9L 2026 Spring on prod).
- * If no default league exists, returns empty data.
- *
- * Per CLAUDE.md "Sheets→DB migration", PR 2 plumbs this in but defaults
- * `dataSource='sheets'`; only PR 4 flips reads to use this.
+ * v1.23.0 — accepts optional `leagueId`. When supplied, fetches that specific
+ * league. When omitted, falls back to the league flagged `isDefault: true`
+ * (T9L 2026 Spring on prod) — preserves pre-v1.23.0 behavior.
+ * If neither match is found, returns empty data.
  *
  * v1.7.0 — Static fields only. The returned `availability`,
  * `availabilityStatuses`, and `played` are always empty objects; the live
@@ -71,9 +70,11 @@ const EMPTY_RESULT: DbToPublicLeagueDataResult = {
  *  - sittingOutTeamId is derived (the team in the league that doesn't appear in any
  *    of this matchday's matches), not stored in DB.
  */
-export async function dbToPublicLeagueData(): Promise<DbToPublicLeagueDataResult> {
+export async function dbToPublicLeagueData(
+  leagueId?: string,
+): Promise<DbToPublicLeagueDataResult> {
   const league = await prisma.league.findFirst({
-    where: { isDefault: true },
+    where: leagueId ? { id: leagueId } : { isDefault: true },
     include: {
       leagueTeams: {
         include: { team: true },

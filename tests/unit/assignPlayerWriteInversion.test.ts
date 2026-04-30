@@ -79,6 +79,11 @@ vi.mock('@/lib/publicData', () => ({
 vi.mock('next/cache', () => ({
   revalidatePath: revalidatePathMock,
   revalidateTag: revalidateTagMock,
+  unstable_cache: <T extends (...args: unknown[]) => unknown>(fn: T) => fn,
+}))
+
+vi.mock('@/lib/getLeagueFromHost', () => ({
+  getLeagueIdFromRequest: vi.fn().mockResolvedValue('l-minato-2025'),
 }))
 
 vi.mock('@vercel/functions', () => ({
@@ -222,6 +227,41 @@ describe('POST /api/assign-player — Redis-canonical sync, Prisma deferred', ()
     // waitUntil keeps the stores in lockstep (neither has the write).
     expect(waitUntilMock).not.toHaveBeenCalled()
   })
+
+  it('v1.23.0 — threads the resolved leagueId from getLeagueIdFromRequest into getPlayerByPublicId', async () => {
+    const { getLeagueIdFromRequest } = await import('@/lib/getLeagueFromHost')
+    const getLeagueIdMock = vi.mocked(getLeagueIdFromRequest)
+    getLeagueIdMock.mockResolvedValueOnce('l-tamachi-2026')
+
+    const req = new Request('http://localhost/api/assign-player', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ playerId: 'test-player' }),
+    })
+
+    await POST(req)
+
+    expect(getPlayerByPublicIdMock).toHaveBeenCalledWith('test-player', 'l-tamachi-2026')
+  })
+
+  it('v1.23.0 — returns 404 when getLeagueIdFromRequest returns null (unknown subdomain)', async () => {
+    const { getLeagueIdFromRequest } = await import('@/lib/getLeagueFromHost')
+    const getLeagueIdMock = vi.mocked(getLeagueIdFromRequest)
+    getLeagueIdMock.mockResolvedValueOnce(null)
+
+    const req = new Request('http://localhost/api/assign-player', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ playerId: 'test-player' }),
+    })
+
+    const res = await POST(req)
+
+    expect(res.status).toBe(404)
+    // No writes should fire when the league cannot be resolved.
+    expect(setMappingOrThrowMock).not.toHaveBeenCalled()
+    expect(waitUntilMock).not.toHaveBeenCalled()
+  })
 })
 
 describe('DELETE /api/assign-player — Redis-canonical sync, Prisma deferred', () => {
@@ -318,6 +358,7 @@ describe('v1.8.2 — link/unlink does NOT bust the public-data static cache', ()
       body: JSON.stringify({ playerId: 'test-player' }),
     })
     await POST(req)
-    expect(getPlayerByPublicIdMock).toHaveBeenCalledWith('test-player')
+    // v1.23.0 — second arg is the resolved leagueId (default-league fixture).
+    expect(getPlayerByPublicIdMock).toHaveBeenCalledWith('test-player', 'l-minato-2025')
   })
 })
