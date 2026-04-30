@@ -9,6 +9,48 @@ import {
 } from "@/lib/playerMappingStore";
 import { playerIdToSlug, teamIdToSlug } from "@/lib/ids";
 
+/**
+ * Resolve the cookie domain for the NextAuth session token from
+ * NEXTAUTH_URL. Pure — exported for unit testing.
+ *
+ * v1.24.0 — multi-tenant prep PR γ. Pre-v1.24.0 NextAuth's session cookie
+ * defaulted to host-only scope, so a JWT issued at `t9l.me` would not be
+ * sent to `tamachi.t9l.me` and vice versa. To support cross-subdomain
+ * sessions (required by the v1.22.0 / v1.23.0 multi-tenant routing), the
+ * cookie domain attribute must be set to `.t9l.me`.
+ *
+ * Branches:
+ *   - NEXTAUTH_URL host is `t9l.me` or `*.t9l.me` (incl. `dev.t9l.me`,
+ *     `tamachi.t9l.me`) → return `.t9l.me`
+ *   - localhost → return undefined (cookies with `domain` attribute don't
+ *     work on localhost; browsers silently reject them)
+ *   - Vercel preview hosts (`*.vercel.app`) → return undefined (the
+ *     preview's session cookie is single-host scoped — multi-tenant flows
+ *     are tested against the prod domain)
+ *   - missing or malformed NEXTAUTH_URL → return undefined (defensive)
+ *
+ * Domain migration runbook: when migrating from `t9l.me` to a new domain,
+ * update this function to match the new apex (e.g. `host.endsWith('.example.com')`)
+ * AND update every consumer in CLAUDE.md's "Domain migration runbook"
+ * section. This is the single source of truth for the cookie scope.
+ */
+export function getAuthCookieDomain(): string | undefined {
+  const url = process.env.NEXTAUTH_URL;
+  if (!url) return undefined;
+  let host: string;
+  try {
+    host = new URL(url).hostname;
+  } catch {
+    return undefined;
+  }
+  // Match `t9l.me` apex AND any subdomain of t9l.me. Localhost, Vercel
+  // preview hosts, and any other domain fall through to host-only scope.
+  if (host === "t9l.me" || host.endsWith(".t9l.me")) {
+    return ".t9l.me";
+  }
+  return undefined;
+}
+
 function safeEqual(a: string, b: string): boolean {
   const ab = Buffer.from(a);
   const bb = Buffer.from(b);
@@ -158,10 +200,49 @@ async function trackLineLogin(
   }
 }
 
+// v1.24.0 — cross-subdomain session cookie config. The `__Secure-` name
+// prefix requires `secure: true`, which the browser enforces on HTTPS only.
+// On localhost (HTTP) we fall back to the default unprefixed name so the
+// dev login flow still works.
+const useSecureAuthCookies = process.env.NEXTAUTH_URL?.startsWith("https://") ?? false;
+const authCookieDomain = getAuthCookieDomain();
+
 export const authOptions: AuthOptions = {
   pages: {
     signIn: '/admin/login',
     error: '/auth-error',
+  },
+  cookies: {
+    // Session token (JWT) — set the domain attribute when running on a
+    // *.t9l.me host so the JWT is shared across subdomains. csrfToken keeps
+    // its default host-only scope (NextAuth uses the __Host- prefix on it
+    // when secure, which forbids the domain attribute by spec).
+    sessionToken: {
+      name: useSecureAuthCookies
+        ? `__Secure-next-auth.session-token`
+        : `next-auth.session-token`,
+      options: {
+        httpOnly: true,
+        sameSite: "lax",
+        path: "/",
+        secure: useSecureAuthCookies,
+        ...(authCookieDomain ? { domain: authCookieDomain } : {}),
+      },
+    },
+    // Callback URL — also cross-subdomain so a sign-in initiated on a
+    // subdomain redirects back correctly after the LINE OAuth round-trip.
+    callbackUrl: {
+      name: useSecureAuthCookies
+        ? `__Secure-next-auth.callback-url`
+        : `next-auth.callback-url`,
+      options: {
+        httpOnly: true,
+        sameSite: "lax",
+        path: "/",
+        secure: useSecureAuthCookies,
+        ...(authCookieDomain ? { domain: authCookieDomain } : {}),
+      },
+    },
   },
   providers: [
     LineProvider({
