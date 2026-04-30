@@ -227,7 +227,14 @@ export async function POST(req: Request) {
   // Throwing variant: silent failure here would leave both stores empty
   // after the response, since the Prisma write is deferred below.
   try {
-    await setMappingOrThrow(session.lineId, { playerId, playerName, teamId });
+    // v1.26.0 — per-league key. Same league context (`leagueId`) the
+    // request is being served against; the JWT callback's read uses the
+    // same key shape on the next session refresh.
+    await setMappingOrThrow(session.lineId, leagueId, {
+      playerId,
+      playerName,
+      teamId,
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Storage error";
     return NextResponse.json({ error: message }, { status: 500 });
@@ -274,11 +281,26 @@ export async function DELETE() {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 
+  // v1.26.0 — resolve league context for the per-league null sentinel.
+  const leagueId = await getLeagueIdFromRequest();
+  if (!leagueId) {
+    return NextResponse.json(
+      { error: "League not found for this host" },
+      { status: 404 },
+    );
+  }
+
   // ── Synchronous canonical write: Redis (null sentinel) ──────────────────
   // The user's next session refresh reads `null` from Redis directly —
   // orphan state served without a Prisma round-trip.
+  //
+  // v1.26.0 — null sentinel is per-league. The user remains linked in
+  // OTHER leagues (if any); only the current league context's mapping is
+  // reset. This matches the user-visible "I want to switch which player
+  // I'm on this league" intent without affecting their assignments
+  // elsewhere.
   try {
-    await setMappingOrThrow(session.lineId, null);
+    await setMappingOrThrow(session.lineId, leagueId, null);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Storage error";
     return NextResponse.json({ error: message }, { status: 500 });

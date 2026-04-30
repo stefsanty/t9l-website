@@ -2,21 +2,22 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 /**
  * v1.13.0 — admin Redis pre-warm deferral via waitUntil.
- *
- * Pre-v1.13.0 the admin server actions (`adminLinkLineToPlayer`,
- * `updatePlayer`, `createPlayer`) awaited `setMapping(...)` on the response
- * critical path. Admin Prisma writes stay synchronous — admin pages re-read
- * Prisma directly via `revalidatePath` — but the Redis pre-warm doesn't need
- * to block the response. v1.13.0 mirrors the v1.8.0 public-hot-path
- * inversion: `setMapping` is wrapped in `waitUntil(setMapping(...).catch(structuredDriftLog))`
- * so admin clicks resolve before the Upstash round-trip lands.
+ * v1.26.0 — per-league cache shape; admin write paths split into:
+ *   - `adminLinkLineToPlayer` (knows leagueId): per-league setMapping
+ *     deferred via waitUntil; on the target's PRIOR lineId, deleteMapping
+ *     across all leagues (admin remap is a global lineId binding change).
+ *   - `updatePlayer` / `createPlayer` (no single league context): no
+ *     per-league pre-warm; deferDeleteMappingAcrossLeagues invalidates
+ *     every per-(leagueId, lineId) entry for the affected lineIds, lazy-
+ *     fill on next read.
  *
  * Regression targets:
- *   - the action returns BEFORE the deferred setMapping resolves
+ *   - the action returns BEFORE the deferred Redis call resolves
  *   - waitUntil is called with a Promise (the action handed it off rather
  *     than awaited it)
- *   - on setMapping rejection, the [v1.13.0 DRIFT] log line emits and the
- *     action does NOT throw (admin UX must not surface Upstash blips)
+ *   - on rejection, the [v1.13.0 DRIFT] / [v1.26.0 DRIFT] log line emits
+ *     and the action does NOT throw (admin UX must not surface Upstash
+ *     blips)
  */
 
 const {
@@ -106,7 +107,7 @@ beforeEach(() => {
   })
 })
 
-describe('adminLinkLineToPlayer — Redis pre-warm deferred via waitUntil', () => {
+describe('adminLinkLineToPlayer — Redis pre-warm deferred via waitUntil (v1.26.0 per-league)', () => {
   it('returns BEFORE the deferred setMapping resolves (regression target)', async () => {
     findUniqueMock.mockResolvedValueOnce({ lineId: null })
 
@@ -129,8 +130,10 @@ describe('adminLinkLineToPlayer — Redis pre-warm deferred via waitUntil', () =
       leagueId: 'l-spring',
     })
 
+    // v1.26.0 — per-league setMapping(lineId, leagueId, mapping).
     expect(setMappingMock).toHaveBeenCalledWith(
       'U-new',
+      'l-spring',
       expect.objectContaining({ playerId: 'p-fresh' }),
     )
     expect(waitUntilMock).toHaveBeenCalledTimes(1)
@@ -139,6 +142,21 @@ describe('adminLinkLineToPlayer — Redis pre-warm deferred via waitUntil', () =
     // Drain — resolving the background promise should not throw.
     resolveSetMapping()
     await capturedPromise
+  })
+
+  it('threads the leagueId into getPlayerMappingFromDb so the right per-league assignment is resolved (v1.26.0)', async () => {
+    findUniqueMock.mockResolvedValueOnce({ lineId: null })
+
+    await adminLinkLineToPlayer({
+      playerId: 'p-target',
+      lineId: 'U-new',
+      leagueId: 'l-spring',
+    })
+
+    // v1.26.0 — pre-warm shape includes leagueId. Without this, an admin
+    // link in League X would seed Redis with the player's primary-league
+    // teamId — wrong for League X.
+    expect(getPlayerMappingFromDbMock).toHaveBeenCalledWith('U-new', 'l-spring')
   })
 
   it('emits a [v1.13.0 DRIFT] log line when the deferred setMapping rejects', async () => {
@@ -151,8 +169,7 @@ describe('adminLinkLineToPlayer — Redis pre-warm deferred via waitUntil', () =
     })
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
 
-    // The action MUST NOT throw — admin UX must not surface Upstash blips,
-    // since the durable Prisma write already landed synchronously.
+    // The action MUST NOT throw — admin UX must not surface Upstash blips.
     await expect(
       adminLinkLineToPlayer({
         playerId: 'p-target',
@@ -168,24 +185,30 @@ describe('adminLinkLineToPlayer — Redis pre-warm deferred via waitUntil', () =
       (args) => typeof args[0] === 'string' && args[0].includes('[v1.13.0 DRIFT]'),
     )
     expect(driftCall).toBeDefined()
-    // The log line carries op + lineId so operators can grep + replay.
     expect(driftCall?.[0]).toContain('op=%s')
     expect(driftCall?.[1]).toBe('admin-link')
     expect(driftCall?.[2]).toBe('U-new')
+    // v1.26.0 — DRIFT log carries leagueId for operator replay.
+    expect(driftCall?.[3]).toBe('l-spring')
 
     errorSpy.mockRestore()
   })
 })
 
-describe('updatePlayer — Redis pre-warm deferred via waitUntil', () => {
-  it('returns BEFORE the deferred setMapping resolves and tags the drift log with admin-update', async () => {
+describe('updatePlayer — invalidates per-league cache via SCAN-and-DEL (v1.26.0)', () => {
+  it('defers deleteMapping(newLineId) for cache invalidation; does NOT call setMapping (lazy-fill on next read)', async () => {
+    // v1.26.0 — updatePlayer no longer pre-warms the cache because the
+    // Player is global (may be in N leagues) and the admin write doesn't
+    // operate within a single league context. Instead it invalidates
+    // across all leagues; first JWT callback per (leagueId, lineId) hits
+    // Prisma + writes back.
     findUniqueMock.mockResolvedValueOnce({ lineId: null })
 
-    let resolveSetMapping: () => void = () => {}
-    const setMappingDeferred = new Promise<void>((resolve) => {
-      resolveSetMapping = () => resolve()
+    let resolveDelete: () => void = () => {}
+    const deleteDeferred = new Promise<void>((resolve) => {
+      resolveDelete = () => resolve()
     })
-    setMappingMock.mockReturnValueOnce(setMappingDeferred)
+    deleteMappingMock.mockReturnValueOnce(deleteDeferred)
 
     let capturedPromise: Promise<unknown> | null = null
     waitUntilMock.mockImplementation((p: unknown) => {
@@ -200,20 +223,18 @@ describe('updatePlayer — Redis pre-warm deferred via waitUntil', () => {
 
     await updatePlayer(fd)
 
-    expect(setMappingMock).toHaveBeenCalledWith(
-      'U-new',
-      expect.objectContaining({ playerId: 'p-fresh' }),
-    )
+    expect(setMappingMock).not.toHaveBeenCalled()
+    expect(deleteMappingMock).toHaveBeenCalledWith('U-new')
     expect(waitUntilMock).toHaveBeenCalledTimes(1)
     expect(capturedPromise).toBeInstanceOf(Promise)
 
-    resolveSetMapping()
+    resolveDelete()
     await capturedPromise
   })
 
-  it('logs admin-update on deferred setMapping failure', async () => {
+  it('logs admin-update on deferred deleteMapping failure', async () => {
     findUniqueMock.mockResolvedValueOnce({ lineId: null })
-    setMappingMock.mockRejectedValueOnce(new Error('Upstash unreachable'))
+    deleteMappingMock.mockRejectedValueOnce(new Error('Upstash unreachable'))
 
     waitUntilMock.mockImplementation((p: unknown) => {
       ;(p as Promise<unknown>).catch(() => {})
@@ -230,17 +251,36 @@ describe('updatePlayer — Redis pre-warm deferred via waitUntil', () => {
     await new Promise((r) => setImmediate(r))
 
     const driftCall = errorSpy.mock.calls.find(
-      (args) => typeof args[0] === 'string' && args[0].includes('[v1.13.0 DRIFT]'),
+      (args) => typeof args[0] === 'string' && args[0].includes('[v1.26.0 DRIFT]'),
     )
     expect(driftCall?.[1]).toBe('admin-update')
+    expect(driftCall?.[2]).toBe('U-new')
 
     errorSpy.mockRestore()
   })
+
+  it('invalidates the prior lineId AND the new lineId when the lineId changes', async () => {
+    findUniqueMock.mockResolvedValueOnce({ lineId: 'U-old' })
+
+    const fd = new FormData()
+    fd.append('id', 'p-target')
+    fd.append('name', 'Test Player')
+    fd.append('lineId', 'U-new')
+    fd.append('pictureUrl', '')
+
+    await updatePlayer(fd)
+
+    // Prior lineId — the previous holder no longer maps to this player in any league.
+    expect(deleteMappingMock).toHaveBeenCalledWith('U-old')
+    // New lineId — invalidate any stale cached null sentinels across leagues.
+    expect(deleteMappingMock).toHaveBeenCalledWith('U-new')
+    expect(waitUntilMock).toHaveBeenCalledTimes(2)
+  })
 })
 
-describe('createPlayer — Redis pre-warm deferred via waitUntil', () => {
-  it('defers setMapping for the new lineId and tags the drift log with admin-create', async () => {
-    setMappingMock.mockRejectedValueOnce(new Error('Upstash unreachable'))
+describe('createPlayer — invalidates per-league cache via SCAN-and-DEL (v1.26.0)', () => {
+  it('defers deleteMapping for the new lineId and tags the drift log with admin-update', async () => {
+    deleteMappingMock.mockRejectedValueOnce(new Error('Upstash unreachable'))
     waitUntilMock.mockImplementation((p: unknown) => {
       ;(p as Promise<unknown>).catch(() => {})
     })
@@ -253,21 +293,23 @@ describe('createPlayer — Redis pre-warm deferred via waitUntil', () => {
     await createPlayer(fd)
     await new Promise((r) => setImmediate(r))
 
-    expect(setMappingMock).toHaveBeenCalledWith(
-      'U-new',
-      expect.objectContaining({ playerId: 'p-fresh' }),
-    )
+    // v1.26.0 — createPlayer doesn't pre-warm because the new Player has
+    // no league assignments yet. Just invalidate any stale cached null
+    // sentinels across leagues.
+    expect(setMappingMock).not.toHaveBeenCalled()
+    expect(deleteMappingMock).toHaveBeenCalledWith('U-new')
     expect(waitUntilMock).toHaveBeenCalledTimes(1)
 
     const driftCall = errorSpy.mock.calls.find(
-      (args) => typeof args[0] === 'string' && args[0].includes('[v1.13.0 DRIFT]'),
+      (args) => typeof args[0] === 'string' && args[0].includes('[v1.26.0 DRIFT]'),
     )
-    expect(driftCall?.[1]).toBe('admin-create')
+    expect(driftCall?.[1]).toBe('admin-update')
+    expect(driftCall?.[2]).toBe('U-new')
 
     errorSpy.mockRestore()
   })
 
-  it('does NOT call setMapping or waitUntil when no lineId is supplied', async () => {
+  it('does NOT call setMapping/deleteMapping or waitUntil when no lineId is supplied', async () => {
     const fd = new FormData()
     fd.append('name', 'New Player')
     fd.append('lineId', '')
@@ -275,6 +317,7 @@ describe('createPlayer — Redis pre-warm deferred via waitUntil', () => {
     await createPlayer(fd)
 
     expect(setMappingMock).not.toHaveBeenCalled()
+    expect(deleteMappingMock).not.toHaveBeenCalled()
     expect(waitUntilMock).not.toHaveBeenCalled()
   })
 })

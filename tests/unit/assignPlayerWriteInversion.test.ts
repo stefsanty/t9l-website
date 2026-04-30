@@ -265,10 +265,10 @@ describe('POST /api/assign-player — Redis-canonical sync, Prisma deferred', ()
 })
 
 describe('DELETE /api/assign-player — Redis-canonical sync, Prisma deferred', () => {
-  it('calls setMappingOrThrow with null and defers Prisma update via waitUntil', async () => {
+  it('calls setMappingOrThrow with null + leagueId and defers Prisma update via waitUntil (v1.26.0)', async () => {
     const res = await DELETE()
     expect(res.status).toBe(200)
-    expect(setMappingOrThrowMock).toHaveBeenCalledWith('U-test', null)
+    expect(setMappingOrThrowMock).toHaveBeenCalledWith('U-test', 'l-minato-2025', null)
     expect(waitUntilMock).toHaveBeenCalledTimes(1)
   })
 
