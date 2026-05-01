@@ -19,12 +19,50 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-const { findUniqueMock, updateMock, transactionMock, updateManyMock } = vi.hoisted(() => ({
-  findUniqueMock: vi.fn(),
-  updateMock: vi.fn().mockResolvedValue({}),
-  transactionMock: vi.fn().mockResolvedValue([]),
-  updateManyMock: vi.fn().mockResolvedValue({ count: 0 }),
-}))
+const {
+  findUniqueMock,
+  updateMock,
+  transactionMock,
+  updateManyMock,
+  userFindUniqueMock,
+  userUpdateMock,
+} = vi.hoisted(() => {
+  const findUniqueMock = vi.fn()
+  const updateMock = vi.fn().mockResolvedValue({})
+  const updateManyMock = vi.fn().mockResolvedValue({ count: 0 })
+  const userFindUniqueMock = vi.fn().mockResolvedValue(null)
+  const userUpdateMock = vi.fn().mockResolvedValue({})
+  // v1.29.0 (stage β) — adminClearLineLink + adminLinkLineToPlayer now wrap
+  // the legacy Player.lineId update AND the new User ↔ Player dual-write
+  // in a single $transaction(async tx => ...). The mock invokes the callback
+  // with a tx object that delegates to the same per-method mocks as the
+  // top-level prisma client, preserving observability of the calls.
+  const transactionMock = vi.fn().mockImplementation(async (arg) => {
+    if (typeof arg === 'function') {
+      const tx = {
+        player: {
+          findUnique: findUniqueMock,
+          update: updateMock,
+          updateMany: updateManyMock,
+        },
+        user: {
+          findUnique: userFindUniqueMock,
+          update: userUpdateMock,
+        },
+      }
+      return arg(tx)
+    }
+    return []
+  })
+  return {
+    findUniqueMock,
+    updateMock,
+    transactionMock,
+    updateManyMock,
+    userFindUniqueMock,
+    userUpdateMock,
+  }
+})
 
 const { setMappingMock, deleteMappingMock } = vi.hoisted(() => ({
   setMappingMock: vi.fn().mockResolvedValue(undefined),
@@ -49,6 +87,10 @@ vi.mock('@/lib/prisma', () => ({
       findUnique: findUniqueMock,
       update: updateMock,
       updateMany: updateManyMock,
+    },
+    user: {
+      findUnique: userFindUniqueMock,
+      update: userUpdateMock,
     },
     $transaction: transactionMock,
   },
