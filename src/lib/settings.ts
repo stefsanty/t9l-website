@@ -65,3 +65,42 @@ export const getWriteMode = unstable_cache(
   ['setting:public:writeMode:global'],
   { revalidate: 30, tags: ['settings'] },
 )
+
+/**
+ * v1.30.0 (stage γ) — identity-rework read-source flag.
+ *
+ * 'legacy' (default): JWT callback resolves Player by `Player.lineId @unique`.
+ * 'user'           : JWT callback resolves Player by
+ *                    `User.lineId → User.playerId → Player`.
+ *
+ * Both resolvers return the same shape (`{ playerId, playerName, teamId }`)
+ * for the same input. The flag exists to gate the cutover safely:
+ * stage 4 retires the legacy column, but only AFTER an extended soak with
+ * the flag set to 'user' and zero drift between the two paths.
+ *
+ * Default 'legacy' is the load-bearing safety property — γ ships with the
+ * code in place but inert. The operator-driven flip happens in a separate
+ * step (PR #5 in the rollout sequence; not yet shipped) once the
+ * backfillUserPlayerLink has populated User.playerId / Player.userId for
+ * every existing linked human.
+ */
+export type IdentityReadSource = 'legacy' | 'user'
+
+export const SETTING_ID_IDENTITY_READ_SOURCE = 's-identity-readSource-global'
+
+export function resolveIdentityReadSource(
+  value: string | null | undefined,
+): IdentityReadSource {
+  return value === 'user' ? 'user' : 'legacy'
+}
+
+export const getIdentityReadSource = unstable_cache(
+  async (): Promise<IdentityReadSource> => {
+    const row = await prisma.setting.findUnique({
+      where: { id: SETTING_ID_IDENTITY_READ_SOURCE },
+    })
+    return resolveIdentityReadSource(row?.value)
+  },
+  ['setting:identity:readSource:global'],
+  { revalidate: 30, tags: ['settings'] },
+)
