@@ -11,6 +11,7 @@ import {
   setMapping,
 } from "@/lib/playerMappingStore";
 import { playerIdToSlug, teamIdToSlug } from "@/lib/ids";
+import { getIdentityReadSource } from "@/lib/settings";
 
 /**
  * Resolve the cookie domain for the NextAuth session token from
@@ -97,7 +98,96 @@ type PlayerMapping = {
 // league context — e.g. `updatePlayer` / `createPlayer` — and which call
 // `deleteMapping(lineId)` to invalidate the per-league cache and lazy-fill
 // on next read).
-export async function getPlayerMappingFromDb(
+/**
+ * v1.30.0 (stage γ) — User-side resolver. Reads identity through
+ * `User.lineId → User.playerId → Player`, the new architecture from the
+ * account-player-rework chain.
+ *
+ * Same input/output as `getPlayerMappingFromDbLegacy`: takes the
+ * JWT-carried `lineId` (still the auth-side key through stage 4) and the
+ * request's `leagueId`, returns the per-league mapping.
+ *
+ * Used only when `Setting('identity.read-source') === 'user'`. The
+ * default 'legacy' branch keeps the v1.5.0 path live unchanged.
+ *
+ * Why same input: the JWT carries `lineId` from the OAuth profile.
+ * Stage γ doesn't change what the JWT receives — it changes what we DO
+ * with it. The new resolver still keys on lineId at the entry point;
+ * only the middle step ("how do we get from lineId to Player") changes
+ * from a direct `Player.lineId @unique` lookup to a User-mediated walk.
+ */
+async function getPlayerMappingViaUser(
+  lineId: string,
+  leagueId?: string | null,
+): Promise<PlayerMapping | null> {
+  const user = await prisma.user.findUnique({
+    where: { lineId },
+    select: { playerId: true },
+  });
+  if (!user?.playerId) return null;
+
+  const player = await prisma.player.findUnique({
+    where: { id: user.playerId },
+    include: {
+      leagueAssignments: {
+        include: { leagueTeam: { include: { team: true } } },
+        orderBy: { fromGameWeek: "desc" },
+      },
+    },
+  });
+  if (!player) return null;
+
+  return pickAssignmentMapping(player, leagueId);
+}
+
+/**
+ * Pure helper: pick the right `PlayerLeagueAssignment` for the requested
+ * leagueId and project the mapping shape. Shared by both resolvers so
+ * leagueId resolution semantics are identical regardless of which path
+ * the caller took. Stage γ's parity check relies on this — the only
+ * meaningful difference between the two resolvers is the Player lookup.
+ */
+function pickAssignmentMapping(
+  player: {
+    id: string;
+    name: string;
+    leagueAssignments: Array<{
+      leagueTeam: { leagueId: string; team: { id: string } };
+      toGameWeek: number | null;
+    }>;
+  },
+  leagueId?: string | null,
+): PlayerMapping {
+  let assignment;
+  if (leagueId) {
+    assignment =
+      player.leagueAssignments.find(
+        (a) => a.leagueTeam.leagueId === leagueId && a.toGameWeek === null,
+      ) ??
+      player.leagueAssignments.find((a) => a.leagueTeam.leagueId === leagueId) ??
+      null;
+  } else {
+    assignment =
+      player.leagueAssignments.find((a) => a.toGameWeek === null) ??
+      player.leagueAssignments[0] ??
+      null;
+  }
+  return {
+    playerId: playerIdToSlug(player.id),
+    playerName: player.name,
+    teamId: assignment ? teamIdToSlug(assignment.leagueTeam.team.id) : "",
+  };
+}
+
+/**
+ * Legacy resolver — Player keyed on `Player.lineId @unique`. Pre-γ this
+ * was the only path; γ adds `getPlayerMappingViaUser` and
+ * `getPlayerMappingFromDb` becomes a flag-dispatch shim that picks one
+ * or the other based on `Setting('identity.read-source')`.
+ *
+ * Stage 4 drops this entirely along with the `Player.lineId` column.
+ */
+async function getPlayerMappingFromDbLegacy(
   lineId: string,
   leagueId?: string | null,
 ): Promise<PlayerMapping | null> {
@@ -111,36 +201,62 @@ export async function getPlayerMappingFromDb(
     },
   });
   if (!player) return null;
+  return pickAssignmentMapping(player, leagueId);
+}
 
-  let assignment;
-  if (leagueId) {
-    // Per-league resolution. Prefer the open assignment for this league;
-    // fall back to the most-recent past assignment in this league. Past
-    // assignments give a sensible "your previous team in this league" view
-    // even after the player rotates out — better than the empty-string
-    // fallback for a player who's still associated with the league.
-    assignment =
-      player.leagueAssignments.find(
-        (a) => a.leagueTeam.leagueId === leagueId && a.toGameWeek === null,
-      ) ??
-      player.leagueAssignments.find((a) => a.leagueTeam.leagueId === leagueId) ??
-      null;
-  } else {
-    // Legacy / league-blind: pre-v1.26.0 behavior. Used only by admin write
-    // paths that need the player's "primary" team for a generic Redis
-    // pre-warm (and even those are migrating to per-league at write time).
-    assignment =
-      player.leagueAssignments.find((a) => a.toGameWeek === null) ??
-      player.leagueAssignments[0] ??
-      null;
+/**
+ * v1.30.0 (stage γ) — flag-dispatched resolver. Reads
+ * `Setting('identity.read-source')`:
+ *   - 'legacy' (default) → `getPlayerMappingFromDbLegacy` — direct
+ *     Player.lineId lookup (the v1.5.0 path).
+ *   - 'user'             → `getPlayerMappingViaUser` — User.lineId →
+ *     User.playerId → Player walk.
+ *
+ * Both resolvers MUST return identical output for any given (lineId,
+ * leagueId) pair when the data is consistent. The post-α.5 + post-β
+ * world satisfies this contract: every linked Player has a User row
+ * with matching playerId. Drift between the two paths surfaces as a
+ * resolver-parity test failure (locally / in CI) and as user-visible
+ * "I'm orphan now" reports in prod (mitigation: the flag is
+ * operator-flippable; revert to 'legacy' on incident).
+ *
+ * Settings cache: `getIdentityReadSource()` is wrapped in `unstable_cache`
+ * with a 30-second TTL under tag 'settings'. Operator-flips bust the
+ * cache via `revalidate({ domain: 'settings' })`. Worst case, an
+ * authenticated user gets up to 30 seconds of "old resolver" behavior
+ * after the flip.
+ */
+export async function getPlayerMappingFromDb(
+  lineId: string,
+  leagueId?: string | null,
+): Promise<PlayerMapping | null> {
+  let source: 'legacy' | 'user' = 'legacy';
+  try {
+    source = await getIdentityReadSource();
+  } catch (err) {
+    // Settings read failed (Prisma blip, schema drift). Default to
+    // 'legacy' so a transient cache-read outage doesn't flip every
+    // session onto the new path during a teardown.
+    console.warn('[auth] getIdentityReadSource failed, defaulting to legacy: %o', err);
   }
 
-  return {
-    playerId: playerIdToSlug(player.id),
-    playerName: player.name,
-    teamId: assignment ? teamIdToSlug(assignment.leagueTeam.team.id) : "",
-  };
+  if (source === 'user') {
+    return getPlayerMappingViaUser(lineId, leagueId);
+  }
+  return getPlayerMappingFromDbLegacy(lineId, leagueId);
 }
+
+/**
+ * Test seam — exposed only for resolver-parity assertions in
+ * `tests/unit/identityResolverParity.test.ts`. Production code never
+ * calls these directly; everything funnels through `getPlayerMappingFromDb`
+ * which dispatches via the Setting flag.
+ */
+export const __resolvers_for_testing = {
+  legacy: getPlayerMappingFromDbLegacy,
+  user: getPlayerMappingViaUser,
+};
+
 
 /**
  * Resolve `lineId → Player` from the v1.5.0 architecture: Redis is canonical;
