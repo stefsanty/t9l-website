@@ -1,8 +1,10 @@
 # Account ↔ Player Rework — Design Doc
 
-**Status:** design only, not implementation. Targets a multi-PR, backward-compatible path from today's `lineId → Player` identity model to a `LINE OAuth → User → Player → many LeagueMembership` model with self-serve league join via codes / personalized invite links.
+**Status:** design only, not implementation. Targets a multi-PR, backward-compatible path from today's `lineId → Player` identity model to a `(LINE | Google | email) → User → Player → many LeagueMembership` model with self-serve league join via codes / personalized invite links.
 
 **Author note (read first):** the user's top concern is *abuse and confusion in onboarding*. The new join flow's job is to make "I am Stefan, here is my code, put me in the right league with the right team identity" both **self-serve** and **tamper-resistant**. Every section below is written with that thread visible — when a tradeoff comes up, the side that closes an abuse vector wins.
+
+**Update 2026-05-01 — multi-provider scope.** The original v1 of this doc assumed LINE OAuth was the only sign-in path. The user has expanded the scope: the new world must support **LINE OAuth + Google OAuth + email** signup. Sections that previously read "LINE → User" now read "(LINE | Google | email) → User", and a new stage α.5 has been inserted between the v1.27.0 schema additions and the original β (dual-write) to lay the multi-provider foundation. Every other downstream stage is unchanged in shape — they just resolve identity through a provider-agnostic `Account` join instead of `User.lineId` directly.
 
 ---
 
@@ -81,19 +83,35 @@ The schema constraint `Player.lineId @unique` actually prevents the literal case
 ### Roles, separated cleanly
 
 ```
-   LINE OAuth (lineId)
-        │
-        ▼
+   LINE OAuth      Google OAuth    Email (magic link)
+   (lineId)        (sub)           (verified address)
+        │              │                  │
+        │              │                  │
+        ▼              ▼                  ▼
+   ┌──────────────────────────────────────────────────┐
+   │  Account                                         │  <- AUTH IDENTITIES (NextAuth adapter)
+   │  ───────                                         │      0..N per User; one per (provider,
+   │  id, userId, type, provider,                     │      providerAccountId). New row created
+   │  providerAccountId, access_token,                │      automatically by NextAuth on each
+   │  refresh_token, expires_at, …                    │      successful OAuth sign-in.
+   │  @@unique([provider, providerAccountId])         │
+   └──────────────────────────┬───────────────────────┘
+                              │ N—1
+                              ▼
    ┌─────────────────────────────────┐
-   │  User                           │   <- AUTH IDENTITY
-   │  ────                           │      one row per LINE account, ever
-   │  id          cuid()             │      (and per admin-credentials user)
-   │  lineId      UNIQUE  (nullable  │
-   │              for non-LINE users)│
-   │  name                           │      first-seen profile (from LINE)
+   │  User                           │   <- CANONICAL HUMAN-AUTH IDENTITY
+   │  ────                           │      one row per human, can have
+   │  id            cuid()           │      multiple Accounts (LINE+Google),
+   │  email         UNIQUE? (nullable│      and at most one Player.
+   │                — LINE may not   │
+   │                provide one)     │
+   │  emailVerified DateTime?        │      set by EmailProvider on magic-link
+   │  lineId        UNIQUE? (legacy; │      stage 4 drops this; legacy compat
+   │                stages 1–3 only) │      column for the LINE OAuth path.
+   │  name                           │      first-seen profile from any provider
    │  pictureUrl                     │
-   │  role        ADMIN | VIEWER     │
-   │  playerId    UNIQUE FK → Player │  ←── 1:1 link to canonical profile
+   │  role          ADMIN | VIEWER   │
+   │  playerId      UNIQUE FK → Player │ ─── 1:1 link to canonical profile
    └────────────────┬────────────────┘
                     │ 1—1 via Player.userId
                     ▼
@@ -106,7 +124,8 @@ The schema constraint `Player.lineId @unique` actually prevents the literal case
    │  pictureUrl                     │       rows for an upcoming roster)
    │  position                       │
    │  (lineId is REMOVED from Player │
-   │   in stage 4; lives on User.)   │
+   │   in stage 4; lives on User in  │
+   │   stages 1–3, then removed too.)│
    └────────────────┬────────────────┘
                     │ 1—N
                     ▼
@@ -145,13 +164,17 @@ The schema constraint `Player.lineId @unique` actually prevents the literal case
 
 ### Why this shape
 
-- **`User` becomes the auth identity carrier.** Today `Player.lineId` does this implicitly — moving it to `User` separates "who logged in" from "who that person is in a league context." The `User` row is created the first time a LINE login happens; nothing else changes about LINE OAuth.
+- **`Account` is the canonical multi-provider join (NextAuth Prisma adapter).** Stage α.5 wires the standard NextAuth `Account` table. One `User` can have many `Account` rows — e.g. Stefan signs in with LINE today and adds Google later; both `Account` rows point at his single `User.id`. Resolution at JWT time goes `(provider, providerAccountId) → Account.userId → User`.
+- **`User` becomes the canonical auth identity carrier.** Today `Player.lineId` does this implicitly. After α.5 the `User` row is the join point: every authenticated request resolves through it, regardless of which provider signed the user in. `User.lineId` survives through stage 3 as a legacy compat column (read by the current `getPlayerMappingFromDb` path); stage 4 drops it once `Account` is the only resolution path.
+- **`User.email` and `User.emailVerified` are NextAuth adapter requirements.** `email` is nullable because LINE OAuth doesn't always provide one — only Google and email-magic-link guarantee a verified address. The `@unique` constraint fires only when the value is non-null (PostgreSQL semantics).
+- **Magic-link email over password** (recommended; user-confirmed acceptable). One implementation surface (NextAuth `EmailProvider`), inherent verification (you must click the link to authenticate), no password storage, no reset flow. Tradeoff: every login requires a fresh email round-trip (no "remember me past the JWT TTL"). For a league app with infrequent logins this is fine; if it becomes a friction point in stage 3+, password-with-bcrypt can be added as a parallel CredentialsProvider — adapter integration stays unchanged.
 - **`Player` keeps its name** (user-decided 2026-05-01). Cost of churning every `playerId`, `playersByTeam`, `Player.lineId` reference across `src/`/`scripts/`/`tests/`/`CLAUDE.md` is large; the conceptual confusion is small.
-- **`Player.userId` is the new bridge.** When a LINE user is linked to a Player, we set `Player.userId = User.id`. The `@unique` constraint enforces 1:1 (one human ↔ one canonical Player). `Player.lineId` becomes a derived/legacy column kept around through stage 3 for compat, dropped in stage 4.
+- **`Player.userId` is the new bridge.** When a User is linked to a Player, we set `Player.userId = User.id`. The `@unique` constraint enforces 1:1 (one human ↔ one canonical Player). `Player.lineId` becomes a derived/legacy column kept around through stage 3 for compat, dropped in stage 4.
 - **`PlayerLeagueAssignment` keeps its name** (user-decided 2026-05-01). It gains a `joinSource` audit column in stage 2 so we can answer "how did Stefan end up in League B?" The `joinedAt` field is NOT added — the existing `createdAt` already records this. No `@@map` rename, no TypeScript identifier churn. The model name stays as-is throughout all stages.
 - **`LeagueInvite`** is the new gate. Two flavors:
   - **Code (open invite):** an admin generates `T9L-2026-K7M9`. Anyone holding the code can claim ONE unlinked Player slot in the league's roster. Use case: "I'm announcing the league in a Slack/LINE group chat — here's the code, pick your name."
   - **Personal (closed invite):** an admin generates a code AND pre-binds it to `targetPlayerId`. The recipient of the code lands directly on "Confirm: you are Stefan S." with no picker. Use case: "Stefan, here's your private link — click, sign in, you're linked."
+- **The invite gate is provider-blind.** A user can sign up with Google or email and *still* not see any league roster until they redeem an invite code. This is critical: email signup is the easiest path for a bad actor to acquire an authenticated session, but `LeagueInvite` makes that session worthless without a code from the league's private channels.
 
 ### Keeping current onboarding alive (backward-compat)
 
@@ -220,7 +243,102 @@ enum InviteKind {                     // NEW
 
 **Rollback:** the Neon snapshot taken pre-PR; failing forward via a `DROP COLUMN User.playerId; DROP COLUMN Player.userId; DROP TABLE LeagueInvite; DROP TYPE InviteKind` revert migration.
 
-### Stage 2 — Dual-write only. No rename. Behavior unchanged for readers.
+**Status:** ✅ shipped as PR #102 / v1.27.0 (2026-05-01).
+
+### Stage α.5 — Multi-provider auth foundation. Adds Google + email signup paths. (NEW — required by user 2026-05-01)
+
+This stage was added after the v1.27.0 schema additions in response to the user's expanded scope: "we want to support email / google signups." Stage α.5 lays the multi-provider auth foundation BEFORE stage β (dual-write) so that β can write a single User-keyed identity model regardless of which provider the user signed in with.
+
+**Schema delta (additive):**
+
+```prisma
+model User {
+  // ... existing fields preserved unchanged ...
+
+  // NEW — NextAuth Prisma adapter requires these on User. Both nullable
+  // because LINE OAuth doesn't always provide an email address — only
+  // Google OAuth and EmailProvider (magic link) guarantee a verified
+  // address. PostgreSQL @unique fires only when the value is non-null,
+  // so two LINE users with no email can coexist.
+  email          String?   @unique
+  emailVerified  DateTime?
+
+  accounts       Account[]
+}
+
+// NextAuth adapter Account table (multi-provider join).
+// Pattern matches https://authjs.dev/reference/adapter/prisma exactly so
+// the official @auth/prisma-adapter wires up without custom field mapping.
+model Account {
+  id                       String   @id @default(cuid())
+  userId                   String
+  type                     String   // "oauth" | "email" | "credentials"
+  provider                 String   // "line" | "google" | "email"
+  providerAccountId        String   // line.sub | google.sub | email address
+  refresh_token            String?  @db.Text
+  access_token             String?  @db.Text
+  expires_at               Int?
+  token_type               String?
+  scope                    String?
+  id_token                 String?  @db.Text
+  session_state            String?
+
+  user                     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+// NextAuth EmailProvider verification tokens (one-shot magic-link codes).
+// Token is hashed before storage; identifier is the email address. Expires
+// 10 minutes after creation by NextAuth default.
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+```
+
+**No `Session` model.** The project keeps `session: { strategy: "jwt" }` (deliberate — required by Redis-canonical mapping store and v1.24.0 cross-subdomain cookie scope). NextAuth v4's PrismaAdapter no-ops session methods under JWT strategy, so omitting the `Session` table is supported and conventional.
+
+**Code delta:**
+
+- New deps: `@auth/prisma-adapter@^2.x`, `nodemailer@^6.x` (email-magic-link transport).
+- New env vars: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `EMAIL_SERVER_HOST` / `EMAIL_SERVER_PORT` / `EMAIL_SERVER_USER` / `EMAIL_SERVER_PASSWORD` / `EMAIL_FROM` (or a single `EMAIL_SERVER` connection string per NextAuth EmailProvider docs).
+- `src/lib/auth.ts`:
+  - Add `adapter: PrismaAdapter(prisma)` to `authOptions`.
+  - Add `GoogleProvider` and `EmailProvider` to the providers array.
+  - The JWT callback gains a fork: when `account?.provider === "google"` or `account?.provider === "email"`, capture the user's identity from the adapter-managed `User` row instead of from `profile.sub`. The LINE branch keeps its existing path through stage 3 (legacy compat).
+  - **LINE coexistence shim.** When `PrismaAdapter` is wired and `LineProvider` signs a user in, the adapter creates a fresh `User` row and an `Account(provider="line")` row. Existing LINE users have a v1.27.0 `User` row already, but no `Account` row. To prevent the adapter from creating duplicate User rows, α.5 ships a one-shot **pre-α.5 backfill** (`scripts/backfillAccountFromLineLogin.ts`): for every existing `User` with `lineId IS NOT NULL` (and for every `Player.lineId` that has no `User` yet — admin-created Players who never logged in but have lineId set via Flow B), insert `Account(provider="line", providerAccountId=lineId, userId=user.id)`. After backfill, the adapter's `linkAccount` call for an existing LINE user finds the existing Account row and reuses the matched User — no duplication.
+  - **The pre-α.5 backfill MUST run between merge and the first LINE login.** Same cutover-protocol shape as v1.7.0 (`backfillRedisRsvpFromPrisma`): dry-run pre-merge, apply pre-merge, then merge. Otherwise the first LINE-user sign-in post-deploy creates a duplicate User row that the stage β dual-write can't reconcile.
+- New routes:
+  - `/auth/signin` — provider picker page (LINE | Google | "sign in with email"). Replaces the implicit NextAuth default sign-in page.
+  - `/auth/verify-request` — "check your email" landing page after submitting an email for magic-link.
+  - `/auth/callback/google` — auto-handled by NextAuth.
+  - `/auth/callback/email` — auto-handled by NextAuth (consumes the magic-link token).
+
+**Behavior:**
+- Existing LINE users: their first sign-in post-deploy goes through the adapter, which finds the pre-α.5-backfilled Account row and reuses the existing User. **No user-visible change** if the backfill ran. JWT callback continues to populate `playerId`/`teamId` via the existing `lineId → Player` path (β handles the resolver swap).
+- New users via Google or email: adapter creates a fresh `User` row with no `lineId`, no `Player` association. They land on `/` signed in but with no playerId. They see the landing page; to do anything league-specific they need to redeem a `LeagueInvite` (PRs #5/#6 ship that flow; until then they're a logged-in lurker with no league context).
+- Admin Flow B continues to work — orphan dropdown still reads `LineLogin`. New Google/email users do NOT appear in Flow B (they have no LINE link to bind). Admin-side handling of non-LINE users is a separate later concern (admin can use the upcoming PR #5 personal-invite flow to bind them).
+
+**Test contract:**
+- Unit: `Account.@@unique([provider, providerAccountId])` enforced.
+- Unit: pre-α.5 backfill maps `User.lineId → Account(provider="line", providerAccountId=lineId)` 1:1, idempotent on second run.
+- Unit: pre-α.5 backfill creates `User` rows for `Player.lineId` values that have no existing User (admin pre-created Players who never logged in).
+- Unit: NextAuth `signIn` callback rejects malformed Google `sub` / missing email.
+- Unit: `EmailProvider` token round-trip — generated token validates exactly once, second use 404s.
+- E2E (Playwright): Google sign-in to a fresh dev environment creates exactly one `User` and one `Account(provider="google")` row.
+- E2E: Email magic-link round-trip — request token, click link, land on `/` signed in.
+- Regression: pre-α.5 LINE user signs in; `User` count is unchanged; new `Account(provider="line")` row appears; JWT callback resolves `playerId` from the existing path.
+
+**Rollback:** Drop `Account` and `VerificationToken` tables; drop `User.email` / `emailVerified`. Remove `adapter: PrismaAdapter(prisma)` from `authOptions`. Drop `GoogleProvider` and `EmailProvider`. The JWT callback's LINE path was untouched, so reverting α.5 leaves the LINE flow exactly as it was at v1.27.0.
+
+### Stage 2 (β) — Dual-write only. Provider-agnostic. Behavior unchanged for readers.
+
+(Originally the immediate sequel to stage 1; now sequenced after α.5 so dual-write can be keyed on `User.id`, not `lineId`.)
 
 Schema delta:
 
@@ -247,19 +365,20 @@ Adding a parallel column would be redundant and noise.)
 
 **Code delta:**
 
-- Every write site that creates a Player AND has a lineId in scope (i.e. the JWT callback's first-sign-in path, which currently doesn't create anything — Players are admin-created today) now also upserts a `User` row keyed by `lineId`.
-- Every write site that links a Player to a LINE user (`/api/assign-player` POST, `adminLinkLineToPlayer`, `updatePlayer` when lineId changes) ADDS a write to `User.playerId` AND `Player.userId` — keeping `Player.lineId` as the canonical write target so reads remain unchanged. The dual-write lands in the same Prisma `$transaction` so it's atomic w.r.t. the existing semantics.
-- `User` rows are upserted on every JWT callback that has a lineId (mirror of today's `trackLineLogin` for `LineLogin` — same shape, different table).
+- Identity resolution is now provider-agnostic. The JWT callback resolves `userId` via the adapter-managed `Account` table (via `Account.userId` join, unique on `(provider, providerAccountId)`). The LINE path keeps reading via `User.lineId` through stage 3 for compat — but α.5 already ensures every LINE-authenticated user has an `Account` row, so β has a unified identity at the User layer regardless of which provider was used.
+- Every write site that links a Player to a User (`/api/assign-player` POST/DELETE, `adminLinkLineToPlayer`, `updatePlayer` when lineId changes, the upcoming `/api/leagues/:id/claim-player` endpoint when stage β ships) now writes `User.playerId` AND `Player.userId` in addition to the existing `Player.lineId` (when applicable). The dual-write lands in the same Prisma `$transaction` so it's atomic w.r.t. the existing semantics.
 - The Redis-canonical store's *value* shape gains a `userId` field (still a JSON object). Old values without `userId` parse as before; new values include it. Auth-side reads that don't need `userId` ignore it. No format-version bump needed.
+- Provider-keyed write sites: when a non-LINE user (Google, email) claims a Player slot via the upcoming `/join/[code]` flow, the link sets `Player.userId` directly with NO `Player.lineId` (because there isn't one). This is the first time the codebase has a logged-in Player with `lineId IS NULL`. Read paths that crash on missing lineId will be fixed in stage 3.
 
-**Reads still go through `Player.lineId`.** Stage 2 is exclusively about *populating* the new columns so stage 3 has data to switch onto.
+**Reads still go through `Player.lineId`** for LINE users. Stage 2 is exclusively about *populating* the new columns so stage 3 has data to switch onto.
 
-**Backfill:** a one-shot script `scripts/backfillUserFromPlayerLineId.ts`:
-1. For every `Player` where `lineId IS NOT NULL`: upsert a `User` row by `lineId`, capture its `id`.
+**Backfill:** a one-shot script `scripts/backfillUserPlayerLink.ts`:
+1. For every `Player` where `lineId IS NOT NULL`: find the matching `User` via `User.lineId` (post-α.5 every LINE login has produced a User row via the adapter; backfilled Users from the pre-α.5 cutover already exist).
 2. Set `User.playerId = player.id` AND `Player.userId = user.id`.
-3. Pure decision helper `decideUserBackfillAction` exported and unit-tested.
-4. `--dry-run` reports a punch list. `--apply` runs the upserts. Idempotent — safe to re-run.
-5. Run pre-PR-merge against prod.
+3. For Players with no matching User: log a warning and skip. (This case shouldn't exist post-α.5 backfill; if it does, it's drift to investigate.)
+4. Pure decision helper `decideUserBackfillAction` exported and unit-tested.
+5. `--dry-run` reports a punch list. `--apply` runs the upserts. Idempotent — safe to re-run.
+6. Run pre-PR-merge against prod.
 
 **Test contract:**
 - The dual-write fires in `$transaction` (regression: a test mocks `prisma.$transaction` and asserts both writes are part of the same call).
@@ -327,9 +446,19 @@ This is a real schema migration (column removal), so it gets its own pre-PR Neon
 
 ## 4. Auth + JWT changes
 
-### Stage 1 (now): no change
+### Stage 1 (shipped, v1.27.0): no change
 
 JWT callback does what it does today. The new columns exist but are not read.
+
+### Stage α.5: Adapter wired; new providers active; LINE branch unchanged
+
+- `authOptions.adapter = PrismaAdapter(prisma)` is added.
+- `GoogleProvider` and `EmailProvider` are added to the providers array.
+- The JWT callback gains a small fork at the top of `jwt({ token, account, profile, user })`:
+  - `account?.provider === "google"`: capture `token.userId = user.id` from the adapter-supplied User row. No `lineId`. No Player association yet (until they redeem an invite).
+  - `account?.provider === "email"`: same as Google — `token.userId` from the adapter, no `lineId`.
+  - `account?.provider === "line"`: existing path runs. Adapter's `linkAccount` has already created the `Account(provider="line")` row by this point. `token.lineId` is set; `token.userId` is captured from `user.id` for forward use.
+- For LINE users, the existing `getPlayerMappingFromDb(lineId, leagueId)` path is unchanged through stage 3. The new `userId` field on the token is captured but not used in resolution yet — it's there so stage β's dual-write knows which User to update.
 
 ### Stage 2: dual-populate `userId` on the JWT
 
@@ -555,15 +684,36 @@ The admin shell already has a "League" picker for which league's tabs to show (i
 - **A user who somehow has another user's personal-invite URL.** Personal invites are a possession-based credential. If the URL leaks, it's claimable by whoever has it. Mitigations: (a) one-shot consumption (`maxUses=1`), (b) optional expiry (`expiresAt`), (c) admin can revoke (`revokedAt`), (d) admin can require LINE-verification gate ("Confirm: you are Stefan" still requires the user's *current LINE display name* to match a fuzzy comparison; this is a UI-side soft gate, not a hard check).
 - **An admin who creates fake Player rows.** Out of scope — admin-trust assumed.
 
+### Multi-provider abuse surface (added 2026-05-01)
+
+Email signups change the abuse surface in two material ways:
+
+1. **The cost of acquiring an authenticated session drops to "have an email address."** Today, signing up requires a LINE OAuth account (low friction in Japan, but still a real provider account with a phone number behind it). With email-magic-link, anyone with a disposable inbox (`temp-mail.org`, `10minutemail.com`, etc.) can complete sign-up. Google OAuth is intermediate — Google does some abuse detection on its side but disposable Google accounts exist.
+2. **`User`-row spam.** A bad actor could script account creation to fill the `User` table with junk rows. There's no per-IP rate limit on `/api/auth/signin/email` today.
+
+**Why this is acceptable for stage α.5:** the `LeagueInvite` gate (PRs #5/#6) is what protects league access. A spammer with 10,000 disposable-email `User` rows still can't see any league's roster, can't RSVP, can't appear on any leaderboard, can't be linked to any Player. They have only a logged-in session that does nothing. The `User` table grows but that's storage, not exploitation.
+
+**Mitigations available without further design (operator-flippable as needed):**
+- Disposable-email blocklist on `/api/auth/signin/email` — a small `BLOCKED_EMAIL_DOMAINS` env var or DB table; the `EmailProvider`'s `sendVerificationRequest` callback rejects matches before sending. Optional, off by default.
+- Per-IP rate limit on email signups (Upstash @upstash/ratelimit, mirror of how RSVP submissions could be rate-limited if needed). Add only if abuse materializes.
+- Admin "purge unlinked Users older than X days with no Account activity" maintenance script — runs on a cron, no UX impact.
+- Google OAuth's own abuse detection covers the Google path.
+
+**What this design does not handle for non-LINE users:**
+- A Google-signed-up user whose Google email matches a real T9L player's email but who isn't actually that player — they could redeem a `LeagueInvite CODE` and pick that player's slot in the picker. Mitigation: `PERSONAL` invites bypass the picker; high-trust leagues issue only `PERSONAL`. Same shape as the existing A1 vector for LINE users.
+- An email-signed-up user is identifiable only by an email address, with no automatic display name or picture. The `/assign-player` picker shows them a roster of Players whose names they may not recognize. Mitigation: name + photo are visible on the roster; PERSONAL invites bypass the picker entirely.
+
 ---
 
 ## 8. Backward-compat surface
 
 These flows MUST keep working unchanged through stages 1, 2, and 3. Each is a regression-prevention test target.
 
-| Flow | Stage 1 | Stage 2 | Stage 3 | Stage 4 |
-|---|---|---|---|---|
-| LINE OAuth → JWT callback resolves session.{playerId, teamId} for the active league. | unchanged | unchanged (dual-write fires alongside) | uses `User.playerId` resolver; falls back to legacy on flag-off | new path only |
+| Flow | Stage 1 ✅ | Stage α.5 | Stage 2 | Stage 3 | Stage 4 |
+|---|---|---|---|---|---|
+| LINE OAuth → JWT callback resolves session.{playerId, teamId} for the active league. | unchanged | unchanged for LINE; adapter creates `Account(provider="line")` row in parallel; resolution still goes through `Player.lineId` | unchanged (dual-write fires alongside) | uses `User.playerId` resolver; falls back to legacy on flag-off | new path only |
+| Google OAuth sign-in | n/a | NEW — adapter creates User + Account; JWT has `userId` but no `playerId` until invite redeemed | dual-writes via `User.playerId` if/when user redeems an invite | unchanged | unchanged |
+| Email magic-link sign-in | n/a | NEW — adapter creates User + Account on token consumption; JWT has `userId` but no `playerId` | dual-writes via `User.playerId` if/when user redeems an invite | unchanged | unchanged |
 | `/assign-player` picker shows unlinked players in the active league's roster. | unchanged | unchanged | unchanged (until we swap to /join — separate later PR) | replaced by `/join` |
 | Admin "Assign Player" Flow B dialog (admin-side dropdown of orphans → bind to Player). | unchanged | dual-writes | dual-writes; new resolver | reads via User |
 | Admin "Remap" dialog (move LINE link from Player A to Player B). | unchanged | dual-writes | dual-writes; new resolver | reads via User |
@@ -636,17 +786,19 @@ The only externally-visible changes are *additive*: new join routes, new admin i
 
 | PR | Title | Stage | Schema touch | Behavior change | Approx LOC | Estimated risk |
 |---|---|---|---|---|---|---|
-| **#1** | **Identity rework α — additive schema** | 1 | yes (additive) | none | ~250 | low; fully revertible |
-| #2 | Identity rework β — dual-write `User` ↔ `Player` + add `joinSource` to PlayerLeagueAssignment | 2 | yes (additive: `joinSource` enum + column) | dual-write fires; reads unchanged | ~500 | medium; tests gate dual-write atomicity |
-| #2.5 | Backfill User from Player.lineId (one-shot script + dry-run) | 2 (companion) | none | none | ~200 | low; idempotent |
-| #3 | Identity rework γ — User-side resolver behind a Setting flag (default OFF) | 3 | none | none yet | ~400 | low; flag is OFF |
-| #4 | Operator flip: `Setting('identity.read-source')` → 'user' | 3 (operator) | none | yes — reads now go through User | 0 | medium; reversible by flipping back |
-| #5 | LeagueInvite admin UI (admin can create code / personal invites for a league) + `inviteCodes.ts` helpers + 7-day default expiry | new feature | none | new admin route | ~500 | low |
-| #6 | Public `/join/[code]` route + `/api/leagues/:id/claim-player` endpoint | new feature | none | new public route | ~700 | medium; new auth-gated write |
-| #7 | Header LeagueSwitcher component + `session.memberships` plumbing | new feature | none | header change | ~400 | low |
-| #8 | Stage 4 — drop `Player.lineId` column, drop legacy resolver, drop drift detector | 4 | yes (destructive) | reads via User only | ~150 | medium; needs Layer 3 snapshot |
+| **#1** | **Identity rework α — additive schema** ✅ shipped (PR #102 / v1.27.0) | 1 | yes (additive) | none | ~250 | low; fully revertible |
+| **#2** | **Multi-provider auth foundation — Account + VerificationToken + Google + email magic-link** (NEW — required by user 2026-05-01) | α.5 | yes (additive: `Account`, `VerificationToken`, `User.email`, `User.emailVerified`) | new Google + email signup paths; LINE behavior unchanged post-backfill | ~600 | medium; pre-merge backfill mandatory to avoid duplicate User rows on first LINE login |
+| #2.5 | Pre-α.5 backfill: `Account` rows for existing LINE users (one-shot script + dry-run) | α.5 (companion) | none | none | ~200 | low; idempotent; MUST run pre-merge |
+| #3 | Identity rework β — dual-write `User.playerId` ↔ `Player.userId` + add `joinSource` to PlayerLeagueAssignment | 2 | yes (additive: `joinSource` enum + column) | dual-write fires; reads unchanged | ~500 | medium; tests gate dual-write atomicity |
+| #3.5 | Backfill `User.playerId` ↔ `Player.userId` from existing `Player.lineId` (one-shot script + dry-run) | 2 (companion) | none | none | ~200 | low; idempotent |
+| #4 | Identity rework γ — User-side resolver behind a Setting flag (default OFF) | 3 | none | none yet | ~400 | low; flag is OFF |
+| #5 | Operator flip: `Setting('identity.read-source')` → 'user' | 3 (operator) | none | yes — reads now go through User | 0 | medium; reversible by flipping back |
+| #6 | LeagueInvite admin UI (admin can create code / personal invites for a league) + `inviteCodes.ts` helpers + 7-day default expiry | new feature | none | new admin route | ~500 | low |
+| #7 | Public `/join/[code]` route + `/api/leagues/:id/claim-player` endpoint | new feature | none | new public route | ~700 | medium; new auth-gated write |
+| #8 | Header LeagueSwitcher component + `session.memberships` plumbing | new feature | none | header change | ~400 | low |
+| #9 | Stage 4 — drop `Player.lineId` + `User.lineId` columns, drop legacy resolver, drop drift detector | 4 | yes (destructive) | reads via User-via-Account only | ~150 | medium; needs Layer 3 snapshot |
 
-PRs #1 through #4 are the identity-rework chain. PRs #5 through #7 are the join-flow chain. They're parallelizable after #2.5 lands. PR #8 closes the identity work. Total: **8 PRs** spanning ~6–10 sessions of focused work, gated on prod soak between #2 and #3 and between #4 and #8.
+PRs #1 through #5 are the identity-rework chain. PRs #6 through #8 are the join-flow chain. They're parallelizable after #3.5 lands. PR #9 closes the identity work. Total: **9 PRs** spanning ~7–11 sessions of focused work, gated on prod soak between #3 and #4 and between #5 and #9.
 
 **Out of scope per user-decided 2026-05-01:** retiring the `/assign-player` open picker. The picker stays live indefinitely alongside the new `/join` flow. Once the new flow is proven in production, a future ticket can revisit retirement — but that's not on this chain.
 
@@ -665,7 +817,215 @@ No key namespace migration is required. The new `userId` field is additive; the 
 
 ---
 
-## 12. First PR proposal — Identity rework α (additive schema)
+## 12. Next PR proposal — Multi-provider auth foundation (stage α.5)
+
+**Branch:** `claude/multi-provider-auth-foundation`
+**Version bump:** 1.27.0 → 1.28.0 (additive feature schema + new providers + new auth surfaces; minor)
+**Status:** ready to ship — no orchestrator gate needed beyond the user reviewing this proposal.
+
+### Why this PR before β
+
+Stage β was originally drafted to dual-write `User.playerId ↔ Player.userId` keyed on `lineId`. The user has now expanded scope to include Google + email signups — for those users there is no `lineId`, so β has no key to dual-write FROM. Building the multi-provider foundation first means:
+1. Stage β's dual-write is keyed on `User.id` directly (resolved from `Account` for any provider), one path that handles all three sign-up surfaces uniformly.
+2. The `Account` join table is the canonical multi-provider identity at the User layer — no per-provider branching in the rest of the codebase.
+3. New non-LINE users are immediately first-class; they sign up, they get a `User`, they can be linked to a `Player` via the upcoming `/join/[code]` flow without a separate "are you a LINE user or not" gate.
+
+The cost is one extra PR in the chain (9 instead of 8) and one extra prod soak window. Acceptable.
+
+### Schema diff
+
+```diff
+ model User {
+   id         String   @id @default(cuid())
+   lineId     String?  @unique
+   name       String?
+   pictureUrl String?
+   role       Role     @default(VIEWER)
+   createdAt  DateTime @default(now())
+   updatedAt  DateTime @updatedAt
+   playerId   String?  @unique
++
++  // Stage α.5 of account-player-rework (v1.28.0). NextAuth Prisma adapter
++  // requires these on User. Both nullable: LINE OAuth doesn't always provide
++  // an email, only Google OAuth and EmailProvider (magic link) guarantee a
++  // verified address. PostgreSQL @unique fires only when value is non-null.
++  email          String?    @unique
++  emailVerified  DateTime?
++
++  accounts       Account[]
+ }
++
++// Stage α.5. NextAuth adapter Account table (multi-provider join).
++// One User can have many Account rows — e.g. Stefan signs in with LINE,
++// later adds Google; both rows point at his single User.id. Resolution
++// at JWT time goes (provider, providerAccountId) → Account.userId → User.
++model Account {
++  id                       String   @id @default(cuid())
++  userId                   String
++  type                     String                       // "oauth" | "email" | "credentials"
++  provider                 String                       // "line" | "google" | "email"
++  providerAccountId        String                       // LINE sub | Google sub | email address
++  refresh_token            String?  @db.Text
++  access_token             String?  @db.Text
++  expires_at               Int?
++  token_type               String?
++  scope                    String?
++  id_token                 String?  @db.Text
++  session_state            String?
++
++  user                     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
++
++  @@unique([provider, providerAccountId])
++  @@index([userId])
++}
++
++// Stage α.5. NextAuth EmailProvider verification tokens (one-shot magic-link
++// codes). Token is hashed before storage; identifier is the email address.
++// Default expiry 10 minutes (NextAuth-managed). Standard adapter shape;
++// matches @auth/prisma-adapter's expected schema exactly.
++model VerificationToken {
++  identifier String
++  token      String   @unique
++  expires    DateTime
++
++  @@unique([identifier, token])
++}
+```
+
+**No `Session` model.** JWT-only sessions stay as-is (load-bearing for v1.5.0 Redis-canonical mapping store and v1.24.0 cross-subdomain cookie scope). NextAuth v4's `PrismaAdapter` no-ops session methods under JWT strategy.
+
+### Files touched
+
+```
+prisma/schema.prisma                                              ~50 lines added
+prisma/migrations/<TS>_multi_provider_auth_foundation/migration.sql  (auto-generated)
+src/lib/version.ts                                                1 line (1.27.0 → 1.28.0)
+tests/unit/version.test.ts                                        1 line
+package.json                                                      +2 deps:
+                                                                    "@auth/prisma-adapter": "^2.x"
+                                                                    "nodemailer": "^6.x"
+                                                                  +1 devDep:
+                                                                    "@types/nodemailer": "^6.x"
+
+src/lib/auth.ts                                                   ~80 lines added/changed
+                                                                    - import PrismaAdapter, GoogleProvider, EmailProvider
+                                                                    - adapter: PrismaAdapter(prisma) on authOptions
+                                                                    - 2 new providers
+                                                                    - JWT callback fork: google / email / line branches
+                                                                    - LINE branch unchanged in resolution; captures token.userId
+
+src/types/next-auth.d.ts                                          ~5 lines
+                                                                    - Session.userId: string | null
+                                                                    - Session.email: string | null
+
+src/app/auth/signin/page.tsx                                      NEW — ~120 lines
+                                                                    - provider picker: LINE | Google | "sign in with email"
+                                                                    - replaces NextAuth default sign-in page
+
+src/app/auth/verify-request/page.tsx                              NEW — ~30 lines
+                                                                    - "check your email" landing after email submit
+
+scripts/backfillAccountFromLineLogin.ts                           NEW — ~250 lines
+                                                                    - reads existing User.lineId and Player.lineId rows
+                                                                    - upserts Account(provider="line", providerAccountId=lineId)
+                                                                    - --dry-run / --apply / --verbose modes
+                                                                    - pure decideBackfillAction helper exported
+                                                                    - idempotent
+
+tests/unit/multiProviderAuthSchema.test.ts                        NEW — ~150 lines
+                                                                    - Account @@unique([provider, providerAccountId]) enforced
+                                                                    - VerificationToken @@unique([identifier, token]) enforced
+                                                                    - User.email @unique fires only on non-null
+                                                                    - User has many Account; Account belongs to User
+
+tests/unit/backfillAccountFromLineLogin.test.ts                   NEW — ~200 lines
+                                                                    - decideBackfillAction CREATE/MATCH/SKIP branches
+                                                                    - covers User-with-lineId + Account-missing → CREATE
+                                                                    - covers Account-already-exists → MATCH
+                                                                    - covers Player.lineId without User → CREATE-USER-AND-ACCOUNT
+                                                                    - idempotent: second --apply run is all MATCH
+
+tests/unit/authJwtCallback.test.ts                                EXTENDED — ~80 lines
+                                                                    - line-mock provider: existing path passes (regression)
+                                                                    - google: token.userId set, lineId null
+                                                                    - email: token.userId set, lineId null
+                                                                    - LINE adapter-managed: existing User reused (no dup)
+
+tests/e2e/multi-provider-signin.spec.ts                           NEW — ~150 lines (gated to localhost)
+                                                                    - Google sign-in creates exactly one User + one Account
+                                                                    - email magic-link round-trip end-to-end
+                                                                    - existing LINE user signs in post-α.5: User count stable
+
+CLAUDE.md                                                         ~80 lines added
+                                                                    - top frontmatter: v1.28.0 ledger entry
+                                                                    - new "Auth providers" subsection under "Architecture Overview"
+                                                                    - per-PR ledger row
+                                                                    - File Structure: noted Account/VerificationToken adapter tables
+                                                                    - Environment Variables: GOOGLE_CLIENT_ID/SECRET, EMAIL_*
+                                                                    - Sheets→DB Migration / Identity rework chain entry for α.5
+```
+
+### Behavior shipped
+
+**Existing LINE users:** post-merge their first sign-in goes through the wired adapter, which finds their pre-α.5-backfilled `Account(provider="line")` row and reuses the existing `User`. JWT callback continues to populate `playerId` / `teamId` via the existing `lineId → Player` path. **No user-visible change.**
+
+**New Google sign-in:** adapter creates a fresh `User` row (with email from Google profile) + an `Account(provider="google")` row. JWT callback sets `token.userId` but no `playerId`. They land on `/` signed in but with no league context. To do anything, they need to redeem a `LeagueInvite` (PRs #6/#7).
+
+**New email sign-in:** user enters email on `/auth/signin` → submits → `EmailProvider.sendVerificationRequest` mails a magic link → user clicks link → `VerificationToken` is consumed → adapter creates User + Account(provider="email"). JWT callback sets `token.userId`. Same lurker-with-no-league-context state as Google until they redeem an invite.
+
+**Admin-credentials login:** unchanged. Admin still uses env-var creds; no DB User row exists for admin, so the JWT callback's existing admin branch is untouched.
+
+### CI / verification
+
+- `prisma migrate deploy` runs on the per-PR Neon branch DB during build (already in pipeline).
+- `prisma generate` produces a Prisma client with the new types.
+- `tsc --noEmit` confirms no existing call sites broke.
+- New unit tests pin the schema invariants and the JWT callback branches.
+- Playwright e2e (gated to localhost) exercises the full Google + email flows against a dev preview.
+
+### Pre-merge protocol
+
+1. **Neon snapshot** (Layer 3): `neonctl branches create --name pre-pr-43-multi-provider --parent production --project-id young-lake-57212861`. Snapshot before merge for rollback.
+2. **Pre-α.5 backfill DRY RUN against prod** before merge. Pulls prod env, runs `npx tsx scripts/backfillAccountFromLineLogin.ts --dry-run --verbose`, expects all CREATE actions for existing LINE users (~30+ Account rows expected on first run). Surface output for sign-off.
+3. **Pre-α.5 backfill APPLY against prod** before merge. Same env, `--apply`. Verifies idempotent on second run.
+4. **Per-PR Neon branch CI** confirms migration applies cleanly.
+5. **Type-check + Vitest green** before requesting merge.
+6. **Per-push reporting** per CLAUDE.md autonomy rule: "PR #N pushed", "merged at <SHA>", "v1.28.0 live on apex".
+7. **Post-deploy smoke:** an existing LINE user signs in to confirm no duplicate User / orphan session. Log volume check for the new auth paths.
+
+### Provider env-var requirements
+
+The PR description must surface these env vars for the operator to set on Vercel BEFORE prod deploy (otherwise the providers fail silently):
+
+```
+GOOGLE_CLIENT_ID         — from Google Cloud Console OAuth credentials
+GOOGLE_CLIENT_SECRET     — same
+EMAIL_SERVER             — SMTP connection string (recommended: Resend)
+                           e.g. smtp://resend:RESEND_API_KEY@smtp.resend.com:587
+EMAIL_FROM               — sending address (e.g. "T9L <noreply@t9l.me>")
+```
+
+If any of `GOOGLE_*` is unset, the GoogleProvider is omitted from the providers array (defensive — avoids "missing client_id" runtime errors on signin page render). Same for `EMAIL_*`. Documented in `src/lib/auth.ts`.
+
+### What this PR DOES NOT do
+
+- Does not write to `Player.userId` or `User.playerId` from any code path. (Stage β.)
+- Does not add `joinSource` to `PlayerLeagueAssignment`. (Stage β.)
+- Does not change `getPlayerMappingFromDb` or its callers. (Stage γ.)
+- Does not change `/api/assign-player`, `/api/rsvp`, or any league-write path.
+- Does not introduce `LeagueInvite` reads/writes. (PRs #6/#7.)
+- Does not change Redis key shapes or values. The `t9l:auth:map:<leagueId>:<lineId>` namespace stays exactly as v1.26.0 specced.
+- Does not introduce a `/account/connections` UI for linking a second provider to an existing User. (Deferred — see §13.)
+- Does not retire the `LineLogin` table. It stays alongside `Account` through stage 4 since it's load-bearing for the admin Flow B orphan dropdown.
+- Does not change the admin-credentials flow.
+
+It's the smallest possible thing that adds Google + email signup paths and lets stage β build provider-agnostic dual-write. By design.
+
+---
+
+## 12.legacy. First PR proposal (historical) — Identity rework α (additive schema)
+
+**Status:** ✅ shipped as PR #102 / v1.27.0 (2026-05-01). Body retained below for reference.
 
 **Branch:** `claude/identity-rework-alpha`
 **Version bump:** 1.26.0 → 1.27.0 (additive feature schema; minor)
@@ -811,12 +1171,20 @@ It's the smallest possible thing that lets PR #2 land without a separate migrati
 - ✅ **`PlayerLeagueAssignment` rename.** Don't rename. Keep the model name as-is across all stages.
 - ✅ **Invite-code default expiry.** `expiresAt = createdAt + 7 days` by default at the application layer (admin can override or set null per-invite).
 - ✅ **`/assign-player` picker retirement.** Don't retire as part of this chain. It stays live indefinitely; revisit only after the new flow is proven.
+- ✅ **Multi-provider scope (added).** Support LINE + Google OAuth + email signups. Stage α.5 lays the multi-provider foundation before stage β dual-write.
+- ✅ **OAuth provider for non-LINE.** Google. (Apple / Microsoft / GitHub deferred; can add later via the same `Account` join.)
+- ✅ **Email-auth flavor.** Magic-link (NextAuth EmailProvider) over password — recommended for fewer surfaces and inherent verification. Password+bcrypt remains an option to add later as a parallel CredentialsProvider if magic-link friction becomes a real complaint; the adapter integration doesn't change.
 
 ### Deferred — surface when relevant in later stages
 
-- **`User.id` shape.** Currently `cuid()`. Should the *public-facing* user identifier be a slug (mirror of how `Player.id` carries `"p-"` prefix today)? Recommendation: keep `User.id` as opaque cuid; never expose it client-side. Use `Player.id` (which already has a public slug shape) for any UI-visible references. Surface in PR #2 if it affects the dual-write helper signatures.
-- **`Player.lineId` removal timing.** Stage 4 plan says 3–4 weeks after stage 3 cutover. Recommendation: tie to "no DRIFT logs for 14 consecutive days post-cutover" rather than a calendar window. Surface in PR #3 (introduces the drift detector) and again at the operator flip (PR #4) so the soak gate is documented.
-- **Switcher placement on small viewports.** The mockup in §6 is desktop-shaped. On mobile, inside the hamburger menu or as a top-of-page banner? Recommendation: inside the hamburger menu when one exists; dropdown adjacent to the user-name pill otherwise. Surface in PR #7 when the switcher actually ships.
+- **`User.id` shape.** Currently `cuid()`. Should the *public-facing* user identifier be a slug (mirror of how `Player.id` carries `"p-"` prefix today)? Recommendation: keep `User.id` as opaque cuid; never expose it client-side. Use `Player.id` (which already has a public slug shape) for any UI-visible references. Surface in PR #3 (β / dual-write) if it affects the dual-write helper signatures.
+- **`Player.lineId` removal timing.** Stage 4 plan says 3–4 weeks after stage 3 cutover. Recommendation: tie to "no DRIFT logs for 14 consecutive days post-cutover" rather than a calendar window. Surface in PR #4 (introduces the drift detector) and again at the operator flip (PR #5) so the soak gate is documented.
+- **Switcher placement on small viewports.** The mockup in §6 is desktop-shaped. On mobile, inside the hamburger menu or as a top-of-page banner? Recommendation: inside the hamburger menu when one exists; dropdown adjacent to the user-name pill otherwise. Surface in PR #8 when the switcher actually ships.
+- **Account-linking UX for existing users.** Stefan signed up with LINE; later wants to add Google so he can also sign in from his work laptop. NextAuth's adapter supports this via the `linkAccount` callback when a signed-in user initiates a second OAuth flow, but we need a `/account/connections` page in the UI to expose it. Out of scope for α.5; surface for a later PR after stage 3 cutover. Until then, a user with two providers needs admin help (admin can manually `prisma.account.create({ ... })` to link).
+- **Email change / removal.** A user signed up with email `a@example.com` and wants to change to `b@example.com`. NextAuth's adapter doesn't expose this natively — needs a custom flow (verify new address → update User.email). Out of scope for α.5. Operationally, the user can sign up fresh with the new address and ask admin to merge.
+- **Disposable-email blocklist.** Section §7 documents the abuse vector. Don't pre-emptively ship a blocklist — wait for actual abuse signal. Operator can add via env var when needed.
+- **LINE without email.** LINE OAuth doesn't always provide an email. Adapter creates a User row with `email = null`, which is fine. But: a user who signed up with LINE-no-email later wants to add Google (which has email) — the adapter's account-linking flow may try to merge by email and find no match, or create a fresh User. Resolution: in the future `/account/connections` page, the linking is initiated from a signed-in session, so the userId is fixed; email match is irrelevant. Surface in the deferred account-linking PR.
+- **Vercel email transport.** EmailProvider needs an SMTP server. Recommendation: Resend (free tier covers test volume; integrates with NextAuth's `EmailProvider` via SMTP relay) OR a transactional provider Stefan already uses. Document the `EMAIL_SERVER` env var format in the α.5 PR description.
 
 ---
 
@@ -824,7 +1192,10 @@ It's the smallest possible thing that lets PR #2 land without a separate migrati
 
 Surfaced explicitly so future-me knows what to flag immediately rather than papering over:
 
+- **Real LINE users can't authenticate after α.5 goes live.** Most likely failure mode: the pre-α.5 backfill didn't run (or ran incomplete), so the adapter creates a duplicate User row on first LINE login post-deploy. Surfaces as "I just signed in but my session has no playerId / teamId" or as a unique-constraint violation in Vercel logs (`Account.@@unique([provider, providerAccountId])` race). Roll back α.5 by reverting the merge; backfilled `Account` rows are harmless to leave in place.
 - **Real LINE users can't authenticate after dual-write goes live (stage 2).** This means the JWT callback is silently swallowing a Prisma error from the new write — surface, do not deploy, roll back stage 2.
+- **A new email signup creates a duplicate User row when an existing User with the same email exists.** PostgreSQL's `@unique` on `User.email` should reject this at the DB layer with a 500. If the adapter SILENTLY merges, that's a bigger problem (data leak across accounts). Investigate via the e2e regression in §9 before flipping α.5 on.
+- **EmailProvider's `sendVerificationRequest` is failing silently.** Users click "sign in with email", form submits, no email arrives. Logs should show the SMTP failure. Verify the `EMAIL_SERVER` config and `EMAIL_FROM` address are correct.
 - **Drift detector logs persistent divergence (stage 3 shadow run).** If `[v1.30 DRIFT]` lines appear at any rate beyond test-injected scenarios, do NOT flip the `Setting` to `'user'`. Investigate source first.
 - **A LINE user with a default-league membership AND a subdomain membership reports "I'm logged out when I switch subdomains."** This means the cross-subdomain JWT (v1.24.0) regressed. Stage 3 must not weaken cookie scope.
 - **Backfill collision rate >5% on the dry-run.** Means there are more `User` rows or `Player` rows out there than the model expects (admin-created Players with manually-set `lineId` that don't have a corresponding `LineLogin`, etc.) — investigate before applying.
