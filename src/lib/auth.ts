@@ -1,6 +1,9 @@
 import type { AuthOptions } from "next-auth";
 import LineProvider from "next-auth/providers/line";
+import GoogleProvider from "next-auth/providers/google";
+import EmailProvider from "next-auth/providers/email";
 import CredentialsProvider from "next-auth/providers/credentials";
+import { PrismaAdapter } from "@auth/prisma-adapter";
 import { timingSafeEqual } from "crypto";
 import { prisma } from "@/lib/prisma";
 import {
@@ -229,6 +232,29 @@ async function getPlayerMapping(
   }
 }
 
+// v1.28.0 (stage α.5) — bridge between the adapter-managed User row and
+// the legacy `User.lineId @unique` column. The PrismaAdapter creates User
+// rows with `{ name, email, image }` but does NOT touch our custom
+// `lineId` column. This helper sets `User.lineId = lineId` IF currently
+// null on the User row, idempotent and tolerant of races (two concurrent
+// JWT callbacks won't conflict — one of them no-ops).
+//
+// Why we don't use `prisma.user.update`: a straight update would race-
+// fail under concurrent first-login refreshes (both fire, second hits the
+// unique constraint). `updateMany WHERE lineId IS NULL` makes the second
+// call a silent no-op.
+//
+// Why we don't use `upsert`: the User row already exists (created by the
+// adapter). We're only filling in our custom column.
+//
+// Stage 4 retires this helper alongside `User.lineId` itself.
+async function syncUserLineId(userId: string, lineId: string): Promise<void> {
+  await prisma.user.updateMany({
+    where: { id: userId, lineId: null },
+    data: { lineId },
+  });
+}
+
 // Upsert a LineLogin row on every authenticated request. Powers the admin
 // "Assign Player" Flow B orphan-user dropdown. Failure is non-fatal — auth
 // must not block on the tracking write.
@@ -264,10 +290,53 @@ async function trackLineLogin(
 const useSecureAuthCookies = process.env.NEXTAUTH_URL?.startsWith("https://") ?? false;
 const authCookieDomain = getAuthCookieDomain();
 
+// v1.28.0 (stage α.5) — Google OAuth + EmailProvider (magic link) wired
+// behind env-var presence checks so a misconfigured prod doesn't crash on
+// signin-page render. If the relevant env var is unset, the provider is
+// omitted from the providers array entirely. Operators can ship α.5 to
+// prod with the env vars unset; LINE OAuth + admin-credentials continue to
+// work, and Google/email signup paths are simply unavailable until vars
+// land. This is the load-bearing safety property that lets the
+// infrastructure rollout proceed without operator-side coordination on
+// the env vars (per user instruction 2026-05-02).
+const googleProviderEnabled =
+  !!process.env.GOOGLE_CLIENT_ID && !!process.env.GOOGLE_CLIENT_SECRET;
+const emailProviderEnabled =
+  !!process.env.EMAIL_SERVER && !!process.env.EMAIL_FROM;
+
 export const authOptions: AuthOptions = {
+  // v1.28.0 — Wire NextAuth's PrismaAdapter for multi-provider Account
+  // management (Google OAuth + EmailProvider magic link). Session strategy
+  // remains JWT (load-bearing for v1.5.0 Redis-canonical mapping store and
+  // v1.24.0 cross-subdomain cookie scope) — adapter no-ops session methods
+  // under JWT strategy per NextAuth v4 docs.
+  //
+  // Adapter manages: User upserts, Account upserts (the multi-provider
+  // join), VerificationToken round-trips for EmailProvider. The Account
+  // table is what makes "one User can sign in with LINE OR Google OR
+  // email" work uniformly — every successful sign-in produces a
+  // (provider, providerAccountId) row keyed on the same User.id.
+  //
+  // First-login-post-α.5 behavior for existing LINE users:
+  //   The adapter has no Account row for them (the table didn't exist
+  //   pre-α.5), and there's no `User` row to match by email either (the
+  //   User table was dormant for the public flow pre-α.5). So the adapter
+  //   creates a fresh User + Account. The `syncUserLineId` bridge below
+  //   then sets `User.lineId = profile.sub` so the legacy lineId-based
+  //   resolver path keeps working through stage 3 (γ).
+  //
+  // The companion backfill script `scripts/backfillAccountFromLineLogin.ts`
+  // can pre-stage User+Account rows for every existing Player.lineId so
+  // stage β has data to dual-write into immediately. Run it post-deploy
+  // (the migration must apply first to create the Account table). The
+  // backfill is idempotent and safe to re-run; it's an optimization, not
+  // a hard merge gate.
+  adapter: PrismaAdapter(prisma),
+
   pages: {
-    signIn: '/admin/login',
+    signIn: '/auth/signin',
     error: '/auth-error',
+    verifyRequest: '/auth/verify-request',
   },
   cookies: {
     // Session token (JWT) — set the domain attribute when running on a
@@ -306,6 +375,34 @@ export const authOptions: AuthOptions = {
       clientId: process.env.LINE_CLIENT_ID ?? "",
       clientSecret: process.env.LINE_CLIENT_SECRET ?? "",
     }),
+    // v1.28.0 (stage α.5) — Google OAuth. Enabled only when env vars
+    // are present; omitted entirely otherwise so an unconfigured prod
+    // doesn't crash the signin page. allowDangerousEmailAccountLinking
+    // is intentionally NOT enabled — preventing automatic Account
+    // merging across providers by email is a defense against an
+    // attacker creating a Google account with a victim's email and
+    // taking over their LINE-only account.
+    ...(googleProviderEnabled
+      ? [
+          GoogleProvider({
+            clientId: process.env.GOOGLE_CLIENT_ID!,
+            clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+          }),
+        ]
+      : []),
+    // v1.28.0 (stage α.5) — EmailProvider (magic link). Enabled only
+    // when EMAIL_SERVER + EMAIL_FROM are set. NextAuth handles the
+    // entire token round-trip via the VerificationToken table; the
+    // adapter consumes the token on click and creates User + Account.
+    ...(emailProviderEnabled
+      ? [
+          EmailProvider({
+            server: process.env.EMAIL_SERVER!,
+            from: process.env.EMAIL_FROM!,
+            // Default 10-minute token expiry from NextAuth is fine.
+          }),
+        ]
+      : []),
     CredentialsProvider({
       id: "admin-credentials",
       name: "Admin",
@@ -410,8 +507,36 @@ export const authOptions: AuthOptions = {
         token.linePictureUrl = "";
       }
 
+      // v1.28.0 (stage α.5) — non-LINE adapter-managed providers.
+      // For Google + email sign-ins, the PrismaAdapter has already created
+      // (or matched) the User + Account rows by the time this callback
+      // fires. NextAuth passes us the resolved `user` object whose `id` is
+      // the User.id. Capture it for forward use; these users do NOT have a
+      // lineId, no Player association yet (until they redeem a
+      // LeagueInvite — PRs #6/#7), and no playerId/teamId on the JWT.
+      // They land on `/` signed in but as logged-in lurkers with no league
+      // context. The picker / RSVP / invite redemption flows handle the
+      // null playerId case via Dashboard's existing render-null branches.
+      if (
+        (account?.provider === "google" || account?.provider === "email") &&
+        user
+      ) {
+        token.userId = user.id;
+        token.lineId = undefined;
+        token.linePictureUrl = "";
+        token.playerId = null;
+        token.playerName = null;
+        token.teamId = null;
+        token.authProvider = account.provider;
+        // Capture name/email/picture for client display surfaces. Google
+        // gives us all three; EmailProvider gives only email.
+        if (user.name) token.name = user.name;
+        if (user.email) token.email = user.email;
+        return token;
+      }
+
       // Set LINE-specific fields on initial sign-in
-      if (account && profile) {
+      if (account && profile && account.provider === "line") {
         console.log('[auth] LINE sign-in: provider=%s sub=%s', account.provider, profile.sub);
         token.lineId = profile.sub as string;
         token.linePictureUrl =
@@ -419,6 +544,36 @@ export const authOptions: AuthOptions = {
         token.playerId = null;
         token.playerName = null;
         token.teamId = null;
+        // v1.28.0 — capture User.id from the adapter-created User row so
+        // β's dual-write knows which User to bind to a Player. The adapter
+        // has already created (or matched, post-pre-α.5-backfill) the
+        // User row by the time we're here, and NextAuth passes us the
+        // resolved `user` object on initial sign-in.
+        if (user?.id) {
+          token.userId = user.id;
+          // v1.28.0 (stage α.5) — bridge: the PrismaAdapter doesn't know
+          // about our custom `User.lineId` column (it's outside NextAuth's
+          // canonical User shape). On first LINE sign-in the adapter
+          // creates a User with lineId=null. Set it now so that:
+          //   (a) the legacy `User.lineId @unique` resolver path keeps
+          //       working through stage 3 (γ),
+          //   (b) the pre-α.5 backfill running post-deploy can find this
+          //       User via lineId on its next pass,
+          //   (c) β's dual-write logic that resolves "the User for this
+          //       lineId" via User.lineId remains valid.
+          // Tolerant of repeat-fire: if already set to this lineId, no-op
+          // at the DB layer (updateMany with where: lineId IS NULL avoids
+          // the unique-violation race when two parallel callbacks try to
+          // set the same value).
+          await syncUserLineId(user.id, token.lineId as string).catch((err) =>
+            console.error(
+              "[auth] syncUserLineId failed userId=%s lineId=%s: %o",
+              user.id,
+              token.lineId,
+              err,
+            ),
+          );
+        }
         // Track this login in Prisma — first-seen population for Flow B.
         await trackLineLogin(
           token.lineId as string,
@@ -506,6 +661,12 @@ export const authOptions: AuthOptions = {
       // refers to. Optional consumer convenience; the playerId/teamId
       // fields are already per-league correct.
       session.leagueId = (token.leagueId as string | null) ?? null;
+      // v1.28.0 (stage α.5) — surface the canonical User.id when the
+      // session has one. Stage β's dual-write keys on this; the upcoming
+      // /join/[code] flow keys on this; the future header league switcher
+      // (PR #8) keys on this. Null for admin-credentials sessions and for
+      // the (transient) state between sign-in start and adapter resolution.
+      session.userId = (token.userId as string | null) ?? null;
       return session;
     },
   },

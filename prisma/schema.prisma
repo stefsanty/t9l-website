@@ -18,6 +18,12 @@ model User {
   lineId     String?  @unique
   name       String?
   pictureUrl String?
+  // v1.28.0 (stage α.5) — NextAuth PrismaAdapter writes the OAuth profile
+  // image to `User.image` by convention. Existing code reads `pictureUrl`
+  // (LINE-specific from PR 6 trackLineLogin); the adapter writes `image`.
+  // Both kept for the dual-population window. Stage 4 consolidates onto
+  // `image` and drops `pictureUrl` once all read sites switch over.
+  image      String?
   role       Role     @default(VIEWER)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
@@ -30,6 +36,64 @@ model User {
   // Player.userId. Stage 2 wires the @relation; stage 1 keeps the columns
   // independent so the migration is fully additive (no FK to fail).
   playerId   String?  @unique
+
+  // Stage α.5 of account-player-rework (v1.28.0). NextAuth Prisma adapter
+  // requires both columns on User. Both nullable: LINE OAuth doesn't always
+  // provide an email, only Google OAuth and EmailProvider (magic link)
+  // guarantee a verified address. PostgreSQL @unique fires only when the
+  // value is non-null, so two LINE users with no email can coexist.
+  email         String?    @unique
+  emailVerified DateTime?
+
+  accounts      Account[]
+}
+
+// Stage α.5 of account-player-rework (v1.28.0). NextAuth adapter Account
+// table — multi-provider join. One User can have many Account rows: e.g.
+// Stefan signs in with LINE, later adds Google; both rows point at his
+// single User.id. Resolution at JWT time goes
+// (provider, providerAccountId) → Account.userId → User.
+//
+// Schema mirrors @auth/prisma-adapter's expected shape exactly so the
+// adapter wires up without custom field mapping. Field names use
+// snake_case where NextAuth uses snake_case (refresh_token, access_token,
+// id_token, expires_at, token_type, session_state); these match the
+// adapter's expected column names directly.
+//
+// onDelete: Cascade — when a User is deleted, their Account rows go too
+// (no point keeping the OAuth bindings of a deleted User).
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String  // "oauth" | "email" | "credentials"
+  provider          String  // "line" | "google" | "email"
+  providerAccountId String  // LINE sub | Google sub | email address
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+// Stage α.5 of account-player-rework (v1.28.0). NextAuth EmailProvider
+// verification tokens — one-shot magic-link codes. The token is hashed
+// before storage by NextAuth; the identifier is the email address.
+// Default expiry is 10 minutes (NextAuth-managed). Composite unique on
+// (identifier, token) supports the consume-and-delete flow without
+// indexing both columns separately.
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
 }
 
 model Venue {

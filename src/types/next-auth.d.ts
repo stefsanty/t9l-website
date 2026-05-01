@@ -16,6 +16,17 @@ declare module "next-auth" {
      * or unknown subdomain).
      */
     leagueId: string | null;
+    /**
+     * v1.28.0 (stage α.5) — canonical User.id for the signed-in human,
+     * resolved through the PrismaAdapter regardless of which provider
+     * (LINE / Google / email) signed them in. Null for admin-credentials
+     * sessions (admin auth doesn't go through the adapter) and for the
+     * transient state between sign-in start and adapter resolution.
+     *
+     * Load-bearing for stage β's dual-write (User.playerId ↔ Player.userId)
+     * and for the upcoming /join/[code] LeagueInvite redemption flow.
+     */
+    userId: string | null;
   }
 }
 
@@ -35,5 +46,11 @@ declare module "next-auth/jwt" {
      * always re-reads the Host header).
      */
     leagueId?: string | null;
+    /**
+     * v1.28.0 (stage α.5) — see `Session.userId` above. Captured from the
+     * adapter-resolved User.id on initial sign-in for any provider, and
+     * passed through on session refresh.
+     */
+    userId?: string | null;
   }
 }
