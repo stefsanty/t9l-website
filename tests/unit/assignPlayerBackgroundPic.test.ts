@@ -25,20 +25,52 @@ const {
   playerUpdateMock,
   playerUpdateManyMock,
   playerFindUniqueMock,
+  userFindUniqueMock,
+  userUpdateMock,
   getServerSessionMock,
   waitUntilMock,
   putMock,
   setMappingOrThrowMock,
-} = vi.hoisted(() => ({
-  transactionMock: vi.fn().mockResolvedValue([]),
-  playerUpdateMock: vi.fn().mockResolvedValue({}),
-  playerUpdateManyMock: vi.fn().mockResolvedValue({ count: 0 }),
-  playerFindUniqueMock: vi.fn().mockResolvedValue({ id: 'p-test-player' }),
-  getServerSessionMock: vi.fn(),
-  waitUntilMock: vi.fn(),
-  putMock: vi.fn().mockResolvedValue({ url: 'https://blob.example/pic.png' }),
-  setMappingOrThrowMock: vi.fn().mockResolvedValue(undefined),
-}))
+} = vi.hoisted(() => {
+  const playerUpdateMock = vi.fn().mockResolvedValue({})
+  const playerUpdateManyMock = vi.fn().mockResolvedValue({ count: 0 })
+  const playerFindUniqueMock = vi.fn().mockResolvedValue({ id: 'p-test-player' })
+  const userFindUniqueMock = vi.fn().mockResolvedValue(null)
+  const userUpdateMock = vi.fn().mockResolvedValue({})
+  // v1.29.0 (stage β) — POST/DELETE handlers wrap the legacy Player.lineId
+  // mutation AND the new User ↔ Player dual-write in a single
+  // $transaction(async tx => ...). Mock invokes the callback with a tx
+  // delegating to the same per-method mocks so call assertions work.
+  const transactionMock = vi.fn().mockImplementation(async (arg) => {
+    if (typeof arg === 'function') {
+      const tx = {
+        player: {
+          findUnique: playerFindUniqueMock,
+          update: playerUpdateMock,
+          updateMany: playerUpdateManyMock,
+        },
+        user: {
+          findUnique: userFindUniqueMock,
+          update: userUpdateMock,
+        },
+      }
+      return arg(tx)
+    }
+    return []
+  })
+  return {
+    transactionMock,
+    playerUpdateMock,
+    playerUpdateManyMock,
+    playerFindUniqueMock,
+    userFindUniqueMock,
+    userUpdateMock,
+    getServerSessionMock: vi.fn(),
+    waitUntilMock: vi.fn(),
+    putMock: vi.fn().mockResolvedValue({ url: 'https://blob.example/pic.png' }),
+    setMappingOrThrowMock: vi.fn().mockResolvedValue(undefined),
+  }
+})
 
 vi.mock('@/lib/playerMappingStore', () => ({
   setMappingOrThrow: setMappingOrThrowMock,
@@ -51,6 +83,10 @@ vi.mock('@/lib/prisma', () => ({
       findUnique: playerFindUniqueMock,
       update: playerUpdateMock,
       updateMany: playerUpdateManyMock,
+    },
+    user: {
+      findUnique: userFindUniqueMock,
+      update: userUpdateMock,
     },
   },
 }))

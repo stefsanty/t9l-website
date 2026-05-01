@@ -9,6 +9,7 @@ import { revalidate } from "@/lib/revalidate";
 import { setMappingOrThrow } from "@/lib/playerMappingStore";
 import { playerIdToSlug, slugToPlayerId } from "@/lib/ids";
 import { getLeagueIdFromRequest } from "@/lib/getLeagueFromHost";
+import { linkPlayerToUser, unlinkPlayerFromUser } from "@/lib/identityLink";
 
 function slugify(name: string): string {
   return name
@@ -118,19 +119,29 @@ async function persistAssignmentToPrisma(args: {
 }): Promise<void> {
   const { lineId, dbPlayerId } = args;
   try {
-    // Atomic: clear lineId from any other Player that currently holds it
-    // (collision-safe because lineId is @unique), then set on target. The
-    // updateMany makes the no-op case (no other holder) a clean no-throw.
-    await prisma.$transaction([
-      prisma.player.updateMany({
+    // v1.29.0 (stage β) — single $transaction now covers BOTH the legacy
+    // Player.lineId mutation AND the new User.playerId / Player.userId
+    // dual-write. Atomic: either both land or neither, preventing drift
+    // between the legacy and new identity columns.
+    await prisma.$transaction(async (tx) => {
+      // Atomic: clear lineId from any other Player that currently holds
+      // it (collision-safe because lineId is @unique), then set on
+      // target. updateMany makes the no-op case (no other holder) a
+      // clean no-throw.
+      await tx.player.updateMany({
         where: { lineId, id: { not: dbPlayerId } },
         data: { lineId: null },
-      }),
-      prisma.player.update({
+      });
+      await tx.player.update({
         where: { id: dbPlayerId },
         data: { lineId },
-      }),
-    ]);
+      });
+      // v1.29.0 — populate User.playerId / Player.userId. No-op (with a
+      // warning log) if no User exists for this lineId yet — a user who
+      // hasn't authenticated post-α.5 won't have a User row; their next
+      // sign-in creates one and the next link populates the new columns.
+      await linkPlayerToUser(tx, { playerId: dbPlayerId, lineId });
+    });
     // Best-effort legacy-hash cleanup; was already non-fatal pre-v1.8.0.
     await legacyRedisCleanup(lineId, { dropMapping: true });
   } catch (err) {
@@ -152,18 +163,25 @@ async function persistAssignmentToPrisma(args: {
 // script.
 async function persistUnassignmentToPrisma(lineId: string): Promise<void> {
   try {
-    const current = await prisma.player.findUnique({
-      where: { lineId },
-      select: { id: true },
-    });
     let unlinkedSlug: string | null = null;
-    if (current) {
-      unlinkedSlug = playerIdToSlug(current.id);
-      await prisma.player.update({
-        where: { id: current.id },
-        data: { lineId: null },
+    // v1.29.0 (stage β) — wrap legacy Player.lineId clear AND the new
+    // User.playerId / Player.userId clear in a single transaction so the
+    // unlink is atomic across both identity columns.
+    await prisma.$transaction(async (tx) => {
+      const current = await tx.player.findUnique({
+        where: { lineId },
+        select: { id: true },
       });
-    }
+      if (current) {
+        unlinkedSlug = playerIdToSlug(current.id);
+        await tx.player.update({
+          where: { id: current.id },
+          data: { lineId: null },
+        });
+      }
+      // Clear User.playerId / Player.userId. No-op when no User exists.
+      await unlinkPlayerFromUser(tx, { lineId });
+    });
     await legacyRedisCleanup(lineId, {
       dropMapping: true,
       ...(unlinkedSlug ? { dropPic: unlinkedSlug } : {}),

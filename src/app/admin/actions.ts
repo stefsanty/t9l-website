@@ -8,6 +8,7 @@ import { authOptions } from '@/lib/auth'
 import { revalidate } from '@/lib/revalidate'
 import { deleteMapping } from '@/lib/playerMappingStore'
 import { parseJstDateOnly } from '@/lib/jst'
+import { linkPlayerToUser, unlinkPlayerFromUser } from '@/lib/identityLink'
 
 /**
  * v1.26.0 — admin write paths that don't operate within a single league
@@ -74,13 +75,31 @@ export async function updatePlayer(formData: FormData) {
   })
   const priorLineId = prior?.lineId ?? null
 
-  await prisma.player.update({
-    where: { id },
-    data: {
-      name:       formData.get('name') as string,
-      lineId,
-      pictureUrl: picUrl,
-    },
+  // v1.29.0 (stage β) — single transaction wraps the legacy Player.lineId /
+  // pictureUrl / name update AND the User ↔ Player dual-write. Three branch
+  // shapes:
+  //   - lineId unchanged → no dual-write needed (still bound to same User).
+  //   - lineId cleared (was set, now null) → unlink User.playerId / Player.userId
+  //     for the prior lineId.
+  //   - lineId set (newly bound, or remapped) → unlink prior lineId's User
+  //     binding (if applicable), then link the new lineId's User to this Player.
+  await prisma.$transaction(async (tx) => {
+    await tx.player.update({
+      where: { id },
+      data: {
+        name:       formData.get('name') as string,
+        lineId,
+        pictureUrl: picUrl,
+      },
+    })
+    if (priorLineId !== lineId) {
+      if (priorLineId) {
+        await unlinkPlayerFromUser(tx, { lineId: priorLineId })
+      }
+      if (lineId) {
+        await linkPlayerToUser(tx, { playerId: id, lineId })
+      }
+    }
   })
 
   // v1.26.0 — `updatePlayer` operates on a global `Player` record without a
@@ -104,8 +123,16 @@ export async function createPlayer(formData: FormData) {
   const name   = formData.get('name')    as string
   const lineId = (formData.get('lineId') as string).trim() || null
 
-  // TODO: team assignment requires selecting a LeagueTeam (not a bare Team)
-  await prisma.player.create({ data: { name, lineId } })
+  // v1.29.0 (stage β) — wrap the create + (optional) User-side dual-write
+  // in a single transaction. linkPlayerToUser is a no-op (with warning)
+  // when no User exists for this lineId yet, which is the expected case
+  // for admin pre-staging a Player before the human has authenticated.
+  await prisma.$transaction(async (tx) => {
+    const player = await tx.player.create({ data: { name, lineId } })
+    if (lineId) {
+      await linkPlayerToUser(tx, { playerId: player.id, lineId })
+    }
+  })
 
   // v1.26.0 — `createPlayer` creates a Player with no league assignment, so
   // there's no per-league cache to pre-warm. If the lineId previously held a

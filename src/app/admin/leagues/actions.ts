@@ -14,6 +14,7 @@ import {
 } from '@/lib/playerMappingStore'
 import { seedGameWeek, deleteGameWeek as deleteGameWeekFromRedis } from '@/lib/rsvpStore'
 import { parseJstDateTimeLocal, parseJstDateOnly } from '@/lib/jst'
+import { linkPlayerToUser, unlinkPlayerFromUser } from '@/lib/identityLink'
 
 /**
  * v1.13.0 — defer the Redis pre-warm off the admin response critical path.
@@ -332,16 +333,30 @@ export async function adminLinkLineToPlayer(input: {
   })
   const targetPriorLineId = targetBefore?.lineId ?? null
 
-  await prisma.$transaction([
-    prisma.player.updateMany({
+  // v1.29.0 (stage β) — single transaction covers the legacy Player.lineId
+  // mutation AND the new User.playerId / Player.userId dual-write. Atomic:
+  // either both land or neither.
+  await prisma.$transaction(async (tx) => {
+    await tx.player.updateMany({
       where: { lineId, id: { not: playerId } },
       data: { lineId: null },
-    }),
-    prisma.player.update({
+    })
+    await tx.player.update({
       where: { id: playerId },
       data: { lineId },
-    }),
-  ])
+    })
+    // Populate User.playerId / Player.userId for the new binding. No-op
+    // (with warning) if no User exists for this lineId yet — admin
+    // pre-staging via Flow B before the user has authenticated post-α.5.
+    await linkPlayerToUser(tx, { playerId, lineId })
+    // If the admin remap just clobbered a different lineId from the
+    // target player, that prior lineId is now orphan from this player's
+    // perspective. Clear its User-side back-pointer too so the User row
+    // doesn't stale-claim a Player it's no longer bound to.
+    if (targetPriorLineId && targetPriorLineId !== lineId) {
+      await unlinkPlayerFromUser(tx, { lineId: targetPriorLineId })
+    }
+  })
 
   // Pre-warm the JWT-callback mapping cache (PR 9) with the post-write
   // relation-include shape, so the next /api/auth/session for this lineId
@@ -391,9 +406,16 @@ export async function adminClearLineLink(input: {
   })
   if (!before?.lineId) return // already unlinked
 
-  await prisma.player.update({
-    where: { id: playerId },
-    data: { lineId: null },
+  // v1.29.0 (stage β) — single transaction clears legacy Player.lineId
+  // AND the new User.playerId / Player.userId pointer.
+  await prisma.$transaction(async (tx) => {
+    await tx.player.update({
+      where: { id: playerId },
+      data: { lineId: null },
+    })
+    if (before.lineId) {
+      await unlinkPlayerFromUser(tx, { lineId: before.lineId })
+    }
   })
 
   // Invalidate the Redis mapping rather than `setMapping(lineId, leagueId, null)` —
