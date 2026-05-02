@@ -175,6 +175,13 @@ model Player {
   position   PlayerPosition?
   lineId     String?         @unique
   pictureUrl String?
+  // v1.37.0 (PR ι) — user-uploaded profile picture (Vercel Blob).
+  // Replace-only: re-upload via /account/player deletes the prior
+  // asset. Distinct from `pictureUrl` (LINE-CDN mirror, written by
+  // /api/assign-player on link). Render priority lives in
+  // src/lib/playerAvatar.ts: profilePictureUrl > pictureUrl > static
+  // fallback. Nullable — pre-ι rows have no user-uploaded asset.
+  profilePictureUrl String?
   createdAt  DateTime        @default(now())
   updatedAt  DateTime        @updatedAt
 
