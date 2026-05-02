@@ -6,6 +6,16 @@
 
 **Update 2026-05-01 — multi-provider scope.** The original v1 of this doc assumed LINE OAuth was the only sign-in path. The user has expanded the scope: the new world must support **LINE OAuth + Google OAuth + email** signup. Sections that previously read "LINE → User" now read "(LINE | Google | email) → User", and a new stage α.5 has been inserted between the v1.27.0 schema additions and the original β (dual-write) to lay the multi-provider foundation. Every other downstream stage is unchanged in shape — they just resolve identity through a provider-agnostic `Account` join instead of `User.lineId` directly.
 
+**Update 2026-05-02 — onboarding chain finalized.** The infrastructure stages α / α.5 / β / γ have all shipped (v1.27.0 → v1.30.0). Per the brainstorm pass over [`onboarding-flow-brainstorm-brief.md`](onboarding-flow-brainstorm-brief.md), the user-facing onboarding work has been compressed from the original §10 plan (PRs #6 / #7 / #8) into a 5-PR chain (δ / ε / ζ / η / θ), with new scope decisions absorbed into the design:
+
+1. **PR δ — Multi-provider login UI** (this PR / v1.32.0). Homepage callouts (`GuestLoginBanner` + header `LineLoginButton`) keep LINE as the primary big button and add a smaller "Other ways to sign in" link routing to `/auth/signin` (the α.5 provider picker). Schema-free.
+2. **PR ε — Admin invite generation.** Players-tab gets an "Add player" button (name / team / position all optional); per-row "Generate invite" creates a PERSONAL `LeagueInvite` and surfaces copy/QR; bulk-create selects multiple unlinked Players and emits a CSV. New `Player.position` enum (`GK | DF | MF | FW`); `Player.name` becomes nullable; `LeagueInvite.skipOnboarding` boolean (default `false`) lets admins fast-path pre-known players past the form.
+3. **PR ζ — Redemption page foundation.** New `/join/[code]` route, viewable signed-out (the personalized preview is the YES gate; auth happens after YES). After YES + sign-in: onboarding form (name / position / optional team preference + multi-select teammate preferences with "Other" free-text when invite has no team assignment) → welcome page. Skip-onboarding invites bypass the form. New `LeagueMembership.onboardingStatus` enum (`'not_yet' | 'completed'`). Existing `/assign-player` picker stays untouched per backward-compat rule.
+4. **PR η — ID upload.** Required step inserted between form submit and welcome: front + back upload to Vercel Blob, consent line ("we will only ever use your ID for the sole purpose of booking more courts for the league"). Admin viewer in Players-tab kebab; admin manual purge. League admins only. Retention: forever, no user-facing disclosure. Without ID, `onboardingStatus` stays `'not_yet'`. Schema: `Player.idFrontUrl` / `Player.idBackUrl` / `Player.idUploadedAt`.
+5. **PR θ — Reset onboarding admin action.** Players-tab kebab → "Reset onboarding" flips `onboardingStatus` back to `'not_yet'` while preserving all existing data; user is redirected on next visit until they re-complete the form. Admin notifies user verbally; welcome page already has the contact email.
+
+**Original §10 PRs #6 / #7 / #8 are superseded** by this chain. Stage 4 (drop `Player.lineId`) stays deferred 3–4 weeks per the rework plan's original soak window. Header league switcher (originally PR #8) and `session.memberships` plumbing (originally Stage 2.5) are deferred — both are downstream of multi-tenant operator UX (subdomain attachment, etc.) which is itself deferred per §8 of the brainstorm brief.
+
 ---
 
 ## 1. Current state
@@ -784,21 +794,32 @@ The only externally-visible changes are *additive*: new join routes, new admin i
 
 ## 10. Rollout sequence
 
-| PR | Title | Stage | Schema touch | Behavior change | Approx LOC | Estimated risk |
-|---|---|---|---|---|---|---|
-| **#1** | **Identity rework α — additive schema** ✅ shipped (PR #102 / v1.27.0) | 1 | yes (additive) | none | ~250 | low; fully revertible |
-| **#2** | **Multi-provider auth foundation — Account + VerificationToken + Google + email magic-link** (NEW — required by user 2026-05-01) | α.5 | yes (additive: `Account`, `VerificationToken`, `User.email`, `User.emailVerified`) | new Google + email signup paths; LINE behavior unchanged post-backfill | ~600 | medium; pre-merge backfill mandatory to avoid duplicate User rows on first LINE login |
-| #2.5 | Pre-α.5 backfill: `Account` rows for existing LINE users (one-shot script + dry-run) | α.5 (companion) | none | none | ~200 | low; idempotent; MUST run pre-merge |
-| #3 | Identity rework β — dual-write `User.playerId` ↔ `Player.userId` + add `joinSource` to PlayerLeagueAssignment | 2 | yes (additive: `joinSource` enum + column) | dual-write fires; reads unchanged | ~500 | medium; tests gate dual-write atomicity |
-| #3.5 | Backfill `User.playerId` ↔ `Player.userId` from existing `Player.lineId` (one-shot script + dry-run) | 2 (companion) | none | none | ~200 | low; idempotent |
-| #4 | Identity rework γ — User-side resolver behind a Setting flag (default OFF) | 3 | none | none yet | ~400 | low; flag is OFF |
-| #5 | Operator flip: `Setting('identity.read-source')` → 'user' | 3 (operator) | none | yes — reads now go through User | 0 | medium; reversible by flipping back |
-| #6 | LeagueInvite admin UI (admin can create code / personal invites for a league) + `inviteCodes.ts` helpers + 7-day default expiry | new feature | none | new admin route | ~500 | low |
-| #7 | Public `/join/[code]` route + `/api/leagues/:id/claim-player` endpoint | new feature | none | new public route | ~700 | medium; new auth-gated write |
-| #8 | Header LeagueSwitcher component + `session.memberships` plumbing | new feature | none | header change | ~400 | low |
-| #9 | Stage 4 — drop `Player.lineId` + `User.lineId` columns, drop legacy resolver, drop drift detector | 4 | yes (destructive) | reads via User-via-Account only | ~150 | medium; needs Layer 3 snapshot |
+**Status (as of 2026-05-02):** stages 1 / α.5 / 2 / 3 are all shipped. Onboarding chain (PRs #6 → #8 in the original plan) has been replaced by the δ / ε / ζ / η / θ chain — see the **Update 2026-05-02 — onboarding chain finalized** note at the top of this document for the canonical breakdown.
 
-PRs #1 through #5 are the identity-rework chain. PRs #6 through #8 are the join-flow chain. They're parallelizable after #3.5 lands. PR #9 closes the identity work. Total: **9 PRs** spanning ~7–11 sessions of focused work, gated on prod soak between #3 and #4 and between #5 and #9.
+### Identity-rework chain (shipped)
+
+| PR | Title | Stage | Schema touch | Behavior change | Status |
+|---|---|---|---|---|---|
+| **#1** | Identity rework α — additive schema (User.playerId / Player.userId / LeagueInvite) | 1 | additive | none | ✅ shipped — PR #102 / v1.27.0 |
+| **#2** | Multi-provider auth foundation — Account + VerificationToken + Google + email magic-link | α.5 | additive (Account, VerificationToken, User.email, User.emailVerified, User.image) | new Google + email signup paths; LINE branch unchanged | ✅ shipped — PR #103 / v1.28.0 |
+| #2.5 | Pre-α.5 backfill: `Account` rows for existing LINE users (one-shot script) | α.5 companion | none | none | ⏭ skipped — design changed to use a `syncUserLineId` JWT-callback bridge so the script became a post-merge optimization, not a hard merge gate |
+| #3 | Identity rework β — dual-write `User.playerId` ↔ `Player.userId` + `PlayerLeagueAssignment.joinSource` | 2 | additive | dual-write fires; reads unchanged | ✅ shipped — PR #104 / v1.29.0 |
+| #3.5 | Backfill `User.playerId` ↔ `Player.userId` from existing `Player.lineId` | 2 companion | none | none | ✅ shipped (32 of 32 prod rows linked) |
+| #4 | Identity rework γ — User-side resolver behind `Setting('identity.read-source')` flag (default `'legacy'`) | 3 | none | none (flag default) | ✅ shipped — PR #105 / v1.30.0 |
+| #5 | Operator flip: `Setting('identity.read-source')` → `'user'` | 3 (operator) | none | reads now go through User | ⏳ deferred — needs prod soak + post-onboarding-chain confidence |
+| #9 | Stage 4 — drop `Player.lineId`, drop legacy resolver, drop drift detector | 4 | destructive | reads via User-via-Account only | ⏳ deferred 3–4 weeks after #5 flip; Layer-3 snapshot required |
+
+### Onboarding chain (post-2026-05-02 brainstorm — δ / ε / ζ / η / θ)
+
+| PR | Title | Schema touch | Behavior change | Status |
+|---|---|---|---|---|
+| **δ** | Multi-provider login UI — banner + header expose `/auth/signin` link beneath the primary LINE button | none | login surfaces gain "Other ways" link; LINE button click unchanged | this PR / v1.32.0 |
+| **ε** | Admin invite generation — Add Player button, per-row Generate invite, bulk CSV, skipOnboarding flag | additive (`Player.position` enum, `Player.name` nullable, `LeagueInvite.skipOnboarding`) | admin-facing only; no public route yet | upcoming |
+| **ζ** | Redemption page foundation — `/join/[code]` + onboarding form + welcome page + `LeagueMembership.onboardingStatus` | additive (`LeagueMembership.onboardingStatus` enum + supporting columns for team/teammate prefs) | new public-facing route | upcoming |
+| **η** | ID upload — front+back to Vercel Blob, admin viewer + purge, gates `onboardingStatus` to completed | additive (`Player.idFrontUrl`, `Player.idBackUrl`, `Player.idUploadedAt`) | new required onboarding step (gated on `BLOB_READ_WRITE_TOKEN`) | upcoming |
+| **θ** | Reset onboarding admin action — Players-tab kebab flips `onboardingStatus` back to `'not_yet'`, preserving data | none | admin can re-trigger onboarding for a member | upcoming |
+
+The η ID-upload requirement is operator-decided 2026-05-02; pre-η there's no ID requirement. The **header league switcher** and **`session.memberships` plumbing** (originally PR #8 in the legacy table) are deferred — they're downstream of multi-tenant operator UX (subdomain attachment) per §8 of the brainstorm brief.
 
 **Out of scope per user-decided 2026-05-01:** retiring the `/assign-player` open picker. The picker stays live indefinitely alongside the new `/join` flow. Once the new flow is proven in production, a future ticket can revisit retirement — but that's not on this chain.
 
