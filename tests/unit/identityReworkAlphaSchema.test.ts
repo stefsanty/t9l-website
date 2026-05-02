@@ -214,14 +214,13 @@ describe('v1.27.0 — Identity rework α: InviteKind enum', () => {
 })
 
 describe('v1.27.0 — Identity rework α: stage-1 invariants', () => {
-  it('schema does NOT introduce JoinSource enum yet (that is stage 2)', () => {
-    // Surface a regression where someone tries to land stage 2 work in this
-    // PR — the JoinSource enum and PlayerLeagueAssignment.joinSource column
-    // are explicitly stage 2 per outputs/account-player-rework-plan.md §3.
-    expect(schema).not.toMatch(/enum JoinSource/)
-    const plaModel = schema.match(/model PlayerLeagueAssignment\s*\{[^}]*\}/m)
-    expect(plaModel).not.toBeNull()
-    expect(plaModel![0]).not.toMatch(/joinSource/)
+  it('α migration does NOT introduce JoinSource enum (that landed in ζ / v1.34.0)', () => {
+    // Pin α's stage-1 invariant against the IMMUTABLE α migration SQL (not
+    // the live schema, which post-ζ DOES carry JoinSource per design).
+    // The test is documenting "α was strictly schema-additive for User-Player";
+    // future stages may grow the schema without invalidating that claim.
+    expect(migration).not.toMatch(/CREATE TYPE\s+"JoinSource"/)
+    expect(migration).not.toMatch(/ALTER TABLE\s+"PlayerLeagueAssignment"\s+ADD COLUMN\s+"joinSource"/)
   })
 
   it('schema does NOT rename PlayerLeagueAssignment to LeagueMembership', () => {

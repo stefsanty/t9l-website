@@ -286,8 +286,9 @@ export async function removeTeamFromLeague(leagueTeamId: string, leagueId: strin
 
 export async function assignPlayer(playerId: string, leagueTeamId: string, fromGameWeek: number) {
   await assertAdmin()
+  // v1.34.0 (PR ζ) — admin-driven assignment carries `joinSource: ADMIN`.
   await prisma.playerLeagueAssignment.create({
-    data: { playerId, leagueTeamId, fromGameWeek },
+    data: { playerId, leagueTeamId, fromGameWeek, joinSource: 'ADMIN' },
   })
   const lt = await prisma.leagueTeam.findUnique({ where: { id: leagueTeamId }, select: { leagueId: true } })
   if (lt) {
@@ -565,7 +566,10 @@ export async function adminCreatePlayer(input: {
     })
     if (leagueTeamId) {
       await tx.playerLeagueAssignment.create({
-        data: { playerId: player.id, leagueTeamId, fromGameWeek },
+        // v1.34.0 (PR ζ) — tag admin-created assignments with `joinSource: ADMIN`
+        // so audit / abuse-mitigation queries can distinguish them from
+        // CODE / PERSONAL / SELF_SERVE rows.
+        data: { playerId: player.id, leagueTeamId, fromGameWeek, joinSource: 'ADMIN' },
       })
     }
     return player
