@@ -124,6 +124,51 @@ function csvEscape(field: string): string {
 }
 
 /**
+ * v1.33.0 (PR ε) — pure helper for building the canonical
+ * `prisma.leagueInvite.create({ data })` shape from a code, target,
+ * and options. Lives here (not in `app/admin/leagues/actions.ts`)
+ * because Next 16's Turbopack enforces "server actions must be async";
+ * a non-async exported helper from a `'use server'` module fails the
+ * build. Pure logic also belongs in lib, not in a server-action file.
+ *
+ * Returns a Prisma input shape — typed loosely as `Record<string, unknown>`
+ * so this lib doesn't pull in a Prisma type dependency. The caller passes
+ * the result through `prisma.leagueInvite.create({ data: ... })`; Prisma
+ * type-checks it at the call site.
+ */
+export interface BuildInviteCreateDataArgs {
+  leagueId: string
+  targetPlayerId: string | null
+  code: string
+  expiresAt: Date | null
+  skipOnboarding: boolean
+  createdById: string | null
+}
+export interface InviteCreateData {
+  leagueId: string
+  code: string
+  kind: 'CODE' | 'PERSONAL'
+  targetPlayerId: string | null
+  createdById: string | null
+  expiresAt: Date | null
+  maxUses: number | null
+  skipOnboarding: boolean
+}
+
+export function buildInviteCreateData(args: BuildInviteCreateDataArgs): InviteCreateData {
+  return {
+    leagueId: args.leagueId,
+    code: args.code,
+    kind: args.targetPlayerId ? 'PERSONAL' : 'CODE',
+    targetPlayerId: args.targetPlayerId,
+    createdById: args.createdById,
+    expiresAt: args.expiresAt,
+    maxUses: args.targetPlayerId ? 1 : null, // PERSONAL invites are single-use
+    skipOnboarding: args.skipOnboarding,
+  }
+}
+
+/**
  * Build a CSV blob from a list of generated invites. Returned as a
  * string ready to feed into a `Blob`/`URL.createObjectURL` flow on the
  * client (or to write to a file in tests). Header row is fixed; rows

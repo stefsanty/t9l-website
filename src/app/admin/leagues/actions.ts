@@ -19,11 +19,12 @@ import {
   generateInviteCode,
   computeInviteExpiry,
   buildInviteUrl,
+  buildInviteCreateData,
   INVITE_DEFAULT_EXPIRY_DAYS,
   type InviteCsvRow,
 } from '@/lib/inviteCodes'
 import { headers } from 'next/headers'
-import type { Prisma, PlayerPosition } from '@prisma/client'
+import type { PlayerPosition } from '@prisma/client'
 
 /**
  * v1.13.0 — defer the Redis pre-warm off the admin response critical path.
@@ -572,33 +573,6 @@ export async function adminCreatePlayer(input: {
 
   revalidate({ domain: 'admin', paths: [`/admin/leagues/${leagueId}/players`] })
   return { id: created.id }
-}
-
-/**
- * v1.33.0 (PR ε) — pure helper exported for the admin generation pipeline
- * AND the unit suite. Builds the canonical input shape for
- * `prisma.leagueInvite.create({ data: ... })` from a code, target, and
- * options. Pulled out so we can pin the exact field set without
- * standing up a real DB.
- */
-export function buildInviteCreateData(args: {
-  leagueId: string
-  targetPlayerId: string | null
-  code: string
-  expiresAt: Date | null
-  skipOnboarding: boolean
-  createdById: string | null
-}): Prisma.LeagueInviteUncheckedCreateInput {
-  return {
-    leagueId: args.leagueId,
-    code: args.code,
-    kind: args.targetPlayerId ? 'PERSONAL' : 'CODE',
-    targetPlayerId: args.targetPlayerId,
-    createdById: args.createdById,
-    expiresAt: args.expiresAt,
-    maxUses: args.targetPlayerId ? 1 : null, // PERSONAL invites are single-use
-    skipOnboarding: args.skipOnboarding,
-  }
 }
 
 /**
