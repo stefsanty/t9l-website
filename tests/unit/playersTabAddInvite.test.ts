@@ -58,14 +58,25 @@ describe('v1.33.0 (PR ε) — PlayersTab integration', () => {
     expect(cleaned).toMatch(/<AddPlayerDialog\s/)
   })
 
-  it('per-row Invite button (desktop) is conditional on !player.lineId — only unlinked players', () => {
-    // Look for the desktop test-id and the conditional render shape
-    expect(cleaned).toMatch(/data-testid=\{`invite-button-\$\{player\.id\}`\}/)
-    expect(cleaned).toMatch(/eligibleForInvite\s*&&/)
+  it('per-row Generate Invite menu item is conditional on !player.lineId — only unlinked players (v1.38.0 / PR κ)', () => {
+    // PR κ collapsed inline action buttons into the OverflowMenu kebab.
+    // The conditional now lives inside `buildPlayerMenuItems`: a
+    // "Generate invite" item is pushed only when `!player.lineId`.
+    expect(cleaned).toMatch(/if\s*\(\s*!player\.lineId\s*\)\s*\{\s*items\.push\(\s*\{\s*label:\s*['"]Generate invite['"]/)
+    // The single-target invite dialog still keys on inviteTargetPlayerId
+    // — the kebab's onSelect calls `setInviteTargetPlayerId(player.id)`
+    // via the `handlers.onInvite` thread-through.
+    expect(cleaned).toMatch(/onInvite:\s*\(\)\s*=>\s*setInviteTargetPlayerId\(player\.id\)/)
   })
 
-  it('per-row Invite button (mobile) mounts inside the mobile button cluster', () => {
-    expect(cleaned).toMatch(/data-testid=\{`invite-button-mobile-\$\{player\.id\}`\}/)
+  it('Generate Invite menu item is wired through both mobile and desktop buildPlayerMenuItems calls (v1.38.0 / PR κ)', () => {
+    // Both mobile and desktop rows pass `handlers.onInvite` into the
+    // builder, so the same kebab affordance shows up in both layouts
+    // without a duplicate inline button.
+    const onInviteCallSites = (
+      cleaned.match(/onInvite:\s*\(\)\s*=>\s*setInviteTargetPlayerId/g) ?? []
+    ).length
+    expect(onInviteCallSites).toBe(2) // one for mobile row, one for desktop row
   })
 
   it('bulk-select checkbox column is in the desktop grid header (data-testid=bulk-select-all)', () => {

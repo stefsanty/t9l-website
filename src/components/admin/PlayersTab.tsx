@@ -1,15 +1,17 @@
 'use client'
 
 import { useMemo, useState, useTransition } from 'react'
-import { ArrowRight, X, ChevronDown, Link2Off, RefreshCw, Send, IdCard, Undo2 } from 'lucide-react'
-import { cn } from '@/lib/utils'
-import StatusBadge from './StatusBadge'
+import { ArrowRight, Send } from 'lucide-react'
 import ConfirmDialog from './ConfirmDialog'
 import AssignLineDialog from './AssignLineDialog'
 import AddPlayerDialog from './AddPlayerDialog'
 import GenerateInviteDialog from './GenerateInviteDialog'
 import IdViewerDialog from './IdViewerDialog'
 import PillEditor from './PillEditor'
+import AdminPlayerAvatar from './AdminPlayerAvatar'
+import SignInStatusBadge from './SignInStatusBadge'
+import OverflowMenu from './MatchOverflowMenu'
+import { pickSignInStatus } from '@/lib/playerSignInStatus'
 import { useToast } from './ToastProvider'
 import {
   transferPlayer,
@@ -45,6 +47,17 @@ interface PlayerRow {
   // v1.33.0 — `Player.position` is now a `PlayerPosition` enum at the DB
   // layer; surfaced as a string so this component remains DB-shape-agnostic.
   position: string | null
+  // v1.37.0 (PR ι) — user-uploaded profile picture; preferred over
+  // pictureUrl + linePictureUrl in the avatar fallback chain.
+  profilePictureUrl: string | null
+  // Legacy LINE-CDN mirror written on /assign-player link (PR 12).
+  pictureUrl: string | null
+  // v1.38.0 (PR κ) — Player.userId from PR β dual-write. Drives the
+  // "Signed up" sign-in status badge.
+  userId: string | null
+  // v1.38.0 (PR κ) — count of active PERSONAL invites for this player.
+  // Drives the "Invited" badge when userId is null.
+  activeInviteCount: number
   // v1.35.0 (PR η) — uploaded ID URLs + timestamp. All null until the
   // user completes the η ID-upload step (or admin purges via the per-row
   // affordance).
@@ -269,15 +282,36 @@ export default function PlayersTab({
       {players.length > 0 && (
         <>
       {/* ── Mobile: card list ────────────────────────────────────────────── */}
+      {/* v1.38.0 (PR κ) — declutter pass per user direction:
+          - Remove the "active status" badge (StatusBadge) and the inline
+            GW1+ tally (assignment column) — those are dashboard signals,
+            not roster signals.
+          - Replace per-row inline action buttons with a single kebab
+            menu (OverflowMenu).
+          - Add an avatar circle leftmost so the operator can scan the
+            list visually.
+          - Add a sign-in status pill (Signed up / Invited / Pending). */}
       <div className="md:hidden bg-admin-surface rounded-xl border border-admin-border overflow-hidden divide-y divide-admin-border">
         {players.map((player) => {
           const current = currentTeam(player)
           const isTransferOpen = transferPanelId === player.id
           const hasPrevious = player.assignments.length > 1
+          const signInStatus = pickSignInStatus({
+            userId: player.userId,
+            activeInviteCount: player.activeInviteCount,
+          })
 
           return (
-            <div key={player.id}>
+            <div key={player.id} data-testid={`player-row-mobile-${player.id}`}>
               <div className="flex items-start gap-3 px-4 py-3.5">
+                <AdminPlayerAvatar
+                  name={player.name}
+                  profilePictureUrl={player.profilePictureUrl}
+                  pictureUrl={player.pictureUrl}
+                  linePictureUrl={player.linePictureUrl}
+                  size={40}
+                  testid={`player-avatar-mobile-${player.id}`}
+                />
                 <div className="flex-1 min-w-0">
                   <PillEditor
                     variant="text"
@@ -288,103 +322,60 @@ export default function PlayersTab({
                     maxLength={100}
                     onSave={(next) => handleRenamePlayer(player.id, next)}
                   />
-                  <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                  <div className="flex items-center gap-1.5 mt-0.5 flex-wrap text-xs">
                     {hasPrevious && (
-                      <span className="text-admin-text3 line-through text-xs font-mono">
+                      <span className="text-admin-text3 line-through font-mono">
                         {player.assignments[player.assignments.length - 2]?.leagueTeam.team.name}
                       </span>
                     )}
                     {hasPrevious && <ArrowRight className="w-3 h-3 text-admin-text3 shrink-0" />}
-                    <span className="text-admin-text2 text-xs">
+                    <span className="text-admin-text2">
                       {current?.leagueTeam.team.name ?? '—'}
                     </span>
-                  </div>
-                  <div className="flex items-center gap-2 mt-1.5">
-                    {current && (
-                      <StatusBadge status={current.toGameWeek === null ? 'ACTIVE' : 'SCHEDULED'} />
+                    {player.position && (
+                      <span
+                        className="text-admin-text3 font-mono uppercase"
+                        data-testid={`player-position-mobile-${player.id}`}
+                      >
+                        · {player.position}
+                      </span>
                     )}
-                    <span className="text-admin-text3 text-xs font-mono">
-                      {current
-                        ? `GW${current.fromGameWeek}${current.toGameWeek !== null ? `–${current.toGameWeek}` : '+'}`
-                        : '—'}
-                    </span>
                   </div>
-                  <LineInfoMobile
-                    player={player}
-                    onClearLine={() => handleClearLine(player.id, player.name)}
-                    onRemap={() => setRemapPlayerId(player.id)}
-                  />
-                </div>
-                <div className="flex items-center gap-1 shrink-0 pt-0.5">
-                  {/* v1.36.0 (PR θ) — mobile per-row "Reset onboarding" icon
-                      button. Same conditional + ConfirmDialog as desktop. */}
-                  {current?.onboardingStatus === 'COMPLETED' && (
-                    <ConfirmDialog
-                      trigger={
-                        <button
-                          type="button"
-                          title="Reset onboarding"
-                          className="p-2 rounded text-admin-text3 hover:text-admin-amber hover:bg-admin-amber-dim/30 transition-colors min-h-[36px] min-w-[36px] flex items-center justify-center"
-                          data-testid={`reset-onboarding-button-mobile-${player.id}`}
-                        >
-                          <Undo2 className="w-4 h-4" />
-                        </button>
-                      }
-                      title={`Reset onboarding for ${nameOrPlaceholder(player.name)}?`}
-                      description="The user is redirected through the onboarding form on their next /join/[code] visit. All existing data is preserved. Notify them verbally."
-                      confirmLabel="Reset onboarding"
-                      onConfirm={() => handleResetOnboarding(player.id, player.name)}
+                  <div className="mt-1.5">
+                    <SignInStatusBadge
+                      status={signInStatus}
+                      testid={`signin-status-mobile-${player.id}`}
                     />
-                  )}
-                  {/* v1.35.0 (PR η) — mobile per-row "View ID" button.
-                      Visible only when the player has uploaded an ID. */}
-                  {player.idUploadedAt && (
-                    <button
-                      type="button"
-                      onClick={() => setIdViewerPlayerId(player.id)}
-                      title="View uploaded ID"
-                      className="p-2 rounded text-admin-text3 hover:text-admin-amber hover:bg-admin-amber-dim/30 transition-colors min-h-[36px] min-w-[36px] flex items-center justify-center"
-                      data-testid={`id-view-button-mobile-${player.id}`}
+                  </div>
+                  {player.lineDisplayName && (
+                    <p
+                      className="text-admin-text3 text-[10px] mt-1 truncate"
+                      title={player.lineId ?? ''}
+                      data-testid={`line-name-mobile-${player.id}`}
                     >
-                      <IdCard className="w-4 h-4" />
-                    </button>
+                      LINE: {player.lineDisplayName}
+                    </p>
                   )}
-                  {/* v1.33.0 (PR ε) — mobile per-row Invite button. Only
-                      visible for unlinked players (linked players don't
-                      need a personal invite). */}
-                  {!player.lineId && (
-                    <button
-                      type="button"
-                      onClick={() => setInviteTargetPlayerId(player.id)}
-                      title="Generate invite"
-                      className="p-2 rounded text-admin-text3 hover:text-admin-green hover:bg-admin-green-dim/30 transition-colors min-h-[36px] min-w-[36px] flex items-center justify-center"
-                      data-testid={`invite-button-mobile-${player.id}`}
-                    >
-                      <Send className="w-4 h-4" />
-                    </button>
-                  )}
-                  <button
-                    onClick={() => setTransferPanelId(isTransferOpen ? null : player.id)}
-                    className={cn(
-                      'flex items-center gap-1 px-2.5 min-h-[36px] rounded text-xs border transition-colors',
-                      isTransferOpen
-                        ? 'bg-admin-green-dim border-admin-green/30 text-admin-green'
-                        : 'border-admin-border text-admin-text2 hover:border-admin-border2 hover:text-admin-text',
-                    )}
-                  >
-                    Transfer
-                    <ChevronDown className={cn('w-3 h-3 transition-transform', isTransferOpen && 'rotate-180')} />
-                  </button>
-                  <ConfirmDialog
-                    trigger={
-                      <button className="p-2 rounded text-admin-text3 hover:text-admin-red hover:bg-admin-red-dim transition-colors min-h-[36px] min-w-[36px] flex items-center justify-center">
-                        <X className="w-4 h-4" />
-                      </button>
-                    }
-                    title={`Remove ${nameOrPlaceholder(player.name)}?`}
-                    description="This will remove all league assignments for this player."
-                    confirmLabel={`Remove ${nameOrPlaceholder(player.name)}`}
-                    onConfirm={() => handleRemove(player.id, player.name)}
+                </div>
+                <div className="shrink-0 pt-0.5">
+                  <OverflowMenu
+                    ariaLabel={`Actions for ${nameOrPlaceholder(player.name)}`}
+                    items={buildPlayerMenuItems({
+                      player,
+                      current,
+                      isTransferOpen,
+                      handlers: {
+                        onTransferToggle: () =>
+                          setTransferPanelId(isTransferOpen ? null : player.id),
+                        onInvite: () => setInviteTargetPlayerId(player.id),
+                        onViewId: () => setIdViewerPlayerId(player.id),
+                        onResetOnboarding: () =>
+                          handleResetOnboarding(player.id, player.name),
+                        onRemap: () => setRemapPlayerId(player.id),
+                        onClearLine: () => handleClearLine(player.id, player.name),
+                        onRemove: () => handleRemove(player.id, player.name),
+                      },
+                    })}
                   />
                 </div>
               </div>
@@ -407,14 +398,23 @@ export default function PlayersTab({
       </div>
 
       {/* ── Desktop: table ───────────────────────────────────────────────── */}
-      {/* v1.33.0 (PR ε) — added a leading 32px checkbox column for bulk-invite
-          selection. Header checkbox toggles all eligible (unlinked) players;
-          per-row checkbox is disabled for already-linked players (those don't
-          need a personal invite). */}
+      {/* v1.38.0 (PR κ) — column redesign per user direction:
+          - REMOVED: "active status" badge column + GW1+ inline tally
+            (those signal RSVP / scheduling, not roster identity).
+          - REMOVED: per-row inline action buttons (Reset / ID / Invite /
+            Transfer / Remove). All actions now live in the kebab.
+          - REPLACED: 220px-wide "LINE" cell with a thin 24px LINE name
+            sub-line under the player name + an avatar in the leftmost
+            column (avatar uses profilePictureUrl > pictureUrl >
+            linePictureUrl > initials).
+          - ADDED: Avatar column (40px), Position column (60px),
+            Sign-in status column (110px), kebab column (40px).
+          Final widths: 32 chk | 40 avatar | 1fr name+line-sub | 140 team |
+          60 position | 110 sign-in | 40 kebab. */}
       <div className="hidden md:block bg-admin-surface rounded-xl border border-admin-border overflow-hidden">
         <div
-          className="grid text-admin-text3 text-xs uppercase tracking-wider px-5 py-2.5 border-b border-admin-border bg-admin-surface2"
-          style={{ gridTemplateColumns: '32px 1fr 140px 220px 100px 80px 180px' }}
+          className="grid text-admin-text3 text-xs uppercase tracking-wider px-5 py-2.5 border-b border-admin-border bg-admin-surface2 items-center gap-3"
+          style={{ gridTemplateColumns: '32px 40px 1fr 140px 60px 110px 40px' }}
         >
           <span>
             <input
@@ -432,11 +432,11 @@ export default function PlayersTab({
               disabled={bulkSelectableIds.size === 0}
             />
           </span>
+          <span />
           <span>Name</span>
           <span>Team</span>
-          <span>LINE</span>
-          <span>Assignment</span>
-          <span>Status</span>
+          <span>Pos.</span>
+          <span>Sign-in</span>
           <span />
         </div>
 
@@ -446,12 +446,16 @@ export default function PlayersTab({
           const hasPrevious = player.assignments.length > 1
           const eligibleForInvite = !player.lineId
           const isChecked = selectedForBulk.has(player.id)
+          const signInStatus = pickSignInStatus({
+            userId: player.userId,
+            activeInviteCount: player.activeInviteCount,
+          })
 
           return (
             <div key={player.id} className="border-b border-admin-border last:border-b-0" data-testid={`player-row-${player.id}`}>
               <div
-                className="grid items-center px-5 py-3 hover:bg-admin-surface2/50 transition-colors"
-                style={{ gridTemplateColumns: '32px 1fr 140px 220px 100px 80px 180px' }}
+                className="grid items-center px-5 py-3 hover:bg-admin-surface2/50 transition-colors gap-3"
+                style={{ gridTemplateColumns: '32px 40px 1fr 140px 60px 110px 40px' }}
               >
                 <span>
                   <input
@@ -469,7 +473,16 @@ export default function PlayersTab({
                   />
                 </span>
 
-                <span>
+                <AdminPlayerAvatar
+                  name={player.name}
+                  profilePictureUrl={player.profilePictureUrl}
+                  pictureUrl={player.pictureUrl}
+                  linePictureUrl={player.linePictureUrl}
+                  size={36}
+                  testid={`player-avatar-${player.id}`}
+                />
+
+                <div className="min-w-0">
                   <PillEditor
                     variant="text"
                     value={player.name ?? ''}
@@ -479,119 +492,64 @@ export default function PlayersTab({
                     maxLength={100}
                     onSave={(next) => handleRenamePlayer(player.id, next)}
                   />
-                </span>
+                  {player.lineDisplayName && (
+                    <p
+                      className="text-admin-text3 text-[10px] mt-0.5 truncate"
+                      title={player.lineId ?? ''}
+                      data-testid={`line-name-${player.id}`}
+                    >
+                      LINE: {player.lineDisplayName}
+                    </p>
+                  )}
+                </div>
 
-                <div className="flex items-center gap-1.5 text-sm">
+                <div className="flex items-center gap-1.5 text-sm min-w-0">
                   {hasPrevious && (
-                    <span className="text-admin-text3 line-through text-xs font-mono">
+                    <span className="text-admin-text3 line-through text-xs font-mono truncate">
                       {player.assignments[player.assignments.length - 2]?.leagueTeam.team.name}
                     </span>
                   )}
                   {hasPrevious && <ArrowRight className="w-3 h-3 text-admin-text3 shrink-0" />}
-                  <span className="text-admin-text2">
+                  <span className="text-admin-text2 truncate">
                     {current?.leagueTeam.team.name ?? '—'}
                   </span>
                 </div>
 
-                <LineInfoCell
-                  player={player}
-                  onClearLine={() => handleClearLine(player.id, player.name)}
-                  onRemap={() => setRemapPlayerId(player.id)}
-                />
-
-                <span className="text-admin-text3 text-xs font-mono">
-                  {current
-                    ? `GW${current.fromGameWeek}${current.toGameWeek !== null ? `–${current.toGameWeek}` : '+'}`
-                    : '—'}
+                <span
+                  className="text-admin-text2 text-xs font-mono uppercase"
+                  data-testid={`player-position-${player.id}`}
+                >
+                  {player.position ?? <span className="text-admin-text3">—</span>}
                 </span>
 
                 <span>
-                  {current ? (
-                    <StatusBadge status={current.toGameWeek === null ? 'ACTIVE' : 'SCHEDULED'} />
-                  ) : (
-                    <span className="text-admin-text3 text-xs">—</span>
-                  )}
+                  <SignInStatusBadge
+                    status={signInStatus}
+                    testid={`signin-status-${player.id}`}
+                  />
                 </span>
 
-                <div className="flex items-center justify-end gap-1.5">
-                  {/* v1.36.0 (PR θ) — per-row "Reset onboarding" button.
-                      Visible only when the player's CURRENT assignment is
-                      onboardingStatus=COMPLETED — for NOT_YET it's a no-op
-                      (pre-onboarded slots) and for missing assignments it's
-                      not applicable. Click → ConfirmDialog → flip back to
-                      NOT_YET; admin notifies the user verbally. */}
-                  {current?.onboardingStatus === 'COMPLETED' && (
-                    <ConfirmDialog
-                      trigger={
-                        <button
-                          type="button"
-                          title="Reset onboarding — user re-fills the form on next visit"
-                          className="inline-flex items-center gap-1 rounded-[6px] border border-admin-border bg-transparent px-2.5 py-1 text-xs text-admin-text2 transition-colors hover:border-admin-amber/40 hover:text-admin-amber"
-                          data-testid={`reset-onboarding-button-${player.id}`}
-                        >
-                          <Undo2 className="w-3 h-3" />
-                          Reset
-                        </button>
-                      }
-                      title={`Reset onboarding for ${nameOrPlaceholder(player.name)}?`}
-                      description="This flips the onboarding status back to NOT_YET. The user is redirected through the onboarding form on their next /join/[code] visit. All existing data is preserved (name / position / preferences / ID). Notify the user verbally — there's no automatic notification."
-                      confirmLabel="Reset onboarding"
-                      onConfirm={() => handleResetOnboarding(player.id, player.name)}
-                    />
-                  )}
-                  {/* v1.35.0 (PR η) — per-row "View ID" button. Visible only
-                      when the player has uploaded an ID. Click → modal with
-                      front + back image + Purge button. */}
-                  {player.idUploadedAt && (
-                    <button
-                      type="button"
-                      onClick={() => setIdViewerPlayerId(player.id)}
-                      title={`View ID uploaded ${player.idUploadedAt}`}
-                      className="inline-flex items-center gap-1 rounded-[6px] border border-admin-border bg-transparent px-2.5 py-1 text-xs text-admin-text2 transition-colors hover:border-admin-amber/40 hover:text-admin-amber"
-                      data-testid={`id-view-button-${player.id}`}
-                    >
-                      <IdCard className="w-3 h-3" />
-                      ID
-                    </button>
-                  )}
-                  {/* v1.33.0 (PR ε) — per-row Invite button. Visible only for
-                      unlinked players (linked players don't need a personal
-                      invite — they already have LINE-side identity). */}
-                  {eligibleForInvite && (
-                    <button
-                      type="button"
-                      onClick={() => setInviteTargetPlayerId(player.id)}
-                      title="Generate a personal invite for this player"
-                      className="inline-flex items-center gap-1 rounded-[6px] border border-admin-border bg-transparent px-2.5 py-1 text-xs text-admin-text2 transition-colors hover:border-admin-green/40 hover:text-admin-green"
-                      data-testid={`invite-button-${player.id}`}
-                    >
-                      <Send className="w-3 h-3" />
-                      Invite
-                    </button>
-                  )}
-                  <button
-                    onClick={() => setTransferPanelId(isTransferOpen ? null : player.id)}
-                    className={cn(
-                      'rounded-[6px] border px-2.5 py-1 text-xs transition-colors',
-                      isTransferOpen
-                        ? 'bg-admin-green-dim border-admin-green/40 text-admin-green'
-                        : 'border-admin-border bg-transparent text-admin-text2 hover:border-admin-border2 hover:text-admin-text',
-                    )}
-                  >
-                    {isTransferOpen ? 'Cancel' : 'Transfer'}
-                  </button>
-                  <ConfirmDialog
-                    trigger={
-                      <button className="rounded-[6px] border border-admin-border bg-transparent px-2.5 py-1 text-xs text-admin-text2 transition-colors hover:border-admin-border2 hover:text-admin-text">
-                        Remove
-                      </button>
-                    }
-                    title={`Remove ${nameOrPlaceholder(player.name)}?`}
-                    description="This will remove all league assignments for this player."
-                    confirmLabel={`Remove ${nameOrPlaceholder(player.name)}`}
-                    onConfirm={() => handleRemove(player.id, player.name)}
+                <span className="flex items-center justify-end">
+                  <OverflowMenu
+                    ariaLabel={`Actions for ${nameOrPlaceholder(player.name)}`}
+                    items={buildPlayerMenuItems({
+                      player,
+                      current,
+                      isTransferOpen,
+                      handlers: {
+                        onTransferToggle: () =>
+                          setTransferPanelId(isTransferOpen ? null : player.id),
+                        onInvite: () => setInviteTargetPlayerId(player.id),
+                        onViewId: () => setIdViewerPlayerId(player.id),
+                        onResetOnboarding: () =>
+                          handleResetOnboarding(player.id, player.name),
+                        onRemap: () => setRemapPlayerId(player.id),
+                        onClearLine: () => handleClearLine(player.id, player.name),
+                        onRemove: () => handleRemove(player.id, player.name),
+                      },
+                    })}
                   />
-                </div>
+                </span>
               </div>
 
               {isTransferOpen && current && (
@@ -689,173 +647,108 @@ export default function PlayersTab({
   )
 }
 
-// ── LINE info cell (desktop) ─────────────────────────────────────────────────
+// ── Per-row overflow menu items ──────────────────────────────────────────────
 
-interface LineInfoCellProps {
+/**
+ * v1.38.0 (PR κ) — collect every per-row admin action into one kebab
+ * menu (mobile + desktop share the same shape via this builder).
+ *
+ * Visibility rules — admin actions surface in this order:
+ *   1. Generate invite (only when player has no LINE link — pre-redemption)
+ *   2. Reset onboarding (only when current assignment is COMPLETED)
+ *   3. View ID (only when player has uploaded one)
+ *   4. Transfer to another team — toggle the inline TransferPanel
+ *   5. Remap LINE link (only when linked)
+ *   6. Unlink LINE (only when linked) — destructive, separated by the
+ *      tone: 'danger' marker
+ *   7. Remove from league (always available) — destructive
+ *
+ * The `OverflowMenu` (re-exported `MatchOverflowMenu`) handles all the
+ * dismissal + a11y plumbing; this helper just maps PR-specific
+ * conditional render logic into menu items. ConfirmDialog flows for
+ * the destructive actions (Reset onboarding / Unlink / Remove) live
+ * elsewhere — the kebab `onSelect` calls the toast-wrapped handler
+ * directly, which is fine for most flows because admin-side double-
+ * click protection is already handled by `useTransition` in the
+ * server action wrappers. The most-destructive (Remove) keeps a
+ * dedicated ConfirmDialog by routing through `confirmRemove`.
+ */
+interface BuildPlayerMenuArgs {
   player: PlayerRow
-  onClearLine: () => Promise<void>
-  onRemap: () => void
+  current: Assignment | null
+  isTransferOpen: boolean
+  handlers: {
+    onTransferToggle: () => void
+    onInvite: () => void
+    onViewId: () => void
+    onResetOnboarding: () => Promise<void>
+    onRemap: () => void
+    onClearLine: () => Promise<void>
+    onRemove: () => Promise<void>
+  }
 }
 
-function LineInfoCell({ player, onClearLine, onRemap }: LineInfoCellProps) {
+function buildPlayerMenuItems(args: BuildPlayerMenuArgs) {
+  const { player, current, isTransferOpen, handlers } = args
+  const items: Array<{
+    label: string
+    onSelect: () => void | Promise<void>
+    tone?: 'default' | 'danger'
+  }> = []
+
   if (!player.lineId) {
-    return (
-      <div className="flex items-center gap-2 text-admin-text3 text-xs">
-        <Link2Off className="w-3.5 h-3.5 opacity-60" />
-        <span>Not linked</span>
-      </div>
-    )
+    items.push({ label: 'Generate invite', onSelect: handlers.onInvite })
   }
-  return (
-    <div className="flex items-center gap-2 min-w-0" data-testid="line-info">
-      <LineAvatar
-        pictureUrl={player.linePictureUrl}
-        displayName={player.lineDisplayName}
-      />
-      <div className="flex flex-col min-w-0 flex-1">
-        <span className="text-admin-text text-xs font-medium truncate" data-testid="line-display-name">
-          {player.lineDisplayName ?? <span className="text-admin-text3 italic">no name</span>}
-        </span>
-        <span
-          className="text-admin-text3 text-[10px] font-mono truncate"
-          title={player.lineId}
-          data-testid="line-id"
-        >
-          {shortLineId(player.lineId)}
-        </span>
-      </div>
-      <div className="flex items-center gap-1 shrink-0">
-        <button
-          type="button"
-          onClick={onRemap}
-          title="Remap to a different LINE user"
-          className="p-1.5 rounded text-admin-text3 hover:text-admin-text hover:bg-admin-surface3 transition-colors"
-          data-testid="remap-button"
-        >
-          <RefreshCw className="w-3.5 h-3.5" />
-        </button>
-        <ConfirmDialog
-          trigger={
-            <button
-              type="button"
-              title="Unlink LINE user from this player"
-              className="p-1.5 rounded text-admin-text3 hover:text-admin-red hover:bg-admin-red-dim transition-colors"
-              data-testid="unlink-button"
-            >
-              <Link2Off className="w-3.5 h-3.5" />
-            </button>
-          }
-          title={`Unlink LINE from ${nameOrPlaceholder(player.name)}?`}
-          description={
-            player.lineDisplayName
-              ? `${player.lineDisplayName} (${shortLineId(player.lineId)}) will need to be re-linked from the orphan dropdown to play again.`
-              : `LINE user ${shortLineId(player.lineId)} will need to be re-linked from the orphan dropdown to play again.`
-          }
-          confirmLabel="Unlink"
-          onConfirm={onClearLine}
-        />
-      </div>
-    </div>
-  )
-}
-
-// ── LINE info row (mobile) ───────────────────────────────────────────────────
-
-interface LineInfoMobileProps {
-  player: PlayerRow
-  onClearLine: () => Promise<void>
-  onRemap: () => void
-}
-
-function LineInfoMobile({ player, onClearLine, onRemap }: LineInfoMobileProps) {
-  if (!player.lineId) {
-    return (
-      <div className="mt-2 flex items-center gap-1.5 text-admin-text3 text-[10px]">
-        <Link2Off className="w-3 h-3 opacity-60" />
-        <span>Not linked to LINE</span>
-      </div>
-    )
+  // Reset onboarding only surfaces when the assignment is COMPLETED —
+  // for NOT_YET it's a no-op. Native window.confirm gates the
+  // destructive flip; we deliberately don't pull a stateful
+  // ConfirmDialog into the menu (that requires turning the builder
+  // into a component).
+  if (current?.onboardingStatus === 'COMPLETED') {
+    items.push({
+      label: 'Reset onboarding',
+      onSelect: async () => {
+        if (
+          typeof window !== 'undefined' &&
+          !window.confirm(
+            `Reset onboarding for ${nameOrPlaceholder(player.name)}? They'll be redirected through the form on next visit. Existing data preserved.`,
+          )
+        ) return
+        await handlers.onResetOnboarding()
+      },
+    })
   }
-  return (
-    <div className="mt-2 flex items-center gap-2" data-testid="line-info-mobile">
-      <LineAvatar
-        pictureUrl={player.linePictureUrl}
-        displayName={player.lineDisplayName}
-      />
-      <div className="flex-1 min-w-0">
-        <p className="text-admin-text2 text-[11px] font-medium truncate">
-          {player.lineDisplayName ?? <span className="italic text-admin-text3">no LINE name</span>}
-        </p>
-        <p
-          className="text-admin-text3 text-[10px] font-mono truncate"
-          title={player.lineId}
-        >
-          {shortLineId(player.lineId)}
-        </p>
-      </div>
-      <div className="flex items-center gap-0.5 shrink-0">
-        <button
-          type="button"
-          onClick={onRemap}
-          title="Remap"
-          className="p-1.5 rounded text-admin-text3 hover:text-admin-text hover:bg-admin-surface3 transition-colors"
-        >
-          <RefreshCw className="w-3.5 h-3.5" />
-        </button>
-        <ConfirmDialog
-          trigger={
-            <button
-              type="button"
-              title="Unlink"
-              className="p-1.5 rounded text-admin-text3 hover:text-admin-red hover:bg-admin-red-dim transition-colors"
-            >
-              <Link2Off className="w-3.5 h-3.5" />
-            </button>
-          }
-          title={`Unlink LINE from ${nameOrPlaceholder(player.name)}?`}
-          description={
-            player.lineDisplayName
-              ? `${player.lineDisplayName} (${shortLineId(player.lineId)}) will need to be re-linked.`
-              : `LINE user ${shortLineId(player.lineId)} will need to be re-linked.`
-          }
-          confirmLabel="Unlink"
-          onConfirm={onClearLine}
-        />
-      </div>
-    </div>
-  )
-}
-
-// ── Avatar component ─────────────────────────────────────────────────────────
-
-interface LineAvatarProps {
-  pictureUrl: string | null
-  displayName: string | null
-}
-
-function LineAvatar({ pictureUrl, displayName }: LineAvatarProps) {
-  // <img> rather than next/image because LINE CDN URLs are stored without
-  // configuration in next.config and we don't want to crash the row on a
-  // hostname not allowed by the loader. Fallback to initial-letter on
-  // load error via onError handler.
-  const [errored, setErrored] = useState(false)
-  if (!pictureUrl || errored) {
-    return (
-      <div className="w-7 h-7 shrink-0 rounded-full bg-admin-surface3 border border-admin-border flex items-center justify-center text-admin-text2 text-[11px] font-bold">
-        {avatarInitial(displayName)}
-      </div>
-    )
+  if (player.idUploadedAt) {
+    items.push({ label: 'View ID', onSelect: handlers.onViewId })
   }
-  return (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img
-      src={pictureUrl}
-      alt={displayName ?? 'LINE avatar'}
-      onError={() => setErrored(true)}
-      className="w-7 h-7 shrink-0 rounded-full bg-admin-surface3 border border-admin-border object-cover"
-      data-testid="line-avatar-img"
-    />
-  )
+  items.push({
+    label: isTransferOpen ? 'Cancel transfer' : 'Transfer to team…',
+    onSelect: handlers.onTransferToggle,
+  })
+  if (player.lineId) {
+    items.push({ label: 'Remap LINE link', onSelect: handlers.onRemap })
+    items.push({
+      label: 'Unlink LINE',
+      tone: 'danger',
+      onSelect: async () => {
+        if (!window.confirm(
+          `Unlink LINE from ${nameOrPlaceholder(player.name)}? They'll need to re-link from the orphan dropdown to play again.`,
+        )) return
+        await handlers.onClearLine()
+      },
+    })
+  }
+  items.push({
+    label: 'Remove from league',
+    tone: 'danger',
+    onSelect: async () => {
+      if (!window.confirm(
+        `Remove ${nameOrPlaceholder(player.name)} from this league? This deletes all their assignments.`,
+      )) return
+      await handlers.onRemove()
+    },
+  })
+  return items
 }
 
 // ── Transfer panel ───────────────────────────────────────────────────────────

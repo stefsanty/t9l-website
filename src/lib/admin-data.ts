@@ -79,7 +79,7 @@ export const getLeagueTeams = unstable_cache(
  */
 export const getLeaguePlayers = unstable_cache(
   async (leagueId: string) => {
-    const [assignments, leagueTeams, gameWeeks, allLineLogins] = await Promise.all([
+    const [assignments, leagueTeams, gameWeeks, allLineLogins, activeInvites] = await Promise.all([
       prisma.playerLeagueAssignment.findMany({
         where: { leagueTeam: { leagueId } },
         include: {
@@ -106,6 +106,26 @@ export const getLeaguePlayers = unstable_cache(
           lastSeenAt: true,
         },
       }),
+      // v1.38.0 (PR κ) — active PERSONAL invites with a `targetPlayerId`,
+      // for the new "Invited" sign-in-status badge. We pull the
+      // population once and group by `targetPlayerId` in JS — Prisma's
+      // groupBy doesn't fit the "non-revoked AND non-used-up AND
+      // non-expired" predicate cleanly. Cardinality is bounded by the
+      // roster size so the in-memory filter is cheap.
+      prisma.leagueInvite.findMany({
+        where: {
+          leagueId,
+          kind: 'PERSONAL',
+          revokedAt: null,
+          targetPlayerId: { not: null },
+        },
+        select: {
+          targetPlayerId: true,
+          expiresAt: true,
+          maxUses: true,
+          usedCount: true,
+        },
+      }),
     ])
     const lineLoginsByLineId: Record<
       string,
@@ -118,7 +138,29 @@ export const getLeaguePlayers = unstable_cache(
         lastSeenAt: ll.lastSeenAt.toISOString(),
       }
     }
-    return [assignments, leagueTeams, gameWeeks, lineLoginsByLineId] as const
+    // Group active invites by targetPlayerId. An invite is "active" iff
+    // it hasn't been used up (usedCount < maxUses, or maxUses null) AND
+    // hasn't expired (expiresAt > now, or expiresAt null) AND isn't
+    // revoked (filtered upstream). Admin pre-staged PERSONAL invites
+    // typically have `maxUses: 1` so any usedCount ≥ 1 means consumed.
+    const now = Date.now()
+    const activeInviteCountByPlayerId: Record<string, number> = {}
+    for (const inv of activeInvites) {
+      if (!inv.targetPlayerId) continue
+      const usedUp = inv.maxUses !== null && inv.usedCount >= inv.maxUses
+      if (usedUp) continue
+      const expired = inv.expiresAt !== null && inv.expiresAt.getTime() <= now
+      if (expired) continue
+      activeInviteCountByPlayerId[inv.targetPlayerId] =
+        (activeInviteCountByPlayerId[inv.targetPlayerId] ?? 0) + 1
+    }
+    return [
+      assignments,
+      leagueTeams,
+      gameWeeks,
+      lineLoginsByLineId,
+      activeInviteCountByPlayerId,
+    ] as const
   },
   ['league-players'],
   { revalidate: 30, tags: ['leagues'] },
