@@ -24,7 +24,7 @@ export default async function EditPlayerPage({ params }: Props) {
             <input
               name="name"
               required
-              defaultValue={player.name}
+              defaultValue={player.name ?? ''}
               className="w-full bg-gray-700 text-white rounded px-3 py-2 text-sm"
             />
           </div>

@@ -298,7 +298,10 @@ export async function getAllLineLoginsWithLinkedPlayer(): Promise<
     pictureUrl: string | null
     firstSeenAt: Date
     lastSeenAt: Date
-    linkedPlayer: { id: string; name: string } | null
+    // v1.33.0 (PR ε) — `Player.name` is now nullable. Linked-player join
+    // surfaces this as `string | null` so admin UIs can render a placeholder
+    // for pre-staged-but-not-yet-onboarded players.
+    linkedPlayer: { id: string; name: string | null } | null
   }>
 > {
   const [allLogins, linkedRows] = await Promise.all([
@@ -317,7 +320,7 @@ export async function getAllLineLoginsWithLinkedPlayer(): Promise<
       select: { id: true, name: true, lineId: true },
     }),
   ])
-  const playerByLineId = new Map<string, { id: string; name: string }>()
+  const playerByLineId = new Map<string, { id: string; name: string | null }>()
   for (const p of linkedRows) {
     if (p.lineId) playerByLineId.set(p.lineId, { id: p.id, name: p.name })
   }

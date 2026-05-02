@@ -35,17 +35,17 @@ model User {
   // The 1:1 is enforced by @unique. The reverse mirror lives on
   // Player.userId. Stage 2 wires the @relation; stage 1 keeps the columns
   // independent so the migration is fully additive (no FK to fail).
-  playerId   String?  @unique
+  playerId String? @unique
 
   // Stage α.5 of account-player-rework (v1.28.0). NextAuth Prisma adapter
   // requires both columns on User. Both nullable: LINE OAuth doesn't always
   // provide an email, only Google OAuth and EmailProvider (magic link)
   // guarantee a verified address. PostgreSQL @unique fires only when the
   // value is non-null, so two LINE users with no email can coexist.
-  email         String?    @unique
+  email         String?   @unique
   emailVerified DateTime?
 
-  accounts      Account[]
+  accounts Account[]
 }
 
 // Stage α.5 of account-player-rework (v1.28.0). NextAuth adapter Account
@@ -65,9 +65,9 @@ model User {
 model Account {
   id                String  @id @default(cuid())
   userId            String
-  type              String  // "oauth" | "email" | "credentials"
-  provider          String  // "line" | "google" | "email"
-  providerAccountId String  // LINE sub | Google sub | email address
+  type              String // "oauth" | "email" | "credentials"
+  provider          String // "line" | "google" | "email"
+  providerAccountId String // LINE sub | Google sub | email address
   refresh_token     String? @db.Text
   access_token      String? @db.Text
   expires_at        Int?
@@ -76,7 +76,7 @@ model Account {
   id_token          String? @db.Text
   session_state     String?
 
-  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([provider, providerAccountId])
   @@index([userId])
@@ -163,25 +163,45 @@ model LeagueTeam {
 }
 
 model Player {
-  id         String   @id @default(cuid())
-  name       String
-  position   String?
-  lineId     String?  @unique
+  id         String          @id @default(cuid())
+  // v1.33.0 (PR ε of the onboarding chain) — `name` becomes nullable so
+  // admins can pre-stage a roster slot (team known, name not yet) and let
+  // the user fill it in via the upcoming `/join/[code]` flow (PR ζ).
+  // Backward-compat: every row at v1.33.0 deploy time has a non-null name.
+  name       String?
+  // v1.33.0 — formal enum. Pre-ε this was `String?` populated from Sheets;
+  // observed prod values are exactly the four literals (or NULL). Migration
+  // CASE-WHEN-backfills; non-conforming free-text values land as NULL.
+  position   PlayerPosition?
+  lineId     String?         @unique
   pictureUrl String?
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
 
   // Stage 1 of account-player-rework (v1.27.0). Mirror of User.playerId — the
   // 1:1 binding from the canonical Player profile to its global User
   // identity. Nullable through stage 3 (existing rows backfill in stage 2;
   // stage 3 reads from this column behind a Setting flag). Stage 4 drops
   // Player.lineId and makes this the only identity column.
-  userId     String?  @unique
+  userId String? @unique
 
   leagueAssignments PlayerLeagueAssignment[]
   goals             Goal[]
   assists           Assist[]
   availability      Availability[]
+}
+
+// v1.33.0 (PR ε) — formal player-position enum. Four roles: goalkeeper,
+// defender, midfielder, forward. Pre-ε `Player.position` was `String?`
+// populated by the Sheets backfill; the enum constrains future writes
+// without changing what observed values mean. Optional — FC Torpedo
+// players have no positions in the source data, and admin pre-stages
+// (PR ζ) start with no position until the user fills onboarding.
+enum PlayerPosition {
+  GK
+  DF
+  MF
+  FW
 }
 
 model PlayerLeagueAssignment {
@@ -200,7 +220,7 @@ model PlayerLeagueAssignment {
 }
 
 model GameWeek {
-  id         String   @id @default(cuid())
+  id         String    @id @default(cuid())
   leagueId   String
   weekNumber Int
   startDate  DateTime?
@@ -365,19 +385,26 @@ model LineLogin {
 // outputs/account-player-rework-plan.md §5 "Default expiry") rather than at
 // the schema level — Prisma can't express `now() + interval` defaults.
 model LeagueInvite {
-  id              String     @id @default(cuid())
-  leagueId        String
-  code            String     @unique
-  kind            InviteKind
-  targetPlayerId  String?
-  createdById     String?
-  expiresAt       DateTime?
-  maxUses         Int?
-  usedCount       Int        @default(0)
-  revokedAt       DateTime?
-  createdAt       DateTime   @default(now())
+  id             String     @id @default(cuid())
+  leagueId       String
+  code           String     @unique
+  kind           InviteKind
+  targetPlayerId String?
+  createdById    String?
+  expiresAt      DateTime?
+  maxUses        Int?
+  usedCount      Int        @default(0)
+  revokedAt      DateTime?
+  createdAt      DateTime   @default(now())
 
-  league          League     @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+  // v1.33.0 (PR ε) — when true, redemption (PR ζ) bypasses the onboarding
+  // form and binds the User to targetPlayerId immediately. Used for
+  // high-trust pre-staged PERSONAL invites where the admin already has
+  // the player's data and just needs the User-Player binding established.
+  // Default false — onboarding form is the safe path.
+  skipOnboarding Boolean @default(false)
+
+  league League @relation(fields: [leagueId], references: [id], onDelete: Cascade)
 
   @@index([leagueId])
   @@index([code])

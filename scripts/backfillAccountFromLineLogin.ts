@@ -98,7 +98,11 @@ export interface BackfillInputs {
   lineId: string
   existingUser: { id: string; lineId: string | null } | null
   existingAccount: { id: string; userId: string } | null
-  playerWithLineId: { id: string; name: string } | null
+  // v1.33.0 (PR ε) — `Player.name` widened to nullable. Pre-α.5 backfill
+  // continues to work the same: if a name is set, prefer the LineLogin
+  // name; otherwise fall back to whatever Player has (which may now itself
+  // be null — covered by `?? null` in the userPayload below).
+  playerWithLineId: { id: string; name: string | null } | null
   lineLogin: { name: string | null; pictureUrl: string | null } | null
 }
 
@@ -125,7 +129,7 @@ export function decideBackfillAction(inputs: BackfillInputs): BackfillDecision {
       kind: 'create-user-and-account',
       userPayload: {
         lineId,
-        name: lineLogin?.name ?? playerWithLineId.name,
+        name: lineLogin?.name ?? playerWithLineId.name ?? null,
         pictureUrl: lineLogin?.pictureUrl ?? null,
       },
     }
