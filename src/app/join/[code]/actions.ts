@@ -6,7 +6,7 @@ import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { revalidate } from '@/lib/revalidate'
 import { validateInvite } from '@/lib/joinValidation'
-import { linkPlayerToUser } from '@/lib/identityLink'
+import { linkUserToPlayer } from '@/lib/identityLink'
 import type { Prisma } from '@prisma/client'
 
 /**
@@ -134,26 +134,28 @@ export async function redeemInvite(input: RedeemInviteInput): Promise<RedeemInvi
   const newJoinSource = invite.kind === 'PERSONAL' ? 'PERSONAL' : 'CODE'
 
   await prisma.$transaction(async (tx) => {
-    // (a) Bind Player ↔ User. Use the v1.29.0 linkPlayerToUser helper
-    // when we have a lineId (existing dual-write path). For Google/email
-    // users (no lineId), set Player.userId directly + mirror User.playerId.
-    if (lineId) {
-      // Set Player.lineId in case it wasn't already (admin pre-stage).
-      await tx.player.update({
-        where: { id: targetPlayerId },
-        data: { lineId, userId },
-      })
-      await linkPlayerToUser(tx, { playerId: targetPlayerId, lineId })
-    } else {
-      await tx.player.update({
-        where: { id: targetPlayerId },
-        data: { userId },
-      })
-      await tx.user.update({
-        where: { id: userId },
-        data: { playerId: targetPlayerId },
-      })
-    }
+    // (a) Bind Player ↔ User. v1.39.0 (PR λ) routes BOTH branches
+    // through the new generic `linkUserToPlayer` helper so the
+    // invariant-clearing logic (clear stale Player.userId, clear stale
+    // User.playerId pointer) runs uniformly for LINE and Google/email
+    // flows alike. Pre-λ the non-LINE branch went around the helper
+    // and could 500 with a Player.userId @unique violation when a
+    // Google/email user rebound to a different Player. See
+    // outputs/identity-unification-audit.md for the full audit.
+    //
+    // The optional `lineId` argument tells the helper whether to ALSO
+    // set Player.lineId in the same transaction:
+    //   - LINE branch: pass the session's lineId so legacy resolver
+    //     (Setting('identity.read-source') === 'legacy') still works.
+    //   - non-LINE branch: omit lineId so Player.lineId stays at
+    //     whatever it was (typically null for a fresh redemption;
+    //     pre-staged admin Players might carry a lineId already, in
+    //     which case it's preserved).
+    await linkUserToPlayer(tx, {
+      userId,
+      playerId: targetPlayerId,
+      ...(lineId ? { lineId } : {}),
+    })
 
     // (b) Mark / create the PlayerLeagueAssignment with onboardingStatus
     // + joinSource. Admin pre-stages may have already created one; if

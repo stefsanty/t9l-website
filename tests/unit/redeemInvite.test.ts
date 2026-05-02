@@ -23,6 +23,7 @@ const {
   txMock,
   revalidateMock,
   linkPlayerToUserMock,
+  linkUserToPlayerMock,
   sessionMock,
   redirectMock,
 } = vi.hoisted(() => {
@@ -56,6 +57,7 @@ const {
     txMock,
     revalidateMock: vi.fn(),
     linkPlayerToUserMock: vi.fn(),
+    linkUserToPlayerMock: vi.fn().mockResolvedValue(true),
     sessionMock: vi.fn(),
     redirectMock: vi.fn(),
   }
@@ -77,6 +79,7 @@ vi.mock('@/lib/prisma', () => ({
 vi.mock('@/lib/revalidate', () => ({ revalidate: revalidateMock }))
 vi.mock('@/lib/identityLink', () => ({
   linkPlayerToUser: linkPlayerToUserMock,
+  linkUserToPlayer: linkUserToPlayerMock,
   unlinkPlayerFromUser: vi.fn(),
 }))
 vi.mock('next-auth', () => ({ getServerSession: sessionMock }))
@@ -97,6 +100,8 @@ beforeEach(() => {
   txMock.mockClear()
   revalidateMock.mockClear()
   linkPlayerToUserMock.mockClear()
+  linkUserToPlayerMock.mockClear()
+  linkUserToPlayerMock.mockResolvedValue(true)
   sessionMock.mockReset()
   redirectMock.mockClear()
 })
@@ -222,28 +227,33 @@ describe('v1.34.0 (PR ζ) — redeemInvite — PERSONAL happy path', () => {
     })
   })
 
-  it('binds the LINE user via linkPlayerToUser + sets Player.lineId', async () => {
+  it('v1.39.0 (PR λ) — binds the LINE user via linkUserToPlayer + sets Player.lineId in same call', async () => {
     await redeemInvite({ code: 'ABCD1234EFGH' })
-    expect(playerUpdateMock).toHaveBeenCalledWith({
-      where: { id: 'p-target' },
-      data: { lineId: 'U_LINEID', userId: 'u-1' },
+    // The PR λ refactor routes BOTH branches through linkUserToPlayer
+    // (the new generic helper). For LINE flows, lineId is passed so
+    // Player.lineId is set on the same Player.update inside the helper.
+    expect(linkUserToPlayerMock).toHaveBeenCalledWith(expect.anything(), {
+      userId: 'u-1',
+      playerId: 'p-target',
+      lineId: 'U_LINEID',
     })
-    expect(linkPlayerToUserMock).toHaveBeenCalledWith(
-      expect.anything(),
-      { playerId: 'p-target', lineId: 'U_LINEID' },
-    )
+    // The legacy lineId-keyed `linkPlayerToUser` is no longer called
+    // from redeemInvite — linkUserToPlayer subsumes its job here. (Other
+    // call sites — admin actions, /api/assign-player — still use
+    // linkPlayerToUser; that's checked separately.)
+    expect(linkPlayerToUserMock).not.toHaveBeenCalled()
   })
 
-  it('Google/email user (no lineId): sets Player.userId directly + mirrors User.playerId', async () => {
+  it('v1.39.0 (PR λ) — Google/email user routes through linkUserToPlayer with NO lineId (Player.lineId stays null)', async () => {
     sessionMock.mockResolvedValue({ userId: 'u-google', lineId: null })
     await redeemInvite({ code: 'ABCD1234EFGH' })
-    expect(playerUpdateMock).toHaveBeenCalledWith({
-      where: { id: 'p-target' },
-      data: { userId: 'u-google' },
-    })
-    expect(userUpdateMock).toHaveBeenCalledWith({
-      where: { id: 'u-google' },
-      data: { playerId: 'p-target' },
+    // The non-LINE branch passes only userId + playerId — no lineId
+    // means the helper does NOT touch Player.lineId. This is the fix
+    // for the v1.38.x bug where the non-LINE branch went around the
+    // helper's invariant-clearing logic.
+    expect(linkUserToPlayerMock).toHaveBeenCalledWith(expect.anything(), {
+      userId: 'u-google',
+      playerId: 'p-target',
     })
     expect(linkPlayerToUserMock).not.toHaveBeenCalled()
   })
