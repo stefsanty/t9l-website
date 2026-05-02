@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo, useState, useTransition } from 'react'
-import { ArrowRight, X, ChevronDown, Link2Off, RefreshCw, Send, IdCard } from 'lucide-react'
+import { ArrowRight, X, ChevronDown, Link2Off, RefreshCw, Send, IdCard, Undo2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import StatusBadge from './StatusBadge'
 import ConfirmDialog from './ConfirmDialog'
@@ -16,6 +16,7 @@ import {
   removePlayerFromLeague,
   adminClearLineLink,
   adminUpdatePlayerName,
+  adminResetOnboarding,
 } from '@/app/admin/leagues/actions'
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -30,6 +31,10 @@ interface Assignment {
   fromGameWeek: number
   toGameWeek: number | null
   leagueTeam: LeagueTeamRef
+  // v1.34.0 (PR ζ) — has the user filled the onboarding form? Surfaces
+  // here so PR θ's "Reset onboarding" button can be conditionally rendered
+  // (only meaningful when the current assignment is COMPLETED).
+  onboardingStatus?: 'NOT_YET' | 'COMPLETED'
 }
 
 interface PlayerRow {
@@ -195,6 +200,19 @@ export default function PlayersTab({
     }
   }
 
+  // v1.36.0 (PR θ) — admin flips the player's onboardingStatus back to
+  // NOT_YET. Preserves all existing data; the user is redirected through
+  // the onboarding flow on their next /join/[code] visit. Admin notifies
+  // the user verbally that they need to redo the form / ID upload.
+  async function handleResetOnboarding(playerId: string, playerName: string | null) {
+    try {
+      await adminResetOnboarding({ playerId, leagueId })
+      toast(`Onboarding reset for ${playerName ?? 'this player'}. Notify them to revisit their join link.`)
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Failed to reset onboarding', 'error')
+    }
+  }
+
   const remapTarget = remapPlayerId ? players.find((p) => p.id === remapPlayerId) ?? null : null
 
   return (
@@ -298,6 +316,26 @@ export default function PlayersTab({
                   />
                 </div>
                 <div className="flex items-center gap-1 shrink-0 pt-0.5">
+                  {/* v1.36.0 (PR θ) — mobile per-row "Reset onboarding" icon
+                      button. Same conditional + ConfirmDialog as desktop. */}
+                  {current?.onboardingStatus === 'COMPLETED' && (
+                    <ConfirmDialog
+                      trigger={
+                        <button
+                          type="button"
+                          title="Reset onboarding"
+                          className="p-2 rounded text-admin-text3 hover:text-admin-amber hover:bg-admin-amber-dim/30 transition-colors min-h-[36px] min-w-[36px] flex items-center justify-center"
+                          data-testid={`reset-onboarding-button-mobile-${player.id}`}
+                        >
+                          <Undo2 className="w-4 h-4" />
+                        </button>
+                      }
+                      title={`Reset onboarding for ${nameOrPlaceholder(player.name)}?`}
+                      description="The user is redirected through the onboarding form on their next /join/[code] visit. All existing data is preserved. Notify them verbally."
+                      confirmLabel="Reset onboarding"
+                      onConfirm={() => handleResetOnboarding(player.id, player.name)}
+                    />
+                  )}
                   {/* v1.35.0 (PR η) — mobile per-row "View ID" button.
                       Visible only when the player has uploaded an ID. */}
                   {player.idUploadedAt && (
@@ -476,6 +514,31 @@ export default function PlayersTab({
                 </span>
 
                 <div className="flex items-center justify-end gap-1.5">
+                  {/* v1.36.0 (PR θ) — per-row "Reset onboarding" button.
+                      Visible only when the player's CURRENT assignment is
+                      onboardingStatus=COMPLETED — for NOT_YET it's a no-op
+                      (pre-onboarded slots) and for missing assignments it's
+                      not applicable. Click → ConfirmDialog → flip back to
+                      NOT_YET; admin notifies the user verbally. */}
+                  {current?.onboardingStatus === 'COMPLETED' && (
+                    <ConfirmDialog
+                      trigger={
+                        <button
+                          type="button"
+                          title="Reset onboarding — user re-fills the form on next visit"
+                          className="inline-flex items-center gap-1 rounded-[6px] border border-admin-border bg-transparent px-2.5 py-1 text-xs text-admin-text2 transition-colors hover:border-admin-amber/40 hover:text-admin-amber"
+                          data-testid={`reset-onboarding-button-${player.id}`}
+                        >
+                          <Undo2 className="w-3 h-3" />
+                          Reset
+                        </button>
+                      }
+                      title={`Reset onboarding for ${nameOrPlaceholder(player.name)}?`}
+                      description="This flips the onboarding status back to NOT_YET. The user is redirected through the onboarding form on their next /join/[code] visit. All existing data is preserved (name / position / preferences / ID). Notify the user verbally — there's no automatic notification."
+                      confirmLabel="Reset onboarding"
+                      onConfirm={() => handleResetOnboarding(player.id, player.name)}
+                    />
+                  )}
                   {/* v1.35.0 (PR η) — per-row "View ID" button. Visible only
                       when the player has uploaded an ID. Click → modal with
                       front + back image + Purge button. */}
