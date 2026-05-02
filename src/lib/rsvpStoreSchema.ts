@@ -27,12 +27,19 @@ export const RSVP_TTL_DAYS_AFTER_MATCH = 90
  * started flowing today, so the 90-day clock runs from today even if the
  * match itself is months away — uses the longer of the two windows
  * implicitly via the `max`).
+ *
+ * v1.31.0 — `gwStartDate` is nullable. When null (admin cleared the
+ * matchday's date — "TBD" on the public site) we anchor on `now` only,
+ * which preserves the "RSVP data has a 90-day window from when it was
+ * written" invariant without any matchday anchor to lengthen it.
  */
 export function computeRsvpExpireAt(
-  gwStartDate: Date,
+  gwStartDate: Date | null,
   now: Date = new Date(),
 ): number {
-  const base = Math.max(gwStartDate.getTime(), now.getTime())
+  const base = gwStartDate
+    ? Math.max(gwStartDate.getTime(), now.getTime())
+    : now.getTime()
   const expireMs = base + RSVP_TTL_DAYS_AFTER_MATCH * 24 * 60 * 60 * 1000
   return Math.floor(expireMs / 1000)
 }

@@ -102,8 +102,11 @@ export default function RsvpBar({
   }
 
   const colorName = COLOR_NAMES[userTeam.id] ?? userTeam.color;
-  const venueName = matchday.venueName ?? 'Tennozu Park C';
-  const venueUrl = matchday.venueUrl ?? 'https://maps.google.com/maps?q=Tennozu+Park+C,+Shinagawa,+Tokyo,+Japan';
+  // v1.31.0 — when admin hasn't set a venue, surface "TBD" instead of the
+  // legacy hardcoded "Tennozu Park C" default. Anchor only renders when a
+  // map URL is set.
+  const venueName = matchday.venueName ?? 'TBD';
+  const venueUrl = matchday.venueUrl ?? null;
   const userFirstMatch = matchday.matches
     .filter((m) => m.homeTeamId === session.teamId || m.awayTeamId === session.teamId)
     .sort((a, b) => a.kickoff.localeCompare(b.kickoff))[0];
@@ -144,14 +147,21 @@ export default function RsvpBar({
                   </>
                 )}
                 <span className="text-black/30 text-[10px]">·</span>
-                <a
-                  href={venueUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-[11px] font-bold !text-black/75 underline underline-offset-2 !decoration-black/30 hover:!text-black transition-colors"
-                >
-                  📍 {venueName} ↗
-                </a>
+                {venueUrl ? (
+                  <a
+                    href={venueUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[11px] font-bold !text-black/75 underline underline-offset-2 !decoration-black/30 hover:!text-black transition-colors"
+                  >
+                    📍 {venueName} ↗
+                  </a>
+                ) : (
+                  // v1.31.0 — TBD venue: no map link, plain text.
+                  <span className="text-[11px] font-bold text-black/75">
+                    📍 {venueName}
+                  </span>
+                )}
               </div>
             </div>
           ) : (
@@ -275,14 +285,19 @@ export default function RsvpBar({
                 <span className="text-lg shrink-0">📍</span>
                 <p className="text-[13px] text-fg-mid leading-snug">
                   Venue:{' '}
-                  <a
-                    href={venueUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-fg-high font-bold underline underline-offset-2 decoration-fg-low hover:decoration-fg-high transition-colors"
-                  >
-                    {venueName} ↗
-                  </a>
+                  {venueUrl ? (
+                    <a
+                      href={venueUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-fg-high font-bold underline underline-offset-2 decoration-fg-low hover:decoration-fg-high transition-colors"
+                    >
+                      {venueName} ↗
+                    </a>
+                  ) : (
+                    // v1.31.0 — TBD venue: no map link, plain text.
+                    <span className="text-fg-high font-bold">{venueName}</span>
+                  )}
                 </p>
               </div>
 

@@ -203,8 +203,8 @@ model GameWeek {
   id         String   @id @default(cuid())
   leagueId   String
   weekNumber Int
-  startDate  DateTime
-  endDate    DateTime
+  startDate  DateTime?
+  endDate    DateTime?
   venueId    String?
 
   league       League         @relation(fields: [leagueId], references: [id], onDelete: Cascade)

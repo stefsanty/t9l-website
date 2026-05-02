@@ -146,17 +146,33 @@ export async function createGameWeek(leagueId: string, data: {
 }
 
 export async function updateGameWeek(id: string, leagueId: string, data: {
-  startDate?: string
-  endDate?:   string
+  startDate?: string | null
+  endDate?:   string | null
   venueId?:   string | null
 }) {
   await assertAdmin()
+  // v1.31.0 — `startDate` / `endDate` may be `null` (admin clearing the date
+  // → public site renders "TBD"). `undefined` means "field not in the patch
+  // — leave it alone". Empty-string normalises to `null` so the date pill's
+  // overlaid <input type="date"> can submit a cleared value.
+  const startDate =
+    data.startDate === undefined
+      ? undefined
+      : data.startDate
+        ? parseJstDateOnly(data.startDate)
+        : null
+  const endDate =
+    data.endDate === undefined
+      ? undefined
+      : data.endDate
+        ? parseJstDateOnly(data.endDate)
+        : null
   await prisma.gameWeek.update({
     where: { id },
     data: {
-      startDate: data.startDate ? parseJstDateOnly(data.startDate) : undefined,
-      endDate:   data.endDate   ? parseJstDateOnly(data.endDate)   : undefined,
-      venueId:   data.venueId !== undefined ? (data.venueId || null) : undefined,
+      startDate,
+      endDate,
+      venueId: data.venueId !== undefined ? (data.venueId || null) : undefined,
     },
   })
   revalidate({ domain: 'admin', paths: [`/admin/leagues/${leagueId}/schedule`] })

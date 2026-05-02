@@ -87,22 +87,32 @@ describe('v1.21.1 — ScheduleTab match time pill structural assertions', () => 
   })
 
   it('the match-row time pill onSave combines the new HH:MM with the matchday startDate', () => {
-    // The combined string is constructed inline as `${fmtDate(gwStartDate)}T${val}`
+    // The combined string is constructed inline as `${fmtDate(dateAnchor)}T${val}`
     // so updateMatch can parse it via the canonical parseJstDateTimeLocal.
-    expect(text).toMatch(/playedAt:\s*`\$\{fmtDate\(gwStartDate\)\}T\$\{val\}`/)
+    // v1.31.0 — `dateAnchor` is `gwStartDate ?? match.playedAt` so a TBD
+    // matchday preserves the match's existing date when the admin edits
+    // the kickoff time.
+    expect(text).toMatch(/playedAt:\s*`\$\{fmtDate\(dateAnchor\)\}T\$\{val\}`/)
+    expect(text).toMatch(/const dateAnchor = gwStartDate \?\? match\.playedAt/)
   })
 
-  it('MatchCardRow receives gwStartDate as a prop', () => {
-    expect(text).toMatch(/gwStartDate:\s*Date/)
+  it('MatchCardRow receives gwStartDate as a nullable prop (v1.31.0)', () => {
+    // v1.31.0 — gwStartDate is `Date | null` because the admin can clear
+    // the matchday date (TBD on public). The component falls back to
+    // `match.playedAt` when null so individual match dates survive.
+    expect(text).toMatch(/gwStartDate:\s*Date\s*\|\s*null/)
     expect(text).toMatch(/gwStartDate=\{gw\.startDate\}/)
   })
 
-  it('the "Add match" empty-state button defaults playedAt to the staggered time for index 0', () => {
-    expect(text).toMatch(/playedAt:\s*`\$\{fmtDate\(gw\.startDate\)\}T\$\{defaultMatchKickoffTime\(0\)\}`/)
+  it('the "Add match" empty-state button defaults playedAt to today when matchday is TBD (v1.31.0)', () => {
+    // v1.31.0 — `gw.startDate ?? new Date()` falls back to today when the
+    // matchday's date has been cleared. Match.playedAt is non-nullable
+    // in the schema, so add-match always needs an anchor.
+    expect(text).toMatch(/playedAt:\s*`\$\{fmtDate\(gw\.startDate\s*\?\?\s*new Date\(\)\)\}T\$\{defaultMatchKickoffTime\(0\)\}`/)
   })
 
   it('the "Add match" button for non-empty matchdays staggers by current match count', () => {
-    expect(text).toMatch(/playedAt:\s*`\$\{fmtDate\(gw\.startDate\)\}T\$\{defaultMatchKickoffTime\(gw\.matches\.length\)\}`/)
+    expect(text).toMatch(/playedAt:\s*`\$\{fmtDate\(gw\.startDate\s*\?\?\s*new Date\(\)\)\}T\$\{defaultMatchKickoffTime\(gw\.matches\.length\)\}`/)
   })
 
   it('does NOT use the v1.21.0 fmtDatetime(gw.startDate) midnight default (regression target)', () => {

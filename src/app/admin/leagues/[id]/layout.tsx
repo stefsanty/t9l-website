@@ -86,7 +86,7 @@ export default async function LeagueLayout({ params, children }: Props) {
             {nextGW && (
               <>
                 <span className="text-admin-text3 mx-1.5">·</span>
-                <span>MD{nextGW.weekNumber} next {formatDate(nextGW.startDate)}</span>
+                <span>MD{nextGW.weekNumber} next {nextGW.startDate ? formatDate(nextGW.startDate) : 'TBD'}</span>
               </>
             )}
           </div>

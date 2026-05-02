@@ -4,8 +4,10 @@ import type { Matchday, Team, Goal } from '@/types';
 import { formatJstFriendly } from '@/lib/jst';
 import MatchdayCountdown from './MatchdayCountdown';
 
-const DEFAULT_VENUE_NAME = 'Tennozu Park C';
-const DEFAULT_VENUE_MAP_URL = 'https://maps.google.com/maps?q=Tennozu+Park+C,+Shinagawa,+Tokyo,+Japan';
+// v1.31.0 — when admin hasn't picked a venue for a matchday, surface "TBD"
+// instead of the legacy hardcoded "Tennozu Park C" default. The link only
+// renders when a venue URL is set; the TBD label is plain text.
+const TBD_VENUE_NAME = 'TBD';
 
 function MatchScorers({
   matchId,
@@ -103,8 +105,8 @@ export default function MatchdayCard({
 }: MatchdayCardProps) {
   const s = STRINGS[locale];
   const isCompleted = matchday.matches[0].homeGoals !== null;
-  const venueName = matchday.venueName ?? DEFAULT_VENUE_NAME;
-  const venueUrl = matchday.venueUrl ?? DEFAULT_VENUE_MAP_URL;
+  const venueName = matchday.venueName ?? TBD_VENUE_NAME;
+  const venueUrl = matchday.venueUrl ?? null;
 
   const getTeam = (id: string) => teams.find((t) => t.id === id);
   const sittingOutTeam = getTeam(matchday.sittingOutTeamId);
@@ -151,19 +153,30 @@ export default function MatchdayCard({
               </div>
             )}
             <div className="flex items-center gap-2 mt-0.5">
-              <a
-                href={venueUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 text-[12px] font-bold text-vibrant-pink/80 hover:text-vibrant-pink transition-colors group/venue"
-              >
-                <svg className="w-3.5 h-3.5 shrink-0 text-vibrant-pink/70 group-hover/venue:text-vibrant-pink transition-colors" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" />
-                </svg>
-                <span className="underline underline-offset-4 decoration-vibrant-pink/30 group-hover/venue:decoration-vibrant-pink/60">
-                  {venueName} ↗
+              {venueUrl ? (
+                <a
+                  href={venueUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 text-[12px] font-bold text-vibrant-pink/80 hover:text-vibrant-pink transition-colors group/venue"
+                >
+                  <svg className="w-3.5 h-3.5 shrink-0 text-vibrant-pink/70 group-hover/venue:text-vibrant-pink transition-colors" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" />
+                  </svg>
+                  <span className="underline underline-offset-4 decoration-vibrant-pink/30 group-hover/venue:decoration-vibrant-pink/60">
+                    {venueName} ↗
+                  </span>
+                </a>
+              ) : (
+                // v1.31.0 — no venue URL (TBD or admin entered a venue name
+                // without a map link): render plain text, no anchor.
+                <span className="inline-flex items-center gap-1.5 text-[12px] font-bold text-vibrant-pink/80">
+                  <svg className="w-3.5 h-3.5 shrink-0 text-vibrant-pink/70" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" />
+                  </svg>
+                  <span>{venueName}</span>
                 </span>
-              </a>
+              )}
               {matchday.venueCourtSize && (
                 <span className="text-[11px] font-medium text-fg-low truncate">
                   {matchday.venueCourtSize}

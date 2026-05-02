@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useTransition } from 'react'
-import { Plus, Upload, Calendar, MapPin, Clock } from 'lucide-react'
+import { Plus, Upload, Calendar, MapPin, Clock, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import StatusBadge from './StatusBadge'
 import MatchScoreEditor from './MatchScoreEditor'
@@ -58,8 +58,11 @@ interface VenueRef {
 interface GameWeekRow {
   id: string
   weekNumber: number
-  startDate: Date
-  endDate: Date
+  // v1.31.0 — nullable so admins can clear the date (renders TBD on the
+  // public site). `endDate` follows `startDate` in lockstep — every admin
+  // surface that sets one sets both.
+  startDate: Date | null
+  endDate: Date | null
   venue: VenueRef | null
   matches: MatchRow[]
 }
@@ -290,18 +293,45 @@ export default function ScheduleTab({ leagueId, gameWeeks, leagueTeams, venues }
 
               {/* Header pills: date + venue */}
               <div className="px-4 pb-3 flex items-center gap-2 flex-wrap">
-                <PillEditor
-                  variant="date"
-                  value={fmtDate(gw.startDate)}
-                  display={formatJstFriendly(gw.startDate, 'en')}
-                  icon={<Calendar className="w-3 h-3" />}
-                  ariaLabel={`MD${gw.weekNumber} date`}
-                  className="min-h-[30px] text-[12px] px-3"
-                  onSave={async (val) => {
-                    await updateGameWeek(gw.id, leagueId, { startDate: val, endDate: val })
-                    toast('Date updated')
-                  }}
-                />
+                <span className="inline-flex items-center gap-1">
+                  <PillEditor
+                    variant="date"
+                    // v1.31.0 — `gw.startDate` is nullable. When null the
+                    // pill renders the "+ Set date" empty state via the
+                    // existing PillEditor empty-value branch; setting any
+                    // value fires onSave with the new "YYYY-MM-DD" string.
+                    value={gw.startDate ? fmtDate(gw.startDate) : ''}
+                    display={gw.startDate ? formatJstFriendly(gw.startDate, 'en') : ''}
+                    placeholder="Set date"
+                    icon={<Calendar className="w-3 h-3" />}
+                    ariaLabel={`MD${gw.weekNumber} date`}
+                    className="min-h-[30px] text-[12px] px-3"
+                    onSave={async (val) => {
+                      await updateGameWeek(gw.id, leagueId, { startDate: val, endDate: val })
+                      toast('Date updated')
+                    }}
+                  />
+                  {gw.startDate && (
+                    // Native <input type="date"> has no built-in clear UI on
+                    // most browsers. v1.31.0 adds an explicit "✕" sibling
+                    // button so admins can flip the matchday back to TBD.
+                    <button
+                      type="button"
+                      aria-label={`Clear MD${gw.weekNumber} date`}
+                      onClick={async () => {
+                        try {
+                          await updateGameWeek(gw.id, leagueId, { startDate: null, endDate: null })
+                          toast('Date cleared')
+                        } catch {
+                          toast('Failed to clear date', 'error')
+                        }
+                      }}
+                      className="inline-flex items-center justify-center w-5 h-5 rounded-full text-admin-text3 hover:text-admin-text hover:bg-admin-surface2 transition-colors"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  )}
+                </span>
                 <PillEditor
                   variant="venue"
                   value={gw.venue?.id ?? ''}
@@ -350,7 +380,10 @@ export default function ScheduleTab({ leagueId, gameWeeks, leagueTeams, venues }
                         awayTeamId: '',
                         // v1.21.1 — pre-stagger the kickoff per match index;
                         // first match defaults to 19:05 JST.
-                        playedAt: `${fmtDate(gw.startDate)}T${defaultMatchKickoffTime(0)}`,
+                        // v1.31.0 — fall back to today's date when the
+                        // matchday's date is cleared (TBD); admins still
+                        // need a non-null Match.playedAt to create the row.
+                        playedAt: `${fmtDate(gw.startDate ?? new Date())}T${defaultMatchKickoffTime(0)}`,
                       })
                     }
                     className="w-full flex items-center justify-center gap-1.5 min-h-[36px] rounded-lg border border-admin-green bg-transparent px-3 text-sm font-medium text-admin-green hover:bg-admin-green-dim transition-colors"
@@ -429,7 +462,9 @@ export default function ScheduleTab({ leagueId, gameWeeks, leagueTeams, venues }
                           awayTeamId: '',
                           // v1.21.1 — stagger by current match count: 2nd
                           // match → 19:40, 3rd → 20:15.
-                          playedAt: `${fmtDate(gw.startDate)}T${defaultMatchKickoffTime(gw.matches.length)}`,
+                          // v1.31.0 — fall back to today when matchday is
+                          // TBD (gw.startDate === null).
+                          playedAt: `${fmtDate(gw.startDate ?? new Date())}T${defaultMatchKickoffTime(gw.matches.length)}`,
                         })
                       }
                       className="w-full flex items-center justify-center gap-1.5 min-h-[30px] rounded-lg border border-admin-green/60 bg-transparent px-3 text-xs font-medium text-admin-green hover:bg-admin-green-dim transition-colors"
@@ -457,9 +492,11 @@ interface MatchCardRowProps {
   /**
    * Matchday's startDate. The match's date is implicit — it's the parent
    * matchday's date — so the time pill needs the GW date to construct the
-   * full datetime when the user picks a new time.
+   * full datetime when the user picks a new time. v1.31.0 — nullable: when
+   * the matchday date is cleared (TBD) we fall back to the match's existing
+   * playedAt date so editing the time alone preserves it.
    */
-  gwStartDate: Date
+  gwStartDate: Date | null
   onDelete: () => void
   onSetStatus: (status: MatchStatus) => void
 }
@@ -487,7 +524,11 @@ function MatchCardRow({ match, leagueId, leagueTeams, gwStartDate, onDelete, onS
           // v1.21.1 — combine the new HH:MM with the matchday's date.
           // updateMatch parses `playedAt` via parseJstDateTimeLocal on the
           // server, so we send the canonical "YYYY-MM-DDTHH:MM" shape.
-          await updateMatch(match.id, leagueId, { playedAt: `${fmtDate(gwStartDate)}T${val}` })
+          // v1.31.0 — when the matchday date is cleared (TBD) preserve the
+          // match's existing date so editing the kickoff time alone doesn't
+          // also relocate the match to today.
+          const dateAnchor = gwStartDate ?? match.playedAt
+          await updateMatch(match.id, leagueId, { playedAt: `${fmtDate(dateAnchor)}T${val}` })
           toast('Kickoff updated')
         }}
       />

@@ -20,7 +20,7 @@ import type {
 export type GameWeekMeta = {
   id: string
   weekNumber: number
-  startDate: Date
+  startDate: Date | null
 }
 
 export type DbToPublicLeagueDataResult = {
@@ -150,7 +150,10 @@ export async function dbToPublicLeagueData(
   for (const gw of league.gameWeeks) {
     const mdId = `md${gw.weekNumber}`
     const mdLabel = `MD${gw.weekNumber}`
-    const date = formatJstDate(gw.startDate)
+    // v1.31.0 — `gw.startDate` is nullable (admin can clear via the
+    // schedule-tab pill). Public-side Matchday.date is `string | null`;
+    // MatchdayCard renders "TBD" on null.
+    const date = gw.startDate ? formatJstDate(gw.startDate) : null
 
     // Sitting-out team: the league team not appearing as home/away this MD
     const playingLtIds = new Set<string>()

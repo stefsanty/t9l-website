@@ -64,7 +64,7 @@ const getFromDb = unstable_cache(
  * corrupting the canonical store on a half-broken connection.
  */
 async function backfillMissesFromPrisma(
-  gws: { id: string; startDate: Date }[],
+  gws: { id: string; startDate: Date | null }[],
   reads: Map<string, RsvpReadResult>,
 ): Promise<Map<string, GwRsvpMap>> {
   const result = new Map<string, GwRsvpMap>()
