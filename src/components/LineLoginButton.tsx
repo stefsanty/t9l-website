@@ -6,6 +6,7 @@ import { createPortal } from 'react-dom';
 import Image from 'next/image';
 import Link from 'next/link';
 import { APP_VERSION } from '@/lib/version';
+import SignInLightbox from './SignInLightbox';
 
 const GUEST_DISMISSED_KEY = 't9l-guest-dismissed';
 const INSTALL_DISMISSED_KEY = 't9l-install-dismissed';
@@ -163,6 +164,7 @@ export default function LineLoginButton() {
   const [open, setOpen] = useState(false);
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [showInstallModal, setShowInstallModal] = useState(false);
+  const [showSignInLightbox, setShowSignInLightbox] = useState(false);
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [isIOS, setIsIOS] = useState(false);
   const [isStandalone, setIsStandalone] = useState(false);
@@ -231,94 +233,87 @@ export default function LineLoginButton() {
     const isLocalDev = process.env.NODE_ENV === 'development';
     const isDevMode = process.env.NEXT_PUBLIC_DEV_MODE === 'true';
 
+    // v1.32.1 / PR δ.1 — In prod the button opens the multi-provider
+    // lightbox (the "Other ways" text link is removed; the LINE branding
+    // is removed). In local dev the existing impersonation dropdown
+    // stays — it's a separate purpose (dev workflow, not provider pick).
     return (
-      <div className="flex items-center gap-2">
-        <div className="relative" ref={ref}>
-          <button
-            onClick={() => {
-              if (isLocalDev) {
-                setOpen(!open);
-              } else {
-                signIn('line');
-              }
-            }}
-            className="flex items-center gap-1.5 bg-[#06C755] hover:bg-[#05b34c] active:scale-95 text-white text-[11px] font-black uppercase tracking-wider px-3 py-1.5 rounded-full transition-all"
-            data-testid="header-line-button"
-          >
-            <LineIcon className="w-3.5 h-3.5" />
-            {"Login"} {isLocalDev && (
-              <svg className={`w-3 h-3 transition-transform ${open ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M19 9l-7 7-7-7" />
-              </svg>
-            )}
-          </button>
-
-          {open && isLocalDev && (
-          <div className="absolute right-0 top-full mt-2 w-52 bg-card border border-border-default rounded-2xl overflow-hidden z-50 shadow-2xl">
+      <>
+        <div className="flex items-center gap-2">
+          <div className="relative" ref={ref}>
             <button
-              onClick={() => signIn('line')}
-              className="w-full flex items-center gap-2 px-4 py-3 text-[12px] font-bold text-fg-high hover:text-fg-mid hover:bg-surface transition-colors border-b border-border-subtle"
+              onClick={() => {
+                if (isLocalDev) {
+                  setOpen(!open);
+                } else {
+                  setShowSignInLightbox(true);
+                }
+              }}
+              className="bg-[#06C755] hover:bg-[#05b34c] active:scale-95 text-white text-[11px] font-black uppercase tracking-wider px-4 py-1.5 rounded-full transition-all"
+              data-testid="header-signin"
             >
-              <LineIcon className="w-4 h-4 text-[#06C755]" />
-              {"Login via LINE"}
+              {"Sign in"}
             </button>
 
-            <div className="px-3 py-3 bg-surface">
-              <p className="text-[9px] font-black uppercase tracking-[0.2em] text-fg-mid mb-2 px-1">{"Dev Shortcuts"}</p>
-              <div className="grid grid-cols-1 gap-1">
-                {[
-                  { id: 'ian-noseda', name: 'Ian Noseda', teamId: 'mariners-fc' },
-                  { id: 'ivo-rodrigues', name: 'Ivo Rodrigues', teamId: 'fenix-fc' },
-                  { id: 'ryohei-enomoto', name: 'Ryohei Enomoto', teamId: 'hygge-sc' },
-                  { id: 'riki-imai', name: 'Riki Imai', teamId: 'fc-torpedo' },
-                ].map((p) => (
+            {open && isLocalDev && (
+            <div className="absolute right-0 top-full mt-2 w-52 bg-card border border-border-default rounded-2xl overflow-hidden z-50 shadow-2xl">
+              <button
+                onClick={() => { setOpen(false); setShowSignInLightbox(true); }}
+                className="w-full flex items-center gap-2 px-4 py-3 text-[12px] font-bold text-fg-high hover:text-fg-mid hover:bg-surface transition-colors border-b border-border-subtle"
+              >
+                {"Open sign-in lightbox"}
+              </button>
+
+              <div className="px-3 py-3 bg-surface">
+                <p className="text-[9px] font-black uppercase tracking-[0.2em] text-fg-mid mb-2 px-1">{"Dev Shortcuts"}</p>
+                <div className="grid grid-cols-1 gap-1">
+                  {[
+                    { id: 'ian-noseda', name: 'Ian Noseda', teamId: 'mariners-fc' },
+                    { id: 'ivo-rodrigues', name: 'Ivo Rodrigues', teamId: 'fenix-fc' },
+                    { id: 'ryohei-enomoto', name: 'Ryohei Enomoto', teamId: 'hygge-sc' },
+                    { id: 'riki-imai', name: 'Riki Imai', teamId: 'fc-torpedo' },
+                  ].map((p) => (
+                    <button
+                      key={p.id}
+                      onClick={() => signIn('dev-login', {
+                        playerId: p.id,
+                        playerName: p.name,
+                        teamId: p.teamId,
+                        callbackUrl: '/'
+                      })}
+                      className="text-left px-2 py-1.5 rounded-lg text-[10px] font-bold text-fg-mid hover:text-electric-green hover:bg-electric-green/5 transition-all truncate"
+                    >
+                      {"Impersonate:"} {p.name}
+                    </button>
+                  ))}
                   <button
-                    key={p.id}
                     onClick={() => signIn('dev-login', {
-                      playerId: p.id,
-                      playerName: p.name,
-                      teamId: p.teamId,
-                      callbackUrl: '/'
+                      playerId: 'guest-dev',
+                      playerName: 'Guest Dev',
+                      teamId: '',
+                      callbackUrl: '/assign-player'
                     })}
-                    className="text-left px-2 py-1.5 rounded-lg text-[10px] font-bold text-fg-mid hover:text-electric-green hover:bg-electric-green/5 transition-all truncate"
+                    className="text-left px-2 py-1.5 rounded-lg text-[10px] font-bold text-fg-mid hover:text-primary hover:bg-primary/5 transition-all truncate"
                   >
-                    {"Impersonate:"} {p.name}
+                    {"Login as Guest (No Player)"}
                   </button>
-                ))}
-                <button
-                  onClick={() => signIn('dev-login', {
-                    playerId: 'guest-dev',
-                    playerName: 'Guest Dev',
-                    teamId: '',
-                    callbackUrl: '/assign-player'
-                  })}
-                  className="text-left px-2 py-1.5 rounded-lg text-[10px] font-bold text-fg-mid hover:text-primary hover:bg-primary/5 transition-all truncate"
-                >
-                  {"Login as Guest (No Player)"}
-                </button>
+                </div>
               </div>
             </div>
+          )}
           </div>
-        )}
+
+          {isDevMode && !isLocalDev && (
+            <Link
+              href="/dev-login"
+              className="text-[10px] font-black uppercase tracking-wider text-yellow-400 border border-yellow-400/30 hover:border-yellow-400/60 hover:text-yellow-300 px-2.5 py-1.5 rounded-full transition-all"
+            >
+              Dev
+            </Link>
+          )}
         </div>
-
-        <Link
-          href="/auth/signin"
-          className="text-[10px] font-bold uppercase tracking-wider text-fg-mid hover:text-fg-high transition-colors whitespace-nowrap"
-          data-testid="header-other-ways"
-        >
-          Other
-        </Link>
-
-        {isDevMode && !isLocalDev && (
-          <Link
-            href="/dev-login"
-            className="text-[10px] font-black uppercase tracking-wider text-yellow-400 border border-yellow-400/30 hover:border-yellow-400/60 hover:text-yellow-300 px-2.5 py-1.5 rounded-full transition-all"
-          >
-            Dev
-          </Link>
-        )}
-      </div>
+        <SignInLightbox open={showSignInLightbox} onClose={() => setShowSignInLightbox(false)} />
+      </>
     );
   }
 
