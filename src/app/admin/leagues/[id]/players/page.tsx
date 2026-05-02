@@ -25,7 +25,14 @@ export default async function PlayersPage({ params }: Props) {
 
   const playerMap = new Map<string, {
     id: string
-    name: string
+    // v1.33.0 (PR ε) — `Player.name` is now nullable. Admin-side surfaces
+    // (PlayersTab) render a "Unnamed" placeholder for null values and let
+    // admins edit via the existing PillEditor; pre-staged players for
+    // PR ζ onboarding flow start with name=null until the user fills.
+    name: string | null
+    // v1.33.0 — `Player.position` is now `PlayerPosition?` enum; surfaced
+    // here as `string | null` so the client component is DB-shape-agnostic.
+    position: string | null
     lineId: string | null
     lineDisplayName: string | null
     linePictureUrl: string | null
@@ -47,6 +54,7 @@ export default async function PlayersPage({ params }: Props) {
       playerMap.set(a.playerId, {
         id: a.player.id,
         name: a.player.name,
+        position: a.player.position ?? null,
         lineId: a.player.lineId ?? null,
         lineDisplayName: ll?.name ?? null,
         linePictureUrl: ll?.pictureUrl ?? null,

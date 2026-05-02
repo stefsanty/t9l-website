@@ -1,11 +1,13 @@
 'use client'
 
-import { useState, useTransition } from 'react'
-import { ArrowRight, X, ChevronDown, Link2, Link2Off, RefreshCw } from 'lucide-react'
+import { useMemo, useState, useTransition } from 'react'
+import { ArrowRight, X, ChevronDown, Link2Off, RefreshCw, Send } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import StatusBadge from './StatusBadge'
 import ConfirmDialog from './ConfirmDialog'
 import AssignLineDialog from './AssignLineDialog'
+import AddPlayerDialog from './AddPlayerDialog'
+import GenerateInviteDialog from './GenerateInviteDialog'
 import PillEditor from './PillEditor'
 import { useToast } from './ToastProvider'
 import {
@@ -31,7 +33,12 @@ interface Assignment {
 
 interface PlayerRow {
   id: string
-  name: string
+  // v1.33.0 (PR ε) — `Player.name` is nullable so admins can pre-stage
+  // roster slots before knowing who will fill them. Render `Unnamed` placeholder.
+  name: string | null
+  // v1.33.0 — `Player.position` is now a `PlayerPosition` enum at the DB
+  // layer; surfaced as a string so this component remains DB-shape-agnostic.
+  position: string | null
   lineId: string | null
   lineDisplayName: string | null
   linePictureUrl: string | null
@@ -48,7 +55,8 @@ interface OrphanLineLogin {
 }
 
 interface AllLineLogin extends OrphanLineLogin {
-  linkedPlayer: { id: string; name: string } | null
+  // v1.33.0 (PR ε) — Player.name is nullable; mirror in the linked-player ref.
+  linkedPlayer: { id: string; name: string | null } | null
 }
 
 interface PlayersTabProps {
@@ -83,6 +91,18 @@ function avatarInitial(name: string | null): string {
   return (name?.trim()?.[0] ?? '?').toUpperCase()
 }
 
+/**
+ * v1.33.0 (PR ε) — coerce a nullable Player.name into a non-null string
+ * suitable for template interpolation (toasts, dialog titles, button
+ * labels). The italic placeholder is rendered separately for UI surfaces
+ * that can take a ReactNode (PillEditor.display); plain strings get
+ * "Unnamed player" so the operator can still tell which row they
+ * clicked on even before the user has filled their name via PR ζ.
+ */
+function nameOrPlaceholder(name: string | null): string {
+  return name && name.trim() !== '' ? name : 'Unnamed player'
+}
+
 // ── Component ────────────────────────────────────────────────────────────────
 
 export default function PlayersTab({
@@ -99,20 +119,58 @@ export default function PlayersTab({
   // opens in "remap" mode locked to this player and lets the operator
   // pick from the FULL list of LINE logins (orphan + already-linked).
   const [remapPlayerId, setRemapPlayerId] = useState<string | null>(null)
+  // v1.33.0 (PR ε) — invite-generation surfaces.
+  // - `inviteTargetPlayerId`: per-row "Invite" button → opens GenerateInviteDialog locked to this target.
+  // - `selectedForBulk`: set of playerIds toggled via desktop checkbox column.
+  // - `bulkInviteOpen`: when true, the bulk dialog is mounted with `selectedForBulk` as targets.
+  const [inviteTargetPlayerId, setInviteTargetPlayerId] = useState<string | null>(null)
+  const [selectedForBulk, setSelectedForBulk] = useState<Set<string>>(new Set())
+  const [bulkInviteOpen, setBulkInviteOpen] = useState(false)
 
-  async function handleRemove(playerId: string, playerName: string) {
+  function toggleBulkSelected(playerId: string) {
+    setSelectedForBulk((prev) => {
+      const next = new Set(prev)
+      if (next.has(playerId)) next.delete(playerId)
+      else next.add(playerId)
+      return next
+    })
+  }
+
+  function clearBulkSelection() {
+    setSelectedForBulk(new Set())
+  }
+
+  // Eligible bulk targets — only unlinked players (no LINE binding) can
+  // receive a personal invite. The toolbar count + the bulk dialog use
+  // this filter consistently.
+  const bulkSelectableIds = useMemo(
+    () => new Set(players.filter((p) => !p.lineId).map((p) => p.id)),
+    [players],
+  )
+  const selectedBulkTargets = useMemo(
+    () =>
+      players
+        .filter((p) => selectedForBulk.has(p.id) && !p.lineId)
+        .map((p) => ({ id: p.id, name: p.name })),
+    [players, selectedForBulk],
+  )
+
+  // v1.33.0 (PR ε) — `playerName` widens to `string | null` to accommodate
+  // pre-staged Player rows. Toast text falls back to "Unnamed player" so the
+  // operator gets a recognizable confirmation even when the slot has no name.
+  async function handleRemove(playerId: string, playerName: string | null) {
     try {
       await removePlayerFromLeague(playerId, leagueId)
-      toast(`${playerName} removed from league`)
+      toast(`${playerName ?? 'Unnamed player'} removed from league`)
     } catch (err) {
       toast(err instanceof Error ? err.message : 'Failed to remove', 'error')
     }
   }
 
-  async function handleClearLine(playerId: string, playerName: string) {
+  async function handleClearLine(playerId: string, playerName: string | null) {
     try {
       await adminClearLineLink({ playerId, leagueId })
-      toast(`Cleared LINE link from ${playerName}`)
+      toast(`Cleared LINE link from ${playerName ?? 'Unnamed player'}`)
     } catch (err) {
       toast(err instanceof Error ? err.message : 'Failed to clear', 'error')
     }
@@ -133,19 +191,46 @@ export default function PlayersTab({
   return (
     <>
       {/* ── Toolbar ─────────────────────────────────────────────────────── */}
-      <div className="mb-4 flex items-center justify-between">
+      <div className="mb-4 flex items-center justify-between gap-2 flex-wrap">
         <h2 className="font-condensed text-[13px] font-bold uppercase tracking-[2px] text-admin-text2">
           Players ({players.length})
         </h2>
-        <AssignLineDialog
-          leagueId={leagueId}
-          orphans={orphans}
-          players={players.map((p) => ({
-            id: p.id,
-            name: p.name,
-            hasLineLink: !!p.lineId,
-          }))}
-        />
+        <div className="flex items-center gap-2">
+          {/* v1.33.0 (PR ε) — bulk-invite affordance, only visible when ≥1
+              unlinked player is checked. Renders the count and clears
+              selection on cancel. */}
+          {selectedForBulk.size > 0 && (
+            <>
+              <button
+                type="button"
+                onClick={clearBulkSelection}
+                className="text-xs text-admin-text3 hover:text-admin-text underline"
+                data-testid="bulk-clear"
+              >
+                Clear ({selectedForBulk.size})
+              </button>
+              <button
+                type="button"
+                onClick={() => setBulkInviteOpen(true)}
+                className="inline-flex items-center gap-1.5 rounded-[6px] bg-admin-green px-2.5 py-1 text-xs font-semibold text-admin-ink hover:opacity-90"
+                data-testid="bulk-generate-invites"
+              >
+                <Send className="w-3 h-3" />
+                Generate {selectedBulkTargets.length} invite{selectedBulkTargets.length === 1 ? '' : 's'}
+              </button>
+            </>
+          )}
+          <AddPlayerDialog leagueId={leagueId} leagueTeams={leagueTeams} />
+          <AssignLineDialog
+            leagueId={leagueId}
+            orphans={orphans}
+            players={players.map((p) => ({
+              id: p.id,
+              name: p.name,
+              hasLineLink: !!p.lineId,
+            }))}
+          />
+        </div>
       </div>
 
       {players.length === 0 ? (
@@ -169,9 +254,9 @@ export default function PlayersTab({
                 <div className="flex-1 min-w-0">
                   <PillEditor
                     variant="text"
-                    value={player.name}
-                    display={player.name}
-                    ariaLabel={`Edit name for ${player.name}`}
+                    value={player.name ?? ''}
+                    display={player.name ?? <span className="italic text-admin-text3">Unnamed</span>}
+                    ariaLabel={`Edit name for ${player.name ?? 'unnamed player'}`}
                     placeholder="Player name"
                     maxLength={100}
                     onSave={(next) => handleRenamePlayer(player.id, next)}
@@ -204,6 +289,20 @@ export default function PlayersTab({
                   />
                 </div>
                 <div className="flex items-center gap-1 shrink-0 pt-0.5">
+                  {/* v1.33.0 (PR ε) — mobile per-row Invite button. Only
+                      visible for unlinked players (linked players don't
+                      need a personal invite). */}
+                  {!player.lineId && (
+                    <button
+                      type="button"
+                      onClick={() => setInviteTargetPlayerId(player.id)}
+                      title="Generate invite"
+                      className="p-2 rounded text-admin-text3 hover:text-admin-green hover:bg-admin-green-dim/30 transition-colors min-h-[36px] min-w-[36px] flex items-center justify-center"
+                      data-testid={`invite-button-mobile-${player.id}`}
+                    >
+                      <Send className="w-4 h-4" />
+                    </button>
+                  )}
                   <button
                     onClick={() => setTransferPanelId(isTransferOpen ? null : player.id)}
                     className={cn(
@@ -222,9 +321,9 @@ export default function PlayersTab({
                         <X className="w-4 h-4" />
                       </button>
                     }
-                    title={`Remove ${player.name}?`}
+                    title={`Remove ${nameOrPlaceholder(player.name)}?`}
                     description="This will remove all league assignments for this player."
-                    confirmLabel={`Remove ${player.name}`}
+                    confirmLabel={`Remove ${nameOrPlaceholder(player.name)}`}
                     onConfirm={() => handleRemove(player.id, player.name)}
                   />
                 </div>
@@ -248,12 +347,31 @@ export default function PlayersTab({
       </div>
 
       {/* ── Desktop: table ───────────────────────────────────────────────── */}
+      {/* v1.33.0 (PR ε) — added a leading 32px checkbox column for bulk-invite
+          selection. Header checkbox toggles all eligible (unlinked) players;
+          per-row checkbox is disabled for already-linked players (those don't
+          need a personal invite). */}
       <div className="hidden md:block bg-admin-surface rounded-xl border border-admin-border overflow-hidden">
-        {/* Table header — note v1.10.0 added the LINE column */}
         <div
           className="grid text-admin-text3 text-xs uppercase tracking-wider px-5 py-2.5 border-b border-admin-border bg-admin-surface2"
-          style={{ gridTemplateColumns: '1fr 140px 220px 100px 80px 140px' }}
+          style={{ gridTemplateColumns: '32px 1fr 140px 220px 100px 80px 180px' }}
         >
+          <span>
+            <input
+              type="checkbox"
+              aria-label="Select all unlinked players for bulk invite"
+              data-testid="bulk-select-all"
+              checked={
+                bulkSelectableIds.size > 0 &&
+                Array.from(bulkSelectableIds).every((id) => selectedForBulk.has(id))
+              }
+              onChange={(e) => {
+                if (e.target.checked) setSelectedForBulk(new Set(bulkSelectableIds))
+                else clearBulkSelection()
+              }}
+              disabled={bulkSelectableIds.size === 0}
+            />
+          </span>
           <span>Name</span>
           <span>Team</span>
           <span>LINE</span>
@@ -266,19 +384,37 @@ export default function PlayersTab({
           const current = currentTeam(player)
           const isTransferOpen = transferPanelId === player.id
           const hasPrevious = player.assignments.length > 1
+          const eligibleForInvite = !player.lineId
+          const isChecked = selectedForBulk.has(player.id)
 
           return (
             <div key={player.id} className="border-b border-admin-border last:border-b-0" data-testid={`player-row-${player.id}`}>
               <div
                 className="grid items-center px-5 py-3 hover:bg-admin-surface2/50 transition-colors"
-                style={{ gridTemplateColumns: '1fr 140px 220px 100px 80px 140px' }}
+                style={{ gridTemplateColumns: '32px 1fr 140px 220px 100px 80px 180px' }}
               >
+                <span>
+                  <input
+                    type="checkbox"
+                    checked={isChecked}
+                    onChange={() => toggleBulkSelected(player.id)}
+                    disabled={!eligibleForInvite}
+                    aria-label={
+                      eligibleForInvite
+                        ? `Select ${nameOrPlaceholder(player.name)} for bulk invite`
+                        : `${nameOrPlaceholder(player.name)} already linked — invite not needed`
+                    }
+                    data-testid={`bulk-select-${player.id}`}
+                    title={eligibleForInvite ? '' : 'Already linked to LINE'}
+                  />
+                </span>
+
                 <span>
                   <PillEditor
                     variant="text"
-                    value={player.name}
-                    display={player.name}
-                    ariaLabel={`Edit name for ${player.name}`}
+                    value={player.name ?? ''}
+                    display={player.name ?? <span className="italic text-admin-text3">Unnamed</span>}
+                    ariaLabel={`Edit name for ${player.name ?? 'unnamed player'}`}
                     placeholder="Player name"
                     maxLength={100}
                     onSave={(next) => handleRenamePlayer(player.id, next)}
@@ -318,6 +454,21 @@ export default function PlayersTab({
                 </span>
 
                 <div className="flex items-center justify-end gap-1.5">
+                  {/* v1.33.0 (PR ε) — per-row Invite button. Visible only for
+                      unlinked players (linked players don't need a personal
+                      invite — they already have LINE-side identity). */}
+                  {eligibleForInvite && (
+                    <button
+                      type="button"
+                      onClick={() => setInviteTargetPlayerId(player.id)}
+                      title="Generate a personal invite for this player"
+                      className="inline-flex items-center gap-1 rounded-[6px] border border-admin-border bg-transparent px-2.5 py-1 text-xs text-admin-text2 transition-colors hover:border-admin-green/40 hover:text-admin-green"
+                      data-testid={`invite-button-${player.id}`}
+                    >
+                      <Send className="w-3 h-3" />
+                      Invite
+                    </button>
+                  )}
                   <button
                     onClick={() => setTransferPanelId(isTransferOpen ? null : player.id)}
                     className={cn(
@@ -335,9 +486,9 @@ export default function PlayersTab({
                         Remove
                       </button>
                     }
-                    title={`Remove ${player.name}?`}
+                    title={`Remove ${nameOrPlaceholder(player.name)}?`}
                     description="This will remove all league assignments for this player."
-                    confirmLabel={`Remove ${player.name}`}
+                    confirmLabel={`Remove ${nameOrPlaceholder(player.name)}`}
                     onConfirm={() => handleRemove(player.id, player.name)}
                   />
                 </div>
@@ -382,6 +533,37 @@ export default function PlayersTab({
             currentLineName: remapTarget.lineDisplayName,
           }}
           onClose={() => setRemapPlayerId(null)}
+        />
+      )}
+
+      {/* v1.33.0 (PR ε) — single-target invite dialog. Mounts when admin
+          clicks the per-row Invite button (desktop or mobile). */}
+      {inviteTargetPlayerId && (() => {
+        const target = players.find((p) => p.id === inviteTargetPlayerId)
+        if (!target) return null
+        return (
+          <GenerateInviteDialog
+            mode="single"
+            leagueId={leagueId}
+            target={{ id: target.id, name: target.name }}
+            onClose={() => setInviteTargetPlayerId(null)}
+          />
+        )
+      })()}
+
+      {/* v1.33.0 (PR ε) — bulk invite dialog. Mounts when admin clicks the
+          toolbar "Generate N invites" button after selecting one or more
+          unlinked players via the desktop checkbox column. Clears the
+          selection on close so the next bulk batch starts clean. */}
+      {bulkInviteOpen && selectedBulkTargets.length > 0 && (
+        <GenerateInviteDialog
+          mode="bulk"
+          leagueId={leagueId}
+          targets={selectedBulkTargets}
+          onClose={() => {
+            setBulkInviteOpen(false)
+            clearBulkSelection()
+          }}
         />
       )}
     </>
@@ -444,7 +626,7 @@ function LineInfoCell({ player, onClearLine, onRemap }: LineInfoCellProps) {
               <Link2Off className="w-3.5 h-3.5" />
             </button>
           }
-          title={`Unlink LINE from ${player.name}?`}
+          title={`Unlink LINE from ${nameOrPlaceholder(player.name)}?`}
           description={
             player.lineDisplayName
               ? `${player.lineDisplayName} (${shortLineId(player.lineId)}) will need to be re-linked from the orphan dropdown to play again.`
@@ -511,7 +693,7 @@ function LineInfoMobile({ player, onClearLine, onRemap }: LineInfoMobileProps) {
               <Link2Off className="w-3.5 h-3.5" />
             </button>
           }
-          title={`Unlink LINE from ${player.name}?`}
+          title={`Unlink LINE from ${nameOrPlaceholder(player.name)}?`}
           description={
             player.lineDisplayName
               ? `${player.lineDisplayName} (${shortLineId(player.lineId)}) will need to be re-linked.`
@@ -593,7 +775,7 @@ function TransferPanel({
     startTransition(async () => {
       try {
         await transferPlayer(player.id, currentAssignment.leagueTeam.id, toTeamId, fromGW, leagueId)
-        toast(`${player.name} transferred`)
+        toast(`${nameOrPlaceholder(player.name)} transferred`)
         onClose()
       } catch (err) {
         toast(err instanceof Error ? err.message : 'Transfer failed', 'error')
@@ -604,7 +786,7 @@ function TransferPanel({
   return (
     <div className="mx-4 md:mx-5 my-3 p-4 bg-admin-surface3 rounded-md border border-admin-border">
       <p className="font-condensed text-[15px] font-bold tracking-[0.5px] text-admin-text mb-4">
-        Transfer {player.name}
+        Transfer {nameOrPlaceholder(player.name)}
       </p>
       <div className="flex flex-col md:flex-row md:items-end gap-3 md:gap-4">
         {/* From (readonly) */}

@@ -150,7 +150,12 @@ async function getPlayerMappingViaUser(
 function pickAssignmentMapping(
   player: {
     id: string;
-    name: string;
+    // v1.33.0 (PR ε) — `Player.name` is now nullable. The JWT mapping carries
+    // a string for downstream serialization; coerce null → empty string at
+    // the boundary. A real LINE user with a null-named Player is the admin
+    // pre-staging flow (PR ε); the JWT can carry "" until the user fills
+    // their name via PR ζ's onboarding.
+    name: string | null;
     leagueAssignments: Array<{
       leagueTeam: { leagueId: string; team: { id: string } };
       toGameWeek: number | null;
@@ -174,7 +179,7 @@ function pickAssignmentMapping(
   }
   return {
     playerId: playerIdToSlug(player.id),
-    playerName: player.name,
+    playerName: player.name ?? "",
     teamId: assignment ? teamIdToSlug(assignment.leagueTeam.team.id) : "",
   };
 }

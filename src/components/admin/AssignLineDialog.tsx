@@ -14,18 +14,21 @@ interface OrphanLineLogin {
 }
 
 interface AllLineLogin extends OrphanLineLogin {
-  linkedPlayer: { id: string; name: string } | null
+  // v1.33.0 (PR ε) — Player.name is now nullable.
+  linkedPlayer: { id: string; name: string | null } | null
 }
 
 interface PlayerOption {
   id: string         // DB Player.id (with p- prefix)
-  name: string
+  // v1.33.0 (PR ε) — Player.name is nullable; renderer falls back to "Unnamed".
+  name: string | null
   hasLineLink: boolean
 }
 
 interface RemapTarget {
   id: string
-  name: string
+  // v1.33.0 (PR ε) — Player.name is nullable.
+  name: string | null
   currentLineId: string | null
   currentLineName: string | null
 }
@@ -114,14 +117,14 @@ export default function AssignLineDialog(props: Props) {
           const picked =
             props.allLineLogins.find((o) => o.lineId === selectedLineId) ?? null
           toast(
-            `Remapped ${picked?.name ?? selectedLineId} → ${props.remapTarget.name}`,
+            `Remapped ${picked?.name ?? selectedLineId} → ${props.remapTarget.name ?? 'Unnamed player'}`,
             'success',
           )
         } else {
           const orphan = props.orphans.find((o) => o.lineId === selectedLineId)
           const player = props.players.find((p) => p.id === selectedPlayerId)
           toast(
-            `Linked ${orphan?.name ?? selectedLineId} → ${player?.name ?? 'player'}`,
+            `Linked ${orphan?.name ?? selectedLineId} → ${player?.name ?? 'Unnamed player'}`,
             'success',
           )
         }
@@ -181,7 +184,7 @@ export default function AssignLineDialog(props: Props) {
           <div className="relative bg-admin-surface border border-admin-border rounded-xl p-6 w-full max-w-md mx-4 shadow-2xl">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-admin-text font-condensed font-bold text-lg">
-                {isRemap ? `Remap LINE for ${props.remapTarget.name}` : 'Assign LINE login'}
+                {isRemap ? `Remap LINE for ${props.remapTarget.name ?? 'Unnamed player'}` : 'Assign LINE login'}
               </h3>
               <button onClick={handleClose} className="text-admin-text3 hover:text-admin-text">
                 <X className="w-4 h-4" />
@@ -192,7 +195,7 @@ export default function AssignLineDialog(props: Props) {
               {isRemap
                 ? props.remapTarget.currentLineId
                   ? `Currently linked to ${props.remapTarget.currentLineName ?? '(no name)'} — pick a different LINE user to remap.`
-                  : `${props.remapTarget.name} has no LINE link. Pick a LINE user to link.`
+                  : `${props.remapTarget.name ?? 'Unnamed player'} has no LINE link. Pick a LINE user to link.`
                 : 'Pick an orphan LINE user (signed in to the public site but not yet linked to a player) and a target player from this league.'}
             </p>
 
@@ -236,7 +239,7 @@ export default function AssignLineDialog(props: Props) {
                   {!isRemap && <option value="">— Pick one —</option>}
                   {props.players.map((p) => (
                     <option key={p.id} value={p.id}>
-                      {p.name}{p.hasLineLink ? ' · already linked (will replace)' : ''}
+                      {p.name ?? 'Unnamed'}{p.hasLineLink ? ' · already linked (will replace)' : ''}
                     </option>
                   ))}
                 </select>
@@ -250,7 +253,7 @@ export default function AssignLineDialog(props: Props) {
               >
                 <strong className="text-admin-amber font-semibold">Heads up:</strong>{' '}
                 this will unlink LINE from{' '}
-                <strong className="text-admin-text">{willUnlinkPlayer.name}</strong>.
+                <strong className="text-admin-text">{willUnlinkPlayer.name ?? 'Unnamed player'}</strong>.
               </div>
             )}
 

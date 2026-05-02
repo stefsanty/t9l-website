@@ -136,7 +136,11 @@ export async function dbToPublicLeagueData(
     const teamSlug = ltToSlug.get(pla.leagueTeamId) ?? ''
     players.push({
       id: slug,
-      name: pla.player.name,
+      // v1.33.0 (PR ε) — `Player.name` is now nullable so admins can pre-stage
+      // a slot before the user fills onboarding. Public renderers expect a
+      // string (regrettable widening would ripple across 30+ components), so
+      // we fall back to "TBD" mirroring the v1.31 empty-matchday convention.
+      name: pla.player.name ?? 'TBD',
       teamId: teamSlug,
       position: pla.player.position ?? null,
       picture: pla.player.pictureUrl ?? null,
@@ -199,7 +203,12 @@ export async function dbToPublicLeagueData(
           matchdayId: mdId,
           scoringTeamId: scoringSlug,
           concedingTeamId: concedingSlug,
-          scorer: g.player.name,
+          // v1.33.0 (PR ε) — defensive fallback for the new Player.name nullability.
+          // Goal/assist sites are an unrealistic null-name path (admin shouldn't
+          // record a goal against a nameless player), but the type system has to
+          // align with the schema; keep the fallback symmetric with the players[]
+          // adapter above.
+          scorer: g.player.name ?? 'TBD',
           assister: g.assist?.player?.name ?? null,
         })
       }

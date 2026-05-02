@@ -193,7 +193,10 @@ async function main() {
       null
     const prismaMapping: PlayerMapping = {
       playerId: playerIdToSlug(p.id),
-      playerName: p.name,
+      // v1.33.0 (PR ε) — `Player.name` is now nullable. The PlayerMapping
+      // shape carries a string for downstream serialization; coerce null →
+      // empty string at the boundary (mirror of the JWT-callback path).
+      playerName: p.name ?? '',
       teamId: current ? teamIdToSlug(current.leagueTeam.team.id) : '',
     }
 

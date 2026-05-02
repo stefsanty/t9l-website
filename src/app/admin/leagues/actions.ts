@@ -15,6 +15,15 @@ import {
 import { seedGameWeek, deleteGameWeek as deleteGameWeekFromRedis } from '@/lib/rsvpStore'
 import { parseJstDateTimeLocal, parseJstDateOnly } from '@/lib/jst'
 import { linkPlayerToUser, unlinkPlayerFromUser } from '@/lib/identityLink'
+import {
+  generateInviteCode,
+  computeInviteExpiry,
+  buildInviteUrl,
+  INVITE_DEFAULT_EXPIRY_DAYS,
+  type InviteCsvRow,
+} from '@/lib/inviteCodes'
+import { headers } from 'next/headers'
+import type { Prisma, PlayerPosition } from '@prisma/client'
 
 /**
  * v1.13.0 — defer the Redis pre-warm off the admin response critical path.
@@ -476,6 +485,386 @@ export async function adminUpdatePlayerName(input: {
   })
 
   revalidate({ domain: 'admin', paths: [`/admin/leagues/${leagueId}/players`] })
+}
+
+// ── Invite generation (PR ε / v1.33.0) ──────────────────────────────────────
+
+const VALID_POSITIONS: readonly PlayerPosition[] = ['GK', 'DF', 'MF', 'FW']
+
+function normalizePosition(input: string | null | undefined): PlayerPosition | null {
+  if (!input) return null
+  const upper = input.trim().toUpperCase()
+  return (VALID_POSITIONS as readonly string[]).includes(upper)
+    ? (upper as PlayerPosition)
+    : null
+}
+
+/**
+ * v1.33.0 (PR ε) — admin pre-stages a Player row inside a league. All three
+ * profile fields (name / position / leagueTeamId) are OPTIONAL so an admin
+ * can hold a roster slot before knowing who's filling it. The user
+ * eventually fills name/position via the upcoming `/join/[code]` onboarding
+ * flow (PR ζ); team assignment can be added later via the existing
+ * Transfer panel.
+ *
+ * Returns the created `Player.id` so the caller (Add Player dialog) can
+ * immediately offer a "Generate invite" follow-up without re-fetching.
+ *
+ * `fromGameWeek` defaults to 1 when an assignment is created without one
+ * (the most common case — admin pre-stages the slot at the start of the
+ * season). Subsequent transfers create new `PlayerLeagueAssignment` rows
+ * with the right `fromGameWeek`.
+ *
+ * Cache invalidation: `revalidate({ domain: 'admin' })` busts the public
+ * `LeagueData` blob too (Player records flow into `dbToPublicLeagueData`),
+ * so the public Squad list reflects the new row on the next render. The
+ * v1.33.0 adapter coerces null name → "TBD" so a nameless pre-staged
+ * Player doesn't crash any public component.
+ */
+export async function adminCreatePlayer(input: {
+  leagueId: string
+  name?: string | null
+  position?: string | null
+  leagueTeamId?: string | null
+  fromGameWeek?: number | null
+}): Promise<{ id: string }> {
+  await assertAdmin()
+  const { leagueId } = input
+  if (!leagueId) throw new Error('leagueId is required')
+
+  const trimmedName = input.name?.trim() ?? ''
+  const name = trimmedName === '' ? null : trimmedName
+  if (name && name.length > 100) {
+    throw new Error('Player name must be 100 characters or fewer')
+  }
+  const position = normalizePosition(input.position)
+  const leagueTeamId = input.leagueTeamId?.trim() || null
+  const fromGameWeek = input.fromGameWeek && input.fromGameWeek > 0
+    ? Math.floor(input.fromGameWeek)
+    : 1
+
+  // If an assignment is requested, the leagueTeam must belong to this league
+  // (else admin in League A could pre-stage a player on a team in League B).
+  if (leagueTeamId) {
+    const lt = await prisma.leagueTeam.findUnique({
+      where: { id: leagueTeamId },
+      select: { leagueId: true },
+    })
+    if (!lt || lt.leagueId !== leagueId) {
+      throw new Error('leagueTeamId does not belong to this league')
+    }
+  }
+
+  const created = await prisma.$transaction(async (tx) => {
+    const player = await tx.player.create({
+      data: {
+        name,
+        position,
+      },
+    })
+    if (leagueTeamId) {
+      await tx.playerLeagueAssignment.create({
+        data: { playerId: player.id, leagueTeamId, fromGameWeek },
+      })
+    }
+    return player
+  })
+
+  revalidate({ domain: 'admin', paths: [`/admin/leagues/${leagueId}/players`] })
+  return { id: created.id }
+}
+
+/**
+ * v1.33.0 (PR ε) — pure helper exported for the admin generation pipeline
+ * AND the unit suite. Builds the canonical input shape for
+ * `prisma.leagueInvite.create({ data: ... })` from a code, target, and
+ * options. Pulled out so we can pin the exact field set without
+ * standing up a real DB.
+ */
+export function buildInviteCreateData(args: {
+  leagueId: string
+  targetPlayerId: string | null
+  code: string
+  expiresAt: Date | null
+  skipOnboarding: boolean
+  createdById: string | null
+}): Prisma.LeagueInviteUncheckedCreateInput {
+  return {
+    leagueId: args.leagueId,
+    code: args.code,
+    kind: args.targetPlayerId ? 'PERSONAL' : 'CODE',
+    targetPlayerId: args.targetPlayerId,
+    createdById: args.createdById,
+    expiresAt: args.expiresAt,
+    maxUses: args.targetPlayerId ? 1 : null, // PERSONAL invites are single-use
+    skipOnboarding: args.skipOnboarding,
+  }
+}
+
+/**
+ * v1.33.0 (PR ε) — admin generates a single PERSONAL invite for a target
+ * Player. Returns the canonical row + the absolute redemption URL so the
+ * caller can render the copy/QR surface immediately without an extra
+ * fetch.
+ *
+ * Validation:
+ *   - `targetPlayerId` must reference an existing Player with NO existing
+ *     `lineId` AND no other un-revoked, un-expired PERSONAL invite already
+ *     pointing at it. This prevents an admin accidentally double-issuing
+ *     codes that race for the same slot. CODE-flavor invites and revoked
+ *     / expired invites don't block.
+ *   - `expiresAt` defaults to now + 7 days; an explicit `null` means no
+ *     expiry (admin opt-out).
+ *
+ * Code generation retries up to 5 times on `@unique` collision. The
+ * 28^12 alphabet makes a real collision vanishingly rare; the retry is
+ * defensive against a worst-case insertion under concurrent admin use.
+ */
+export async function adminGenerateInvite(input: {
+  leagueId: string
+  targetPlayerId: string
+  skipOnboarding?: boolean
+  expiresAt?: Date | null // omit = +7 days; null = no expiry
+}): Promise<{
+  id: string
+  code: string
+  expiresAt: Date | null
+  skipOnboarding: boolean
+  joinUrl: string
+}> {
+  await assertAdmin()
+  const { leagueId, targetPlayerId } = input
+  if (!leagueId) throw new Error('leagueId is required')
+  if (!targetPlayerId) throw new Error('targetPlayerId is required')
+
+  const skipOnboarding = !!input.skipOnboarding
+  const expiresAt =
+    input.expiresAt === undefined
+      ? computeInviteExpiry(new Date(), INVITE_DEFAULT_EXPIRY_DAYS)
+      : input.expiresAt
+
+  // Validate target: exists and has no LINE binding (a player already linked
+  // doesn't need an invite — admin should re-bind via the existing remap flow).
+  const target = await prisma.player.findUnique({
+    where: { id: targetPlayerId },
+    select: { id: true, lineId: true },
+  })
+  if (!target) throw new Error('Target player not found')
+  if (target.lineId) throw new Error('Target player is already linked to a LINE user')
+
+  // Block a second active PERSONAL invite for the same player. Active =
+  // not revoked AND (expiresAt null OR expiresAt > now).
+  const now = new Date()
+  const existing = await prisma.leagueInvite.findFirst({
+    where: {
+      leagueId,
+      targetPlayerId,
+      kind: 'PERSONAL',
+      revokedAt: null,
+      OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+    },
+  })
+  if (existing) {
+    throw new Error('An active personal invite already exists for this player')
+  }
+
+  // Resolve host for the redemption URL. Subdomain-aware so an invite
+  // generated from `tamachi.t9l.me/admin/...` produces a tamachi-hosted
+  // join link. Falls back to the request Host header when NEXTAUTH_URL
+  // is missing the subdomain (e.g. localhost dev where NEXTAUTH_URL is
+  // `http://localhost:3000`). PR ζ ships the redemption route; for now
+  // the URL is a placeholder destination but the SHAPE is locked.
+  const reqHeaders = await headers()
+  const host = reqHeaders.get('host') ?? new URL(process.env.NEXTAUTH_URL ?? 'https://t9l.me').host
+
+  // Retry on @unique collision; tiny probability but defensive.
+  let lastErr: unknown = null
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const code = generateInviteCode()
+    try {
+      const session = await getServerSession(authOptions)
+      const createdById = (session as { userId?: string | null } | null)?.userId ?? null
+      const created = await prisma.leagueInvite.create({
+        data: buildInviteCreateData({
+          leagueId,
+          targetPlayerId,
+          code,
+          expiresAt,
+          skipOnboarding,
+          createdById,
+        }),
+      })
+      revalidate({ domain: 'admin', paths: [`/admin/leagues/${leagueId}/players`] })
+      return {
+        id: created.id,
+        code: created.code,
+        expiresAt: created.expiresAt,
+        skipOnboarding: created.skipOnboarding,
+        joinUrl: buildInviteUrl(host, created.code),
+      }
+    } catch (err) {
+      // Prisma 5 throws PrismaClientKnownRequestError with code P2002 on
+      // unique constraint failure. Retry; bubble anything else.
+      if (
+        err &&
+        typeof err === 'object' &&
+        'code' in err &&
+        (err as { code?: string }).code === 'P2002'
+      ) {
+        lastErr = err
+        continue
+      }
+      throw err
+    }
+  }
+  throw new Error(
+    `Failed to generate a unique invite code after 5 attempts: ${
+      lastErr instanceof Error ? lastErr.message : String(lastErr)
+    }`,
+  )
+}
+
+/**
+ * v1.33.0 (PR ε) — bulk variant. Generates one PERSONAL invite per
+ * targetPlayerId and returns a list ready for CSV export. Skips (does
+ * not throw on) targets that fail validation — the result includes a
+ * per-row `error` field so the caller can render a partial-success UI.
+ *
+ * Cache invalidation runs ONCE at the end (not per-row) — the admin
+ * Players tab re-render shows the new invite badges in a single tick.
+ */
+export async function adminGenerateInvitesBulk(input: {
+  leagueId: string
+  targetPlayerIds: string[]
+  skipOnboarding?: boolean
+  expiresAt?: Date | null
+}): Promise<{
+  results: Array<{
+    playerId: string
+    playerName: string | null
+    ok: boolean
+    code: string | null
+    expiresAt: Date | null
+    skipOnboarding: boolean
+    joinUrl: string | null
+    error: string | null
+  }>
+  csv: string
+}> {
+  await assertAdmin()
+  const { leagueId, targetPlayerIds } = input
+  if (!leagueId) throw new Error('leagueId is required')
+  if (!Array.isArray(targetPlayerIds) || targetPlayerIds.length === 0) {
+    throw new Error('targetPlayerIds must be a non-empty array')
+  }
+  if (targetPlayerIds.length > 100) {
+    throw new Error('Bulk invite generation is capped at 100 targets per call')
+  }
+
+  // Resolve player names up front for the result + CSV (the Player rows
+  // may have null names — PR ε allows pre-staged anonymous slots).
+  const players = await prisma.player.findMany({
+    where: { id: { in: targetPlayerIds } },
+    select: { id: true, name: true, lineId: true },
+  })
+  const playerById = new Map(players.map((p) => [p.id, p]))
+
+  const results: Array<{
+    playerId: string
+    playerName: string | null
+    ok: boolean
+    code: string | null
+    expiresAt: Date | null
+    skipOnboarding: boolean
+    joinUrl: string | null
+    error: string | null
+  }> = []
+
+  // Sequential, not parallel — bulk-generate-1000-at-once would slam the
+  // DB and amplify any P2002 retry storms. The admin UI gates this at 100
+  // anyway; sequential keeps the latency budget bounded and predictable.
+  for (const playerId of targetPlayerIds) {
+    const target = playerById.get(playerId)
+    if (!target) {
+      results.push({
+        playerId,
+        playerName: null,
+        ok: false,
+        code: null,
+        expiresAt: null,
+        skipOnboarding: !!input.skipOnboarding,
+        joinUrl: null,
+        error: 'Player not found',
+      })
+      continue
+    }
+    if (target.lineId) {
+      results.push({
+        playerId,
+        playerName: target.name,
+        ok: false,
+        code: null,
+        expiresAt: null,
+        skipOnboarding: !!input.skipOnboarding,
+        joinUrl: null,
+        error: 'Player already linked to LINE',
+      })
+      continue
+    }
+    try {
+      const invite = await adminGenerateInvite({
+        leagueId,
+        targetPlayerId: playerId,
+        skipOnboarding: input.skipOnboarding,
+        expiresAt: input.expiresAt,
+      })
+      results.push({
+        playerId,
+        playerName: target.name,
+        ok: true,
+        code: invite.code,
+        expiresAt: invite.expiresAt,
+        skipOnboarding: invite.skipOnboarding,
+        joinUrl: invite.joinUrl,
+        error: null,
+      })
+    } catch (err) {
+      results.push({
+        playerId,
+        playerName: target.name,
+        ok: false,
+        code: null,
+        expiresAt: null,
+        skipOnboarding: !!input.skipOnboarding,
+        joinUrl: null,
+        error: err instanceof Error ? err.message : 'Unknown error',
+      })
+    }
+  }
+
+  // adminGenerateInvite already revalidated per-call. The bulk wrapper
+  // doesn't need an additional bust — but if every row failed validation
+  // (no DB writes happened), the per-call revalidate didn't fire either.
+  // That's fine: nothing changed, no need to bust.
+
+  const csvRows: InviteCsvRow[] = results
+    .filter((r): r is typeof r & { ok: true; code: string; joinUrl: string; expiresAt: Date | null } =>
+      r.ok && !!r.code && !!r.joinUrl,
+    )
+    .map((r) => ({
+      playerId: r.playerId,
+      playerName: r.playerName ?? '',
+      code: r.code,
+      joinUrl: r.joinUrl,
+      expiresAt: r.expiresAt ? r.expiresAt.toISOString() : '',
+      skipOnboarding: r.skipOnboarding,
+    }))
+
+  // Lazy import keeps `buildInviteCsv` out of this module's surface.
+  const { buildInviteCsv } = await import('@/lib/inviteCodes')
+  const csv = buildInviteCsv(csvRows)
+
+  return { results, csv }
 }
 
 // ── Settings (data source / write mode toggles) ──────────────────────────────

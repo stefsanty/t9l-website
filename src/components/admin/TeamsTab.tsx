@@ -11,7 +11,9 @@ import { enrollTeam, removeTeamFromLeague } from '@/app/admin/leagues/actions'
 
 interface PlayerAssignment {
   id: string
-  player: { id: string; name: string }
+  // v1.33.0 (PR ε) — `Player.name` is nullable so admins can pre-stage slots.
+  // Render `pa.player.name ?? 'Unnamed'` at display sites.
+  player: { id: string; name: string | null }
 }
 
 interface MatchRef {
@@ -136,7 +138,7 @@ function TeamDetail({
                 className="flex items-center gap-2 text-sm text-admin-text"
               >
                 <span className="text-admin-text3 select-none">·</span>
-                {pa.player.name}
+                {pa.player.name ?? <span className="italic text-admin-text3">Unnamed</span>}
               </li>
             ))}
           </ul>

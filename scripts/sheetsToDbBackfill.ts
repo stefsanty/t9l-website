@@ -273,17 +273,23 @@ async function runBackfill(prisma: PrismaClient, parsed: LeagueData, flags: Flag
   const playerIdBySlug = new Map<string, string>()
   for (const p of parsed.players) {
     const pId = ids.player(p.id)
+    // v1.33.0 (PR ε) — Player.position is now `PlayerPosition?` enum.
+    // Sheets-side values are free-text; coerce to enum or null.
+    const validPositions = ['GK', 'DF', 'MF', 'FW'] as const
+    const positionEnum = p.position && (validPositions as readonly string[]).includes(p.position.toUpperCase())
+      ? (p.position.toUpperCase() as 'GK' | 'DF' | 'MF' | 'FW')
+      : null
     await prisma.player.upsert({
       where: { id: pId },
       create: {
         id: pId,
         name: p.name,
-        position: p.position ?? null,
+        position: positionEnum,
         pictureUrl: p.picture ?? null,
       },
       update: {
         name: p.name,
-        position: p.position ?? null,
+        position: positionEnum,
         pictureUrl: p.picture ?? null,
       },
     })

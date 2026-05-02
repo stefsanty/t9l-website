@@ -13,10 +13,17 @@ interface GoalRow {
   scoringTeamId: string
   isOwnGoal: boolean
   matchId: string
-  player: { id: string; name: string }
+  // v1.33.0 (PR ε) — `Player.name` is now nullable. Stats display falls back
+  // to "Unnamed" via the maybeName helper below; admins won't realistically
+  // record a goal against a nameless player but the type system has to align.
+  player: { id: string; name: string | null }
   scoringTeam: { id: string; team: { name: string } }
   match: { gameWeek: { weekNumber: number } }
-  assist: { player: { id: string; name: string } } | null
+  assist: { player: { id: string; name: string | null } } | null
+}
+
+function maybeName(name: string | null): string {
+  return name ?? 'Unnamed'
 }
 
 interface MatchRow {
@@ -54,11 +61,11 @@ function buildScorerStats(goals: GoalRow[], matchdayFilter: number | null) {
   for (const g of filtered) {
     if (g.isOwnGoal) continue
     const key = g.player.id
-    if (!map.has(key)) map.set(key, { name: g.player.name, team: g.scoringTeam.team.name, goals: 0, assists: 0 })
+    if (!map.has(key)) map.set(key, { name: maybeName(g.player.name), team: g.scoringTeam.team.name, goals: 0, assists: 0 })
     map.get(key)!.goals++
     if (g.assist) {
       const aKey = g.assist.player.id
-      if (!map.has(aKey)) map.set(aKey, { name: g.assist.player.name, team: '', goals: 0, assists: 0 })
+      if (!map.has(aKey)) map.set(aKey, { name: maybeName(g.assist.player.name), team: '', goals: 0, assists: 0 })
       map.get(aKey)!.assists++
     }
   }
