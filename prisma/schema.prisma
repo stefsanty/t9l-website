@@ -185,6 +185,13 @@ model Player {
   // Player.lineId and makes this the only identity column.
   userId String? @unique
 
+  // v1.34.0 (PR ζ) — captures the onboarding form's free-form preference
+  // fields (preferredTeammateIds: string[] + preferredTeammatesFreeText:
+  // string + optional preferredLeagueTeamId for invites without a team
+  // pre-bound). JSON shape keeps the schema flexible while ζ + η iterate
+  // on the form. Nullable — admin pre-stages start with no preferences.
+  onboardingPreferences Json?
+
   leagueAssignments PlayerLeagueAssignment[]
   goals             Goal[]
   assists           Assist[]
@@ -212,11 +219,45 @@ model PlayerLeagueAssignment {
   toGameWeek   Int?
   createdAt    DateTime @default(now())
 
+  // v1.34.0 (PR ζ) — has the user filled the onboarding form for this
+  // league? Existing rows at deploy time are backfilled to COMPLETED
+  // (already-active players don't get retroactively gated). New rows
+  // default to NOT_YET so admin pre-stages and `/join/[code]` redemptions
+  // enter the redemption flow until the form is submitted.
+  onboardingStatus OnboardingStatus @default(NOT_YET)
+
+  // v1.34.0 — audit trail for how this assignment was created. NULL on
+  // backfilled rows (we don't know retroactively); ADMIN/SELF_SERVE/
+  // CODE/PERSONAL on new writes. Used by ζ for the welcome page +
+  // future abuse-mitigation forensics (the rework plan's A1/A2/A3 vectors).
+  joinSource JoinSource?
+
   player     Player     @relation(fields: [playerId], references: [id], onDelete: Cascade)
   leagueTeam LeagueTeam @relation(fields: [leagueTeamId], references: [id], onDelete: Cascade)
 
   @@index([playerId])
   @@index([leagueTeamId])
+}
+
+// v1.34.0 (PR ζ) — has a player completed the onboarding form for this
+// league? `NOT_YET` is the default for new assignments (admin pre-stage
+// or `/join/[code]` redemption); `COMPLETED` flips when the user submits
+// the form. PR θ adds an admin "Reset onboarding" action that flips
+// COMPLETED back to NOT_YET while preserving the underlying data.
+enum OnboardingStatus {
+  NOT_YET
+  COMPLETED
+}
+
+// v1.34.0 (PR ζ) — audit trail. ADMIN: admin pre-staged via PlayersTab.
+// SELF_SERVE: claimed via the legacy `/assign-player` picker. CODE:
+// claimed via a CODE-flavor `LeagueInvite` redemption. PERSONAL:
+// claimed via a PERSONAL-flavor `LeagueInvite` redemption.
+enum JoinSource {
+  ADMIN
+  SELF_SERVE
+  CODE
+  PERSONAL
 }
 
 model GameWeek {

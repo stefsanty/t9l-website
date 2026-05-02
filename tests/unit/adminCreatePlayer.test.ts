@@ -93,7 +93,8 @@ describe('v1.33.0 (PR ε) — adminCreatePlayer', () => {
       data: { name: 'Ian Noseda', position: 'MF' },
     })
     expect(assignmentCreateMock).toHaveBeenCalledWith({
-      data: { playerId: 'p-new-player', leagueTeamId: 'lt-mariners', fromGameWeek: 3 },
+      // v1.34.0 (PR ζ) — admin-created assignments carry joinSource: 'ADMIN'.
+      data: { playerId: 'p-new-player', leagueTeamId: 'lt-mariners', fromGameWeek: 3, joinSource: 'ADMIN' },
     })
     expect(revalidateMock).toHaveBeenCalledWith({
       domain: 'admin',
@@ -146,7 +147,8 @@ describe('v1.33.0 (PR ε) — adminCreatePlayer', () => {
       leagueTeamId: 'lt-x',
     })
     expect(assignmentCreateMock).toHaveBeenCalledWith({
-      data: { playerId: 'p-new-player', leagueTeamId: 'lt-x', fromGameWeek: 1 },
+      // v1.34.0 (PR ζ) — admin-created assignments carry joinSource: 'ADMIN'.
+      data: { playerId: 'p-new-player', leagueTeamId: 'lt-x', fromGameWeek: 1, joinSource: 'ADMIN' },
     })
   })
 

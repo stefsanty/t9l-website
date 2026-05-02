@@ -141,6 +141,17 @@ async function persistAssignmentToPrisma(args: {
       // hasn't authenticated post-α.5 won't have a User row; their next
       // sign-in creates one and the next link populates the new columns.
       await linkPlayerToUser(tx, { playerId: dbPlayerId, lineId });
+      // v1.34.0 (PR ζ) — tag the player's existing PlayerLeagueAssignment
+      // rows with `joinSource: SELF_SERVE` so the audit trail records that
+      // this binding came through the legacy `/assign-player` picker (vs
+      // ADMIN pre-stage / CODE / PERSONAL invite). updateMany is a no-op
+      // when the player has no current assignment — that's fine; the
+      // SELF_SERVE picker is gated to in-league players, but if a stale
+      // call hits an unassigned player, we don't want the join to throw.
+      await tx.playerLeagueAssignment.updateMany({
+        where: { playerId: dbPlayerId, joinSource: null },
+        data: { joinSource: 'SELF_SERVE' },
+      });
     });
     // Best-effort legacy-hash cleanup; was already non-fatal pre-v1.8.0.
     await legacyRedisCleanup(lineId, { dropMapping: true });
