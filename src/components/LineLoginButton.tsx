@@ -243,6 +243,7 @@ export default function LineLoginButton() {
               }
             }}
             className="flex items-center gap-1.5 bg-[#06C755] hover:bg-[#05b34c] active:scale-95 text-white text-[11px] font-black uppercase tracking-wider px-3 py-1.5 rounded-full transition-all"
+            data-testid="header-line-button"
           >
             <LineIcon className="w-3.5 h-3.5" />
             {"Login"} {isLocalDev && (
@@ -300,6 +301,14 @@ export default function LineLoginButton() {
           </div>
         )}
         </div>
+
+        <Link
+          href="/auth/signin"
+          className="text-[10px] font-bold uppercase tracking-wider text-fg-mid hover:text-fg-high transition-colors whitespace-nowrap"
+          data-testid="header-other-ways"
+        >
+          Other
+        </Link>
 
         {isDevMode && !isLocalDev && (
           <Link

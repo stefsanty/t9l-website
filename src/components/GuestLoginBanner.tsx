@@ -1,6 +1,7 @@
 'use client';
 
 import { useSession, signIn } from 'next-auth/react';
+import Link from 'next/link';
 
 function LineIcon({ className = 'w-4 h-4' }: { className?: string }) {
   return (
@@ -27,13 +28,23 @@ export default function GuestLoginBanner() {
             Login with LINE to confirm attendance.
           </p>
         </div>
-        <button
-          onClick={() => signIn('line')}
-          className="shrink-0 flex items-center gap-2 bg-[#06C755] hover:bg-[#05b34c] active:scale-95 text-white text-[12px] font-black uppercase tracking-wider px-4 py-2 rounded-xl transition-all shadow-[0_4px_12px_rgba(6,199,85,0.2)]"
-        >
-          <LineIcon className="w-4 h-4" />
-          Login
-        </button>
+        <div className="shrink-0 flex flex-col items-end gap-1.5">
+          <button
+            onClick={() => signIn('line')}
+            className="flex items-center gap-2 bg-[#06C755] hover:bg-[#05b34c] active:scale-95 text-white text-[12px] font-black uppercase tracking-wider px-4 py-2 rounded-xl transition-all shadow-[0_4px_12px_rgba(6,199,85,0.2)]"
+            data-testid="guest-banner-line-button"
+          >
+            <LineIcon className="w-4 h-4" />
+            Login
+          </button>
+          <Link
+            href="/auth/signin"
+            className="text-[10px] font-bold uppercase tracking-wider text-fg-mid hover:text-fg-high transition-colors"
+            data-testid="guest-banner-other-ways"
+          >
+            Other ways to sign in →
+          </Link>
+        </div>
       </div>
     </div>
   );
