@@ -17,12 +17,22 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-const { findManyAssignmentsMock, findManyLeagueTeamsMock, findManyGameWeeksMock, findManyLineLoginsMock, findManyPlayersMock } = vi.hoisted(() => ({
+const {
+  findManyAssignmentsMock,
+  findManyLeagueTeamsMock,
+  findManyGameWeeksMock,
+  findManyLineLoginsMock,
+  findManyPlayersMock,
+  findManyInvitesMock,
+} = vi.hoisted(() => ({
   findManyAssignmentsMock: vi.fn(),
   findManyLeagueTeamsMock: vi.fn(),
   findManyGameWeeksMock: vi.fn(),
   findManyLineLoginsMock: vi.fn(),
   findManyPlayersMock: vi.fn(),
+  // v1.38.0 (PR κ) — admin-data now also fetches active PERSONAL invites
+  // per league for the new "Invited" sign-in-status badge.
+  findManyInvitesMock: vi.fn(),
 }))
 
 vi.mock('@/lib/prisma', () => ({
@@ -32,6 +42,7 @@ vi.mock('@/lib/prisma', () => ({
     gameWeek: { findMany: findManyGameWeeksMock },
     lineLogin: { findMany: findManyLineLoginsMock },
     player: { findMany: findManyPlayersMock },
+    leagueInvite: { findMany: findManyInvitesMock },
   },
 }))
 
@@ -43,6 +54,10 @@ import { getLeaguePlayers, getAllLineLoginsWithLinkedPlayer } from '@/lib/admin-
 
 beforeEach(() => {
   vi.clearAllMocks()
+  // v1.38.0 (PR κ) — default the new invite fetch to empty so existing
+  // test cases don't need to set it explicitly. Tests that exercise the
+  // "Invited" badge override this in their own `mockResolvedValueOnce`.
+  findManyInvitesMock.mockResolvedValue([])
 })
 
 describe('getLeaguePlayers v1.10.0 4-tuple shape', () => {
@@ -148,8 +163,66 @@ describe('getLeaguePlayers v1.10.0 4-tuple shape', () => {
     expect(result[0]).toBe(assignments)
     expect(result[1]).toBe(leagueTeams)
     expect(result[2]).toBe(gameWeeks)
-    // 4th position is the new map.
+    // 4th position is the line-login map (v1.10.0); 5th is the active
+    // invite count map (v1.38.0 / PR κ).
     expect(result[3]).toEqual({})
+    expect(result[4]).toEqual({})
+  })
+
+  it('v1.38.0 (PR κ) — counts active PERSONAL invites per targetPlayerId', async () => {
+    findManyAssignmentsMock.mockResolvedValueOnce([])
+    findManyLeagueTeamsMock.mockResolvedValueOnce([])
+    findManyGameWeeksMock.mockResolvedValueOnce([])
+    findManyLineLoginsMock.mockResolvedValueOnce([])
+    const future = new Date(Date.now() + 86_400_000) // +1 day
+    const past = new Date(Date.now() - 86_400_000) // -1 day
+    findManyInvitesMock.mockResolvedValueOnce([
+      // active — counted
+      { targetPlayerId: 'p-alice', expiresAt: future, maxUses: 1, usedCount: 0 },
+      // active, no expiry — counted
+      { targetPlayerId: 'p-alice', expiresAt: null, maxUses: null, usedCount: 0 },
+      // expired — NOT counted
+      { targetPlayerId: 'p-alice', expiresAt: past, maxUses: 1, usedCount: 0 },
+      // used up — NOT counted
+      { targetPlayerId: 'p-bob', expiresAt: future, maxUses: 1, usedCount: 1 },
+      // null targetPlayerId — NOT counted (defensive)
+      { targetPlayerId: null, expiresAt: future, maxUses: 1, usedCount: 0 },
+      // active for charlie
+      { targetPlayerId: 'p-charlie', expiresAt: future, maxUses: 5, usedCount: 2 },
+    ])
+
+    const [, , , , inviteCounts] = await getLeaguePlayers('l-spring')
+
+    expect(inviteCounts['p-alice']).toBe(2)
+    expect(inviteCounts['p-bob']).toBeUndefined()
+    expect(inviteCounts['p-charlie']).toBe(1)
+  })
+
+  it('v1.38.0 (PR κ) — passes the right where-clause to leagueInvite.findMany', async () => {
+    findManyAssignmentsMock.mockResolvedValueOnce([])
+    findManyLeagueTeamsMock.mockResolvedValueOnce([])
+    findManyGameWeeksMock.mockResolvedValueOnce([])
+    findManyLineLoginsMock.mockResolvedValueOnce([])
+    findManyInvitesMock.mockResolvedValueOnce([])
+
+    await getLeaguePlayers('l-spring')
+
+    expect(findManyInvitesMock).toHaveBeenCalledTimes(1)
+    const call = findManyInvitesMock.mock.calls[0][0]
+    // Scope to the league and to PERSONAL invites with a target.
+    expect(call.where).toMatchObject({
+      leagueId: 'l-spring',
+      kind: 'PERSONAL',
+      revokedAt: null,
+      targetPlayerId: { not: null },
+    })
+    // Selecting only the fields needed for the JS-side filter.
+    expect(call.select).toMatchObject({
+      targetPlayerId: true,
+      expiresAt: true,
+      maxUses: true,
+      usedCount: true,
+    })
   })
 })
 

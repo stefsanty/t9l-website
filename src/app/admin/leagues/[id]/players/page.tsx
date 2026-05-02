@@ -9,12 +9,12 @@ type Props = { params: Promise<{ id: string }> }
 
 export default async function PlayersPage({ params }: Props) {
   const { id } = await params
-  // v1.10.0 / PR B — `getLeaguePlayers` now returns a 4-tuple ending in
-  // `lineLoginsByLineId`, and we additionally fetch the all-LINE-logins
-  // list (orphans + linked-elsewhere) for the remap dialog. Both lists
-  // serialize Date → ISO at the server/client boundary.
+  // v1.10.0 / PR B — `getLeaguePlayers` returns a tuple of admin-page
+  // payload pieces. v1.38.0 (PR κ) added `activeInviteCountByPlayerId`
+  // as the 5th element so the new "Invited" sign-in-status badge can
+  // render without a separate fetch.
   const [
-    [assignments, leagueTeams, gameWeeks, lineLoginsByLineId],
+    [assignments, leagueTeams, gameWeeks, lineLoginsByLineId, activeInviteCountByPlayerId],
     orphansRaw,
     allLineLoginsRaw,
   ] = await Promise.all([
@@ -33,6 +33,17 @@ export default async function PlayersPage({ params }: Props) {
     // v1.33.0 — `Player.position` is now `PlayerPosition?` enum; surfaced
     // here as `string | null` so the client component is DB-shape-agnostic.
     position: string | null
+    // v1.37.0 (PR ι) — user-uploaded profile picture (Vercel Blob URL).
+    profilePictureUrl: string | null
+    // Legacy LINE-CDN mirror written on /assign-player link.
+    pictureUrl: string | null
+    // v1.38.0 (PR κ) — User binding from PR β / v1.29.0 dual-write.
+    // Drives the "Signed up" sign-in status badge.
+    userId: string | null
+    // v1.38.0 — count of active PERSONAL invites pre-bound to this
+    // player (not revoked, not used up, not expired). Drives the
+    // "Invited" badge when userId is null.
+    activeInviteCount: number
     // v1.35.0 (PR η) — uploaded ID URLs + timestamp. Null when no upload yet.
     idFrontUrl: string | null
     idBackUrl: string | null
@@ -62,6 +73,10 @@ export default async function PlayersPage({ params }: Props) {
         id: a.player.id,
         name: a.player.name,
         position: a.player.position ?? null,
+        profilePictureUrl: a.player.profilePictureUrl ?? null,
+        pictureUrl: a.player.pictureUrl ?? null,
+        userId: a.player.userId ?? null,
+        activeInviteCount: activeInviteCountByPlayerId[a.player.id] ?? 0,
         // v1.35.0 (PR η) — surface ID upload state. Date → ISO string at
         // the boundary (matches lineLastSeenAt's cache-safe pattern).
         idFrontUrl: a.player.idFrontUrl ?? null,
