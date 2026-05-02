@@ -95,6 +95,92 @@ export async function linkPlayerToUser(
 }
 
 /**
+ * v1.39.0 (PR λ) — generic User↔Player binder keyed on `User.id`.
+ *
+ * Sibling of `linkPlayerToUser` for the case where the caller has the
+ * `User.id` directly (e.g. `/join/[code]` redemption — the session
+ * already carries `userId`, no need for the lineId round-trip).
+ * Critically, this helper supports the **non-LINE** flows (Google /
+ * email magic-link) for which `linkPlayerToUser` returns false (no
+ * `User.lineId` set on those Users).
+ *
+ * Same invariant-clearing logic as `linkPlayerToUser`:
+ *   - Clears `Player.userId` on any other Player previously bound to
+ *     this User (defends against the `Player.userId @unique` race).
+ *   - Clears `User.playerId` if it was previously set to a different
+ *     Player.
+ *
+ * Optional `lineId` argument lets the LINE redemption branch ALSO set
+ * `Player.lineId` in the same `tx.player.update` call, replacing the
+ * pre-λ pattern of issuing two separate updates (one for `lineId, userId`
+ * and one inside `linkPlayerToUser` for the User-side mirror). Pass
+ * `undefined` (or omit) for non-LINE flows so `Player.lineId` is left
+ * untouched.
+ *
+ * Returns `true` on success; `false` if the User couldn't be resolved
+ * (consistent with `linkPlayerToUser`'s failure mode — the caller can
+ * choose to ignore the return value).
+ *
+ * Stage 4 (Δ): when `Player.lineId` is dropped, the optional `lineId`
+ * argument goes too, leaving this helper as the sole linker.
+ */
+export async function linkUserToPlayer(
+  tx: Tx,
+  args: { userId: string; playerId: string; lineId?: string | null },
+): Promise<boolean> {
+  const user = await tx.user.findUnique({
+    where: { id: args.userId },
+    select: { id: true, playerId: true },
+  });
+  if (!user) {
+    console.warn(
+      "[identityLink] linkUserToPlayer: no User for userId=%s — skipping bind",
+      args.userId,
+    );
+    return false;
+  }
+
+  // Clear the User's prior playerId pointer if it was bound to a
+  // different Player. The User.playerId @unique constraint allows null
+  // duplicates so two cleared Users can coexist.
+  if (user.playerId && user.playerId !== args.playerId) {
+    await tx.player.updateMany({
+      where: { id: user.playerId, userId: user.id },
+      data: { userId: null },
+    });
+  }
+
+  // Defensive: clear any stale Player.userId pointing at this User from
+  // a different angle (e.g. data drift, manual SQL edit, or a parallel
+  // binder racing the same User.id). updateMany handles "row already
+  // excluded" silently.
+  await tx.player.updateMany({
+    where: { userId: user.id, id: { not: args.playerId } },
+    data: { userId: null },
+  });
+
+  // Forward pointer + (optional) Player.lineId in the same write.
+  // For non-LINE flows (Google / email), `lineId` is undefined so the
+  // spread is a no-op and Player.lineId is left at whatever value it
+  // already had (typically null for a fresh non-LINE redemption).
+  await tx.player.update({
+    where: { id: args.playerId },
+    data: {
+      userId: user.id,
+      ...(args.lineId !== undefined ? { lineId: args.lineId } : {}),
+    },
+  });
+
+  // Back pointer: User.playerId.
+  await tx.user.update({
+    where: { id: user.id },
+    data: { playerId: args.playerId },
+  });
+
+  return true;
+}
+
+/**
  * Inverse of linkPlayerToUser. Clears `User.playerId` AND `Player.userId`
  * for the User identified by lineId. No-op if the User doesn't exist or
  * has no current playerId.
