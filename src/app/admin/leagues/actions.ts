@@ -489,6 +489,60 @@ export async function adminUpdatePlayerName(input: {
   revalidate({ domain: 'admin', paths: [`/admin/leagues/${leagueId}/players`] })
 }
 
+// ── Player ID upload management (PR η / v1.35.0) ────────────────────────────
+
+/**
+ * v1.35.0 (PR η) — admin purges a player's uploaded ID. DELs both
+ * Vercel Blob assets if `BLOB_READ_WRITE_TOKEN` is set, then nulls all
+ * three Player columns regardless. The Blob delete is best-effort
+ * (logged on failure) — what matters is that the columns clear so the
+ * UI no longer surfaces stale URLs and the next onboarding round-trip
+ * (after admin uses the θ "Reset onboarding" action) can re-upload.
+ *
+ * No-op when the player has no ID uploaded (idempotent).
+ */
+export async function adminPurgePlayerId(input: {
+  playerId: string
+  leagueId: string
+}): Promise<void> {
+  await assertAdmin()
+  if (!input.playerId) throw new Error('playerId is required')
+
+  const player = await prisma.player.findUnique({
+    where: { id: input.playerId },
+    select: { id: true, idFrontUrl: true, idBackUrl: true },
+  })
+  if (!player) throw new Error('Player not found')
+  if (!player.idFrontUrl && !player.idBackUrl) {
+    return // already purged / never uploaded
+  }
+
+  // Best-effort Blob deletion. Token absent → skip (admin still wants
+  // the columns nulled so the UI doesn't dangle stale URLs).
+  if (process.env.BLOB_READ_WRITE_TOKEN) {
+    try {
+      const { del } = await import('@vercel/blob')
+      const urls = [player.idFrontUrl, player.idBackUrl].filter(
+        (u): u is string => !!u,
+      )
+      if (urls.length > 0) await del(urls)
+    } catch (err) {
+      console.warn('[adminPurgePlayerId] Blob del failed: %o', err)
+    }
+  }
+
+  await prisma.player.update({
+    where: { id: input.playerId },
+    data: {
+      idFrontUrl: null,
+      idBackUrl: null,
+      idUploadedAt: null,
+    },
+  })
+
+  revalidate({ domain: 'admin', paths: [`/admin/leagues/${input.leagueId}/players`] })
+}
+
 // ── Invite generation (PR ε / v1.33.0) ──────────────────────────────────────
 
 const VALID_POSITIONS: readonly PlayerPosition[] = ['GK', 'DF', 'MF', 'FW']

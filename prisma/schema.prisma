@@ -192,6 +192,24 @@ model Player {
   // on the form. Nullable — admin pre-stages start with no preferences.
   onboardingPreferences Json?
 
+  // v1.35.0 (PR η) — ID upload step in the onboarding flow. Two URL
+  // columns hold Vercel Blob public URLs for the front + back of the
+  // user's photo ID. `idUploadedAt` is the timestamp gate (non-null
+  // means both URLs were uploaded successfully). All three nullable —
+  // admin pre-stages and pre-η users have no IDs.
+  //
+  // Retention: forever (no user-facing disclosure per operator decision
+  // 2026-05-02). Admin can purge via the per-row "Purge ID" action,
+  // which DELs the Blob objects and nulls the columns. Used solely for
+  // venue booking documentation.
+  //
+  // Operator gate: writes require `BLOB_READ_WRITE_TOKEN` on Vercel.
+  // Without the env var, the upload route surfaces a "skip" path that
+  // flips onboardingStatus → COMPLETED without writing these columns.
+  idFrontUrl   String?
+  idBackUrl    String?
+  idUploadedAt DateTime?
+
   leagueAssignments PlayerLeagueAssignment[]
   goals             Goal[]
   assists           Assist[]
