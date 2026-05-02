@@ -180,7 +180,7 @@ export async function POST(req: Request) {
   // The gameWeek lookup stays synchronous because the Redis key shape and
   // TTL math both need `gameWeek.id` and `gameWeek.startDate`. Single keyed
   // findUnique — typically <200ms even cold.
-  let gameWeek: { id: string; startDate: Date }
+  let gameWeek: { id: string; startDate: Date | null }
   try {
     const gw = await prisma.gameWeek.findUnique({
       where: { leagueId_weekNumber: { leagueId, weekNumber } },

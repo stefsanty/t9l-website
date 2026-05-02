@@ -159,7 +159,7 @@ function key(gameWeekId: string): string {
 async function writeRsvpField(
   client: RedisLike,
   gameWeekId: string,
-  gwStartDate: Date,
+  gwStartDate: Date | null,
   field: string,
   value: string | null,
 ): Promise<void> {
@@ -224,7 +224,7 @@ export function parseHashFields(raw: Record<string, unknown>): GwRsvpMap {
  */
 export async function getRsvpForGameWeek(
   gameWeekId: string,
-  _gwStartDate: Date,
+  _gwStartDate: Date | null,
 ): Promise<RsvpReadResult> {
   const client = await getClient()
   if (!client) return { status: 'error', reason: 'no-client' }
@@ -257,7 +257,7 @@ export async function getRsvpForGameWeek(
  * Upstash-specific dep that would leak through the RedisLike abstraction).
  */
 export async function getRsvpForGameWeeks(
-  gws: { id: string; startDate: Date }[],
+  gws: { id: string; startDate: Date | null }[],
 ): Promise<Map<string, RsvpReadResult>> {
   const entries = await Promise.all(
     gws.map(async (gw) => {
@@ -279,7 +279,7 @@ export async function getRsvpForGameWeeks(
  */
 export async function setRsvp(
   gameWeekId: string,
-  gwStartDate: Date,
+  gwStartDate: Date | null,
   playerSlug: string,
   rsvp: RsvpValue | null,
 ): Promise<void> {
@@ -315,7 +315,7 @@ export async function setRsvp(
  */
 export async function setRsvpOrThrow(
   gameWeekId: string,
-  gwStartDate: Date,
+  gwStartDate: Date | null,
   playerSlug: string,
   rsvp: RsvpValue | null,
 ): Promise<void> {
@@ -337,7 +337,7 @@ export async function setRsvpOrThrow(
  */
 export async function setParticipated(
   gameWeekId: string,
-  gwStartDate: Date,
+  gwStartDate: Date | null,
   playerSlug: string,
   participated: ParticipatedValue | null,
 ): Promise<void> {
@@ -372,7 +372,7 @@ export async function setParticipated(
  */
 export async function seedGameWeek(
   gameWeekId: string,
-  gwStartDate: Date,
+  gwStartDate: Date | null,
 ): Promise<void> {
   const client = await getClient()
   if (!client) return

@@ -79,7 +79,7 @@ export default async function AdminDashboard() {
                     Next Matchday
                   </p>
                   <p className="font-condensed text-[26px] font-bold leading-tight text-admin-text">
-                    MD{nextGW.weekNumber} · {formatJstShort(nextGW.startDate)}
+                    MD{nextGW.weekNumber} · {nextGW.startDate ? formatJstShort(nextGW.startDate) : 'TBD'}
                   </p>
                   <div className="mt-1.5 flex flex-col gap-0.5 text-xs text-admin-text2">
                     {venueName && <span>{venueName}</span>}
