@@ -69,11 +69,14 @@ vi.mock('next/headers', () => ({
   headers: vi.fn().mockResolvedValue(new Map([['host', 't9l.me']])),
 }))
 
+// v1.33.1 — `buildInviteCreateData` moved out of `actions.ts` (Next 16
+// Turbopack rejects non-async exports from `'use server'` modules) and
+// into `lib/inviteCodes.ts` where the rest of the pure helpers live.
 const {
   adminGenerateInvite,
   adminGenerateInvitesBulk,
-  buildInviteCreateData,
 } = await import('@/app/admin/leagues/actions')
+const { buildInviteCreateData } = await import('@/lib/inviteCodes')
 
 beforeEach(() => {
   playerFindUniqueMock.mockReset()
