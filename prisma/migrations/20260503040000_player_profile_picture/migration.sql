@@ -1,0 +1,25 @@
+-- v1.37.0 (PR ι) — user self-service profile picture column.
+--
+-- One additive nullable column on `Player`. No data destruction:
+--
+--   1. Player.profilePictureUrl — Vercel Blob public URL of the
+--      user-uploaded profile picture (replace-only — re-upload deletes
+--      the prior asset). Distinct from `Player.pictureUrl` which is
+--      the legacy LINE-CDN mirror written by /api/assign-player.
+--
+-- Display priority (decided by render-side helper, not the DB):
+--   profilePictureUrl  -- user-uploaded, takes precedence
+--   pictureUrl         -- LINE-CDN mirror (PR 12 / v1.3.1)
+--   /player_pics/{slug}.png — static fallback (PlayerAvatar chain)
+--   /player_pics/default.png
+--
+-- Operator-side gate (NOT a blocker for the migration): the actual
+-- upload requires `BLOB_READ_WRITE_TOKEN` on Vercel. Without it, the
+-- /account/player form surfaces a "currently unavailable, contact
+-- admin" message on the picture field; the rest of the form (name /
+-- position / preferences) keeps working.
+--
+-- Rollback (purely additive — no data loss against existing rows):
+--   ALTER TABLE "Player" DROP COLUMN "profilePictureUrl";
+
+ALTER TABLE "Player" ADD COLUMN "profilePictureUrl" TEXT;
