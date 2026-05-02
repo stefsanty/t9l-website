@@ -489,6 +489,71 @@ export async function adminUpdatePlayerName(input: {
   revalidate({ domain: 'admin', paths: [`/admin/leagues/${leagueId}/players`] })
 }
 
+// ── Onboarding reset (PR θ / v1.36.0) ───────────────────────────────────────
+
+/**
+ * v1.36.0 (PR θ of the onboarding chain) — admin flips a player's
+ * onboarding state back to NOT_YET so the user is redirected through
+ * the onboarding flow on their next visit.
+ *
+ * Preserves all existing data:
+ *   - Player.name / position / onboardingPreferences / idFront/idBack/idUploadedAt
+ *     are NOT cleared. The user re-enters the form pre-filled with
+ *     whatever they previously submitted (PR ζ's onboarding form
+ *     already handles that idempotent case via the page-level fetch).
+ *   - Player.userId / lineId are NOT cleared. The User remains bound;
+ *     the only change is the assignment-level NOT_YET flag, which
+ *     redirects them through `/join/[code]/onboarding` next time they
+ *     visit the redemption URL. (Admin needs to share the URL with
+ *     them — the welcome page already surfaces the league admin
+ *     contact email per ζ.)
+ *
+ * Per the brainstorm brief §4 of the onboarding flow design: admin
+ * notifies the user verbally that they need to redo onboarding. There
+ * is no automatic notification.
+ *
+ * Why league-scoped (not global):
+ *   - `onboardingStatus` lives on `PlayerLeagueAssignment`, not on
+ *     `Player`. A user can be in N leagues and the reset is per-league
+ *     (the brainstorm called this out — different leagues have
+ *     different onboarding requirements, e.g. ID retention).
+ *   - The league context is needed for the cache-bust path anyway.
+ *
+ * No-op (no error) when the assignment is already NOT_YET — admins
+ * clicking the button twice doesn't error out.
+ */
+export async function adminResetOnboarding(input: {
+  playerId: string
+  leagueId: string
+}): Promise<void> {
+  await assertAdmin()
+  if (!input.playerId) throw new Error('playerId is required')
+  if (!input.leagueId) throw new Error('leagueId is required')
+
+  // Verify the player has an assignment in this league. Without this
+  // check, a leagueId mismatch would silently update zero rows.
+  const assignment = await prisma.playerLeagueAssignment.findFirst({
+    where: {
+      playerId: input.playerId,
+      leagueTeam: { leagueId: input.leagueId },
+    },
+    select: { id: true, onboardingStatus: true },
+  })
+  if (!assignment) {
+    throw new Error('Player has no assignment in this league')
+  }
+  if (assignment.onboardingStatus === 'NOT_YET') {
+    return // already reset; idempotent no-op
+  }
+
+  await prisma.playerLeagueAssignment.update({
+    where: { id: assignment.id },
+    data: { onboardingStatus: 'NOT_YET' },
+  })
+
+  revalidate({ domain: 'admin', paths: [`/admin/leagues/${input.leagueId}/players`] })
+}
+
 // ── Player ID upload management (PR η / v1.35.0) ────────────────────────────
 
 /**

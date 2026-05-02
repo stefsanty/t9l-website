@@ -46,6 +46,9 @@ export default async function PlayersPage({ params }: Props) {
       fromGameWeek: number
       toGameWeek: number | null
       leagueTeam: { id: string; team: { name: string } }
+      // v1.36.0 (PR θ) — surface the assignment's onboarding state so
+      // PlayersTab can conditionally render the "Reset onboarding" button.
+      onboardingStatus: 'NOT_YET' | 'COMPLETED'
     }[]
   }>()
 
