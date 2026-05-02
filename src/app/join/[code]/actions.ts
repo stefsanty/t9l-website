@@ -284,6 +284,9 @@ export async function submitOnboarding(input: SubmitOnboardingInput): Promise<vo
     preferredTeammatesFreeText: input.preferredTeammatesFreeText ?? null,
   }
 
+  // v1.35.0 (PR η) — onboarding form completion no longer flips
+  // `onboardingStatus` to COMPLETED. The ID-upload step does that. Form
+  // submission only persists the form data and routes to the next step.
   await prisma.$transaction(async (tx) => {
     await tx.player.update({
       where: { id: input.playerId },
@@ -293,9 +296,100 @@ export async function submitOnboarding(input: SubmitOnboardingInput): Promise<vo
         onboardingPreferences: preferences,
       },
     })
+    // No onboardingStatus update — that flips in submitIdUpload (or
+    // skipIdUpload when BLOB is unconfigured). The form-completed state
+    // is "you've named yourself but still owe an ID."
+  })
+
+  revalidate({ domain: 'admin', paths: [`/admin/leagues/${invite.leagueId}/players`] })
+  revalidate({ domain: 'public' })
+  redirect(`/join/${input.code}/id-upload`)
+}
+
+/**
+ * v1.35.0 (PR η) — finalize onboarding by uploading front + back ID
+ * images to Vercel Blob, then flipping the assignment's
+ * `onboardingStatus` to COMPLETED.
+ *
+ * Files arrive via FormData (the only way browsers can stream binary
+ * to a server action without base64 round-trip overhead). Each file is
+ * uploaded to a stable path keyed on the player's id so a re-upload
+ * overwrites the prior asset rather than leaving an orphan in Blob.
+ *
+ * Admin can purge later via `adminPurgePlayerId` (in admin actions),
+ * which DELs both Blob objects and nulls the three columns.
+ *
+ * Operator-side gate: requires `BLOB_READ_WRITE_TOKEN`. Without it,
+ * the route renders a skip flow that calls `skipIdUpload` instead.
+ */
+export async function submitIdUpload(formData: FormData): Promise<void> {
+  const session = await getServerSession(authOptions)
+  if (!session) throw new Error('Sign in required')
+  const userId = (session as { userId?: string | null }).userId ?? null
+  if (!userId) throw new Error('Admin sessions cannot submit onboarding')
+
+  const code = formData.get('code') as string | null
+  const playerId = formData.get('playerId') as string | null
+  const front = formData.get('idFront') as File | null
+  const back = formData.get('idBack') as File | null
+
+  if (!code) throw new Error('Missing invite code')
+  if (!playerId) throw new Error('Missing playerId')
+  if (!front || !(front instanceof File) || front.size === 0) {
+    throw new Error('Front of ID is required')
+  }
+  if (!back || !(back instanceof File) || back.size === 0) {
+    throw new Error('Back of ID is required')
+  }
+  if (!process.env.BLOB_READ_WRITE_TOKEN) {
+    throw new Error('ID upload is currently unavailable. Use the Skip option to continue.')
+  }
+
+  // Verify the user is bound to this player (defense in depth).
+  const player = await prisma.player.findUnique({
+    where: { id: playerId },
+    select: { id: true, userId: true },
+  })
+  if (!player) throw new Error('Player not found')
+  if (player.userId !== userId) {
+    throw new Error('You are not linked to this player slot')
+  }
+
+  const invite = await prisma.leagueInvite.findUnique({
+    where: { code },
+    select: { leagueId: true },
+  })
+  if (!invite) throw new Error('Invite not found')
+
+  const { put } = await import('@vercel/blob')
+  // Upload-or-overwrite at stable paths so a re-upload doesn't orphan
+  // the prior asset. `addRandomSuffix: false` is required for the path
+  // to be stable (default is true).
+  const [frontResult, backResult] = await Promise.all([
+    put(`player-id/${playerId}/front-${Date.now()}.${extOf(front.name)}`, front, {
+      access: 'public',
+      addRandomSuffix: false,
+      contentType: front.type || 'application/octet-stream',
+    }),
+    put(`player-id/${playerId}/back-${Date.now()}.${extOf(back.name)}`, back, {
+      access: 'public',
+      addRandomSuffix: false,
+      contentType: back.type || 'application/octet-stream',
+    }),
+  ])
+
+  await prisma.$transaction(async (tx) => {
+    await tx.player.update({
+      where: { id: playerId },
+      data: {
+        idFrontUrl: frontResult.url,
+        idBackUrl: backResult.url,
+        idUploadedAt: new Date(),
+      },
+    })
     await tx.playerLeagueAssignment.updateMany({
       where: {
-        playerId: input.playerId,
+        playerId,
         leagueTeam: { leagueId: invite.leagueId },
       },
       data: { onboardingStatus: 'COMPLETED' },
@@ -303,6 +397,55 @@ export async function submitOnboarding(input: SubmitOnboardingInput): Promise<vo
   })
 
   revalidate({ domain: 'admin', paths: [`/admin/leagues/${invite.leagueId}/players`] })
-  revalidate({ domain: 'public' })
+  redirect(`/join/${code}/welcome`)
+}
+
+function extOf(filename: string): string {
+  const i = filename.lastIndexOf('.')
+  if (i < 0) return 'bin'
+  return filename.slice(i + 1).toLowerCase().replace(/[^a-z0-9]/g, '') || 'bin'
+}
+
+/**
+ * v1.35.0 (PR η) — operator-gate fallback when `BLOB_READ_WRITE_TOKEN`
+ * is missing. Skips the actual ID upload but still flips
+ * `onboardingStatus` to COMPLETED so the user isn't permanently stuck.
+ * Admin will collect ID separately (out-of-band).
+ *
+ * Also reachable from a "Skip for now" affordance on the upload page
+ * even when BLOB IS configured — handles the edge case where the user
+ * doesn't have their ID handy at sign-up time. Admin sees `idUploadedAt
+ * IS NULL` in the player list and follows up.
+ */
+export async function skipIdUpload(input: { code: string; playerId: string }): Promise<void> {
+  const session = await getServerSession(authOptions)
+  if (!session) throw new Error('Sign in required')
+  const userId = (session as { userId?: string | null }).userId ?? null
+  if (!userId) throw new Error('Admin sessions cannot submit onboarding')
+
+  const player = await prisma.player.findUnique({
+    where: { id: input.playerId },
+    select: { id: true, userId: true },
+  })
+  if (!player) throw new Error('Player not found')
+  if (player.userId !== userId) {
+    throw new Error('You are not linked to this player slot')
+  }
+
+  const invite = await prisma.leagueInvite.findUnique({
+    where: { code: input.code },
+    select: { leagueId: true },
+  })
+  if (!invite) throw new Error('Invite not found')
+
+  await prisma.playerLeagueAssignment.updateMany({
+    where: {
+      playerId: input.playerId,
+      leagueTeam: { leagueId: invite.leagueId },
+    },
+    data: { onboardingStatus: 'COMPLETED' },
+  })
+
+  revalidate({ domain: 'admin', paths: [`/admin/leagues/${invite.leagueId}/players`] })
   redirect(`/join/${input.code}/welcome`)
 }

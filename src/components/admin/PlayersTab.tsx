@@ -1,13 +1,14 @@
 'use client'
 
 import { useMemo, useState, useTransition } from 'react'
-import { ArrowRight, X, ChevronDown, Link2Off, RefreshCw, Send } from 'lucide-react'
+import { ArrowRight, X, ChevronDown, Link2Off, RefreshCw, Send, IdCard } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import StatusBadge from './StatusBadge'
 import ConfirmDialog from './ConfirmDialog'
 import AssignLineDialog from './AssignLineDialog'
 import AddPlayerDialog from './AddPlayerDialog'
 import GenerateInviteDialog from './GenerateInviteDialog'
+import IdViewerDialog from './IdViewerDialog'
 import PillEditor from './PillEditor'
 import { useToast } from './ToastProvider'
 import {
@@ -39,6 +40,12 @@ interface PlayerRow {
   // v1.33.0 — `Player.position` is now a `PlayerPosition` enum at the DB
   // layer; surfaced as a string so this component remains DB-shape-agnostic.
   position: string | null
+  // v1.35.0 (PR η) — uploaded ID URLs + timestamp. All null until the
+  // user completes the η ID-upload step (or admin purges via the per-row
+  // affordance).
+  idFrontUrl: string | null
+  idBackUrl: string | null
+  idUploadedAt: string | null
   lineId: string | null
   lineDisplayName: string | null
   linePictureUrl: string | null
@@ -126,6 +133,8 @@ export default function PlayersTab({
   const [inviteTargetPlayerId, setInviteTargetPlayerId] = useState<string | null>(null)
   const [selectedForBulk, setSelectedForBulk] = useState<Set<string>>(new Set())
   const [bulkInviteOpen, setBulkInviteOpen] = useState(false)
+  // v1.35.0 (PR η) — when non-null, IdViewerDialog opens for this player.
+  const [idViewerPlayerId, setIdViewerPlayerId] = useState<string | null>(null)
 
   function toggleBulkSelected(playerId: string) {
     setSelectedForBulk((prev) => {
@@ -289,6 +298,19 @@ export default function PlayersTab({
                   />
                 </div>
                 <div className="flex items-center gap-1 shrink-0 pt-0.5">
+                  {/* v1.35.0 (PR η) — mobile per-row "View ID" button.
+                      Visible only when the player has uploaded an ID. */}
+                  {player.idUploadedAt && (
+                    <button
+                      type="button"
+                      onClick={() => setIdViewerPlayerId(player.id)}
+                      title="View uploaded ID"
+                      className="p-2 rounded text-admin-text3 hover:text-admin-amber hover:bg-admin-amber-dim/30 transition-colors min-h-[36px] min-w-[36px] flex items-center justify-center"
+                      data-testid={`id-view-button-mobile-${player.id}`}
+                    >
+                      <IdCard className="w-4 h-4" />
+                    </button>
+                  )}
                   {/* v1.33.0 (PR ε) — mobile per-row Invite button. Only
                       visible for unlinked players (linked players don't
                       need a personal invite). */}
@@ -454,6 +476,21 @@ export default function PlayersTab({
                 </span>
 
                 <div className="flex items-center justify-end gap-1.5">
+                  {/* v1.35.0 (PR η) — per-row "View ID" button. Visible only
+                      when the player has uploaded an ID. Click → modal with
+                      front + back image + Purge button. */}
+                  {player.idUploadedAt && (
+                    <button
+                      type="button"
+                      onClick={() => setIdViewerPlayerId(player.id)}
+                      title={`View ID uploaded ${player.idUploadedAt}`}
+                      className="inline-flex items-center gap-1 rounded-[6px] border border-admin-border bg-transparent px-2.5 py-1 text-xs text-admin-text2 transition-colors hover:border-admin-amber/40 hover:text-admin-amber"
+                      data-testid={`id-view-button-${player.id}`}
+                    >
+                      <IdCard className="w-3 h-3" />
+                      ID
+                    </button>
+                  )}
                   {/* v1.33.0 (PR ε) — per-row Invite button. Visible only for
                       unlinked players (linked players don't need a personal
                       invite — they already have LINE-side identity). */}
@@ -566,6 +603,25 @@ export default function PlayersTab({
           }}
         />
       )}
+
+      {/* v1.35.0 (PR η) — ID viewer dialog. Mounts when admin clicks the
+          per-row "ID" button. Shows front + back image previews + a Purge
+          affordance that DELs the Blob assets and nulls the columns. */}
+      {idViewerPlayerId && (() => {
+        const target = players.find((p) => p.id === idViewerPlayerId)
+        if (!target || !target.idUploadedAt) return null
+        return (
+          <IdViewerDialog
+            playerId={target.id}
+            playerName={target.name}
+            leagueId={leagueId}
+            idFrontUrl={target.idFrontUrl}
+            idBackUrl={target.idBackUrl}
+            idUploadedAt={target.idUploadedAt}
+            onClose={() => setIdViewerPlayerId(null)}
+          />
+        )
+      })()}
     </>
   )
 }

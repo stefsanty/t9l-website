@@ -98,20 +98,27 @@ export default async function JoinPage({ params }: Props) {
   const userId = (session as { userId?: string | null } | null)?.userId ?? null
 
   // If already signed in AND already bound to a player in this league,
-  // jump directly to welcome — they're done. Idempotent re-visit.
+  // route to the right step in the flow. Idempotent re-visit.
   if (isSignedIn && userId) {
     const existingBinding = await prisma.playerLeagueAssignment.findFirst({
       where: {
         leagueTeam: { leagueId: invite.leagueId },
         player: { userId },
       },
-      select: { onboardingStatus: true },
+      select: {
+        onboardingStatus: true,
+        player: { select: { name: true } },
+      },
     })
     if (existingBinding) {
-      // Bound + onboarded → straight to welcome.
-      // Bound but not onboarded → onboarding form.
+      // Three-stage resolver post-η:
+      //   COMPLETED                   → /welcome
+      //   NOT_YET + name set          → /id-upload (form done, ID pending)
+      //   NOT_YET + no name           → /onboarding (form not done)
       if (existingBinding.onboardingStatus === 'COMPLETED') {
         redirect(`/join/${code}/welcome`)
+      } else if (existingBinding.player.name) {
+        redirect(`/join/${code}/id-upload`)
       } else {
         redirect(`/join/${code}/onboarding`)
       }

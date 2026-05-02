@@ -33,6 +33,10 @@ export default async function PlayersPage({ params }: Props) {
     // v1.33.0 — `Player.position` is now `PlayerPosition?` enum; surfaced
     // here as `string | null` so the client component is DB-shape-agnostic.
     position: string | null
+    // v1.35.0 (PR η) — uploaded ID URLs + timestamp. Null when no upload yet.
+    idFrontUrl: string | null
+    idBackUrl: string | null
+    idUploadedAt: string | null  // ISO string (cache-safe; same pattern as lineLastSeenAt)
     lineId: string | null
     lineDisplayName: string | null
     linePictureUrl: string | null
@@ -55,6 +59,20 @@ export default async function PlayersPage({ params }: Props) {
         id: a.player.id,
         name: a.player.name,
         position: a.player.position ?? null,
+        // v1.35.0 (PR η) — surface ID upload state. Date → ISO string at
+        // the boundary (matches lineLastSeenAt's cache-safe pattern).
+        idFrontUrl: a.player.idFrontUrl ?? null,
+        idBackUrl: a.player.idBackUrl ?? null,
+        // v1.35.0 — defensive against the v1.17.1 cache-Date trap:
+        // `getLeaguePlayers` is wrapped in `unstable_cache`, which
+        // JSON-round-trips its return value, so a Date may arrive as a
+        // string post-cache. Coerce both shapes via String() — works on
+        // both Date (toString → cache-friendly) and pre-stringified ISO.
+        idUploadedAt: a.player.idUploadedAt
+          ? a.player.idUploadedAt instanceof Date
+            ? a.player.idUploadedAt.toISOString()
+            : String(a.player.idUploadedAt)
+          : null,
         lineId: a.player.lineId ?? null,
         lineDisplayName: ll?.name ?? null,
         linePictureUrl: ll?.pictureUrl ?? null,
