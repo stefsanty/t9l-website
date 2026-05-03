@@ -46,6 +46,12 @@ model User {
   emailVerified DateTime?
 
   accounts Account[]
+
+  // v1.42.0 (epic match events PR α) — audit trail for who entered each
+  // MatchEvent row (admin or self-reporting player). Nullable on the
+  // MatchEvent side; relation declared here so Prisma's relation graph
+  // compiles.
+  authoredEvents MatchEvent[]
 }
 
 // Stage α.5 of account-player-rework (v1.28.0). NextAuth adapter Account
@@ -163,18 +169,18 @@ model LeagueTeam {
 }
 
 model Player {
-  id         String          @id @default(cuid())
+  id                String          @id @default(cuid())
   // v1.33.0 (PR ε of the onboarding chain) — `name` becomes nullable so
   // admins can pre-stage a roster slot (team known, name not yet) and let
   // the user fill it in via the upcoming `/join/[code]` flow (PR ζ).
   // Backward-compat: every row at v1.33.0 deploy time has a non-null name.
-  name       String?
+  name              String?
   // v1.33.0 — formal enum. Pre-ε this was `String?` populated from Sheets;
   // observed prod values are exactly the four literals (or NULL). Migration
   // CASE-WHEN-backfills; non-conforming free-text values land as NULL.
-  position   PlayerPosition?
-  lineId     String?         @unique
-  pictureUrl String?
+  position          PlayerPosition?
+  lineId            String?         @unique
+  pictureUrl        String?
   // v1.37.0 (PR ι) — user-uploaded profile picture (Vercel Blob).
   // Replace-only: re-upload via /account/player deletes the prior
   // asset. Distinct from `pictureUrl` (LINE-CDN mirror, written by
@@ -182,8 +188,8 @@ model Player {
   // src/lib/playerAvatar.ts: profilePictureUrl > pictureUrl > static
   // fallback. Nullable — pre-ι rows have no user-uploaded asset.
   profilePictureUrl String?
-  createdAt  DateTime        @default(now())
-  updatedAt  DateTime        @updatedAt
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
 
   // Stage 1 of account-player-rework (v1.27.0). Mirror of User.playerId — the
   // 1:1 binding from the canonical Player profile to its global User
@@ -221,6 +227,12 @@ model Player {
   goals             Goal[]
   assists           Assist[]
   availability      Availability[]
+
+  // v1.42.0 (epic match events PR α) — back-relations for MatchEvent.
+  // Two named relations because a Player can be either the scorer or the
+  // assister (or both, on different events).
+  scoredEvents   MatchEvent[] @relation("EventScorer")
+  assistedEvents MatchEvent[] @relation("EventAssister")
 }
 
 // v1.33.0 (PR ε) — formal player-position enum. Four roles: goalkeeper,
@@ -303,31 +315,96 @@ model GameWeek {
 }
 
 model Match {
-  id         String      @id @default(cuid())
-  leagueId   String
-  gameWeekId String
-  homeTeamId String
-  awayTeamId String
-  homeScore  Int         @default(0)
-  awayScore  Int         @default(0)
-  venueId    String?
-  playedAt   DateTime
-  endedAt    DateTime?
-  status     MatchStatus @default(SCHEDULED)
-  createdAt  DateTime    @default(now())
-  updatedAt  DateTime    @updatedAt
+  id            String      @id @default(cuid())
+  leagueId      String
+  gameWeekId    String
+  homeTeamId    String
+  awayTeamId    String
+  // v1.42.0 (epic match events PR α) — `homeScore`/`awayScore` become a
+  // derived cache populated by `src/lib/matchScore.ts#recomputeMatchScore`
+  // every time a MatchEvent row is inserted/updated/deleted. The columns
+  // stay so existing read paths (StatsTab, dbToPublicLeagueData,
+  // MatchdayCard) continue to work; PR δ flips reads to compute from
+  // events directly via the `events` relation.
+  homeScore     Int         @default(0)
+  awayScore     Int         @default(0)
+  // v1.42.0 — when non-null, takes precedence over the cache for display
+  // (forfeits, abandoned matches, manually-corrected scores). Free-text
+  // string like "3-0 (forfeit)" or "abandoned"; the resolver tries to
+  // parse "H-A" shape for places that need numeric values, otherwise
+  // exposes the raw string.
+  scoreOverride String?
+  venueId       String?
+  playedAt      DateTime
+  endedAt       DateTime?
+  status        MatchStatus @default(SCHEDULED)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
 
-  league   League     @relation(fields: [leagueId], references: [id])
-  gameWeek GameWeek   @relation(fields: [gameWeekId], references: [id])
-  homeTeam LeagueTeam @relation("HomeTeam", fields: [homeTeamId], references: [id])
-  awayTeam LeagueTeam @relation("AwayTeam", fields: [awayTeamId], references: [id])
-  venue    Venue?     @relation(fields: [venueId], references: [id])
+  league   League       @relation(fields: [leagueId], references: [id])
+  gameWeek GameWeek     @relation(fields: [gameWeekId], references: [id])
+  homeTeam LeagueTeam   @relation("HomeTeam", fields: [homeTeamId], references: [id])
+  awayTeam LeagueTeam   @relation("AwayTeam", fields: [awayTeamId], references: [id])
+  venue    Venue?       @relation(fields: [venueId], references: [id])
   goals    Goal[]
   assists  Assist[]
+  events   MatchEvent[]
 
   @@unique([gameWeekId, homeTeamId, awayTeamId])
   @@index([leagueId])
   @@index([gameWeekId])
+}
+
+// v1.42.0 (epic match events PR α) — unified event log tied to a Match +
+// Player(s). v1 only carries kind=GOAL with goalType detail (open play /
+// set piece / penalty / own goal). EventKind is intentionally an enum
+// rather than a string so future event types (cards, substitutions) can
+// extend cleanly. minute is nullable: events without a recorded clock
+// time are allowed (admin entered after-the-fact, player self-reported
+// without checking the clock).
+//
+// Cascades on Match delete (an event without its match is meaningless).
+// Does NOT cascade on Player delete — same shape as Goal/Assist; deleting
+// a Player with events would FK-fail. Admin "remove from league" only
+// deletes PlayerLeagueAssignment rows, not the Player itself, so this is
+// the documented intent.
+model MatchEvent {
+  id          String    @id @default(cuid())
+  matchId     String
+  kind        EventKind @default(GOAL)
+  // Nullable so future EventKinds (cards, subs) don't carry GoalType.
+  // For kind=GOAL we expect a non-null goalType in practice; runtime
+  // guards live in the admin server actions, not in the schema.
+  goalType    GoalType?
+  scorerId    String
+  assisterId  String?
+  minute      Int?
+  // Audit who entered the event — admin (their User.id) or the player
+  // themselves (their User.id via session.user.playerId → the User who
+  // owns that Player). NULL on backfilled rows from the Sheets import.
+  createdById String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  match     Match   @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  scorer    Player  @relation("EventScorer", fields: [scorerId], references: [id])
+  assister  Player? @relation("EventAssister", fields: [assisterId], references: [id])
+  createdBy User?   @relation(fields: [createdById], references: [id])
+
+  @@index([matchId])
+  @@index([scorerId])
+  @@index([assisterId])
+}
+
+enum EventKind {
+  GOAL
+}
+
+enum GoalType {
+  OPEN_PLAY
+  SET_PIECE
+  PENALTY
+  OWN_GOAL
 }
 
 enum MatchStatus {
