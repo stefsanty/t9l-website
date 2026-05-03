@@ -489,6 +489,43 @@ export async function adminUpdatePlayerName(input: {
   revalidate({ domain: 'admin', paths: [`/admin/leagues/${leagueId}/players`] })
 }
 
+/**
+ * v1.41.0 — admin sets / clears `Player.position` directly from the
+ * Players-tab edit panel.
+ *
+ * Pre-v1.41.0 the only paths that wrote `Player.position` were:
+ *   - `adminCreatePlayer` (PR ε) on initial admin pre-stage
+ *   - `submitOnboarding` (PR ζ) when the user fills the onboarding form
+ *
+ * The admin had no surface to fix a mistyped position or fill in a slot
+ * the user left blank — they had to flip onboardingStatus back via PR θ
+ * and ask the user to redo the form. This action closes that gap.
+ *
+ * Accepts the four enum literals (GK / DF / MF / FW) or null to clear.
+ * Unknown strings are coerced to null defensively (mirrors PR ε's
+ * behavior in `adminCreatePlayer`). The Prisma column is
+ * `PlayerPosition?` so null is a first-class value.
+ */
+export async function adminUpdatePlayerPosition(input: {
+  playerId: string
+  leagueId: string
+  position: 'GK' | 'DF' | 'MF' | 'FW' | null
+}): Promise<void> {
+  await assertAdmin()
+  const { playerId, leagueId } = input
+  if (!playerId) throw new Error('playerId is required')
+
+  const allowed = new Set(['GK', 'DF', 'MF', 'FW'])
+  const next = input.position && allowed.has(input.position) ? input.position : null
+
+  await prisma.player.update({
+    where: { id: playerId },
+    data: { position: next },
+  })
+
+  revalidate({ domain: 'admin', paths: [`/admin/leagues/${leagueId}/players`] })
+}
+
 // ── Onboarding reset (PR θ / v1.36.0) ───────────────────────────────────────
 
 /**
