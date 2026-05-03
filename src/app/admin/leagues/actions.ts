@@ -24,7 +24,8 @@ import {
   type InviteCsvRow,
 } from '@/lib/inviteCodes'
 import { headers } from 'next/headers'
-import type { PlayerPosition } from '@prisma/client'
+import type { PlayerPosition, GoalType } from '@prisma/client'
+import { recomputeMatchScore } from '@/lib/matchScore'
 
 /**
  * v1.13.0 — defer the Redis pre-warm off the admin response critical path.
@@ -1053,4 +1054,318 @@ export async function setWriteMode(value: WriteMode) {
     update: { value },
   })
   revalidate({ domain: 'settings', paths: ['/admin'] })
+}
+
+// ── MatchEvent CRUD (PR γ / v1.43.0) ───────────────────────────────────────
+
+const VALID_GOAL_TYPES = new Set<GoalType>([
+  'OPEN_PLAY',
+  'SET_PIECE',
+  'PENALTY',
+  'OWN_GOAL',
+])
+
+/**
+ * v1.43.0 (PR γ) — admin creates a MatchEvent row.
+ *
+ * Validation gates (server-side, defense in depth — the picker UI is the
+ * affordance, not the contract):
+ *   1. session is admin
+ *   2. matchId belongs to the supplied leagueId (cross-league isolation)
+ *   3. goalType is one of the four enum literals
+ *   4. scorerId resolves to a Player on the BENEFICIARY team's roster:
+ *        - non-OG: scorer must be on the beneficiary team
+ *        - OG: scorer must be on the OPPOSING team (since OG benefits the
+ *          opposite side and is scored by a player conceding to themselves)
+ *   5. assisterId, when supplied, must resolve to a Player on the
+ *      beneficiary team's roster, and must not equal scorerId
+ *
+ * `beneficiaryTeamId` is the LeagueTeam.id that the goal counts toward —
+ * passed explicitly so the action doesn't have to re-derive it from the
+ * goal type + match teams (the client already knows; pass it through).
+ *
+ * Wraps the insert + recompute in a Prisma transaction so a recompute
+ * failure doesn't leave a phantom event in the cache state.
+ */
+export async function adminCreateMatchEvent(input: {
+  matchId: string
+  leagueId: string
+  goalType: GoalType
+  beneficiaryTeamId: string
+  scorerId: string
+  assisterId?: string | null
+  minute?: number | null
+}): Promise<{ id: string }> {
+  await assertAdmin()
+  const session = await getServerSession(authOptions)
+  const userId = session?.userId ?? null
+
+  const { matchId, leagueId, goalType, beneficiaryTeamId, scorerId } = input
+  if (!matchId) throw new Error('matchId is required')
+  if (!leagueId) throw new Error('leagueId is required')
+  if (!scorerId) throw new Error('scorerId is required')
+  if (!beneficiaryTeamId) throw new Error('beneficiaryTeamId is required')
+  if (!VALID_GOAL_TYPES.has(goalType)) {
+    throw new Error(`Invalid goalType: ${goalType}`)
+  }
+  if (
+    input.minute !== undefined &&
+    input.minute !== null &&
+    (input.minute < 0 || input.minute > 200)
+  ) {
+    throw new Error('minute out of range')
+  }
+  const assisterId = input.assisterId ?? null
+  if (assisterId && assisterId === scorerId) {
+    throw new Error('Assister cannot be the scorer')
+  }
+
+  // Cross-league + match-team isolation: confirm the match exists in the
+  // league, and that beneficiaryTeamId is one of its teams.
+  const match = await prisma.match.findUnique({
+    where: { id: matchId },
+    select: { id: true, leagueId: true, homeTeamId: true, awayTeamId: true },
+  })
+  if (!match || match.leagueId !== leagueId) {
+    throw new Error('Match not found in this league')
+  }
+  if (
+    beneficiaryTeamId !== match.homeTeamId &&
+    beneficiaryTeamId !== match.awayTeamId
+  ) {
+    throw new Error('beneficiaryTeamId is not part of this match')
+  }
+  const opposingTeamId =
+    beneficiaryTeamId === match.homeTeamId ? match.awayTeamId : match.homeTeamId
+
+  // Confirm scorer is on the right team for the goalType.
+  // - For non-OG: scorer must be on beneficiaryTeamId.
+  // - For OG: scorer must be on opposingTeamId.
+  const requiredScorerTeamId =
+    goalType === 'OWN_GOAL' ? opposingTeamId : beneficiaryTeamId
+  const scorerOnTeam = await prisma.playerLeagueAssignment.findFirst({
+    where: { playerId: scorerId, leagueTeamId: requiredScorerTeamId },
+    select: { id: true },
+  })
+  if (!scorerOnTeam) {
+    throw new Error(
+      goalType === 'OWN_GOAL'
+        ? 'Scorer (own goal) must be on the OPPOSING team'
+        : 'Scorer must be on the beneficiary team',
+    )
+  }
+
+  // Assister, when supplied, must be on the beneficiary team.
+  if (assisterId) {
+    const assisterOnTeam = await prisma.playerLeagueAssignment.findFirst({
+      where: { playerId: assisterId, leagueTeamId: beneficiaryTeamId },
+      select: { id: true },
+    })
+    if (!assisterOnTeam) {
+      throw new Error('Assister must be on the beneficiary team')
+    }
+  }
+
+  const created = await prisma.$transaction(async (tx) => {
+    const ev = await tx.matchEvent.create({
+      data: {
+        matchId,
+        kind: 'GOAL',
+        goalType,
+        scorerId,
+        assisterId,
+        minute: input.minute ?? null,
+        createdById: userId,
+      },
+      select: { id: true },
+    })
+    await recomputeMatchScore(tx, matchId)
+    return ev
+  })
+
+  revalidate({
+    domain: 'admin',
+    paths: [
+      `/admin/leagues/${leagueId}/stats`,
+      `/admin/leagues/${leagueId}/schedule`,
+      `/admin/matches/${matchId}`,
+    ],
+  })
+  return created
+}
+
+/**
+ * v1.43.0 (PR γ) — admin updates a MatchEvent row.
+ *
+ * Same validation contract as `adminCreateMatchEvent`. Recomputes the
+ * affected match's score. v1 does NOT allow changing `matchId` (admins
+ * delete + re-create if they made a wrong-match mistake) — keeps the
+ * recompute scoped to a single match.
+ */
+export async function adminUpdateMatchEvent(input: {
+  eventId: string
+  leagueId: string
+  goalType: GoalType
+  beneficiaryTeamId: string
+  scorerId: string
+  assisterId?: string | null
+  minute?: number | null
+}): Promise<void> {
+  await assertAdmin()
+  const { eventId, leagueId, goalType, beneficiaryTeamId, scorerId } = input
+  if (!eventId) throw new Error('eventId is required')
+  if (!VALID_GOAL_TYPES.has(goalType)) {
+    throw new Error(`Invalid goalType: ${goalType}`)
+  }
+  const assisterId = input.assisterId ?? null
+  if (assisterId && assisterId === scorerId) {
+    throw new Error('Assister cannot be the scorer')
+  }
+  if (
+    input.minute !== undefined &&
+    input.minute !== null &&
+    (input.minute < 0 || input.minute > 200)
+  ) {
+    throw new Error('minute out of range')
+  }
+
+  const existing = await prisma.matchEvent.findUnique({
+    where: { id: eventId },
+    select: { id: true, matchId: true },
+  })
+  if (!existing) throw new Error('Event not found')
+
+  const match = await prisma.match.findUnique({
+    where: { id: existing.matchId },
+    select: { id: true, leagueId: true, homeTeamId: true, awayTeamId: true },
+  })
+  if (!match || match.leagueId !== leagueId) {
+    throw new Error('Match not found in this league')
+  }
+  if (
+    beneficiaryTeamId !== match.homeTeamId &&
+    beneficiaryTeamId !== match.awayTeamId
+  ) {
+    throw new Error('beneficiaryTeamId is not part of this match')
+  }
+  const opposingTeamId =
+    beneficiaryTeamId === match.homeTeamId ? match.awayTeamId : match.homeTeamId
+  const requiredScorerTeamId =
+    goalType === 'OWN_GOAL' ? opposingTeamId : beneficiaryTeamId
+
+  const scorerOnTeam = await prisma.playerLeagueAssignment.findFirst({
+    where: { playerId: scorerId, leagueTeamId: requiredScorerTeamId },
+    select: { id: true },
+  })
+  if (!scorerOnTeam) {
+    throw new Error(
+      goalType === 'OWN_GOAL'
+        ? 'Scorer (own goal) must be on the OPPOSING team'
+        : 'Scorer must be on the beneficiary team',
+    )
+  }
+  if (assisterId) {
+    const assisterOnTeam = await prisma.playerLeagueAssignment.findFirst({
+      where: { playerId: assisterId, leagueTeamId: beneficiaryTeamId },
+      select: { id: true },
+    })
+    if (!assisterOnTeam) {
+      throw new Error('Assister must be on the beneficiary team')
+    }
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await tx.matchEvent.update({
+      where: { id: eventId },
+      data: {
+        goalType,
+        scorerId,
+        assisterId,
+        minute: input.minute ?? null,
+      },
+    })
+    await recomputeMatchScore(tx, existing.matchId)
+  })
+
+  revalidate({
+    domain: 'admin',
+    paths: [
+      `/admin/leagues/${leagueId}/stats`,
+      `/admin/leagues/${leagueId}/schedule`,
+      `/admin/matches/${existing.matchId}`,
+    ],
+  })
+}
+
+/**
+ * v1.43.0 (PR γ) — admin deletes a MatchEvent row.
+ */
+export async function adminDeleteMatchEvent(input: {
+  eventId: string
+  leagueId: string
+}): Promise<void> {
+  await assertAdmin()
+  const { eventId, leagueId } = input
+  if (!eventId) throw new Error('eventId is required')
+
+  const existing = await prisma.matchEvent.findUnique({
+    where: { id: eventId },
+    select: { id: true, matchId: true, match: { select: { leagueId: true } } },
+  })
+  if (!existing) throw new Error('Event not found')
+  if (existing.match.leagueId !== leagueId) {
+    throw new Error('Event not found in this league')
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await tx.matchEvent.delete({ where: { id: eventId } })
+    await recomputeMatchScore(tx, existing.matchId)
+  })
+
+  revalidate({
+    domain: 'admin',
+    paths: [
+      `/admin/leagues/${leagueId}/stats`,
+      `/admin/leagues/${leagueId}/schedule`,
+      `/admin/matches/${existing.matchId}`,
+    ],
+  })
+}
+
+/**
+ * v1.43.0 (PR γ) — admin sets `Match.scoreOverride`. Pass `null` to clear.
+ * Does NOT touch the cache columns; `recomputeMatchScore` keeps populating
+ * those from events so flipping the override on/off doesn't lose history.
+ */
+export async function adminSetMatchScoreOverride(input: {
+  matchId: string
+  leagueId: string
+  override: string | null
+}): Promise<void> {
+  await assertAdmin()
+  const { matchId, leagueId } = input
+  if (!matchId) throw new Error('matchId is required')
+
+  const match = await prisma.match.findUnique({
+    where: { id: matchId },
+    select: { leagueId: true },
+  })
+  if (!match || match.leagueId !== leagueId) {
+    throw new Error('Match not found in this league')
+  }
+  const next = input.override?.trim() || null
+
+  await prisma.match.update({
+    where: { id: matchId },
+    data: { scoreOverride: next },
+  })
+
+  revalidate({
+    domain: 'admin',
+    paths: [
+      `/admin/leagues/${leagueId}/stats`,
+      `/admin/leagues/${leagueId}/schedule`,
+      `/admin/matches/${matchId}`,
+    ],
+  })
 }
