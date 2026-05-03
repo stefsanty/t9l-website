@@ -256,7 +256,7 @@ export default function LineLoginButton() {
                   setShowSignInLightbox(true);
                 }
               }}
-              className="bg-[#06C755] hover:bg-[#05b34c] active:scale-95 text-white text-[11px] font-black uppercase tracking-wider px-4 py-1.5 rounded-full transition-all"
+              className="bg-[#06C755] hover:bg-[#05b34c] active:scale-95 text-white text-[11px] font-black uppercase tracking-wider px-3 md:px-4 py-1.5 rounded-full transition-all"
               data-testid="header-signin"
             >
               {"Sign in"}
