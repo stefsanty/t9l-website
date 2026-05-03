@@ -48,6 +48,15 @@ describe('Header mobile sizing (v1.41.2 regression target)', () => {
     expect(headerSrc).toMatch(/flex-1 flex justify-end items-center gap-1\.5 md:gap-2/)
   })
 
+  it('does not render a drop shadow (v1.41.3 — shadow removed; border-b is the seam)', () => {
+    // v1.41.3 — pre-fix the header carried `shadow-[0_4px_20px_rgba(0,0,0,0.15)]`
+    // creating a soft drop shadow under the fixed bar. User asked for it
+    // removed; the existing `border-b border-border-default` provides the
+    // visual separation between header and body content.
+    expect(headerSrc).not.toMatch(/shadow-\[/)
+    expect(headerSrc).toMatch(/border-b border-border-default/)
+  })
+
   it('keeps the brand title at text-xl on both breakpoints (load-bearing brand mark)', () => {
     // Both spans inside the title <Link> stay at text-xl across breakpoints.
     // If a future PR adds `text-lg md:text-xl` (or similar) it would
