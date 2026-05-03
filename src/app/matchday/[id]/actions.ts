@@ -6,6 +6,7 @@ import { authOptions } from '@/lib/auth'
 import { revalidate } from '@/lib/revalidate'
 import { recomputeMatchScore } from '@/lib/matchScore'
 import { evaluateSelfReportGate } from '@/lib/playerSelfReportGate'
+import { parseMatchPublicId } from '@/lib/matchPublicId'
 import { slugToPlayerId } from '@/lib/ids'
 import type { GoalType } from '@prisma/client'
 
@@ -182,22 +183,7 @@ export async function submitOwnMatchEvent(input: {
   return created
 }
 
-/**
- * Parses `md3-m2` → `{ weekNumber: 3, matchIndex: 1, matchdayPublicId: 'md3' }`.
- * Returns null on shape mismatch.
- */
-export function parseMatchPublicId(
-  matchPublicId: string,
-): { weekNumber: number; matchIndex: number; matchdayPublicId: string } | null {
-  const match = matchPublicId.match(/^md(\d+)-m(\d+)$/)
-  if (!match) return null
-  const weekNumber = parseInt(match[1], 10)
-  const matchNumber = parseInt(match[2], 10)
-  if (!Number.isFinite(weekNumber) || weekNumber < 1) return null
-  if (!Number.isFinite(matchNumber) || matchNumber < 1) return null
-  return {
-    weekNumber,
-    matchIndex: matchNumber - 1,
-    matchdayPublicId: `md${weekNumber}`,
-  }
-}
+// v1.47.0 — `parseMatchPublicId` moved to `src/lib/matchPublicId.ts`. Kept
+// out of this file because Next 16's strict server-action contract rejects
+// non-async exports from `'use server'` modules — the v1.46.0 prod build
+// failed for this exact reason. Tests import from the new location.

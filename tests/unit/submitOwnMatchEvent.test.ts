@@ -52,7 +52,8 @@ vi.mock('next/cache', () => ({
   unstable_cache: <T extends (...args: unknown[]) => unknown>(fn: T) => fn,
 }))
 
-const { submitOwnMatchEvent, parseMatchPublicId } = await import('@/app/matchday/[id]/actions')
+const { submitOwnMatchEvent } = await import('@/app/matchday/[id]/actions')
+const { parseMatchPublicId } = await import('@/lib/matchPublicId')
 
 const HOME_LT = 'lt-home'
 const AWAY_LT = 'lt-away'
