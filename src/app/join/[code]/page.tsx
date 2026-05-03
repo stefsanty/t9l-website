@@ -7,6 +7,7 @@ import { validateInvite } from '@/lib/joinValidation'
 import { formatInviteCodeForDisplay } from '@/lib/inviteCodes'
 import RedeemPersonalForm from './RedeemPersonalForm'
 import RedeemCodePicker from './RedeemCodePicker'
+import JoinInlineAuth from './JoinInlineAuth'
 
 /**
  * v1.34.0 (PR ζ of the onboarding chain) — public redemption landing.
@@ -325,14 +326,32 @@ function PersonalPreview({
           </div>
         </div>
 
-        <p className="text-fg-mid text-sm mb-5">Is this you?</p>
+        <p className="text-fg-mid text-sm mb-5">
+          {isSignedIn
+            ? 'Is this you?'
+            : "Is this you? Pick how you'd like to sign in to claim your slot."}
+        </p>
 
-        <RedeemPersonalForm
-          code={code}
-          isSignedIn={isSignedIn}
-          inviteCode={code}
-          skipOnboarding={skipOnboarding}
-        />
+        {/*
+         * v1.40.0 — collapse the YES step for signed-out users. Picking a
+         * provider IS the confirmation: the OAuth round-trip lands the user
+         * back on `/join/[code]` already authenticated, the page rerenders
+         * into the signed-in branch, and `RedeemPersonalForm` kicks off
+         * the redemption immediately.
+         *
+         * Pre-v1.40.0 the signed-out preview showed a "Yes, that's me —
+         * sign in to confirm" button that bounced to `/auth/signin` and
+         * back. The provider picker is now inline.
+         */}
+        {isSignedIn ? (
+          <RedeemPersonalForm
+            code={code}
+            inviteCode={code}
+            skipOnboarding={skipOnboarding}
+          />
+        ) : (
+          <JoinInlineAuth code={code} />
+        )}
 
         <p className="text-fg-low text-xs mt-4 text-center font-mono" data-testid="join-code-display">
           {formatInviteCodeForDisplay(code)}
@@ -362,15 +381,15 @@ function CodePreviewSignedOut({
           {league.name}
         </h1>
         <p className="text-fg-mid text-sm mb-5">
-          Sign in below, then pick the player slot you'd like to claim.
+          Pick how you&apos;d like to sign in. After that you can claim your roster spot.
         </p>
-        <Link
-          href={`/auth/signin?callbackUrl=${encodeURIComponent(`/join/${code}`)}`}
-          className="inline-block w-full text-center rounded-lg bg-primary text-on-primary px-4 py-2.5 text-sm font-medium hover:opacity-90 transition-opacity"
-          data-testid="join-signin-cta"
-        >
-          Sign in to continue
-        </Link>
+        {/*
+         * v1.40.0 — provider buttons inline. Pre-v1.40.0 this branch had a
+         * single "Sign in to continue" link routing to `/auth/signin?...`
+         * which then bounced back to `/join/[code]`. Skipping the bounce
+         * keeps the league context visible the whole time.
+         */}
+        <JoinInlineAuth code={code} />
         <p className="text-fg-low text-xs mt-4 text-center font-mono" data-testid="join-code-display">
           {formatInviteCodeForDisplay(code)}
         </p>

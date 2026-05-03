@@ -8,15 +8,11 @@ import { redeemInvite } from './actions'
 /**
  * v1.34.0 (PR ζ) — client-side YES/NO buttons for the PERSONAL preview.
  *
- * Signed-out: "Yes, that's me" routes to `/auth/signin?callbackUrl=/join/<code>`.
- * After sign-in, the page re-renders and the user lands here signed-in.
- *
- * Signed-in: "Yes, that's me" calls `redeemInvite` and the server action
- * redirects to either `/join/<code>/welcome` (skipOnboarding) or
- * `/join/<code>/onboarding`. We follow with `router.push` for the
- * non-redirecting return path (Next 16 server actions can return values
- * OR redirect; we use the value form so the client can show inline
- * errors before navigating).
+ * v1.40.0 — signed-out branch removed. The parent (`page.tsx`) now renders
+ * `JoinInlineAuth` directly for signed-out PERSONAL previews so the user
+ * picks a provider on the invite page (no bounce to `/auth/signin`). After
+ * the OAuth round-trip the page re-renders into the signed-in branch and
+ * mounts this component, which fires `redeemInvite` on click.
  *
  * "No, not me": for now just routes home; future PR θ-adjacent could
  * record a rejection audit trail (see brainstorm brief Q4.2).
@@ -24,21 +20,16 @@ import { redeemInvite } from './actions'
 
 interface Props {
   code: string
-  isSignedIn: boolean
   inviteCode: string
   skipOnboarding: boolean
 }
 
-export default function RedeemPersonalForm({ code, isSignedIn, skipOnboarding }: Props) {
+export default function RedeemPersonalForm({ code, skipOnboarding }: Props) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
   const [error, setError] = useState<string | null>(null)
 
   function handleYes() {
-    if (!isSignedIn) {
-      router.push(`/auth/signin?callbackUrl=${encodeURIComponent(`/join/${code}`)}`)
-      return
-    }
     setError(null)
     startTransition(async () => {
       const result = await redeemInvite({ code })
@@ -61,11 +52,9 @@ export default function RedeemPersonalForm({ code, isSignedIn, skipOnboarding }:
       >
         {pending
           ? 'Linking…'
-          : isSignedIn
-            ? skipOnboarding
-              ? 'Yes, that’s me — link my account'
-              : 'Yes, that’s me — continue'
-            : 'Yes, that’s me — sign in to confirm'}
+          : skipOnboarding
+            ? 'Yes, that’s me — link my account'
+            : 'Yes, that’s me — continue'}
       </button>
       <Link
         href="/"
