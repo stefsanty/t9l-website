@@ -126,14 +126,81 @@ export function resolveWeekNumber(
 }
 
 /**
+ * Names in `GoalsRaw` that should be mapped to the per-team Guest player when
+ * the row's scoring-team context is known. Lowercased + trimmed for the
+ * comparison. v1.46.1 introduces this list to absorb:
+ *   - "Guest" (existing convention from the legacy Sheets-side loader —
+ *     non-rostered scorer).
+ *   - "Sergei Borodin" — former player no longer on any roster; goals were
+ *     real but the source identity is gone. The user explicitly mapped him
+ *     to Guest in PR-feedback-on-the-dry-run.
+ *
+ * Add new entries here when the dry-run report surfaces other historical
+ * names that should land on the per-team Guest. Do NOT use this list for
+ * resolvable-but-typoed names — those should be fixed at the source sheet.
+ */
+export const EXPLICIT_GUEST_NAMES: ReadonlySet<string> = new Set([
+  'guest',
+  'sergei borodin',
+])
+
+/**
+ * Lowercased first-name token of a name like "Kosma Knasiecki" → "kosma".
+ * Returns null when input has no space (i.e. it's already a single token,
+ * or empty after trim).
+ */
+export function firstNameToken(name: string): string | null {
+  const trimmed = name.trim()
+  if (!trimmed) return null
+  const idx = trimmed.indexOf(' ')
+  if (idx <= 0) return null
+  return trimmed.slice(0, idx).toLowerCase()
+}
+
+/**
+ * Given a list of players on a specific team, return the unique player whose
+ * first-name token matches `firstNameLc` (case-insensitive). Returns null
+ * when zero or 2+ players match — the resolver only collapses unambiguous
+ * single-token references.
+ */
+export function findUniqueByFirstName(
+  firstNameLc: string,
+  teamPlayers: ReadonlyArray<{ id: string; name: string | null }>,
+): string | null {
+  const matches: string[] = []
+  for (const p of teamPlayers) {
+    if (!p.name) continue
+    const ft = firstNameToken(p.name)
+    if (ft === firstNameLc) matches.push(p.id)
+  }
+  return matches.length === 1 ? matches[0] : null
+}
+
+export interface ResolvePlayerContext {
+  /** Players on the row's scoring team — used for fuzzy first-name match. */
+  teamPlayers?: ReadonlyArray<{ id: string; name: string | null }>
+  /** Guest player id on the row's scoring team — used for EXPLICIT_GUEST_NAMES + unresolved-name fallback. */
+  guestPlayerId?: string
+}
+
+/**
  * Resolve a player name against a roster keyed by case-insensitive trimmed
- * exact match first, then by slug. Roster shape: `Map<lowercase-name, playerId>`
- * + `Map<slug, playerId>`. Returns null when neither yields a hit.
+ * exact match first, then by slug. v1.46.1 adds:
+ *
+ *   3. **First-name fuzzy match** (when context.teamPlayers supplied) —
+ *      single-token names like "Kosma" resolve to the unique team player whose
+ *      first name matches. Ambiguity (0 or 2+ matches) falls through.
+ *   4. **Explicit Guest names** (when context.guestPlayerId supplied) —
+ *      EXPLICIT_GUEST_NAMES (e.g. "Guest", "Sergei Borodin") map to the
+ *      team's Guest player.
+ *
+ * Returns null when none of the four steps yield a hit.
  */
 export function resolvePlayer(
   rawName: string,
   byLcName: Map<string, string>,
   bySlug: Map<string, string>,
+  context?: ResolvePlayerContext,
 ): string | null {
   const trimmed = rawName.trim()
   if (!trimmed) return null
@@ -141,7 +208,20 @@ export function resolvePlayer(
   const direct = byLcName.get(lc)
   if (direct) return direct
   const slug = slugify(trimmed)
-  return bySlug.get(slug) ?? null
+  const slugHit = bySlug.get(slug)
+  if (slugHit) return slugHit
+  // 3. Fuzzy first-name match within team context. Only when input is a
+  //    single token AND we know which team to look in.
+  if (context?.teamPlayers && trimmed.indexOf(' ') === -1) {
+    const fuzzy = findUniqueByFirstName(lc, context.teamPlayers)
+    if (fuzzy) return fuzzy
+  }
+  // 4. Explicit Guest mapping. Single league-wide list of names that resolve
+  //    to the team's Guest player. Requires team context.
+  if (context?.guestPlayerId && EXPLICIT_GUEST_NAMES.has(lc)) {
+    return context.guestPlayerId
+  }
+  return null
 }
 
 export type RowDecision =
@@ -166,6 +246,18 @@ export function decideRowAction(args: {
   teamByName: Map<string, string>
   playerByLcName: Map<string, string>
   playerBySlug: Map<string, string>
+  /**
+   * v1.46.1 — players on each LeagueTeam, keyed by leagueTeamId. Enables
+   * the fuzzy first-name match in `resolvePlayer`. Optional for backwards
+   * compat with the existing test fixtures that don't supply it.
+   */
+  playersByLeagueTeam?: Map<string, ReadonlyArray<{ id: string; name: string | null }>>
+  /**
+   * v1.46.1 — Guest player id per LeagueTeam. Enables the EXPLICIT_GUEST_NAMES
+   * mapping in `resolvePlayer`. Populated by `ensureGuestPlayers` at script
+   * startup; optional for tests that don't need the Guest behavior.
+   */
+  guestPlayerByLeagueTeam?: Map<string, string>
 }): RowDecision {
   const wk = resolveWeekNumber(args.rawMd, args.timestamp, args.weekDates)
   if (wk === null) {
@@ -193,13 +285,27 @@ export function decideRowAction(args: {
     }
   }
 
-  const scorerId = resolvePlayer(args.scorerName, args.playerByLcName, args.playerBySlug)
+  // v1.46.1 — team context drives the fuzzy first-name match + Guest fallback.
+  // Both scorer and assister belong to the SCORING team in the legacy GoalsRaw
+  // shape (the source has no goalType column, so OWN_GOAL doesn't appear in
+  // the historical data; everything imports as OPEN_PLAY where scorer.team
+  // === scoring-team).
+  const teamPlayers = args.playersByLeagueTeam?.get(scoringLT)
+  const guestPlayerId = args.guestPlayerByLeagueTeam?.get(scoringLT)
+  const resolveCtx = { teamPlayers, guestPlayerId }
+
+  const scorerId = resolvePlayer(
+    args.scorerName,
+    args.playerByLcName,
+    args.playerBySlug,
+    resolveCtx,
+  )
   if (!scorerId) {
     return { kind: 'SKIP', reason: `unresolved-scorer: "${args.scorerName}"`, row: args.rowNumber }
   }
 
   const assisterId = args.assisterName
-    ? resolvePlayer(args.assisterName, args.playerByLcName, args.playerBySlug)
+    ? resolvePlayer(args.assisterName, args.playerByLcName, args.playerBySlug, resolveCtx)
     : null
   // Note: we do NOT skip when assister text is non-empty but unresolved — assister
   // is nullable. Surface in the report instead and insert with null.
@@ -245,6 +351,94 @@ async function fetchGoalsRaw(): Promise<string[][]> {
   return (data.values as string[][]) ?? []
 }
 
+// ── Guest seeder ───────────────────────────────────────────────────────────
+
+/**
+ * v1.46.1 — derive the deterministic Player.id for the per-team Guest player.
+ * Mirrors the existing single-Guest convention (`p-guest`, `lib/ids.ts`) but
+ * scopes it per LeagueTeam so the score-derivation lookup
+ * (`playerToLt: Map<playerId, leagueTeamId>` in `dbToPublicLeagueData`) maps
+ * each Guest to exactly one team.
+ *
+ * The single legacy `p-guest` Player record (with no PlayerLeagueAssignment)
+ * predates this and is left untouched. It's harmless — the public read path
+ * iterates PLA rows so an unassigned Player never surfaces.
+ */
+export function guestPlayerIdFor(leagueTeamId: string): string {
+  return `p-guest-${leagueTeamId}`
+}
+
+interface GuestSeedSummary {
+  /** Map from leagueTeamId → guest player id, for every team in the league. */
+  guestByLeagueTeam: Map<string, string>
+  /** Number of NEW Player rows created (already-existing rows are no-ops). */
+  playersCreated: number
+  /** Number of NEW PlayerLeagueAssignment rows created. */
+  assignmentsCreated: number
+}
+
+/**
+ * Idempotently ensure a Guest Player exists on every LeagueTeam in the league,
+ * with a current `PlayerLeagueAssignment`. Re-running is safe — already-present
+ * rows are detected and skipped.
+ *
+ * Why per-team and not one global Guest with multiple assignments: the public
+ * read path's `playerToLt` map (`dbToPublicLeagueData.ts` line 215) is a
+ * `Map<playerId, leagueTeamId>` that overwrites on duplicate keys. A single
+ * global Guest with N team assignments would collapse to one entry, breaking
+ * the scorer→team lookup that drives the scoreline derivation. Per-team
+ * Guests are 4 distinct Player rows; the lookup stays correct.
+ *
+ * Visibility on the public site: Guests appear in the public roster like any
+ * other Player (the existing `GUEST_ID === 'p-guest'` filter in
+ * `dbToPublicLeagueData` is an exact-equals check that does NOT match the
+ * new `p-guest-<lt-id>` ids). The user explicitly accepted this in the
+ * dry-run feedback — "(or hidden if you decide Guest should be invisible
+ * from public roster — flag if you make that call)" — so this is flagged
+ * here in the report's seeder section. Future PR can hide them by changing
+ * the filter to a prefix check; that's a `src/` change deferred out of this
+ * scripts-only PR.
+ */
+export async function ensureGuestPlayers(
+  prisma: PrismaClient,
+  leagueTeams: ReadonlyArray<{ id: string; team: { name: string } }>,
+): Promise<GuestSeedSummary> {
+  const out: GuestSeedSummary = {
+    guestByLeagueTeam: new Map(),
+    playersCreated: 0,
+    assignmentsCreated: 0,
+  }
+  for (const lt of leagueTeams) {
+    const guestId = guestPlayerIdFor(lt.id)
+    out.guestByLeagueTeam.set(lt.id, guestId)
+    const existingPlayer = await prisma.player.findUnique({ where: { id: guestId } })
+    if (!existingPlayer) {
+      await prisma.player.create({
+        data: { id: guestId, name: 'Guest' },
+      })
+      out.playersCreated++
+    }
+    const existingPla = await prisma.playerLeagueAssignment.findFirst({
+      where: { playerId: guestId, leagueTeamId: lt.id },
+    })
+    if (!existingPla) {
+      await prisma.playerLeagueAssignment.create({
+        data: {
+          playerId: guestId,
+          leagueTeamId: lt.id,
+          fromGameWeek: 1,
+          // Onboarding doesn't apply to Guests (no user, no flow). Mark
+          // COMPLETED so the v1.34.0 redemption gate never blocks anything.
+          onboardingStatus: 'COMPLETED',
+          // joinSource left null — there is no human "join event" to attribute.
+        },
+      })
+      out.assignmentsCreated++
+    }
+  }
+  return out
+}
+
 // ── Apply ──────────────────────────────────────────────────────────────────
 
 interface RunReport {
@@ -262,6 +456,8 @@ interface RunReport {
   }>
   assumptions: string[]
   noteOnAssister: string[]
+  /** v1.46.1 — Guest seeding outcomes for the report. */
+  guestSeed?: GuestSeedSummary
 }
 
 async function runBackfill(prisma: PrismaClient, flags: Flags): Promise<RunReport> {
@@ -328,6 +524,17 @@ async function runBackfill(prisma: PrismaClient, flags: Flags): Promise<RunRepor
     matchById.set(m.id, m)
   }
 
+  // v1.46.1 — Guest seeder runs BEFORE the roster fetch so the per-team
+  // Guest players appear in the same `playerByLcName` / `playersByLeagueTeam`
+  // maps as regular roster members. Idempotent; no-op when already seeded.
+  // Runs in both dry-run and apply modes — dry-run is the simulation source
+  // of truth, so the seeded guests must be queryable for the resolver to
+  // exercise the Guest-fallback branch in the planning pass too. The guest
+  // creates are tiny writes (≤4 Player + ≤4 PLA per league) and idempotent
+  // on re-run, so writing during dry-run is acceptable.
+  const guestSeed = await ensureGuestPlayers(prisma, leagueTeams)
+  report.guestSeed = guestSeed
+
   // Roster — players assigned to one of this league's teams
   const plas = await prisma.playerLeagueAssignment.findMany({
     where: { leagueTeam: { leagueId } },
@@ -335,10 +542,27 @@ async function runBackfill(prisma: PrismaClient, flags: Flags): Promise<RunRepor
   })
   const playerByLcName = new Map<string, string>()
   const playerBySlug = new Map<string, string>()
+  // v1.46.1 — per-team rosters drive the fuzzy first-name match in
+  // `resolvePlayer`. Built from the same PLA fetch, no extra round-trip.
+  const playersByLeagueTeam = new Map<string, Array<{ id: string; name: string | null }>>()
+  // v1.46.1 — Guest player ids (one per team) all share `name = "Guest"`,
+  // so they would collapse in `playerByLcName` / `playerBySlug` to a single
+  // last-write-wins entry. Worse: that entry would shadow the contextual
+  // Guest fallback in `resolvePlayer` because the by-name match returns
+  // BEFORE the EXPLICIT_GUEST_NAMES branch — the resolver would credit
+  // every "Guest" goal to whichever team's guest happened to be processed
+  // last. Skip guests here; they're reachable only via the contextual
+  // `guestPlayerByLeagueTeam` fallback, which routes by scoring team.
+  const guestPlayerIds = new Set(guestSeed.guestByLeagueTeam.values())
   for (const pla of plas) {
     if (!pla.player.name) continue
-    playerByLcName.set(pla.player.name.trim().toLowerCase(), pla.player.id)
-    playerBySlug.set(slugify(pla.player.name), pla.player.id)
+    if (!guestPlayerIds.has(pla.player.id)) {
+      playerByLcName.set(pla.player.name.trim().toLowerCase(), pla.player.id)
+      playerBySlug.set(slugify(pla.player.name), pla.player.id)
+    }
+    const list = playersByLeagueTeam.get(pla.leagueTeamId) ?? []
+    list.push({ id: pla.player.id, name: pla.player.name })
+    playersByLeagueTeam.set(pla.leagueTeamId, list)
   }
 
   // Read GoalsRaw — skip header row.
@@ -369,6 +593,8 @@ async function runBackfill(prisma: PrismaClient, flags: Flags): Promise<RunRepor
       teamByName,
       playerByLcName,
       playerBySlug,
+      playersByLeagueTeam,
+      guestPlayerByLeagueTeam: guestSeed.guestByLeagueTeam,
     })
     decisions.push(decision)
     if (decision.kind === 'INSERT') {
@@ -468,6 +694,16 @@ function renderReport(flags: Flags, report: RunReport): string {
     out.push('## Assumptions encoded')
     out.push('')
     for (const a of report.assumptions) out.push(`- ${a}`)
+    out.push('')
+  }
+  if (report.guestSeed) {
+    out.push('## Guest player seeding (v1.46.1)')
+    out.push('')
+    out.push(`- Players created: ${report.guestSeed.playersCreated} (idempotent — re-runs are no-ops)`)
+    out.push(`- Assignments created: ${report.guestSeed.assignmentsCreated}`)
+    out.push(`- Per-team Guest map: ${report.guestSeed.guestByLeagueTeam.size} teams`)
+    out.push('')
+    out.push('Each Guest is a regular Player record on a single LeagueTeam, named "Guest". They appear in the public roster (the legacy `GUEST_ID === \'p-guest\'` exact-equals filter does NOT match the new `p-guest-<lt-id>` ids). Hide them via a prefix-check filter in `dbToPublicLeagueData` if desired (deferred — out of this scripts-only PR).')
     out.push('')
   }
   if (report.skips.length) {
