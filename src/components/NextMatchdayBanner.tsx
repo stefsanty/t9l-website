@@ -26,6 +26,14 @@ interface NextMatchdayBannerProps {
   onMatchdayChange: (id: string) => void;
   teams: Team[];
   goals: Goal[];
+  /**
+   * v1.47.0 — when true, disable the "auto-default to user's next playing
+   * matchday" useEffect. Used by /matchday/[id] where the URL is the source
+   * of truth for which matchday is selected; the banner must not silently
+   * jump to a different matchday on session hydration. Default false
+   * preserves the homepage Dashboard's existing behavior.
+   */
+  lockToSelected?: boolean;
 }
 
 export default function NextMatchdayBanner({
@@ -34,6 +42,7 @@ export default function NextMatchdayBanner({
   onMatchdayChange,
   teams,
   goals,
+  lockToSelected = false,
 }: NextMatchdayBannerProps) {
   const { data: session, status } = useSession();
   const locale = useLocale();
@@ -61,6 +70,7 @@ export default function NextMatchdayBanner({
   );
 
   useEffect(() => {
+    if (lockToSelected) return;
     if (status === 'loading' || hasDefaulted) return;
 
     if (session?.teamId) {
@@ -75,7 +85,7 @@ export default function NextMatchdayBanner({
       }
     }
     setHasDefaulted(true);
-  }, [status, session, matchdays, onMatchdayChange, selectedMatchdayId, hasDefaulted]);
+  }, [lockToSelected, status, session, matchdays, onMatchdayChange, selectedMatchdayId, hasDefaulted]);
 
   const matchday = matchdays[currentIndex] ?? matchdays[0];
 
