@@ -7,7 +7,11 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { filterEvents, rosterFor } from '@/components/admin/StatsTab'
+import {
+  buildScorerStatsFromEvents,
+  filterEvents,
+  rosterFor,
+} from '@/components/admin/StatsTab'
 
 const ROOT = join(__dirname, '..', '..')
 const SOURCE = readFileSync(join(ROOT, 'src/components/admin/StatsTab.tsx'), 'utf-8')
@@ -69,6 +73,48 @@ describe('filterEvents', () => {
     const result = filterEvents(events, 3, 'khrapov')
     expect(result).toHaveLength(1)
     expect(result[0].id).toBe('e3')
+  })
+})
+
+describe('buildScorerStatsFromEvents (PR δ)', () => {
+  const events = [
+    ev({ id: 'e1', goalType: 'OPEN_PLAY', scorer: { id: 'p-stefan', name: 'Stefan' }, assister: { id: 'p-alex', name: 'Alex' } }),
+    ev({ id: 'e2', goalType: 'PENALTY', scorer: { id: 'p-stefan', name: 'Stefan' }, assister: null }),
+    ev({ id: 'e3', goalType: 'OPEN_PLAY', scorer: { id: 'p-alex', name: 'Alex' }, assister: { id: 'p-stefan', name: 'Stefan' } }),
+    ev({ id: 'e4', goalType: 'OWN_GOAL', scorer: { id: 'p-stefan', name: 'Stefan' }, assister: null }),
+  ]
+
+  it('counts goals + assists across regular + set-piece + penalty events', () => {
+    const stats = buildScorerStatsFromEvents(events, null)
+    const stefan = stats.find((s) => s.name === 'Stefan')!
+    const alex = stats.find((s) => s.name === 'Alex')!
+    expect(stefan.goals).toBe(2) // OPEN_PLAY + PENALTY (OG excluded)
+    expect(stefan.assists).toBe(1) // assist on e3
+    expect(alex.goals).toBe(1)
+    expect(alex.assists).toBe(1)
+  })
+
+  it('OWN_GOAL events do NOT add to scorer/assister tallies', () => {
+    const stats = buildScorerStatsFromEvents(
+      [ev({ id: 'og', goalType: 'OWN_GOAL', scorer: { id: 'p-stefan', name: 'Stefan' }, assister: { id: 'p-alex', name: 'Alex' } })],
+      null,
+    )
+    expect(stats).toHaveLength(0)
+  })
+
+  it('respects matchday filter', () => {
+    const wkEvents = [
+      ev({ id: 'e1', match: { ...baseMatch, gameWeek: { weekNumber: 1 } }, scorer: { id: 'p-stefan', name: 'Stefan' }, assister: null }),
+      ev({ id: 'e2', match: { ...baseMatch, gameWeek: { weekNumber: 2 } }, scorer: { id: 'p-stefan', name: 'Stefan' }, assister: null }),
+    ]
+    expect(buildScorerStatsFromEvents(wkEvents, 1)[0].goals).toBe(1)
+    expect(buildScorerStatsFromEvents(wkEvents, 2)[0].goals).toBe(1)
+  })
+
+  it('sorts by goals desc, then assists desc', () => {
+    const stats = buildScorerStatsFromEvents(events, null)
+    expect(stats[0].name).toBe('Stefan') // 2 goals
+    expect(stats[1].name).toBe('Alex') // 1 goal
   })
 })
 

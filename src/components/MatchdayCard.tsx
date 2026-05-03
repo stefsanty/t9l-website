@@ -26,6 +26,10 @@ function MatchScorers({
   const homeGoals = matchGoals.filter((g) => g.scoringTeamId === homeTeamId);
   const awayGoals = matchGoals.filter((g) => g.scoringTeamId === awayTeamId);
 
+  // v1.44.0 (PR δ) — minute + goalType available when public reads come
+  // from MatchEvent. Render minute prefix when present; mark OG with a
+  // small "(OG)" suffix; no PEN/SP marker on the card (deferred to the
+  // per-matchday detail page).
   return (
     <div className="mt-2 grid grid-cols-2 gap-x-3 text-[11px]">
       <div className="space-y-0.5">
@@ -33,7 +37,9 @@ function MatchScorers({
           <div key={i} className="flex items-start gap-1 text-fg-high">
             <span className="shrink-0 mt-px">⚽️</span>
             <span className="font-semibold truncate" translate="no">
+              {typeof g.minute === 'number' ? <span className="text-fg-low font-normal">{g.minute}&apos; </span> : null}
               {g.scorer}
+              {g.goalType === 'OWN_GOAL' ? <span className="text-fg-low font-normal"> (OG)</span> : null}
               {g.assister ? <span className="text-fg-low font-normal"> ({g.assister})</span> : null}
             </span>
           </div>
@@ -43,7 +49,9 @@ function MatchScorers({
         {awayGoals.map((g, i) => (
           <div key={i} className="flex items-start justify-end gap-1 text-fg-high">
             <span className="font-semibold truncate" translate="no">
+              {typeof g.minute === 'number' ? <span className="text-fg-low font-normal">{g.minute}&apos; </span> : null}
               {g.scorer}
+              {g.goalType === 'OWN_GOAL' ? <span className="text-fg-low font-normal"> (OG)</span> : null}
               {g.assister ? <span className="text-fg-low font-normal"> ({g.assister})</span> : null}
             </span>
             <span className="shrink-0 mt-px">⚽️</span>
