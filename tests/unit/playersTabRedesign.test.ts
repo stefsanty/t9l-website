@@ -91,7 +91,9 @@ describe('v1.38.0 (PR κ) — column structure changes', () => {
 
   it('the desktop grid uses 7 columns: chk, avatar, name, team, pos, sign-in, kebab', () => {
     // The header + each row sets gridTemplateColumns. Tally tokens.
-    expect(cleaned).toMatch(/gridTemplateColumns:\s*['"]32px\s+40px\s+1fr\s+140px\s+60px\s+110px\s+40px['"]/)
+    // v1.41.0 — final column widened from 40px to 80px so the row's
+    // pencil "Edit" button fits next to the kebab.
+    expect(cleaned).toMatch(/gridTemplateColumns:\s*['"]32px\s+40px\s+1fr\s+140px\s+60px\s+110px\s+80px['"]/)
   })
 
   it('builds the per-row menu via the buildPlayerMenuItems helper', () => {

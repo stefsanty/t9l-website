@@ -8,18 +8,29 @@ import { join } from 'path'
  * Pre-v1.20.0 the player name in PlayersTab was non-editable display
  * text — `<p>{player.name}</p>` on mobile, `<span>{player.name}</span>`
  * on desktop. The only way to change a player name was directly via
- * Prisma Studio. v1.20.0 wires the name through `PillEditor variant="text"`
+ * Prisma Studio. v1.20.0 wired the name through `PillEditor variant="text"`
  * (the new text variant in PillEditor — click-to-swap-input pattern,
- * Enter / blur saves, Escape cancels) and adds the `adminUpdatePlayerName`
+ * Enter / blur saves, Escape cancels) and added the `adminUpdatePlayerName`
  * server action.
  *
- * Structural test pattern mirrors `pillEditor.test.ts` and
- * `matchScoreEditor.test.ts` — RTL not set up; grep + regex against
- * source files is the established regression-prevention shape.
+ * v1.41.0 reverses the inline-pill rendering on PlayersTab — the always-on
+ * dotted-underline editor was visually noisy. The name is now plain text;
+ * edits live inside the per-row EditPlayerPanel (`tests/unit/playersTabEditMode.test.ts`)
+ * which still calls `adminUpdatePlayerName` under the hood. We keep:
+ *
+ *   - The PillEditor `text` variant contract — still part of the public
+ *     PillEditor API for future callers; removing the variant would
+ *     silently leak edge-cases the variant fixed (commit-on-blur,
+ *     change-guard, rollback-on-failure).
+ *   - The `adminUpdatePlayerName` action contract — still the canonical
+ *     write path (now invoked from `EditPlayerPanel`).
+ *
+ * The dropped block — "PlayersTab uses PillEditor for player name" — was
+ * the v1.20.0 inline-pill assertion; v1.41.0 contradicts it directly. The
+ * v1.41.0 contract lives in [`tests/unit/playersTabEditMode.test.ts`](tests/unit/playersTabEditMode.test.ts).
  */
 
 const REPO = process.cwd()
-const PLAYERS_TAB = join(REPO, 'src/components/admin/PlayersTab.tsx')
 const PILL_EDITOR = join(REPO, 'src/components/admin/PillEditor.tsx')
 const LEAGUES_ACTIONS = join(REPO, 'src/app/admin/leagues/actions.ts')
 
@@ -71,48 +82,6 @@ describe('v1.20.0 — PillEditor text variant', () => {
     const text = readFileSync(PILL_EDITOR, 'utf8')
     // Matches the server-side cap in adminUpdatePlayerName.
     expect(text).toMatch(/props\.maxLength \?\? 100/)
-  })
-})
-
-describe('v1.20.0 — PlayersTab uses PillEditor for player name', () => {
-  it('imports PillEditor', () => {
-    const text = readFileSync(PLAYERS_TAB, 'utf8')
-    expect(text).toMatch(/import\s+PillEditor\s+from\s+['"]\.\/PillEditor['"]/)
-  })
-
-  it('imports the adminUpdatePlayerName server action', () => {
-    const text = readFileSync(PLAYERS_TAB, 'utf8')
-    expect(text).toMatch(/adminUpdatePlayerName/)
-  })
-
-  it('renders PillEditor variant="text" for player.name', () => {
-    const text = readFileSync(PLAYERS_TAB, 'utf8')
-    // Both mobile and desktop should now render PillEditor for the
-    // player name — pre-v1.20.0 there was no editor at all; the
-    // structural assertion that variant="text" exists confirms at
-    // least one render is wired up.
-    expect(text).toMatch(/variant="text"/)
-  })
-
-  it('the name pill onSave goes through handleRenamePlayer (which calls adminUpdatePlayerName)', () => {
-    const text = readFileSync(PLAYERS_TAB, 'utf8')
-    expect(text).toMatch(/handleRenamePlayer/)
-    expect(text).toMatch(/adminUpdatePlayerName\(\{ playerId, leagueId, name \}\)/)
-  })
-
-  it('handleRenamePlayer rethrows so the PillEditor rolls back on server validation failure', () => {
-    const text = readFileSync(PLAYERS_TAB, 'utf8')
-    // Without rethrow, a server-side "name required" rejection would
-    // toast an error but leave the pill showing the (now-not-saved)
-    // empty value; rethrow lets PillEditor's catch path roll back.
-    expect(text).toMatch(/throw err/)
-  })
-
-  it('no longer renders the bare player.name text node where it used to be on mobile', () => {
-    const text = readFileSync(PLAYERS_TAB, 'utf8')
-    // Pre-v1.20.0 mobile had: <p ...>{player.name}</p>. That literal
-    // shape is gone now — the name is wrapped in PillEditor.
-    expect(text).not.toMatch(/<p\s+className="text-admin-text font-medium text-sm">\{player\.name\}<\/p>/)
   })
 })
 
