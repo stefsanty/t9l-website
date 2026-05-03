@@ -17,7 +17,7 @@ export default function Header() {
   // layout unchanged via `md:` overrides. Title font kept at `text-xl`
   // (brand mark is load-bearing; trimming utility chrome was preferred).
   return (
-    <header className="fixed top-0 left-1/2 -translate-x-1/2 w-full max-w-lg z-50 bg-header-bg backdrop-blur-md border-b border-border-default shadow-[0_4px_20px_rgba(0,0,0,0.15)]">
+    <header className="fixed top-0 left-1/2 -translate-x-1/2 w-full max-w-lg z-50 bg-header-bg backdrop-blur-md border-b border-border-default">
       <div className="flex items-center gap-2 px-3 md:px-4 h-12">
         <Link href="/" className="font-display font-black uppercase tracking-tight leading-none flex items-baseline gap-1.5 shrink-0 hover:opacity-80 transition-opacity">
           <span className="text-xl text-fg-high">T9L &apos;26</span>
