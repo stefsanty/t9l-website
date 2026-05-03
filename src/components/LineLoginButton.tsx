@@ -183,15 +183,22 @@ export default function LineLoginButton() {
     return () => window.removeEventListener('beforeinstallprompt', handler);
   }, []);
 
-  // Show the assign modal on first login (no player assigned, not previously dismissed)
+  // Show the assign modal on first login (no player assigned, not previously dismissed).
+  //
+  // v1.39.2 — gated on `session?.lineId`. The modal CTAs route to
+  // `/assign-player`, which is LINE-keyed end-to-end (`/api/assign-player`
+  // POST/DELETE check `session.lineId` and 401 on Google/email sessions).
+  // Non-LINE users redeem invites via `/join/[code]` (PR ζ); they should not
+  // see this modal at all. The dropdown's needsSetup branch surfaces a
+  // separate "Need an invite" message for them instead.
   useEffect(() => {
-    if (status === 'authenticated' && !session?.playerId) {
+    if (status === 'authenticated' && session?.lineId && !session?.playerId) {
       const dismissed = localStorage.getItem(GUEST_DISMISSED_KEY);
       if (!dismissed) {
         setShowAssignModal(true);
       }
     }
-  }, [status, session?.playerId]);
+  }, [status, session?.lineId, session?.playerId]);
 
   // Show install modal for authenticated users who haven't dismissed it
   useEffect(() => {
@@ -318,6 +325,11 @@ export default function LineLoginButton() {
   }
 
   const needsSetup = !session.playerId;
+  // v1.39.2 — `/assign-player` is LINE-keyed end-to-end. Gate every CTA into
+  // it on `session.lineId`. Non-LINE users (Google / email magic-link) get a
+  // "need invite" message in the same dropdown slot and switch player by
+  // redeeming a fresh `/join/[code]` invite instead.
+  const hasLine = !!session.lineId;
 
   return (
     <>
@@ -366,7 +378,9 @@ export default function LineLoginButton() {
             {needsSetup ? (
               <div className="px-4 py-3 border-b border-border-subtle">
                 <p className="text-[10px] font-black uppercase tracking-widest text-fg-mid">{"Signed in as guest"}</p>
-                <p className="text-xs text-fg-high mt-0.5">{"No player assigned yet"}</p>
+                <p className="text-xs text-fg-high mt-0.5">
+                  {hasLine ? "No player assigned yet" : "Need an invite to join"}
+                </p>
               </div>
             ) : (
               <div className="px-4 py-3 border-b border-border-subtle">
@@ -376,16 +390,44 @@ export default function LineLoginButton() {
             )}
 
             {needsSetup ? (
-              <Link
-                href="/assign-player"
-                onClick={() => setOpen(false)}
-                className="flex items-center gap-2 px-4 py-3 text-[12px] font-bold text-electric-green hover:bg-electric-green/5 transition-colors"
-              >
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                </svg>
-                {"Assign to my player"}
-              </Link>
+              hasLine ? (
+                <Link
+                  href="/assign-player"
+                  onClick={() => setOpen(false)}
+                  className="flex items-center gap-2 px-4 py-3 text-[12px] font-bold text-electric-green hover:bg-electric-green/5 transition-colors"
+                  data-testid="account-menu-assign-player"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                  </svg>
+                  {"Assign to my player"}
+                </Link>
+              ) : (
+                /*
+                 * v1.39.2 — non-LINE users (Google / email) cannot use the
+                 * legacy LINE-keyed picker. Surface the invite path instead:
+                 * a static "need invite" hint plus a mailto so they can ask
+                 * the operator directly. No /assign-player link in this
+                 * branch — the API would 401 them anyway.
+                 */
+                <div
+                  data-testid="account-menu-need-invite"
+                  className="px-4 py-3 text-[12px] text-fg-mid leading-relaxed"
+                >
+                  <p className="font-bold text-fg-high mb-1">{"Need an invite link"}</p>
+                  <p>
+                    {"Ask an admin or "}
+                    <a
+                      href="mailto:vitoriatamachi@gmail.com"
+                      onClick={() => setOpen(false)}
+                      className="text-electric-green hover:underline"
+                    >
+                      {"vitoriatamachi@gmail.com"}
+                    </a>
+                    {"."}
+                  </p>
+                </div>
+              )
             ) : (
               <>
                 {/* v1.37.0 (PR ι) — self-service "Change my details". */}
@@ -400,16 +442,28 @@ export default function LineLoginButton() {
                   </svg>
                   {"Edit my details"}
                 </Link>
-                <Link
-                  href="/assign-player"
-                  onClick={() => setOpen(false)}
-                  className="flex items-center gap-2 px-4 py-3 text-[12px] font-bold text-fg-high hover:text-fg-mid hover:bg-surface transition-colors"
-                >
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                  </svg>
-                  {"Change/Unassign player"}
-                </Link>
+                {/*
+                 * v1.39.2 — gate the legacy "Change/Unassign player" surface
+                 * on session.lineId. Non-LINE users switch player by
+                 * redeeming a fresh /join/[code] invite (PR ζ /
+                 * `redeemInvite`'s linkUserToPlayer helper handles rebinding
+                 * a previously bound User onto a new Player atomically — see
+                 * v1.39.0 PR λ). The legacy picker stays for grandfathered
+                 * LINE users.
+                 */}
+                {hasLine && (
+                  <Link
+                    href="/assign-player"
+                    onClick={() => setOpen(false)}
+                    className="flex items-center gap-2 px-4 py-3 text-[12px] font-bold text-fg-high hover:text-fg-mid hover:bg-surface transition-colors"
+                    data-testid="account-menu-change-player"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                    </svg>
+                    {"Change/Unassign player"}
+                  </Link>
+                )}
               </>
             )}
 
