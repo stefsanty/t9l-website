@@ -167,6 +167,15 @@ html.light {
 
   /* shadcn/ui additional mappings */
   --color-primary-foreground: var(--primary-foreground);
+  /*
+   * v1.41.1 — `text-on-primary` is the convention used across the public
+   * `/join/[code]` flow + Account form. Without this alias the Tailwind
+   * class compiles to `color: var(--color-on-primary)` which is undefined
+   * and falls back to the inherited foreground — invisible on the magenta
+   * `bg-primary` button. Aliased to `--primary-foreground` so a single
+   * source-of-truth controls "white text on the primary brand button".
+   */
+  --color-on-primary: var(--primary-foreground);
   --color-secondary-foreground: var(--secondary-foreground);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
