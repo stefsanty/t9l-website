@@ -44,6 +44,13 @@ export interface Goal {
   concedingTeamId: string;
   scorer: string;
   assister: string | null;
+  // v1.44.0 (PR δ) — optional event metadata exposed when the public read
+  // path computes from MatchEvent rows. Pre-δ Goal records (Sheets path,
+  // legacy Goal+Assist join) leave both null. Consumers that don't care
+  // (the existing scorer-tick rendering) ignore these; PR ε's per-matchday
+  // page renders the timeline using both.
+  minute?: number | null;
+  goalType?: 'OPEN_PLAY' | 'SET_PIECE' | 'PENALTY' | 'OWN_GOAL' | null;
 }
 
 export interface Availability {

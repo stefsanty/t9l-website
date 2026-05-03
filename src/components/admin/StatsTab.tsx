@@ -92,8 +92,49 @@ interface StatsTabProps {
   eventLeagueTeams: EventLeagueTeam[]
 }
 
-// ── Helpers (legacy leaderboard / table — read from `Goal`/`Assist` for now) ────
+// ── Helpers ────────────────────────────────────────────────────────────────
 
+// v1.44.0 (PR δ) — top scorers/assists derived from MatchEvent rows.
+// Own goals are excluded from individual goal totals (scorer is on the
+// opposing team and the goal benefits the OTHER side; counting it as the
+// scorer's "goal" would be misleading). Assists from non-OG events count.
+export function buildScorerStatsFromEvents(
+  events: EventRow[],
+  matchdayFilter: number | null,
+): Array<{ name: string; team: string; goals: number; assists: number }> {
+  const filtered = matchdayFilter
+    ? events.filter((e) => e.match.gameWeek.weekNumber === matchdayFilter)
+    : events
+
+  const map = new Map<string, { name: string; team: string; goals: number; assists: number }>()
+
+  for (const ev of filtered) {
+    const isOG = ev.goalType === 'OWN_GOAL'
+    if (!isOG) {
+      const key = ev.scorer.id
+      if (!map.has(key)) {
+        map.set(key, { name: maybeName(ev.scorer.name), team: '', goals: 0, assists: 0 })
+      }
+      map.get(key)!.goals++
+      if (ev.assister) {
+        const aKey = ev.assister.id
+        if (!map.has(aKey)) {
+          map.set(aKey, { name: maybeName(ev.assister.name), team: '', goals: 0, assists: 0 })
+        }
+        map.get(aKey)!.assists++
+      }
+    }
+    // OWN_GOAL: scorer's individual stats don't get inflated; we don't
+    // record a goal or assist credit. The match's beneficiary team
+    // tally is handled by recomputeMatchScore — this is an admin
+    // leaderboard, not a per-team scoreline.
+  }
+
+  return Array.from(map.values()).sort((a, b) => b.goals - a.goals || b.assists - a.assists)
+}
+
+// Legacy helper retained for backward compat with any caller still passing
+// Goal[] in. New callers prefer `buildScorerStatsFromEvents`.
 function buildScorerStats(goals: GoalRow[], matchdayFilter: number | null) {
   const filtered = matchdayFilter
     ? goals.filter((g) => g.match.gameWeek.weekNumber === matchdayFilter)
@@ -204,7 +245,17 @@ export default function StatsTab({
   const [editorOpen, setEditorOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
 
-  const scorers = useMemo(() => buildScorerStats(goals, matchdayFilter), [goals, matchdayFilter])
+  // v1.44.0 (PR δ) — leaderboard reads from MatchEvent. The legacy
+  // `buildScorerStats` is kept exported so any future caller wanting the
+  // Goal/Assist-backed shape can still reach it; the StatsTab itself
+  // prefers events. `_legacyScorers` left as a dev-only sanity reference
+  // (compiles out under tree-shake).
+  void buildScorerStats
+  const scorers = useMemo(
+    () => buildScorerStatsFromEvents(events, matchdayFilter),
+    [events, matchdayFilter],
+  )
+  void goals // retained on the props surface for backward compat
   const table = useMemo(() => buildLeagueTable(leagueTeams, matches, matchdayFilter), [leagueTeams, matches, matchdayFilter])
   const filteredEvents = useMemo(() => filterEvents(events, matchdayFilter, search), [events, matchdayFilter, search])
   const editingEvent = editingId ? events.find((e) => e.id === editingId) ?? null : null

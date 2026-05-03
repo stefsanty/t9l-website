@@ -1,6 +1,7 @@
 import { prisma } from './prisma'
 import { formatJstDate, formatJstTime } from './jst'
 import { GUEST_ID, playerIdToSlug, teamIdToSlug } from './ids'
+import { resolveDisplayScore } from './matchScore'
 import type {
   Team,
   Player,
@@ -86,12 +87,16 @@ export async function dbToPublicLeagueData(
             include: {
               homeTeam: { include: { team: true } },
               awayTeam: { include: { team: true } },
-              goals: {
+              // v1.44.0 (PR δ) — public reads compute scoreline from
+              // MatchEvent rows. The ordering matches PR γ's admin
+              // editor sort: minute asc (nulls last), then createdAt
+              // asc to keep co-temporal events stable.
+              events: {
                 include: {
-                  player: true,
-                  scoringTeam: { include: { team: true } },
-                  assist: { include: { player: true } },
+                  scorer: true,
+                  assister: true,
                 },
+                orderBy: [{ minute: 'asc' }, { createdAt: 'asc' }],
               },
             },
             orderBy: { playedAt: 'asc' },
@@ -168,14 +173,27 @@ export async function dbToPublicLeagueData(
     const sittingOutLt = league.leagueTeams.find((lt) => !playingLtIds.has(lt.id))
     const sittingOutTeamId = sittingOutLt ? (ltToSlug.get(sittingOutLt.id) ?? '') : ''
 
-    // matches: ordered by playedAt asc; matchNumber = 1-based index
+    // v1.44.0 (PR δ) — matches[] now reads from MatchEvent rows. The
+    // existing `m.homeScore`/`m.awayScore` Int columns are the cache
+    // populated by recomputeMatchScore on every event mutation; we use
+    // them as-is unless `m.scoreOverride` is set, in which case the
+    // override drives display via resolveDisplayScore.
     const publicMatchIdByDbId = new Map<string, string>()
     const matches: Match[] = gw.matches.map((m, idx) => {
       const publicId = `${mdId}-m${idx + 1}`
       publicMatchIdByDbId.set(m.id, publicId)
       const homeTeamId = ltToSlug.get(m.homeTeamId) ?? ''
       const awayTeamId = ltToSlug.get(m.awayTeamId) ?? ''
-      const isPlayed = m.status === 'COMPLETED' || m.goals.length > 0
+      const display = resolveDisplayScore({
+        homeScore: m.homeScore,
+        awayScore: m.awayScore,
+        scoreOverride: m.scoreOverride,
+      })
+      // "Is played" — match is treated as played if it has any events,
+      // an explicit override, or status=COMPLETED. Same semantic the
+      // pre-δ code carried via `m.status === 'COMPLETED' || m.goals.length > 0`.
+      const isPlayed =
+        m.status === 'COMPLETED' || m.events.length > 0 || m.scoreOverride !== null
       return {
         id: publicId,
         matchNumber: idx + 1,
@@ -183,33 +201,51 @@ export async function dbToPublicLeagueData(
         fullTime: m.endedAt ? formatJstTime(m.endedAt) : '',
         homeTeamId,
         awayTeamId,
-        homeGoals: isPlayed ? m.homeScore : null,
-        awayGoals: isPlayed ? m.awayScore : null,
+        homeGoals: isPlayed ? display.home : null,
+        awayGoals: isPlayed ? display.away : null,
       }
     })
 
-    // goals: scoringTeamId is a public slug; concedingTeamId is the OTHER team
-    // in the match (DB doesn't store it). scorer/assister are NAMES, not ids.
+    // v1.44.0 (PR δ) — goals[] derives from MatchEvent rows. The legacy
+    // `Goal.scoringTeamId` was a stored column; in the event model we
+    // resolve the scorer's team via `playerToLt` (built once per call
+    // from the league's PLA fetch) and flip on OWN_GOAL — same logic
+    // as `computeScoreFromEvents` in `lib/matchScore.ts`.
+    const playerToLt = new Map<string, string>()
+    for (const pla of plas) playerToLt.set(pla.playerId, pla.leagueTeamId)
+
     for (const m of gw.matches) {
       const publicMatchId = publicMatchIdByDbId.get(m.id) ?? ''
       const homeSlug = ltToSlug.get(m.homeTeamId) ?? ''
       const awaySlug = ltToSlug.get(m.awayTeamId) ?? ''
-      for (const g of m.goals) {
-        const scoringSlug = ltToSlug.get(g.scoringTeamId) ?? ''
-        const concedingSlug = scoringSlug === homeSlug ? awaySlug : homeSlug
+      for (const ev of m.events) {
+        const scorerLt = playerToLt.get(ev.scorerId)
+        // Skip events whose scorer is not on either match team (data bug;
+        // admin should review). Mirrors the structured-warning path in
+        // `recomputeMatchScore`.
+        if (!scorerLt || (scorerLt !== m.homeTeamId && scorerLt !== m.awayTeamId)) {
+          continue
+        }
+        const isOwnGoal = ev.goalType === 'OWN_GOAL'
+        // Beneficiary team (the side the goal counts toward).
+        const beneficiaryLt = isOwnGoal
+          ? scorerLt === m.homeTeamId
+            ? m.awayTeamId
+            : m.homeTeamId
+          : scorerLt
+        const beneficiarySlug = ltToSlug.get(beneficiaryLt) ?? ''
+        const concedingSlug = beneficiarySlug === homeSlug ? awaySlug : homeSlug
         goals.push({
-          id: g.id,
+          id: ev.id,
           matchId: publicMatchId,
           matchdayId: mdId,
-          scoringTeamId: scoringSlug,
+          scoringTeamId: beneficiarySlug,
           concedingTeamId: concedingSlug,
-          // v1.33.0 (PR ε) — defensive fallback for the new Player.name nullability.
-          // Goal/assist sites are an unrealistic null-name path (admin shouldn't
-          // record a goal against a nameless player), but the type system has to
-          // align with the schema; keep the fallback symmetric with the players[]
-          // adapter above.
-          scorer: g.player.name ?? 'TBD',
-          assister: g.assist?.player?.name ?? null,
+          // v1.33.0 (PR ε) — defensive fallback for nullable Player.name.
+          scorer: ev.scorer.name ?? 'TBD',
+          assister: ev.assister?.name ?? null,
+          minute: ev.minute,
+          goalType: ev.goalType,
         })
       }
     }
