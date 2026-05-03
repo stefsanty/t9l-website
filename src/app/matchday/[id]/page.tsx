@@ -4,7 +4,12 @@ import Header from '@/components/Header'
 import { getPublicLeagueData } from '@/lib/publicData'
 import { getLeagueIdFromRequest } from '@/lib/getLeagueFromHost'
 import { formatJstFriendly } from '@/lib/jst'
-import type { Goal, Matchday, Team } from '@/types'
+import { prisma } from '@/lib/prisma'
+import { authOptions } from '@/lib/auth'
+import { getServerSession } from 'next-auth'
+import { selfReportGateOpen } from '@/lib/playerSelfReportGate'
+import SubmitGoalForm from '@/components/matchday/SubmitGoalForm'
+import type { Goal, Matchday, Player, Team } from '@/types'
 
 export const metadata = {
   title: 'Matchday | T9L',
@@ -36,6 +41,66 @@ export default async function MatchdayPage({ params }: Props) {
 
   const teamMap = new Map(data.teams.map((t) => [t.id, t]))
   const sittingOutTeam = md.sittingOutTeamId ? teamMap.get(md.sittingOutTeamId) ?? null : null
+
+  // v1.46.0 (PR ζ) — gate the Submit-goal CTA on session + linked
+  // player + the matchday's earliest kickoff time. We need the actual
+  // playedAt instants (not the JST "HH:MM" formatted strings on the
+  // public Match shape) so we read them from the DB by gameWeek number.
+  const session = await getServerSession(authOptions)
+  const myPlayerSlug = session?.playerId ?? null
+  const myPlayer = myPlayerSlug
+    ? data.players.find((p) => p.id === myPlayerSlug) ?? null
+    : null
+
+  // Read kickoff timestamps from Prisma so the gate has real instants.
+  const weekNumber = parseInt(md.id.replace('md', ''), 10)
+  const dbGameWeek = await prisma.gameWeek.findFirst({
+    where: { weekNumber, leagueId: leagueId ?? undefined },
+    select: {
+      matches: {
+        select: { id: true, playedAt: true, homeTeamId: true, awayTeamId: true },
+        orderBy: { playedAt: 'asc' },
+      },
+    },
+  })
+  const kickoffInstants = (dbGameWeek?.matches ?? []).map((m) => m.playedAt)
+
+  const submitGateOpen = selfReportGateOpen({
+    hasSession: !!session,
+    hasLinkedPlayer: !!myPlayerSlug,
+    matchKickoffs: kickoffInstants,
+    now: new Date(),
+  })
+
+  // Build the participating-matches list for the form: only matches in
+  // this matchday where the user's team plays. The form posts the
+  // public matchPublicId (`md3-m2`) — we already have that on
+  // `md.matches[idx].id`.
+  const participatingMatches = myPlayer
+    ? md.matches
+        .filter(
+          (m) =>
+            m.homeTeamId === myPlayer.teamId || m.awayTeamId === myPlayer.teamId,
+        )
+        .map((m) => {
+          const home = teamMap.get(m.homeTeamId)
+          const away = teamMap.get(m.awayTeamId)
+          return {
+            id: m.id,
+            homeTeamId: m.homeTeamId,
+            awayTeamId: m.awayTeamId,
+            homeTeamName: home?.name ?? m.homeTeamId,
+            awayTeamName: away?.name ?? m.awayTeamId,
+          }
+        })
+    : []
+
+  // Teammates: same team, exclude self.
+  const teammates: Player[] = myPlayer
+    ? data.players.filter(
+        (p) => p.teamId === myPlayer.teamId && p.id !== myPlayer.id,
+      )
+    : []
 
   return (
     <div className="flex flex-col min-h-dvh bg-background">
@@ -99,6 +164,15 @@ export default async function MatchdayPage({ params }: Props) {
           >
             Sitting out: {sittingOutTeam.name}
           </p>
+        ) : null}
+
+        {submitGateOpen && myPlayer ? (
+          <SubmitGoalForm
+            matchday={md}
+            participatingMatches={participatingMatches}
+            teammates={teammates}
+            myTeamId={myPlayer.teamId}
+          />
         ) : null}
       </main>
     </div>
