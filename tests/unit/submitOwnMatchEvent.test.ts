@@ -1,6 +1,14 @@
 /**
  * v1.46.0 (epic match events PR ζ) — server action `submitOwnMatchEvent`
  * gates the player-side write path. Every gate pinned.
+ *
+ * v1.48.0 — open attribution: ANY logged-in linked player can submit a
+ * goal for ANY player. Tests rewritten for the new contract:
+ *   - `scorerPlayerSlug` is required, comes from form input (not session)
+ *   - the scorer must have an assignment in one of the match's two teams
+ *   - the calling user (`session.playerId`) is recorded in `createdById`
+ *     for audit but is NOT used as the scorer
+ *   - assister, if supplied, must be on the SCORER's team (not caller's)
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
@@ -72,11 +80,14 @@ beforeEach(() => {
   recomputeMock.mockClear()
   getServerSessionMock.mockReset()
 
-  // Default: signed-in linked user; player on home team.
+  // Default: signed-in linked CALLER (audit user). The CALLER does not
+  // need to be on either match team; v1.48.0 lets any linked player
+  // submit on behalf of any scorer.
   getServerSessionMock.mockResolvedValue({
     userId: 'u-stefan',
     playerId: 'stefan-santos',
   })
+  // Caller's player record — drives the leagueId resolution.
   playerFindUniqueMock.mockResolvedValue({
     id: 'p-stefan-santos',
     name: 'Stefan',
@@ -92,7 +103,8 @@ beforeEach(() => {
       { id: 'm-real', homeTeamId: HOME_LT, awayTeamId: AWAY_LT, playedAt: PAST },
     ],
   })
-  plaFindFirstMock.mockResolvedValue({ id: 'pla-1' })
+  // Default scorer-on-home; assister-on-home (used for happy path).
+  plaFindFirstMock.mockResolvedValue({ id: 'pla-1', leagueTeamId: HOME_LT })
 })
 
 describe('parseMatchPublicId', () => {
@@ -111,10 +123,11 @@ describe('parseMatchPublicId', () => {
   })
 })
 
-describe('submitOwnMatchEvent', () => {
-  it('happy path: creates event, recomputes, revalidates', async () => {
+describe('submitOwnMatchEvent (v1.48.0 open attribution)', () => {
+  it('happy path: creates event with scorer from form input, recomputes, revalidates', async () => {
     const result = await submitOwnMatchEvent({
       matchPublicId: 'md1-m1',
+      scorerPlayerSlug: 'aleksandr-ivankov',
       goalType: 'OPEN_PLAY',
       assisterPlayerSlug: null,
       minute: 47,
@@ -123,10 +136,12 @@ describe('submitOwnMatchEvent', () => {
     expect(matchEventCreateMock).toHaveBeenCalledTimes(1)
     const data = matchEventCreateMock.mock.calls[0][0].data
     expect(data.kind).toBe('GOAL')
-    expect(data.scorerId).toBe('p-stefan-santos') // session-driven, not form-driven
+    // Scorer driven by form input (not session)
+    expect(data.scorerId).toBe('p-aleksandr-ivankov')
     expect(data.goalType).toBe('OPEN_PLAY')
     expect(data.assisterId).toBeNull()
     expect(data.minute).toBe(47)
+    // createdById still recorded from session for audit
     expect(data.createdById).toBe('u-stefan')
     expect(recomputeMock).toHaveBeenCalledWith(expect.anything(), 'm-real')
     expect(revalidateMock).toHaveBeenCalledTimes(1)
@@ -135,15 +150,23 @@ describe('submitOwnMatchEvent', () => {
   it('rejects when not signed in', async () => {
     getServerSessionMock.mockResolvedValue(null)
     await expect(
-      submitOwnMatchEvent({ matchPublicId: 'md1-m1', goalType: 'OPEN_PLAY' }),
+      submitOwnMatchEvent({
+        matchPublicId: 'md1-m1',
+        scorerPlayerSlug: 'aleksandr-ivankov',
+        goalType: 'OPEN_PLAY',
+      }),
     ).rejects.toThrow(/Not signed in/)
     expect(matchEventCreateMock).not.toHaveBeenCalled()
   })
 
-  it('rejects when no linked player', async () => {
+  it('rejects when caller has no linked player', async () => {
     getServerSessionMock.mockResolvedValue({ userId: 'u-x', playerId: null })
     await expect(
-      submitOwnMatchEvent({ matchPublicId: 'md1-m1', goalType: 'OPEN_PLAY' }),
+      submitOwnMatchEvent({
+        matchPublicId: 'md1-m1',
+        scorerPlayerSlug: 'aleksandr-ivankov',
+        goalType: 'OPEN_PLAY',
+      }),
     ).rejects.toThrow(/No linked player/)
   })
 
@@ -151,6 +174,7 @@ describe('submitOwnMatchEvent', () => {
     await expect(
       submitOwnMatchEvent({
         matchPublicId: 'md1-m1',
+        scorerPlayerSlug: 'aleksandr-ivankov',
         // @ts-expect-error — runtime guard
         goalType: 'BICYCLE',
       }),
@@ -159,27 +183,44 @@ describe('submitOwnMatchEvent', () => {
 
   it('rejects malformed matchPublicId', async () => {
     await expect(
-      submitOwnMatchEvent({ matchPublicId: 'bogus', goalType: 'OPEN_PLAY' }),
+      submitOwnMatchEvent({
+        matchPublicId: 'bogus',
+        scorerPlayerSlug: 'aleksandr-ivankov',
+        goalType: 'OPEN_PLAY',
+      }),
     ).rejects.toThrow(/Invalid matchPublicId/)
   })
 
-  it('rejects when match is not in the user’s league', async () => {
+  it('rejects when match is not in the caller’s league', async () => {
     gameWeekFindFirstMock.mockResolvedValue(null)
     await expect(
-      submitOwnMatchEvent({ matchPublicId: 'md9-m1', goalType: 'OPEN_PLAY' }),
+      submitOwnMatchEvent({
+        matchPublicId: 'md9-m1',
+        scorerPlayerSlug: 'aleksandr-ivankov',
+        goalType: 'OPEN_PLAY',
+      }),
     ).rejects.toThrow(/Matchday MD9 not in league/)
   })
 
-  it('rejects when player’s team is not in the match', async () => {
-    // Match with two teams that don't include the player's team.
-    gameWeekFindFirstMock.mockResolvedValue({
-      matches: [
-        { id: 'm-real', homeTeamId: 'lt-other-1', awayTeamId: 'lt-other-2', playedAt: PAST },
-      ],
-    })
+  it('rejects when scorer is not on either match team (cross-team picker abuse)', async () => {
+    plaFindFirstMock.mockResolvedValue(null) // scorer assignment lookup returns null
     await expect(
-      submitOwnMatchEvent({ matchPublicId: 'md1-m1', goalType: 'OPEN_PLAY' }),
-    ).rejects.toThrow(/Your team is not playing/)
+      submitOwnMatchEvent({
+        matchPublicId: 'md1-m1',
+        scorerPlayerSlug: 'random-guy',
+        goalType: 'OPEN_PLAY',
+      }),
+    ).rejects.toThrow(/Scorer is not on either of the match teams/)
+  })
+
+  it('rejects when scorer slug is empty', async () => {
+    await expect(
+      submitOwnMatchEvent({
+        matchPublicId: 'md1-m1',
+        scorerPlayerSlug: '',
+        goalType: 'OPEN_PLAY',
+      }),
+    ).rejects.toThrow(/Scorer is required/)
   })
 
   it('rejects when ALL kickoffs are still in the future', async () => {
@@ -189,7 +230,11 @@ describe('submitOwnMatchEvent', () => {
       ],
     })
     await expect(
-      submitOwnMatchEvent({ matchPublicId: 'md1-m1', goalType: 'OPEN_PLAY' }),
+      submitOwnMatchEvent({
+        matchPublicId: 'md1-m1',
+        scorerPlayerSlug: 'aleksandr-ivankov',
+        goalType: 'OPEN_PLAY',
+      }),
     ).rejects.toThrow(/Submission opens at kickoff/)
   })
 
@@ -197,46 +242,76 @@ describe('submitOwnMatchEvent', () => {
     await expect(
       submitOwnMatchEvent({
         matchPublicId: 'md1-m1',
+        scorerPlayerSlug: 'aleksandr-ivankov',
         goalType: 'OPEN_PLAY',
-        assisterPlayerSlug: 'stefan-santos',
+        assisterPlayerSlug: 'aleksandr-ivankov',
       }),
     ).rejects.toThrow(/Assister cannot be the scorer/)
   })
 
-  it('rejects when assister is not on the player’s team', async () => {
-    plaFindFirstMock.mockResolvedValue(null)
+  it('rejects when assister is not on the scorer’s team', async () => {
+    // First call resolves scorer (HOME); second call (assister lookup
+    // scoped to scorer's leagueTeamId) returns null.
+    plaFindFirstMock
+      .mockResolvedValueOnce({ id: 'pla-scorer', leagueTeamId: HOME_LT })
+      .mockResolvedValueOnce(null)
     await expect(
       submitOwnMatchEvent({
         matchPublicId: 'md1-m1',
+        scorerPlayerSlug: 'aleksandr-ivankov',
         goalType: 'OPEN_PLAY',
         assisterPlayerSlug: 'random-other',
       }),
-    ).rejects.toThrow(/Assister must be on your team/)
+    ).rejects.toThrow(/Assister must be on the scorer's team/)
   })
 
-  it('OWN_GOAL: scorer must be on the BENEFICIARY team’s opposite (i.e. own team) — happy path', async () => {
-    // For OG, scorer (= self) is on the team CONCEDING. The page-level
-    // form derives beneficiary as the opposite of self's team. Here the
-    // self is on HOME, so beneficiary is AWAY — and the team
-    // participation gate still checks self's team is in the match
-    // (HOME is, ✓).
+  it('OWN_GOAL: scorer on HOME, beneficiary derived as AWAY (handled in the event derivation)', async () => {
+    // For OG, scorer is on the team CONCEDING. The action derives
+    // beneficiary as opposite of scorer's team. Here scorer assignment
+    // returns HOME, so beneficiary is AWAY.
     const result = await submitOwnMatchEvent({
       matchPublicId: 'md1-m1',
+      scorerPlayerSlug: 'aleksandr-ivankov',
       goalType: 'OWN_GOAL',
     })
     expect(result.id).toBe('me-zeta')
     expect(matchEventCreateMock.mock.calls[0][0].data.goalType).toBe('OWN_GOAL')
+    expect(matchEventCreateMock.mock.calls[0][0].data.scorerId).toBe('p-aleksandr-ivankov')
   })
 
-  it('audits createdById from session, not from input', async () => {
-    await submitOwnMatchEvent({ matchPublicId: 'md1-m1', goalType: 'OPEN_PLAY' })
-    expect(matchEventCreateMock.mock.calls[0][0].data.createdById).toBe('u-stefan')
+  it('audits createdById from session, scorer from input (the v1.48.0 contract regression target)', async () => {
+    await submitOwnMatchEvent({
+      matchPublicId: 'md1-m1',
+      scorerPlayerSlug: 'someone-else',
+      goalType: 'OPEN_PLAY',
+    })
+    const data = matchEventCreateMock.mock.calls[0][0].data
+    // Audit: who SUBMITTED (the calling user)
+    expect(data.createdById).toBe('u-stefan')
+    // Attribution: who SCORED (form input — different from caller)
+    expect(data.scorerId).toBe('p-someone-else')
+  })
+
+  it('caller does NOT need to be on a match team to submit (open attribution)', async () => {
+    // The caller (Stefan) is on HOME. The match is HOME vs AWAY. Even
+    // if we were to make Stefan be on a third team that's not playing,
+    // submission should still succeed because the caller is just the
+    // audit identity — only the SCORER's team matters for participation.
+    // (This case is the practical inverse of pre-v1.48.0 behavior.)
+    const result = await submitOwnMatchEvent({
+      matchPublicId: 'md1-m1',
+      scorerPlayerSlug: 'aleksandr-ivankov',
+      goalType: 'OPEN_PLAY',
+    })
+    expect(result.id).toBe('me-zeta')
+    expect(matchEventCreateMock.mock.calls[0][0].data.scorerId).toBe('p-aleksandr-ivankov')
   })
 
   it('rejects out-of-range minute', async () => {
     await expect(
       submitOwnMatchEvent({
         matchPublicId: 'md1-m1',
+        scorerPlayerSlug: 'aleksandr-ivankov',
         goalType: 'OPEN_PLAY',
         minute: 999,
       }),

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import type {
   Team, Player, Matchday, Goal, Availability, AvailabilityStatuses, PlayedStatus,
@@ -11,6 +11,9 @@ import MatchdayAvailability from './MatchdayAvailability';
 import Header from './Header';
 import RsvpBar from './RsvpBar';
 import UserTeamBadge from './UserTeamBadge';
+import SubmitGoalForm from './matchday/SubmitGoalForm';
+import { selfReportGateOpen } from '@/lib/playerSelfReportGate';
+import { combineJstDateAndTime } from '@/lib/jst';
 
 interface DashboardProps {
   teams: Team[];
@@ -21,8 +24,37 @@ interface DashboardProps {
   availabilityStatuses: AvailabilityStatuses;
   played: PlayedStatus;
   nextMd: { matchday: Matchday; isNext: boolean } | null;
+  /**
+   * v1.48.0 — pre-select a specific matchday on first render. When unset
+   * the banner picks the user's next playing matchday (existing behavior).
+   * When set, the banner pre-loads this matchday — used by `/matchday/[id]`
+   * which is now a thin wrapper that renders Dashboard with the URL
+   * matchday slug as the initial selection. After the initial render the
+   * banner uses local state for navigation (swipes / arrows / dots), same
+   * as on the homepage.
+   */
+  initialMatchdayId?: string | null;
 }
 
+/**
+ * v1.48.0 — homepage IS the matchday page.
+ *
+ * The Dashboard component is now the single render path for both the
+ * apex (`/`) and per-matchday URLs (`/matchday/<id>`). The optional
+ * `initialMatchdayId` prop pre-selects a matchday; the banner handles
+ * subsequent navigation via local state (URL doesn't update on swipe —
+ * the URL is the entry point, not a continuous source of truth).
+ *
+ * The Submit-goal CTA (PR ζ / v1.46.0) now lives here — visible on the
+ * homepage too, not just on the per-matchday route. Per v1.48.0's open-
+ * attribution model, ANY logged-in linked player can submit a goal for
+ * ANY player. The kickoff-time gate stays — button hidden if before
+ * earliest kickoff or no kickoff data on the selected matchday.
+ *
+ * The MatchdayCard's eyebrow ("MATCHDAY RESULTS" / "YOUR NEXT MATCHDAY")
+ * is now click-to-copy via `<CopyMatchdayLink>` — copies
+ * `https://<host>/matchday/<id>` to the clipboard with a Sonner toast.
+ */
 export default function Dashboard({
   teams,
   players,
@@ -32,10 +64,11 @@ export default function Dashboard({
   availabilityStatuses,
   played,
   nextMd,
+  initialMatchdayId,
 }: DashboardProps) {
   const { data: session } = useSession();
   const [selectedMatchdayId, setSelectedMatchdayId] = useState(
-    nextMd?.matchday.id ?? matchdays[0]?.id ?? ''
+    initialMatchdayId ?? nextMd?.matchday.id ?? matchdays[0]?.id ?? ''
   );
 
   const selectedMatchday =
@@ -52,6 +85,49 @@ export default function Dashboard({
       : '') as 'GOING' | 'UNDECIDED' | 'Y' | 'EXPECTED' | '';
 
   const showRsvpBar = !!(session?.playerId && userTeamIsPlaying && !isCompleted);
+
+  // v1.48.0 — Submit-goal gate (PR ζ kickoff gate, evaluated client-side
+  // from selected matchday's matchday.date + match.kickoff via the
+  // canonical JST helpers). The matchday's earliest kickoff is the
+  // minimum across its matches.
+  const submitGateOpen = useMemo(() => {
+    if (!session?.playerId || !selectedMatchday?.date) return false;
+    const kickoffs: Date[] = [];
+    for (const m of selectedMatchday.matches) {
+      if (!m.kickoff) continue;
+      try {
+        kickoffs.push(combineJstDateAndTime(selectedMatchday.date, m.kickoff));
+      } catch {
+        // Defensive: skip malformed kickoff strings rather than crash
+        // the dashboard render.
+      }
+    }
+    return selfReportGateOpen({
+      hasSession: true,
+      hasLinkedPlayer: true,
+      matchKickoffs: kickoffs,
+      now: new Date(),
+    });
+  }, [session?.playerId, selectedMatchday]);
+
+  const teamLookup = useMemo(() => {
+    const map = new Map<string, Team>();
+    for (const t of teams) map.set(t.id, t);
+    return map;
+  }, [teams]);
+
+  // v1.48.0 — all matches in the selected matchday are submittable (open
+  // attribution: any signed-in linked player can submit for any player).
+  const submitMatches = useMemo(() => {
+    if (!selectedMatchday) return [];
+    return selectedMatchday.matches.map((m) => ({
+      id: m.id,
+      homeTeamId: m.homeTeamId,
+      awayTeamId: m.awayTeamId,
+      homeTeamName: teamLookup.get(m.homeTeamId)?.name ?? m.homeTeamId,
+      awayTeamName: teamLookup.get(m.awayTeamId)?.name ?? m.awayTeamId,
+    }));
+  }, [selectedMatchday, teamLookup]);
 
   return (
     <div className="flex flex-col min-h-dvh pb-0 max-w-lg mx-auto bg-background selection:bg-vibrant-pink selection:text-white">
@@ -70,6 +146,17 @@ export default function Dashboard({
                 teams={teams}
                 goals={goals}
               />
+
+              {submitGateOpen && selectedMatchday ? (
+                <SubmitGoalForm
+                  key={selectedMatchday.id}
+                  matchday={selectedMatchday}
+                  matches={submitMatches}
+                  players={players}
+                  teams={teams}
+                />
+              ) : null}
+
               <MatchdayAvailability
                 key={selectedMatchdayId}
                 matchday={selectedMatchday}
