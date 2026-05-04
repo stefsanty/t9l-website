@@ -7,6 +7,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { APP_VERSION } from '@/lib/version';
 import SignInLightbox from './SignInLightbox';
+import AccountMenuLeagueSwitch from './AccountMenuLeagueSwitch';
 
 const GUEST_DISMISSED_KEY = 't9l-guest-dismissed';
 const INSTALL_DISMISSED_KEY = 't9l-install-dismissed';
@@ -466,6 +467,15 @@ export default function LineLoginButton() {
                 )}
               </>
             )}
+
+            {/* v1.52.0 — "Switch league" inline section. Renders nothing
+                when the user has < 2 league memberships. Hook lazy-loads
+                memberships from /api/me/memberships when this component
+                mounts inside the open dropdown. */}
+            <AccountMenuLeagueSwitch
+              dropdownOpen={open}
+              onNavigate={() => setOpen(false)}
+            />
 
             {!isStandalone && (deferredPrompt || isIOS) && (
               <button
