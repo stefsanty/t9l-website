@@ -77,6 +77,22 @@ export async function createLeague(formData: FormData) {
   const endDate     = formData.get('endDate')      as string | null
   const subdomain   = (formData.get('subdomain')   as string | null)?.trim() || null
 
+  // v1.53.1 (PR 5 of the path-routing chain) — server-side reserved-word
+  // + format validation. The slug becomes the URL path component
+  // (`/league/<slug>` and `/<slug>`) so it must:
+  //   - match [a-z0-9](-[a-z0-9]+)* between 3–30 chars
+  //   - not collide with a reserved top-level segment (admin, auth, ...)
+  // The client-side check in CreateLeagueModal mirrors this logic for
+  // immediate UX feedback; the server is the contract. Reject early
+  // before hitting Prisma so the admin sees the specific failure reason.
+  if (subdomain !== null) {
+    const { validateLeagueSlug } = await import('@/lib/leagueSlug')
+    const v = validateLeagueSlug(subdomain)
+    if (!v.ok) {
+      throw new Error(`Invalid league slug: ${v.reason}`)
+    }
+  }
+
   // League startDate/endDate are JST calendar dates (date-only `<input type="date">`).
   // Stored as UTC midnight; see lib/jst.ts.
   const league = await prisma.league.create({
@@ -103,6 +119,21 @@ export async function updateLeagueInfo(id: string, data: {
   endDate?:     string | null
 }) {
   await assertAdmin()
+
+  // v1.53.1 — slug is "cannot be changed after creation" by convention,
+  // but the API still accepts updates because admin may have left the
+  // slug blank at create time and want to fill it in later. When the
+  // slug IS being changed, validate it against the same rules
+  // createLeague enforces. Empty-to-non-empty is allowed (filling in
+  // a blank slot); non-empty-to-empty is allowed (clearing a slot).
+  if (data.subdomain !== undefined && data.subdomain !== null && data.subdomain !== '') {
+    const { validateLeagueSlug } = await import('@/lib/leagueSlug')
+    const v = validateLeagueSlug(data.subdomain)
+    if (!v.ok) {
+      throw new Error(`Invalid league slug: ${v.reason}`)
+    }
+  }
+
   await prisma.league.update({
     where: { id },
     data: {
