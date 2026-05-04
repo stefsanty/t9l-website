@@ -1,12 +1,9 @@
 import { notFound } from 'next/navigation'
 import { getPublicLeagueData } from '@/lib/publicData'
 import { getLeagueIdFromRequest } from '@/lib/getLeagueFromHost'
-import { prisma } from '@/lib/prisma'
-import { authOptions } from '@/lib/auth'
-import { getServerSession } from 'next-auth'
-import { selfReportGateOpen } from '@/lib/playerSelfReportGate'
-import MatchdayPageView from './MatchdayPageView'
-import type { Goal, Player } from '@/types'
+import { findNextMatchday } from '@/lib/stats'
+import Dashboard from '@/components/Dashboard'
+import type { Goal } from '@/types'
 
 export const metadata = {
   title: 'Matchday | T9L',
@@ -20,86 +17,49 @@ type Props = { params: Promise<{ id: string }> }
  * id (`md1`, `md4`, etc. — same shape `dbToPublicLeagueData` produces).
  * 404s when the matchday isn't in the resolved league.
  *
- * v1.47.0 — page is now a thin server component that resolves the data
- * + the PR ζ self-report gate, and hands the whole bundle to
- * `MatchdayPageView` (client component) which renders the homepage-mirrored
- * layout (NextMatchdayBanner + UserTeamBadge + Submit-goal CTA + modal +
- * MatchdayAvailability + RsvpBar). The bespoke per-match scoreline +
- * timeline that lived here pre-v1.47.0 is gone — the homepage's
- * MatchdayCard already shows minute + scorer + assister + (OG) decoration
- * inside the banner. Per-event PEN/SP detail is preserved on MatchEvent
- * + admin Stats CRUD; surfacing it in a public-facing detail view can
- * land in a future PR if needed.
+ * v1.47.0 — page delegated to a `MatchdayPageView` client component that
+ * mirrored the homepage Dashboard layout.
+ *
+ * v1.48.0 — homepage IS the matchday page. The route is now a thin server
+ * component that resolves the league + verifies the matchday exists, then
+ * hands data to the same `Dashboard` the apex renders, with
+ * `initialMatchdayId` pre-selecting the URL matchday. The user can swipe /
+ * arrow / dot between matchdays from there as on homepage; the URL is
+ * the entry point, not a continuous source of truth, so subsequent
+ * navigation is local state (no per-swipe URL push).
+ *
+ * `MatchdayPageView` is gone — it was a thin shim and is no longer needed.
+ * The Submit-goal CTA + modal that lived inside it now live inside the
+ * Dashboard (homepage gets the CTA too, per v1.48.0's open-attribution
+ * model).
  */
 export default async function MatchdayPage({ params }: Props) {
   const { id } = await params
   const leagueId = await getLeagueIdFromRequest()
-  const data = await getPublicLeagueData(leagueId ?? undefined)
+
+  if (leagueId === null) {
+    return (
+      <div className="flex items-center justify-center min-h-dvh bg-midnight text-white px-6 text-center">
+        <div>
+          <p className="font-display text-3xl font-black uppercase text-white/80 mb-2">
+            League not found
+          </p>
+          <p className="text-sm text-white/80 font-bold uppercase tracking-widest">
+            This subdomain is not attached to a league.
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  const data = await getPublicLeagueData(leagueId)
   const md = data.matchdays.find((m) => m.id === id)
   if (!md) notFound()
 
-  // PR ζ — gate the Submit-goal CTA on session + linked player + the
-  // matchday's earliest kickoff time. We need the actual playedAt instants
-  // (not the JST "HH:MM" formatted strings on the public Match shape) so we
-  // read them from the DB by gameWeek number.
-  const session = await getServerSession(authOptions)
-  const myPlayerSlug = session?.playerId ?? null
-  const myPlayer: Player | null = myPlayerSlug
-    ? data.players.find((p) => p.id === myPlayerSlug) ?? null
-    : null
-
-  const weekNumber = parseInt(md.id.replace('md', ''), 10)
-  const dbGameWeek = await prisma.gameWeek.findFirst({
-    where: { weekNumber, leagueId: leagueId ?? undefined },
-    select: {
-      matches: {
-        select: { id: true, playedAt: true, homeTeamId: true, awayTeamId: true },
-        orderBy: { playedAt: 'asc' },
-      },
-    },
-  })
-  const kickoffInstants = (dbGameWeek?.matches ?? []).map((m) => m.playedAt)
-
-  const submitGateOpen = selfReportGateOpen({
-    hasSession: !!session,
-    hasLinkedPlayer: !!myPlayerSlug,
-    matchKickoffs: kickoffInstants,
-    now: new Date(),
-  })
-
-  // Build the participating-matches list for the form: only matches in
-  // this matchday where the user's team plays. The form posts the public
-  // matchPublicId (`md3-m2`) — already on `md.matches[idx].id`.
-  const teamMap = new Map(data.teams.map((t) => [t.id, t]))
-  const participatingMatches = myPlayer
-    ? md.matches
-        .filter(
-          (m) =>
-            m.homeTeamId === myPlayer.teamId || m.awayTeamId === myPlayer.teamId,
-        )
-        .map((m) => {
-          const home = teamMap.get(m.homeTeamId)
-          const away = teamMap.get(m.awayTeamId)
-          return {
-            id: m.id,
-            homeTeamId: m.homeTeamId,
-            awayTeamId: m.awayTeamId,
-            homeTeamName: home?.name ?? m.homeTeamId,
-            awayTeamName: away?.name ?? m.awayTeamId,
-          }
-        })
-    : []
-
-  // Teammates: same team, exclude self.
-  const teammates: Player[] = myPlayer
-    ? data.players.filter(
-        (p) => p.teamId === myPlayer.teamId && p.id !== myPlayer.id,
-      )
-    : []
+  const nextMd = findNextMatchday(data.matchdays)
 
   return (
-    <MatchdayPageView
-      matchdayId={md.id}
+    <Dashboard
       teams={data.teams}
       players={data.players}
       matchdays={data.matchdays}
@@ -107,10 +67,8 @@ export default async function MatchdayPage({ params }: Props) {
       availability={data.availability}
       availabilityStatuses={data.availabilityStatuses}
       played={data.played}
-      selfReportGateOpen={submitGateOpen}
-      myPlayer={myPlayer}
-      participatingMatches={participatingMatches}
-      teammates={teammates}
+      nextMd={nextMd}
+      initialMatchdayId={md.id}
     />
   )
 }

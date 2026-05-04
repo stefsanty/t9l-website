@@ -1,12 +1,15 @@
 /**
  * v1.45.0 (PR ε) — per-matchday public page structural pins.
  *
- * v1.47.0 — page is now a thin server component that delegates to
- * `MatchdayPageView` (client component). The bespoke per-match scoreline
- * + timeline layout is gone; the page mirrors the homepage Dashboard shape
- * (NextMatchdayBanner + UserTeamBadge + Submit-goal CTA + modal +
- * MatchdayAvailability + RsvpBar). This file pins both the route's data-
- * fetching shape AND the new view's structural composition.
+ * v1.47.0 — page delegated to a `MatchdayPageView` client component.
+ *
+ * v1.48.0 — homepage IS the matchday page. The page is now a thin server
+ * wrapper that renders the same `Dashboard` the apex renders, with
+ * `initialMatchdayId` pre-selecting the URL matchday. `MatchdayPageView`
+ * is gone (deleted, no replacement). The Submit-goal CTA + modal that
+ * lived inside it now live inside the Dashboard. Section headers
+ * ("MATCHDAY RESULTS" etc.) are now click-to-copy via `<CopyMatchdayLink>`
+ * — clicking copies `https://<host>/matchday/<id>` with a Sonner toast.
  */
 import { describe, expect, it } from 'vitest'
 import { readFileSync, existsSync } from 'node:fs'
@@ -16,112 +19,103 @@ import { goalTypeLabel } from '@/app/matchday/[id]/page'
 const ROOT = join(__dirname, '..', '..')
 const PAGE_PATH = join(ROOT, 'src/app/matchday/[id]/page.tsx')
 const VIEW_PATH = join(ROOT, 'src/app/matchday/[id]/MatchdayPageView.tsx')
+const DASHBOARD_PATH = join(ROOT, 'src/components/Dashboard.tsx')
 const CARD_PATH = join(ROOT, 'src/components/MatchdayCard.tsx')
 const FORM_PATH = join(ROOT, 'src/components/matchday/SubmitGoalForm.tsx')
-const BANNER_PATH = join(ROOT, 'src/components/NextMatchdayBanner.tsx')
+const COPY_PATH = join(ROOT, 'src/components/CopyMatchdayLink.tsx')
 
-describe('PR ε / v1.47.0 page — file shape', () => {
+/** Strip JS comments so docstrings that legitimately mention removed
+ * symbols (e.g. "this PR deleted MatchdayPageView") don't trip negative
+ * regex checks meant for production code shape. */
+function stripComments(src: string): string {
+  return src
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/\/\/[^\n]*/g, '')
+    .replace(/\{\/\*[\s\S]*?\*\/\}/g, '')
+}
+
+describe('v1.48.0 — page + Dashboard convergence', () => {
   it('the route file exists', () => {
     expect(existsSync(PAGE_PATH)).toBe(true)
   })
 
-  it('the new MatchdayPageView client component exists', () => {
-    expect(existsSync(VIEW_PATH)).toBe(true)
+  it('MatchdayPageView is GONE — collapsed into Dashboard (regression target)', () => {
+    expect(existsSync(VIEW_PATH)).toBe(false)
   })
 
   const PAGE = readFileSync(PAGE_PATH, 'utf-8')
 
-  it('uses getLeagueIdFromRequest for subdomain awareness', () => {
+  it('page uses getLeagueIdFromRequest for subdomain awareness', () => {
     expect(PAGE).toMatch(/getLeagueIdFromRequest/)
     expect(PAGE).toMatch(/getPublicLeagueData/)
   })
 
-  it('404s when the matchday is not in the resolved league', () => {
+  it('page 404s when the matchday is not in the resolved league', () => {
     expect(PAGE).toMatch(/notFound/)
   })
 
-  it('evaluates the PR ζ self-report gate server-side', () => {
-    expect(PAGE).toMatch(/selfReportGateOpen/)
-    expect(PAGE).toMatch(/getServerSession/)
-    expect(PAGE).toMatch(/prisma\.gameWeek\.findFirst/)
+  it('page renders Dashboard with initialMatchdayId pre-set to the URL matchday', () => {
+    expect(PAGE).toMatch(/import Dashboard from '@\/components\/Dashboard'/)
+    expect(PAGE).toMatch(/<Dashboard[\s\S]*initialMatchdayId=\{md\.id\}/)
   })
 
-  it('hands the resolved data to MatchdayPageView', () => {
-    expect(PAGE).toMatch(/import MatchdayPageView from/)
-    expect(PAGE).toMatch(/<MatchdayPageView[\s\S]*matchdayId=/)
+  it('page does NOT import MatchdayPageView (deleted)', () => {
+    expect(stripComments(PAGE)).not.toMatch(/MatchdayPageView/)
   })
 
-  it('uses getPublicLeagueData NOT getLeagueStats (events-derived per PR δ)', () => {
-    expect(PAGE).not.toMatch(/getLeagueStats/)
+  it('page does NOT import SubmitGoalForm directly (Dashboard owns it now)', () => {
+    expect(stripComments(PAGE)).not.toMatch(/SubmitGoalForm/)
   })
 })
 
-describe('v1.47.0 MatchdayPageView — homepage-mirrored structure', () => {
-  const VIEW = readFileSync(VIEW_PATH, 'utf-8')
+describe('v1.48.0 Dashboard — converges homepage + matchday route', () => {
+  const DASHBOARD = readFileSync(DASHBOARD_PATH, 'utf-8')
 
   it("declares 'use client'", () => {
-    expect(VIEW.split('\n')[0].trim().replace(/['"]/g, '')).toBe('use client')
+    expect(DASHBOARD.split('\n')[0].trim().replace(/['";]/g, '')).toBe('use client')
   })
 
-  it('renders the same homepage components — NextMatchdayBanner, MatchdayAvailability, RsvpBar, UserTeamBadge, GuestLoginBanner, Header', () => {
-    expect(VIEW).toMatch(/from '@\/components\/NextMatchdayBanner'/)
-    expect(VIEW).toMatch(/from '@\/components\/MatchdayAvailability'/)
-    expect(VIEW).toMatch(/from '@\/components\/RsvpBar'/)
-    expect(VIEW).toMatch(/from '@\/components\/UserTeamBadge'/)
-    expect(VIEW).toMatch(/from '@\/components\/GuestLoginBanner'/)
-    expect(VIEW).toMatch(/from '@\/components\/Header'/)
+  it('accepts initialMatchdayId? prop', () => {
+    expect(DASHBOARD).toMatch(/initialMatchdayId\?:\s*string\s*\|\s*null/)
   })
 
-  it('mounts NextMatchdayBanner with lockToSelected so URL drives the selection', () => {
-    expect(VIEW).toMatch(/<NextMatchdayBanner[\s\S]*lockToSelected/)
+  it('uses initialMatchdayId as the first-render selection (overrides nextMd default)', () => {
+    expect(DASHBOARD).toMatch(/initialMatchdayId\s*\?\?\s*nextMd\?\.matchday\.id/)
   })
 
-  it('routes banner navigation via router.push (URL is canonical)', () => {
-    expect(VIEW).toMatch(/router\.push\(`\/matchday\/\$\{/)
+  it('mounts SubmitGoalForm gated by submitGateOpen', () => {
+    expect(DASHBOARD).toMatch(/import SubmitGoalForm from '\.\/matchday\/SubmitGoalForm'/)
+    expect(DASHBOARD).toMatch(/submitGateOpen[\s\S]*<SubmitGoalForm/)
   })
 
-  it('mounts SubmitGoalForm only when selfReportGateOpen && myPlayer', () => {
-    expect(VIEW).toMatch(/from '@\/components\/matchday\/SubmitGoalForm'/)
-    expect(VIEW).toMatch(/selfReportGateOpen && myPlayer[\s\S]*<SubmitGoalForm/)
+  it('evaluates the kickoff gate client-side via combineJstDateAndTime', () => {
+    expect(DASHBOARD).toMatch(/from '@\/lib\/playerSelfReportGate'/)
+    expect(DASHBOARD).toMatch(/from '@\/lib\/jst'/)
+    expect(DASHBOARD).toMatch(/combineJstDateAndTime/)
   })
 
-  it('keeps the back-to-schedule affordance', () => {
-    expect(VIEW).toMatch(/data-testid="matchday-back"/)
-    expect(VIEW).toMatch(/href="\/schedule"/)
-  })
-
-  it('preserves the homepage RSVP-bar gating logic (showRsvpBar derived the same way)', () => {
-    expect(VIEW).toMatch(/showRsvpBar/)
-    expect(VIEW).toMatch(/userTeamIsPlaying/)
+  it('passes all-roster `players` to SubmitGoalForm (open attribution)', () => {
+    // The form's scorer dropdown sources from `players` prop.
+    expect(DASHBOARD).toMatch(/<SubmitGoalForm[\s\S]*players=\{players\}/)
   })
 })
 
-describe('v1.47.0 NextMatchdayBanner.lockToSelected', () => {
-  const BANNER = readFileSync(BANNER_PATH, 'utf-8')
-
-  it('exposes lockToSelected prop with default false', () => {
-    expect(BANNER).toMatch(/lockToSelected\?:\s*boolean/)
-    expect(BANNER).toMatch(/lockToSelected\s*=\s*false/)
-  })
-
-  it('skips the auto-default useEffect when lockToSelected is true', () => {
-    // Regression target: removing the early-return would let the homepage's
-    // "auto-default to user's next playing matchday" useEffect clobber the
-    // matchday page's URL-driven selection.
-    expect(BANNER).toMatch(/if\s*\(\s*lockToSelected\s*\)\s*return/)
-  })
-
-  it('threads lockToSelected through useEffect deps (so it re-runs when the prop changes)', () => {
-    expect(BANNER).toMatch(/\[lockToSelected,/)
-  })
-})
-
-describe('v1.47.0 SubmitGoalForm — modal-based CTA', () => {
+describe('v1.48.0 SubmitGoalForm — green CTA + scorer dropdown', () => {
   const FORM = readFileSync(FORM_PATH, 'utf-8')
 
-  it('big CTA button rendered in place (not inline expand)', () => {
-    expect(FORM).toMatch(/data-testid="submit-goal-cta"/)
-    expect(FORM).toMatch(/⚽️ Submit a goal/)
+  it('CTA uses LINE green (#06C755), not the legacy pink', () => {
+    expect(FORM).toMatch(/bg-\[#06C755\]/)
+    expect(FORM).not.toMatch(/data-testid="submit-goal-cta"[\s\S]{0,200}bg-vibrant-pink/)
+  })
+
+  it('exposes a scorer dropdown (data-testid="submit-goal-scorer")', () => {
+    expect(FORM).toMatch(/data-testid="submit-goal-scorer"/)
+  })
+
+  it('scorer dropdown sources from `players` prop, NOT locked to caller', () => {
+    expect(FORM).toMatch(/players: Player\[\]/)
+    // The match dropdown is no longer "participatingMatches" — it's "matches"
+    expect(FORM).toMatch(/matches:\s*Array<\{/)
   })
 
   it('uses createPortal so the modal escapes parent stacking context', () => {
@@ -149,6 +143,7 @@ describe('v1.47.0 SubmitGoalForm — modal-based CTA', () => {
   it('exposes the form testids the e2e specs key off', () => {
     expect(FORM).toContain('data-testid="submit-goal-form"')
     expect(FORM).toContain('data-testid="submit-goal-match"')
+    expect(FORM).toContain('data-testid="submit-goal-scorer"')
     expect(FORM).toContain('data-testid="submit-goal-type"')
     expect(FORM).toContain('data-testid="submit-goal-assister"')
     expect(FORM).toContain('data-testid="submit-goal-minute"')
@@ -157,17 +152,54 @@ describe('v1.47.0 SubmitGoalForm — modal-based CTA', () => {
     expect(FORM).toContain('data-testid="submit-goal-close"')
   })
 
-  it('still calls submitOwnMatchEvent (the PR ζ server action contract)', () => {
+  it('still calls submitOwnMatchEvent — passing scorerPlayerSlug from form input', () => {
     expect(FORM).toMatch(/submitOwnMatchEvent\(/)
+    expect(FORM).toMatch(/scorerPlayerSlug:\s*scorerSlug/)
   })
 })
 
-describe('PR ε MatchdayCard wiring (unchanged in v1.47.0)', () => {
+describe('v1.48.0 CopyMatchdayLink — section header click-to-copy', () => {
+  it('the component file exists', () => {
+    expect(existsSync(COPY_PATH)).toBe(true)
+  })
+
+  const COPY = readFileSync(COPY_PATH, 'utf-8')
+
+  it("declares 'use client'", () => {
+    expect(COPY.split('\n')[0].trim().replace(/['";]/g, '')).toBe('use client')
+  })
+
+  it('uses navigator.clipboard.writeText to copy', () => {
+    expect(COPY).toMatch(/navigator\.clipboard\.writeText/)
+  })
+
+  it('builds the URL from window.location.origin (apex + subdomain compatible)', () => {
+    expect(COPY).toMatch(/window\.location\.origin/)
+    expect(COPY).toMatch(/\/matchday\/\$\{matchdayId\}/)
+  })
+
+  it('fires a Sonner toast on success', () => {
+    expect(COPY).toMatch(/from 'sonner'/)
+    expect(COPY).toMatch(/toast\.success/)
+  })
+
+  it('exposes a per-matchday testid for e2e and unit specs', () => {
+    expect(COPY).toMatch(/data-testid=\{`copy-matchday-link-\$\{matchdayId\}`\}/)
+  })
+})
+
+describe('v1.48.0 MatchdayCard — eyebrow is CopyMatchdayLink, "View matchday" gone', () => {
   const CARD = readFileSync(CARD_PATH, 'utf-8')
 
-  it('wires the "View matchday" link to /matchday/<id>', () => {
-    expect(CARD).toMatch(/href=\{`\/matchday\/\$\{matchday\.id\}`\}/)
-    expect(CARD).toMatch(/data-testid=\{`matchday-card-view-\$\{matchday\.id\}`\}/)
+  it('imports CopyMatchdayLink and renders it as the eyebrow', () => {
+    expect(CARD).toMatch(/import CopyMatchdayLink from/)
+    expect(CARD).toMatch(/<CopyMatchdayLink[\s\S]*matchdayId=\{matchday\.id\}/)
+  })
+
+  it('"View matchday" link is gone (regression target — homepage IS the matchday page)', () => {
+    const CARD_NO_COMMENTS = stripComments(CARD)
+    expect(CARD_NO_COMMENTS).not.toMatch(/data-testid=\{`matchday-card-view-/)
+    expect(CARD_NO_COMMENTS).not.toMatch(/View matchday/)
   })
 
   it('still renders the legacy "See full schedule" link when showScheduleLink is true', () => {
