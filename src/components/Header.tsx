@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import ThemeToggle from './ThemeToggle';
 import LanguageToggle from './LanguageToggle';
 import LineLoginButton from './LineLoginButton';
+import LeagueSwitcher from './LeagueSwitcher';
 
 export default function Header() {
   const pathname = usePathname();
@@ -23,6 +24,12 @@ export default function Header() {
           <span className="text-xl text-fg-high">T9L &apos;26</span>
           <span className="text-xl text-primary">春</span>
         </Link>
+
+        {/* v1.52.0 — league switcher chevron next to the brand. Hidden when
+            the user has < 2 league memberships (single-league users see no
+            extra chrome). The component lazy-loads memberships on first
+            open via /api/me/memberships. */}
+        <LeagueSwitcher />
 
         <nav className="flex items-center gap-1 ml-2 md:ml-3">
           <Link
