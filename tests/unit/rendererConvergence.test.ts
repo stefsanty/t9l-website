@@ -56,35 +56,30 @@ describe('v1.25.0 — app/page.tsx renderer convergence', () => {
     expect(pageSrc).not.toMatch(/getLeagueBySubdomain/)
   })
 
-  it('does NOT call the deleted getLeagueFromHost helper', () => {
-    // Regression target: pre-v1.25.0 page.tsx called `getLeagueFromHost()`
-    // (returns the full League row) to detect the subdomain branch. The
-    // canonical helper post-v1.22.0 is `getLeagueIdFromRequest()` (returns
-    // just the id; null for unknown subdomain). v1.25.0 deletes
-    // `getLeagueFromHost`. Match call-site `getLeagueFromHost(` rather
-    // than the bare identifier so the file path in the import line —
-    // `@/lib/getLeagueFromHost` — doesn't trip a false positive.
-    expect(pageSrc).not.toMatch(/\bgetLeagueFromHost\s*\(/)
-    expect(pageSrc).not.toMatch(/\{\s*getLeagueFromHost\s*[,}]/)
+  it('v1.53.0 — does NOT use the deleted getLeagueFromHost / getLeagueIdFromRequest helpers (subdomain teardown)', () => {
+    // Regression target: PR 4 of the path-routing chain stripped the
+    // host-header league resolver. The apex page now uses
+    // `getDefaultLeagueId` from `@/lib/leagueSlug`.
+    expect(pageSrc).not.toMatch(/getLeagueFromHost/)
+    expect(pageSrc).not.toMatch(/getLeagueIdFromRequest/)
   })
 
-  it('resolves leagueId via getLeagueIdFromRequest and threads it into getPublicLeagueData', () => {
+  it('v1.53.0 — resolves leagueId via getDefaultLeagueId and threads it into getPublicLeagueData', () => {
     expect(pageSrc).toMatch(
-      /import\s+\{\s*getLeagueIdFromRequest\s*\}\s+from\s+["']@\/lib\/getLeagueFromHost["']/,
+      /import\s+\{[^}]*getDefaultLeagueId[^}]*\}\s+from\s+["']@\/lib\/leagueSlug["']/,
     )
-    expect(pageSrc).toMatch(/await\s+getLeagueIdFromRequest\s*\(\s*\)/)
+    expect(pageSrc).toMatch(/await\s+getDefaultLeagueId\s*\(\s*\)/)
     expect(pageSrc).toMatch(/getPublicLeagueData\s*\(\s*leagueId\s*\)/)
   })
 
-  it('handles unknown subdomain (leagueId === null) with an explicit "league not found" surface', () => {
-    // Regression target: pre-v1.25.0 page.tsx silently fell through to the
-    // apex/default-league render when `getLeagueBySubdomain` returned null
-    // (subdomain present but unknown). v1.25.0 surfaces the unknown
-    // subdomain as a distinct render so admins / operators provisioning new
-    // leagues see a clear "this subdomain is not attached to a league yet"
-    // signal instead of a wrong-league render.
+  it('v1.53.0 — handles null leagueId (no default-league configured) with the Data unavailable surface', () => {
+    // Pre-v1.53.0 the apex page surfaced "League not found" for unknown
+    // subdomains. PR 4 strips the subdomain code path; the only failure
+    // mode now is "no default league flagged" — a catastrophic-config
+    // scenario surfaced as the same Data unavailable copy the Prisma
+    // catch block uses.
     expect(pageSrc).toMatch(/leagueId\s*===\s*null/)
-    expect(pageSrc).toMatch(/League not found/i)
+    expect(pageSrc).toMatch(/Data unavailable/i)
   })
 })
 
@@ -106,15 +101,13 @@ describe('v1.25.0 — LeaguePublicView deletion', () => {
     expect(adminDataSrc).not.toMatch(/export\s+(async\s+)?function\s+getLeagueBySubdomain\b/)
   })
 
-  it('getLeagueFromHost.ts no longer exports getLeagueFromHost (the full-League fetcher)', () => {
-    // Note: the FILE keeps the same name — `getLeagueFromHost.ts` — because
-    // it now hosts `getLeagueIdFromRequest` (the canonical helper) and
-    // `extractSubdomain`. Just the legacy `getLeagueFromHost` function is
-    // gone.
-    const helperSrc = stripComments(
-      readFileSync(join(repoRoot, 'src/lib/getLeagueFromHost.ts'), 'utf8'),
-    )
-    expect(helperSrc).not.toMatch(/export\s+async\s+function\s+getLeagueFromHost\b/)
+  it('v1.53.0 — getLeagueFromHost.ts is DELETED entirely (subdomain teardown)', () => {
+    // Regression target: PR 4 of the path-routing chain deletes the
+    // file entirely. The default-league resolver lives in
+    // src/lib/leagueSlug.ts now.
+    const fs = require('node:fs') as typeof import('node:fs')
+    const helperPath = join(repoRoot, 'src/lib/getLeagueFromHost.ts')
+    expect(fs.existsSync(helperPath)).toBe(false)
   })
 })
 

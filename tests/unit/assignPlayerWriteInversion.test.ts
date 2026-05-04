@@ -82,8 +82,8 @@ vi.mock('next/cache', () => ({
   unstable_cache: <T extends (...args: unknown[]) => unknown>(fn: T) => fn,
 }))
 
-vi.mock('@/lib/getLeagueFromHost', () => ({
-  getLeagueIdFromRequest: vi.fn().mockResolvedValue('l-minato-2025'),
+vi.mock('@/lib/leagueSlug', () => ({
+  getDefaultLeagueId: vi.fn().mockResolvedValue('l-minato-2025'),
 }))
 
 vi.mock('@vercel/functions', () => ({
@@ -228,10 +228,10 @@ describe('POST /api/assign-player — Redis-canonical sync, Prisma deferred', ()
     expect(waitUntilMock).not.toHaveBeenCalled()
   })
 
-  it('v1.23.0 — threads the resolved leagueId from getLeagueIdFromRequest into getPlayerByPublicId', async () => {
-    const { getLeagueIdFromRequest } = await import('@/lib/getLeagueFromHost')
-    const getLeagueIdMock = vi.mocked(getLeagueIdFromRequest)
-    getLeagueIdMock.mockResolvedValueOnce('l-tamachi-2026')
+  it('v1.53.0 — threads the resolved default leagueId into getPlayerByPublicId', async () => {
+    const { getDefaultLeagueId } = await import('@/lib/leagueSlug')
+    const getLeagueIdMock = vi.mocked(getDefaultLeagueId)
+    getLeagueIdMock.mockResolvedValueOnce('l-minato-2025')
 
     const req = new Request('http://localhost/api/assign-player', {
       method: 'POST',
@@ -241,12 +241,12 @@ describe('POST /api/assign-player — Redis-canonical sync, Prisma deferred', ()
 
     await POST(req)
 
-    expect(getPlayerByPublicIdMock).toHaveBeenCalledWith('test-player', 'l-tamachi-2026')
+    expect(getPlayerByPublicIdMock).toHaveBeenCalledWith('test-player', 'l-minato-2025')
   })
 
-  it('v1.23.0 — returns 404 when getLeagueIdFromRequest returns null (unknown subdomain)', async () => {
-    const { getLeagueIdFromRequest } = await import('@/lib/getLeagueFromHost')
-    const getLeagueIdMock = vi.mocked(getLeagueIdFromRequest)
+  it('v1.53.0 — returns 404 when getDefaultLeagueId returns null (catastrophic config)', async () => {
+    const { getDefaultLeagueId } = await import('@/lib/leagueSlug')
+    const getLeagueIdMock = vi.mocked(getDefaultLeagueId)
     getLeagueIdMock.mockResolvedValueOnce(null)
 
     const req = new Request('http://localhost/api/assign-player', {

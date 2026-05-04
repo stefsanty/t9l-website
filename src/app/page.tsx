@@ -1,52 +1,39 @@
 import { findNextMatchday } from "@/lib/stats";
 import Dashboard from "@/components/Dashboard";
-import { getLeagueIdFromRequest } from "@/lib/getLeagueFromHost";
 import { getPublicLeagueData } from "@/lib/publicData";
-import { DEFAULT_LEAGUE_SLUG } from "@/lib/leagueSlug";
+import { DEFAULT_LEAGUE_SLUG, getDefaultLeagueId } from "@/lib/leagueSlug";
 
 /**
- * Public landing page — apex AND subdomain both render through here.
+ * Public landing page — apex `/` always renders the default league.
  *
- * v1.25.0 — renderer convergence: pre-v1.25.0 apex (`t9l.me`) rendered
- * `Dashboard` (RSVP / NextMatchdayBanner / UserTeamBadge / MatchdayAvailability)
- * while subdomains (`tamachi.t9l.me` etc.) rendered `LeaguePublicView` —
- * a stripped-down 3-tab schedule/standings/teams view with no RSVP, no next-
- * matchday banner, no logged-in-user affordances. Two parallel renderers were
- * drifting; subdomains were second-class. v1.25.0 deletes `LeaguePublicView`
- * and routes both apex and subdomain through `Dashboard`, fed by the v1.23.0
- * parameterized `getPublicLeagueData(leagueId?)` so the league context is
- * established once at the page boundary and threaded through as data.
- *
- * Routing rules (delegated to `getLeagueIdFromRequest`):
- *   - apex / dev base / localhost / Vercel preview → default league id
- *   - known subdomain → that league's id
- *   - unknown subdomain → null → renders the "league not found" surface
- *     instead of silently falling back to the default league
- *
- * Subdomain users now get the full Dashboard feature set: NextMatchdayBanner,
- * MatchdayAvailability, RsvpBar, UserTeamBadge, GuestLoginBanner. Their
- * /schedule and /stats sub-routes were already subdomain-aware as of v1.23.0
- * — v1.25.0 closes the remaining home-tab gap.
+ * v1.53.0 (PR 4 of the path-routing chain) — subdomain teardown.
+ * Pre-v1.53.0 this page resolved the league via the host header
+ * (`getLeagueIdFromRequest()`); subdomain support was wired in
+ * v1.22.0–v1.26.0 but never actually used in production (only the apex
+ * `t9l.me` was deployed). v1.53.0 strips the host-header path and
+ * always serves the default league here. Multi-league access lives
+ * exclusively under `/league/<slug>` and the `/<slug>` short alias
+ * (PR 1 of this chain). The "League not found" branch goes away
+ * because the only fail mode now is "no default league flagged in
+ * config" — a catastrophic-config scenario, not a routing one — and
+ * we surface that as the same Data unavailable state the catch block
+ * uses below.
  */
 export default async function Home() {
-  const leagueId = await getLeagueIdFromRequest();
+  const leagueId = await getDefaultLeagueId();
 
   if (leagueId === null) {
-    // Subdomain present in the host header but no matching League row.
-    // Pre-v1.25.0 the `getLeagueBySubdomain` lookup also returned null in
-    // this case and `app/page.tsx` would silently fall through to the apex
-    // path — same default-league bleed-through as the pre-v1.22.0 RSVP
-    // route. v1.25.0 surfaces the unknown subdomain explicitly so admins
-    // (and operators provisioning new leagues) get a clear "this subdomain
-    // is not attached to a league yet" signal instead of a wrong-league render.
+    // Catastrophic config — no default league row exists. Render the
+    // generic "Data unavailable" surface; operator should flag a
+    // default league via admin Settings or the seed migration.
     return (
       <div className="flex items-center justify-center min-h-dvh bg-midnight text-white px-6 text-center">
         <div>
           <p className="font-display text-3xl font-black uppercase text-white/80 mb-2">
-            League not found
+            Data unavailable
           </p>
           <p className="text-sm text-white/80 font-bold uppercase tracking-widest">
-            This subdomain is not attached to a league.
+            Try again in a moment
           </p>
         </div>
       </div>

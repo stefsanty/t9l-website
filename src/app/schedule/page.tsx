@@ -5,7 +5,7 @@ import Link from "next/link";
 import MatchdayCard from "@/components/MatchdayCard";
 import Header from "@/components/Header";
 import { getPublicLeagueData } from "@/lib/publicData";
-import { getLeagueIdFromRequest } from "@/lib/getLeagueFromHost";
+import { getDefaultLeagueId } from "@/lib/leagueSlug";
 
 export const metadata = {
   title: "Schedule | T9L",
@@ -15,10 +15,12 @@ export default async function SchedulePage() {
   const session = await getServerSession(authOptions);
   const userTeamId = session?.teamId;
 
-  // v1.23.0 — resolve the active league from the request Host header so
-  // /schedule rendered at tamachi.t9l.me shows tamachi's matchdays, not
-  // the default league's. Pre-v1.23.0 every render hit the default league.
-  const leagueId = await getLeagueIdFromRequest();
+  // v1.53.0 — subdomain teardown. Always renders the default league.
+  // Multi-league access lives under `/league/<slug>` (PRs 1-3 of the
+  // path-routing chain). A future PR can add `/league/<slug>/schedule`
+  // if per-league schedule pages are desired; today /schedule is
+  // default-only by design.
+  const leagueId = await getDefaultLeagueId();
 
   let data;
   try {

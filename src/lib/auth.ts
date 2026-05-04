@@ -703,21 +703,27 @@ export const authOptions: AuthOptions = {
         );
       }
 
-      // v1.26.0 — resolve the active league from the request host on every
-      // JWT callback so navigating across subdomains updates the per-league
-      // mapping deterministically. apex / dev base / localhost / Vercel
-      // preview → default league id; known subdomain → that league's id;
-      // unknown subdomain → null (no league context — null out player/team
-      // fields rather than serving cross-league data).
+      // v1.53.0 — subdomain teardown. The JWT callback resolves against
+      // the default league only. Pre-v1.53.0 (v1.26.0) it read the
+      // request Host header to support per-subdomain league context;
+      // path-based routing (PRs 1-3 of the path-routing chain) replaced
+      // the subdomain mechanism, but the JWT callback has no path
+      // access in next-auth v4. The conservative choice is "session
+      // surfaces the default-league mapping". When a user browses a
+      // non-default league via /league/<slug>, the page-level league
+      // context drives data; session.{playerId,teamId} reflect their
+      // default-league membership and are typically not used by the
+      // page chrome (Dashboard's render-null branches handle a
+      // session.teamId not in the rendered league).
       //
-      // Lazy import to keep the helper out of the static import graph for
-      // non-request-context callers (the recovery script, etc.).
+      // Lazy import to keep the helper out of the static import graph
+      // for non-request-context callers (recovery scripts, etc.).
       let requestLeagueId: string | null = null;
       try {
-        const { getLeagueIdFromRequest } = await import("@/lib/getLeagueFromHost");
-        requestLeagueId = await getLeagueIdFromRequest();
+        const { getDefaultLeagueId } = await import("@/lib/leagueSlug");
+        requestLeagueId = await getDefaultLeagueId();
       } catch (err) {
-        console.error("[auth] getLeagueIdFromRequest failed in JWT callback: %o", err);
+        console.error("[auth] getDefaultLeagueId failed in JWT callback: %o", err);
       }
       token.leagueId = requestLeagueId;
 

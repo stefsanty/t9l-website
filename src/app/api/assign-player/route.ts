@@ -8,7 +8,7 @@ import { prisma } from "@/lib/prisma";
 import { revalidate } from "@/lib/revalidate";
 import { setMappingOrThrow } from "@/lib/playerMappingStore";
 import { playerIdToSlug, slugToPlayerId } from "@/lib/ids";
-import { getLeagueIdFromRequest } from "@/lib/getLeagueFromHost";
+import { getDefaultLeagueId } from "@/lib/leagueSlug";
 import { linkPlayerToUser, unlinkPlayerFromUser } from "@/lib/identityLink";
 
 function slugify(name: string): string {
@@ -220,14 +220,13 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "playerId required" }, { status: 400 });
   }
 
-  // v1.23.0 — resolve the active league from the request Host so subdomain
-  // link flows validate against the per-subdomain league's roster. Pre-fix
-  // every link checked against the default league regardless of the host
-  // the user was on.
-  const leagueId = await getLeagueIdFromRequest();
+  // v1.53.0 — subdomain teardown. /assign-player is the legacy LINE-only
+  // self-serve picker; it always operates on the default league.
+  // Multi-league self-serve binding is via /join/[code] (PR ζ).
+  const leagueId = await getDefaultLeagueId();
   if (!leagueId) {
     return NextResponse.json(
-      { error: "League not found for this host" },
+      { error: "No default league configured" },
       { status: 404 },
     );
   }
@@ -310,11 +309,12 @@ export async function DELETE() {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 
-  // v1.26.0 — resolve league context for the per-league null sentinel.
-  const leagueId = await getLeagueIdFromRequest();
+  // v1.53.0 — subdomain teardown. /assign-player DELETE always operates
+  // on the default league.
+  const leagueId = await getDefaultLeagueId();
   if (!leagueId) {
     return NextResponse.json(
-      { error: "League not found for this host" },
+      { error: "No default league configured" },
       { status: 404 },
     );
   }

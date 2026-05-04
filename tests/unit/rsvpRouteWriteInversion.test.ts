@@ -26,7 +26,7 @@ const {
   setRsvpOrThrowMock,
   getWriteModeMock,
   writeRosterAvailabilityMock,
-  getLeagueIdFromRequestMock,
+  getDefaultLeagueIdMock,
 } = vi.hoisted(() => ({
   gameWeekFindUniqueMock: vi.fn(),
   availabilityUpsertMock: vi.fn(),
@@ -35,7 +35,7 @@ const {
   setRsvpOrThrowMock: vi.fn(),
   getWriteModeMock: vi.fn(),
   writeRosterAvailabilityMock: vi.fn(),
-  getLeagueIdFromRequestMock: vi.fn(),
+  getDefaultLeagueIdMock: vi.fn(),
 }))
 
 vi.mock('@/lib/rsvpStore', () => ({
@@ -69,8 +69,8 @@ vi.mock('@vercel/functions', () => ({
   waitUntil: waitUntilMock,
 }))
 
-vi.mock('@/lib/getLeagueFromHost', () => ({
-  getLeagueIdFromRequest: getLeagueIdFromRequestMock,
+vi.mock('@/lib/leagueSlug', () => ({
+  getDefaultLeagueId: getDefaultLeagueIdMock,
 }))
 
 import { POST } from '@/app/api/rsvp/route'
@@ -89,7 +89,7 @@ beforeEach(() => {
   setRsvpOrThrowMock.mockResolvedValue(undefined)
   writeRosterAvailabilityMock.mockResolvedValue(undefined)
   getWriteModeMock.mockResolvedValue('dual')
-  getLeagueIdFromRequestMock.mockResolvedValue('l-minato-2025')
+  getDefaultLeagueIdMock.mockResolvedValue('l-minato-2025')
   waitUntilMock.mockImplementation(() => {
     // capture-only by default; tests override to control execution
   })
