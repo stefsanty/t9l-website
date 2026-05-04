@@ -34,6 +34,12 @@ interface NextMatchdayBannerProps {
    * preserves the homepage Dashboard's existing behavior.
    */
   lockToSelected?: boolean;
+  /**
+   * v1.51.0 — passed through to `MatchdayCard` → `CopyMatchdayLink` so
+   * the share URL is the canonical `/league/<slug>/md/<id>` form. When
+   * unset, CopyMatchdayLink falls back to the default-league slug.
+   */
+  leagueSlug?: string;
 }
 
 export default function NextMatchdayBanner({
@@ -43,6 +49,7 @@ export default function NextMatchdayBanner({
   teams,
   goals,
   lockToSelected = false,
+  leagueSlug,
 }: NextMatchdayBannerProps) {
   const { data: session, status } = useSession();
   const locale = useLocale();
@@ -170,6 +177,7 @@ export default function NextMatchdayBanner({
             isUserNextMatchday={isUserNextMatchday}
             showCountdown
             locale={locale}
+            leagueSlug={leagueSlug}
           />
         </div>
 

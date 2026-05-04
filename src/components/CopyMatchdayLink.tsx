@@ -2,35 +2,47 @@
 
 import { useState } from 'react'
 import { toast } from 'sonner'
+import { DEFAULT_LEAGUE_SLUG } from '@/lib/leagueSlug'
 
 /**
  * v1.48.0 — clickable section-header eyebrow that copies a deep-link to the
  * current matchday view to the clipboard.
  *
+ * v1.51.0 (PR 2 of the path-routing chain) — URL form upgraded to the
+ * canonical path-based shape `/league/<slug>/md/<id>` so users sharing
+ * the link see the canonical URL rather than the legacy
+ * `/matchday/<id>` form (which still works via 308 redirect for old
+ * shared links). When the parent component knows which league this
+ * matchday belongs to, it threads the slug via the `leagueSlug` prop;
+ * otherwise the `DEFAULT_LEAGUE_SLUG` constant ('t9l') is used as a
+ * sensible fallback (today there's only one league with public
+ * matchdays, so this preserves working URLs across every legacy
+ * call site).
+ *
  * Wraps the matchday-card eyebrow text ("MATCHDAY RESULTS" / "YOUR NEXT
  * MATCHDAY" / "MATCHDAY DETAILS"). On click:
- *   1. Compute `https://<host>/matchday/<id>` from `window.location.origin`
- *      so the URL works on apex AND any subdomain without per-tenant config.
+ *   1. Compute `https://<host>/league/<slug>/md/<id>` from
+ *      `window.location.origin` so the URL works on apex AND any
+ *      subdomain without per-tenant config.
  *   2. Write to clipboard via `navigator.clipboard.writeText`.
  *   3. Fire a Sonner toast confirmation.
  *   4. Show a brief visual checkmark on the icon.
- *
- * The eyebrow text + icon together are the affordance — both are the
- * clickable surface (single button). The icon is a small link/share glyph
- * that telegraphs "click to copy/share".
  */
 export default function CopyMatchdayLink({
   matchdayId,
   label,
+  leagueSlug,
 }: {
   matchdayId: string
   label: string
+  leagueSlug?: string
 }) {
   const [copied, setCopied] = useState(false)
 
   function copy() {
     if (typeof window === 'undefined') return
-    const url = `${window.location.origin}/matchday/${matchdayId}`
+    const slug = leagueSlug ?? DEFAULT_LEAGUE_SLUG
+    const url = `${window.location.origin}/league/${slug}/md/${matchdayId}`
 
     const onSuccess = () => {
       setCopied(true)

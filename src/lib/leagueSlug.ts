@@ -19,6 +19,17 @@ import { prisma } from './prisma'
  */
 
 /**
+ * Hard-coded fallback slug for the default league. The migration in
+ * v1.50.0 backfills `League.subdomain = 't9l'` for the default league;
+ * this constant is the matching client-side fallback for components
+ * (CopyMatchdayLink, etc.) that need to compose a canonical URL but
+ * don't have a leagueSlug threaded through their props (e.g. the
+ * /schedule page). PR 4 (v1.53.0) may revisit this once subdomain
+ * functionality is removed and the column is renamed to `slug`.
+ */
+export const DEFAULT_LEAGUE_SLUG = 't9l'
+
+/**
  * Slugs that must NEVER resolve to a league. Each entry corresponds to
  * either an existing top-level route segment or a future-reserved name.
  *

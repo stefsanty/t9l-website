@@ -34,6 +34,14 @@ interface DashboardProps {
    * as on the homepage.
    */
   initialMatchdayId?: string | null;
+  /**
+   * v1.51.0 (PR 2 of the path-routing chain) — the league slug threaded
+   * down to `CopyMatchdayLink` so the share URL it composes points at
+   * the canonical path-based form `/league/<slug>/md/<id>`. Optional
+   * because the homepage `/` and `/schedule` may not yet thread it; in
+   * those cases CopyMatchdayLink falls back to the default-league slug.
+   */
+  leagueSlug?: string;
 }
 
 /**
@@ -65,6 +73,7 @@ export default function Dashboard({
   played,
   nextMd,
   initialMatchdayId,
+  leagueSlug,
 }: DashboardProps) {
   const { data: session } = useSession();
   const [selectedMatchdayId, setSelectedMatchdayId] = useState(
@@ -146,6 +155,7 @@ export default function Dashboard({
                 teams={teams}
                 goals={goals}
                 lockToSelected={initialMatchdayId != null}
+                leagueSlug={leagueSlug}
               />
 
               {submitGateOpen && selectedMatchday ? (

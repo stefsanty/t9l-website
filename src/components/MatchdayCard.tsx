@@ -75,6 +75,12 @@ export interface MatchdayCardProps {
   showScheduleLink?: boolean;
   /** Locale for rendering translated strings. Default: 'en' */
   locale?: 'en' | 'ja';
+  /**
+   * v1.51.0 — threaded down to `CopyMatchdayLink` so the share URL is
+   * the canonical path-based `/league/<slug>/md/<id>` form. Optional;
+   * when unset CopyMatchdayLink falls back to `DEFAULT_LEAGUE_SLUG`.
+   */
+  leagueSlug?: string;
 }
 
 const STRINGS = {
@@ -111,6 +117,7 @@ export default function MatchdayCard({
   showCountdown = false,
   showScheduleLink = false,
   locale = 'en',
+  leagueSlug,
 }: MatchdayCardProps) {
   const s = STRINGS[locale];
   const isCompleted = matchday.matches[0].homeGoals !== null;
@@ -154,7 +161,7 @@ export default function MatchdayCard({
                   with a Sonner toast confirmation. The "View matchday"
                   link below is removed because the homepage IS the
                   matchday page now (Dashboard takes initialMatchdayId). */}
-              <CopyMatchdayLink matchdayId={matchday.id} label={eyebrow} />
+              <CopyMatchdayLink matchdayId={matchday.id} label={eyebrow} leagueSlug={leagueSlug} />
             </div>
             <h2 className="font-display text-4xl font-black uppercase tracking-tighter text-fg-high leading-tight">
               {matchday.date ? formatJstFriendly(matchday.date, locale) : 'TBD'}

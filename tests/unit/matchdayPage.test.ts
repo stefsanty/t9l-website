@@ -8,16 +8,26 @@
  * `initialMatchdayId` pre-selecting the URL matchday. `MatchdayPageView`
  * is gone (deleted, no replacement). The Submit-goal CTA + modal that
  * lived inside it now live inside the Dashboard. Section headers
- * ("MATCHDAY RESULTS" etc.) are now click-to-copy via `<CopyMatchdayLink>`
- * — clicking copies `https://<host>/matchday/<id>` with a Sonner toast.
+ * ("MATCHDAY RESULTS" etc.) are now click-to-copy via `<CopyMatchdayLink>`.
+ *
+ * v1.51.0 (PR 2 of the path-routing chain) — the canonical matchday
+ * route is now `/league/<slug>/md/<id>` (under `src/app/league/[slug]/md/[id]/page.tsx`).
+ * The legacy `/matchday/[id]` route is converted to a 308-redirect that
+ * resolves the matchday's league via Prisma `gameWeek.findMany({ weekNumber })`
+ * and forwards to the canonical URL. Dashboard rendering with
+ * `initialMatchdayId` now lives on the new route. CopyMatchdayLink
+ * builds the canonical URL form `/league/<slug>/md/<id>` and falls back
+ * to the `DEFAULT_LEAGUE_SLUG` constant when its parent does not pass a
+ * `leagueSlug` prop.
  */
 import { describe, expect, it } from 'vitest'
 import { readFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { goalTypeLabel } from '@/app/matchday/[id]/page'
+import { goalTypeLabel } from '@/lib/goalTypeLabel'
 
 const ROOT = join(__dirname, '..', '..')
-const PAGE_PATH = join(ROOT, 'src/app/matchday/[id]/page.tsx')
+const LEGACY_PAGE_PATH = join(ROOT, 'src/app/matchday/[id]/page.tsx')
+const NEW_PAGE_PATH = join(ROOT, 'src/app/league/[slug]/md/[id]/page.tsx')
 const VIEW_PATH = join(ROOT, 'src/app/matchday/[id]/MatchdayPageView.tsx')
 const DASHBOARD_PATH = join(ROOT, 'src/components/Dashboard.tsx')
 const CARD_PATH = join(ROOT, 'src/components/MatchdayCard.tsx')
@@ -34,37 +44,88 @@ function stripComments(src: string): string {
     .replace(/\{\/\*[\s\S]*?\*\/\}/g, '')
 }
 
-describe('v1.48.0 — page + Dashboard convergence', () => {
-  it('the route file exists', () => {
-    expect(existsSync(PAGE_PATH)).toBe(true)
+describe('v1.51.0 — new canonical /league/[slug]/md/[id] route', () => {
+  it('the new route file exists', () => {
+    expect(existsSync(NEW_PAGE_PATH)).toBe(true)
   })
 
   it('MatchdayPageView is GONE — collapsed into Dashboard (regression target)', () => {
     expect(existsSync(VIEW_PATH)).toBe(false)
   })
 
-  const PAGE = readFileSync(PAGE_PATH, 'utf-8')
+  const NEW_PAGE = readFileSync(NEW_PAGE_PATH, 'utf-8')
 
-  it('page uses getLeagueIdFromRequest for subdomain awareness', () => {
-    expect(PAGE).toMatch(/getLeagueIdFromRequest/)
-    expect(PAGE).toMatch(/getPublicLeagueData/)
+  it('new route resolves slug via getLeagueIdBySlug (path-based, NOT host-based)', () => {
+    expect(NEW_PAGE).toMatch(/getLeagueIdBySlug/)
+    expect(NEW_PAGE).toMatch(/getPublicLeagueData/)
+    expect(stripComments(NEW_PAGE)).not.toMatch(/getLeagueIdFromRequest/)
   })
 
-  it('page 404s when the matchday is not in the resolved league', () => {
-    expect(PAGE).toMatch(/notFound/)
+  it('new route 404s when the slug or matchday is not found', () => {
+    expect(NEW_PAGE).toMatch(/notFound/)
   })
 
-  it('page renders Dashboard with initialMatchdayId pre-set to the URL matchday', () => {
-    expect(PAGE).toMatch(/import Dashboard from '@\/components\/Dashboard'/)
-    expect(PAGE).toMatch(/<Dashboard[\s\S]*initialMatchdayId=\{md\.id\}/)
+  it('new route renders Dashboard with initialMatchdayId pre-set to the URL matchday', () => {
+    expect(NEW_PAGE).toMatch(/import Dashboard from '@\/components\/Dashboard'/)
+    expect(NEW_PAGE).toMatch(/<Dashboard[\s\S]*initialMatchdayId=\{md\.id\}/)
   })
 
-  it('page does NOT import MatchdayPageView (deleted)', () => {
-    expect(stripComments(PAGE)).not.toMatch(/MatchdayPageView/)
+  it('new route threads `leagueSlug` to Dashboard (canonical URL composition)', () => {
+    expect(NEW_PAGE).toMatch(/leagueSlug=\{normalizeLeagueSlug\(slug\)\}/)
   })
 
-  it('page does NOT import SubmitGoalForm directly (Dashboard owns it now)', () => {
-    expect(stripComments(PAGE)).not.toMatch(/SubmitGoalForm/)
+  it('new route does NOT import MatchdayPageView (deleted)', () => {
+    expect(stripComments(NEW_PAGE)).not.toMatch(/MatchdayPageView/)
+  })
+
+  it('new route does NOT import SubmitGoalForm directly (Dashboard owns it)', () => {
+    expect(stripComments(NEW_PAGE)).not.toMatch(/SubmitGoalForm/)
+  })
+
+  it('new route does case-insensitive matchday-id match (carry-over from v1.49.1)', () => {
+    expect(NEW_PAGE).toMatch(/id\.toLowerCase\(\)/)
+    expect(NEW_PAGE).toMatch(/m\.id\.toLowerCase\(\)/)
+  })
+})
+
+describe('v1.51.0 — legacy /matchday/[id] route is now a 308-redirect', () => {
+  it('legacy route file still exists (we redirect, we don\'t 404)', () => {
+    expect(existsSync(LEGACY_PAGE_PATH)).toBe(true)
+  })
+
+  const LEGACY_PAGE = readFileSync(LEGACY_PAGE_PATH, 'utf-8')
+
+  it('legacy route imports `redirect` from next/navigation', () => {
+    expect(LEGACY_PAGE).toMatch(/import\s*\{[^}]*redirect[^}]*\}\s*from\s*['"]next\/navigation['"]/)
+  })
+
+  it('legacy route calls `redirect(\\`/league/<slug>/md/<id>\\`)` — canonical URL form', () => {
+    expect(LEGACY_PAGE).toMatch(/redirect\(\s*`\/league\/\$\{[^}]+\}\/md\/\$\{[^}]+\}`\s*\)/)
+  })
+
+  it('legacy route resolves the matchday\'s league via prisma gameWeek lookup', () => {
+    expect(LEGACY_PAGE).toMatch(/prisma\.gameWeek\.findMany/)
+    expect(LEGACY_PAGE).toMatch(/weekNumber/)
+  })
+
+  it('legacy route prefers the default league when multiple match (backward-compat for legacy single-league shared URLs)', () => {
+    expect(LEGACY_PAGE).toMatch(/isDefault/)
+  })
+
+  it('legacy route falls back to DEFAULT_LEAGUE_SLUG when subdomain is null', () => {
+    expect(LEGACY_PAGE).toMatch(/DEFAULT_LEAGUE_SLUG/)
+  })
+
+  it('legacy route does NOT render Dashboard (it redirects only)', () => {
+    expect(stripComments(LEGACY_PAGE)).not.toMatch(/<Dashboard/)
+  })
+
+  it('legacy route 404s when the matchday cannot be resolved', () => {
+    expect(LEGACY_PAGE).toMatch(/notFound/)
+  })
+
+  it('legacy route does NOT use getLeagueIdFromRequest (subdomain logic is irrelevant for redirect)', () => {
+    expect(stripComments(LEGACY_PAGE)).not.toMatch(/getLeagueIdFromRequest/)
   })
 })
 
@@ -97,6 +158,51 @@ describe('v1.48.0 Dashboard — converges homepage + matchday route', () => {
   it('passes all-roster `players` to SubmitGoalForm (open attribution)', () => {
     // The form's scorer dropdown sources from `players` prop.
     expect(DASHBOARD).toMatch(/<SubmitGoalForm[\s\S]*players=\{players\}/)
+  })
+
+  it('v1.51.0 — accepts optional leagueSlug prop and threads to NextMatchdayBanner', () => {
+    expect(DASHBOARD).toMatch(/leagueSlug\?:\s*string/)
+    expect(DASHBOARD).toMatch(/<NextMatchdayBanner[\s\S]{0,500}leagueSlug=\{leagueSlug\}/)
+  })
+})
+
+describe('v1.51.0 — leagueSlug threading through banner + card', () => {
+  const BANNER_PATH = join(ROOT, 'src/components/NextMatchdayBanner.tsx')
+  const BANNER = readFileSync(BANNER_PATH, 'utf-8')
+  const CARD = readFileSync(CARD_PATH, 'utf-8')
+
+  it('NextMatchdayBanner accepts optional leagueSlug prop', () => {
+    expect(BANNER).toMatch(/leagueSlug\?:\s*string/)
+  })
+
+  it('NextMatchdayBanner forwards leagueSlug to its MatchdayCard mount', () => {
+    expect(BANNER).toMatch(/<MatchdayCard[\s\S]{0,400}leagueSlug=\{leagueSlug\}/)
+  })
+
+  it('MatchdayCard accepts optional leagueSlug prop', () => {
+    expect(CARD).toMatch(/leagueSlug\?:\s*string/)
+  })
+
+  it('MatchdayCard forwards leagueSlug to CopyMatchdayLink', () => {
+    expect(CARD).toMatch(/<CopyMatchdayLink[\s\S]{0,200}leagueSlug=\{leagueSlug\}/)
+  })
+})
+
+describe('v1.51.0 — apex / `/league/[slug]` / `/[slug]` pages thread leagueSlug', () => {
+  it('apex `app/page.tsx` passes leagueSlug={DEFAULT_LEAGUE_SLUG}', () => {
+    const APEX = readFileSync(join(ROOT, 'src/app/page.tsx'), 'utf-8')
+    expect(APEX).toMatch(/import\s*\{[^}]*DEFAULT_LEAGUE_SLUG[^}]*\}\s*from\s*['"]@\/lib\/leagueSlug['"]/)
+    expect(APEX).toMatch(/<Dashboard[\s\S]{0,800}leagueSlug=\{DEFAULT_LEAGUE_SLUG\}/)
+  })
+
+  it('/league/[slug]/page.tsx passes leagueSlug={normalizeLeagueSlug(slug)}', () => {
+    const PG = readFileSync(join(ROOT, 'src/app/league/[slug]/page.tsx'), 'utf-8')
+    expect(PG).toMatch(/<Dashboard[\s\S]{0,800}leagueSlug=\{normalizeLeagueSlug\(slug\)\}/)
+  })
+
+  it('/[slug]/page.tsx passes leagueSlug={normalizeLeagueSlug(slug)}', () => {
+    const PG = readFileSync(join(ROOT, 'src/app/[slug]/page.tsx'), 'utf-8')
+    expect(PG).toMatch(/<Dashboard[\s\S]{0,800}leagueSlug=\{normalizeLeagueSlug\(slug\)\}/)
   })
 })
 
@@ -181,9 +287,21 @@ describe('v1.48.0 CopyMatchdayLink — section header click-to-copy', () => {
     expect(COPY).toMatch(/navigator\.clipboard\.writeText/)
   })
 
-  it('builds the URL from window.location.origin (apex + subdomain compatible)', () => {
+  it('builds the canonical URL from window.location.origin + /league/<slug>/md/<id> (v1.51.0)', () => {
+    // v1.51.0 — URL form upgraded from `/matchday/<id>` to the canonical
+    // path-based shape `/league/<slug>/md/<id>`. The legacy `/matchday/<id>`
+    // route still exists as a 308-redirect for old shared links.
     expect(COPY).toMatch(/window\.location\.origin/)
-    expect(COPY).toMatch(/\/matchday\/\$\{matchdayId\}/)
+    expect(COPY).toMatch(/\/league\/\$\{slug\}\/md\/\$\{matchdayId\}/)
+  })
+
+  it('falls back to DEFAULT_LEAGUE_SLUG when no leagueSlug prop is provided', () => {
+    expect(COPY).toMatch(/DEFAULT_LEAGUE_SLUG/)
+    expect(COPY).toMatch(/leagueSlug\s*\?\?\s*DEFAULT_LEAGUE_SLUG/)
+  })
+
+  it('accepts an optional leagueSlug prop (parent threads through Dashboard → MatchdayCard)', () => {
+    expect(COPY).toMatch(/leagueSlug\?:\s*string/)
   })
 
   it('fires a Sonner toast on success', () => {
@@ -274,23 +392,24 @@ describe('v1.49.1 — Dashboard locks the banner to the URL-pre-selected matchda
   })
 })
 
-describe('v1.49.1 — /matchday/[id] case-insensitive slug match', () => {
-  const PAGE = readFileSync(PAGE_PATH, 'utf-8')
+describe('v1.49.1 — case-insensitive slug match (carried into v1.51.0 new route)', () => {
+  const NEW_PAGE = readFileSync(NEW_PAGE_PATH, 'utf-8')
 
   // Regression target: pre-v1.49.1 the page did `m.id === id` exactly, so
   // /matchday/MD2 (capital, the way users naturally type "matchday 2")
   // returned undefined → notFound(). Fix: normalize both sides to lowercase
-  // before comparing.
-  it('lowercases the URL slug before comparing to matchday.id', () => {
-    expect(PAGE).toMatch(/id\.toLowerCase\(\)/)
+  // before comparing. v1.51.0 carries this contract into the new
+  // /league/<slug>/md/<id> route.
+  it('lowercases the URL matchday id before comparing to matchday.id', () => {
+    expect(NEW_PAGE).toMatch(/id\.toLowerCase\(\)/)
   })
 
   it('lowercases matchday.id when comparing (mirror normalization)', () => {
-    expect(PAGE).toMatch(/m\.id\.toLowerCase\(\)/)
+    expect(NEW_PAGE).toMatch(/m\.id\.toLowerCase\(\)/)
   })
 
-  it('does NOT do an exact-case `m.id === id` comparison anymore (regression target)', () => {
-    expect(stripComments(PAGE)).not.toMatch(/m\.id === id\b/)
+  it('does NOT do an exact-case `m.id === id` comparison (regression target)', () => {
+    expect(stripComments(NEW_PAGE)).not.toMatch(/m\.id === id\b/)
   })
 })
 
