@@ -46,6 +46,17 @@ export default function SubmitGoalForm({
   const [open, setOpen] = useState(false)
   const [success, setSuccess] = useState(false)
 
+  // v1.48.1 — singleton CTA across matchday swipes. The Dashboard no longer
+  // remounts this component on `selectedMatchday.id` change (the prior
+  // `key={selectedMatchday.id}` is gone), so we have to reset local state
+  // ourselves when the matchday context changes: a previously-open modal
+  // tied to MD2 must not linger after the user swipes to MD3, and the
+  // post-success "tap again" hint should clear too.
+  useEffect(() => {
+    setOpen(false)
+    setSuccess(false)
+  }, [matchday.id])
+
   if (matches.length === 0) return null
 
   return (
@@ -130,6 +141,18 @@ function SubmitGoalModal({
   const [goalType, setGoalType] = useState<GoalType>('OPEN_PLAY')
   const [assisterSlug, setAssisterSlug] = useState('')
   const [minute, setMinute] = useState('')
+
+  // v1.48.1 — singleton CTA. The parent SubmitGoalForm no longer remounts
+  // on matchday change, so the modal's `matchPublicId` may now reference a
+  // match from the prior matchday. If the current selection is no longer
+  // in the list, reset to the first match in the new matchday's list.
+  useEffect(() => {
+    if (!matches.find((m) => m.id === matchPublicId)) {
+      setMatchPublicId(matches[0]?.id ?? '')
+      setScorerSlug('')
+      setAssisterSlug('')
+    }
+  }, [matches, matchPublicId])
 
   const [mounted, setMounted] = useState(false)
   const dialogRef = useRef<HTMLDivElement | null>(null)
@@ -247,8 +270,6 @@ function SubmitGoalModal({
 
   if (!mounted) return null
 
-  void matchday // matchday is reserved for future per-matchday narrative
-
   return createPortal(
     <div
       className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center px-4"
@@ -267,9 +288,17 @@ function SubmitGoalModal({
         data-testid="submit-goal-form"
       >
         <div className="flex items-start justify-between gap-3 mb-1">
-          <h3 className="text-fg-high font-display text-xl font-black uppercase tracking-tight">
-            Submit a goal
-          </h3>
+          <div className="flex flex-col gap-0.5">
+            <span className="text-fg-low text-[10px] uppercase tracking-widest">
+              Submit a goal for
+            </span>
+            <h3
+              className="text-fg-high font-display text-2xl font-black uppercase tracking-tight"
+              data-testid="submit-goal-modal-matchday-label"
+            >
+              {matchday.label}
+            </h3>
+          </div>
           <button
             type="button"
             onClick={() => {

@@ -208,6 +208,42 @@ describe('v1.48.0 MatchdayCard — eyebrow is CopyMatchdayLink, "View matchday" 
   })
 })
 
+describe('v1.48.1 — Submit-Goal CTA singleton across matchday changes', () => {
+  const DASHBOARD = readFileSync(DASHBOARD_PATH, 'utf-8')
+  const FORM = readFileSync(FORM_PATH, 'utf-8')
+
+  // Regression target: pre-v1.48.1 the form had `key={selectedMatchday.id}`
+  // which forced a full remount per swipe — combined with the Google Translate
+  // DOM mutations in the root layout, the CTA visually duplicated on every
+  // navigation. Dropping the key turns it into a singleton whose props
+  // update on swipe, eliminating the spawn-on-scroll path entirely.
+  it('Dashboard does NOT pass `key={selectedMatchday.id}` to SubmitGoalForm', () => {
+    const noComments = stripComments(DASHBOARD)
+    expect(noComments).not.toMatch(/<SubmitGoalForm[\s\S]{0,300}key=\{selectedMatchday\.id\}/)
+  })
+
+  it('SubmitGoalForm resets `open` + `success` when matchday.id changes (singleton state cleanup)', () => {
+    expect(FORM).toMatch(/useEffect\(\(\)\s*=>\s*\{[\s\S]{0,200}setOpen\(false\)[\s\S]{0,200}setSuccess\(false\)[\s\S]{0,80}\},\s*\[matchday\.id\]\)/)
+  })
+
+  it('SubmitGoalModal syncs matchPublicId when the matches list changes', () => {
+    expect(FORM).toMatch(/if\s*\(!matches\.find\(\(m\)\s*=>\s*m\.id\s*===\s*matchPublicId\)\)/)
+    expect(FORM).toMatch(/setMatchPublicId\(matches\[0\]\?\.id\s*\?\?\s*''\)/)
+  })
+
+  it('modal shows the matchday label as a bold heading at the top', () => {
+    expect(FORM).toMatch(/data-testid="submit-goal-modal-matchday-label"/)
+    expect(FORM).toMatch(/Submit a goal for/)
+    expect(FORM).toMatch(/\{matchday\.label\}/)
+  })
+
+  it('the bold matchday label is the visible h3 (not the legacy "Submit a goal" h3)', () => {
+    // The h3 must contain the matchday label expression — pinning the
+    // content of the prominent heading.
+    expect(FORM).toMatch(/<h3[^>]*data-testid="submit-goal-modal-matchday-label"[^>]*>\s*\{matchday\.label\}\s*<\/h3>/)
+  })
+})
+
 describe('goalTypeLabel (export preserved for backward compat)', () => {
   it('returns null for OPEN_PLAY (no decoration)', () => {
     expect(goalTypeLabel('OPEN_PLAY')).toBeNull()
