@@ -103,9 +103,17 @@ describe('v1.48.0 Dashboard — converges homepage + matchday route', () => {
 describe('v1.48.0 SubmitGoalForm — green CTA + scorer dropdown', () => {
   const FORM = readFileSync(FORM_PATH, 'utf-8')
 
-  it('CTA uses LINE green (#06C755), not the legacy pink', () => {
-    expect(FORM).toMatch(/bg-\[#06C755\]/)
+  it('CTA uses an AA-compliant darker green (#067E37), not the legacy pink', () => {
+    // v1.49.2 — darkened from `#06C755` (white-on-green ~2.1:1, fails AA)
+    // to `#067E37` (~5.22:1, clears AA Normal 4.5:1) so the white label is
+    // genuinely readable against the button. Bidirectional regex because
+    // JSX renders `className` before `data-testid` on this element.
+    expect(FORM).toMatch(
+      /(?:data-testid="submit-goal-cta"[\s\S]{0,400}bg-\[#067E37\]|bg-\[#067E37\][\s\S]{0,400}data-testid="submit-goal-cta")/
+    )
     expect(FORM).not.toMatch(/data-testid="submit-goal-cta"[\s\S]{0,200}bg-vibrant-pink/)
+    expect(FORM).not.toMatch(/bg-\[#06C755\][\s\S]{0,400}data-testid="submit-goal-cta"/)
+    expect(FORM).not.toMatch(/data-testid="submit-goal-cta"[\s\S]{0,200}bg-\[#06C755\]/)
   })
 
   it('exposes a scorer dropdown (data-testid="submit-goal-scorer")', () => {
@@ -222,8 +230,11 @@ describe('v1.48.1 — Submit-Goal CTA singleton across matchday changes', () => 
     expect(noComments).not.toMatch(/<SubmitGoalForm[\s\S]{0,300}key=\{selectedMatchday\.id\}/)
   })
 
-  it('SubmitGoalForm resets `open` + `success` when matchday.id changes (singleton state cleanup)', () => {
-    expect(FORM).toMatch(/useEffect\(\(\)\s*=>\s*\{[\s\S]{0,200}setOpen\(false\)[\s\S]{0,200}setSuccess\(false\)[\s\S]{0,80}\},\s*\[matchday\.id\]\)/)
+  it('SubmitGoalForm resets `open` when matchday.id changes (singleton state cleanup)', () => {
+    // v1.49.2 dropped the inline success message + setSuccess state, so the
+    // useEffect only needs to close the modal on matchday change. The
+    // singleton-state-cleanup intent is preserved.
+    expect(FORM).toMatch(/useEffect\(\(\)\s*=>\s*\{[\s\S]{0,200}setOpen\(false\)[\s\S]{0,80}\},\s*\[matchday\.id\]\)/)
   })
 
   it('SubmitGoalModal syncs matchPublicId when the matches list changes', () => {
@@ -303,5 +314,47 @@ describe('goalTypeLabel (export preserved for backward compat)', () => {
   it('returns null for null/undefined goalType (Sheets path / pre-δ data)', () => {
     expect(goalTypeLabel(null)).toBeNull()
     expect(goalTypeLabel(undefined)).toBeNull()
+  })
+})
+
+describe('v1.49.2 — Submit Goal CTA polish (contrast + helper-text removal)', () => {
+  const FORM = readFileSync(FORM_PATH, 'utf-8')
+
+  // Regression target: pre-v1.49.2 the CTA used `bg-[#06C755]` with white
+  // text — measured contrast ~2.1:1 against white, fails WCAG AA Normal
+  // (4.5:1 required at 16px / 12pt). v1.49.2 darkens to `#067E37` (~5.22:1)
+  // and adds a subtle text-shadow for additional perceptual punch.
+  it('CTA carries a text-shadow utility for additional white-text legibility', () => {
+    expect(FORM).toMatch(
+      /\[text-shadow:0_1px_2px_rgba\(0,0,0,0\.35\)\][\s\S]{0,400}data-testid="submit-goal-cta"/
+    )
+  })
+
+  it('CTA hover state is the deeper shade (#056630), not the legacy hover', () => {
+    expect(FORM).toMatch(/hover:bg-\[#056630\][\s\S]{0,400}data-testid="submit-goal-cta"/)
+    expect(FORM).not.toMatch(/hover:bg-\[#05b34c\][\s\S]{0,400}data-testid="submit-goal-cta"/)
+  })
+
+  // Regression target: pre-v1.49.2 the form rendered a helper subtitle
+  // ("Auto-approved. Admin can edit / delete via the Stats tab.") and a
+  // post-submit confirmation ("✅ Submitted. Tap again to add another.")
+  // beneath the CTA. v1.49.2 removes both — just the button stays.
+  it('helper subtitle "Auto-approved. Admin can edit / delete..." is gone', () => {
+    expect(FORM).not.toContain('Auto-approved. Admin can edit / delete via the Stats tab.')
+  })
+
+  it('inline success message ("Tap again to add another") is gone', () => {
+    expect(FORM).not.toContain('Tap again to add another')
+  })
+
+  it('submit-goal-success testid is gone (no inline post-submit confirmation)', () => {
+    expect(FORM).not.toContain('data-testid="submit-goal-success"')
+  })
+
+  it('component no longer tracks an internal `success` state', () => {
+    // Removing the helper paragraph also retires the success state machine.
+    // The modal closing on submit IS the user-visible feedback.
+    expect(FORM).not.toMatch(/setSuccess\(/)
+    expect(FORM).not.toMatch(/const \[success,\s*setSuccess\]/)
   })
 })
