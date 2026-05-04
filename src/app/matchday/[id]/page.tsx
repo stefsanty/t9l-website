@@ -53,7 +53,13 @@ export default async function MatchdayPage({ params }: Props) {
   }
 
   const data = await getPublicLeagueData(leagueId)
-  const md = data.matchdays.find((m) => m.id === id)
+  // v1.49.1 — case-insensitive slug match. Matchday ids are canonical
+  // lowercase (`md1`, `md2`, ...) per `dbToPublicLeagueData`. Users sharing
+  // links may type or paste the URL with capital letters (`/matchday/MD2`,
+  // `/matchday/Md2`); normalize both sides so any common casing resolves
+  // to the same matchday.
+  const idLower = id.toLowerCase()
+  const md = data.matchdays.find((m) => m.id.toLowerCase() === idLower)
   if (!md) notFound()
 
   const nextMd = findNextMatchday(data.matchdays)
