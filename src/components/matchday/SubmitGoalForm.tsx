@@ -44,17 +44,14 @@ export default function SubmitGoalForm({
   teams: Team[]
 }) {
   const [open, setOpen] = useState(false)
-  const [success, setSuccess] = useState(false)
 
   // v1.48.1 — singleton CTA across matchday swipes. The Dashboard no longer
   // remounts this component on `selectedMatchday.id` change (the prior
-  // `key={selectedMatchday.id}` is gone), so we have to reset local state
-  // ourselves when the matchday context changes: a previously-open modal
-  // tied to MD2 must not linger after the user swipes to MD3, and the
-  // post-success "tap again" hint should clear too.
+  // `key={selectedMatchday.id}` is gone), so we have to reset the open
+  // state ourselves when the matchday context changes: a previously-open
+  // modal tied to MD2 must not linger after the user swipes to MD3.
   useEffect(() => {
     setOpen(false)
-    setSuccess(false)
   }, [matchday.id])
 
   if (matches.length === 0) return null
@@ -63,27 +60,12 @@ export default function SubmitGoalForm({
     <div className="mt-4 mb-6" data-testid="submit-goal-section">
       <button
         type="button"
-        onClick={() => {
-          setOpen(true)
-          setSuccess(false)
-        }}
-        className="w-full bg-[#06C755] hover:bg-[#05b34c] active:scale-95 text-white text-base font-black uppercase tracking-wider px-4 py-4 rounded-2xl shadow-[0_4px_12px_rgba(6,199,85,0.25)] transition-all"
+        onClick={() => setOpen(true)}
+        className="w-full bg-[#067E37] hover:bg-[#056630] active:scale-95 text-white text-base font-black uppercase tracking-wider px-4 py-4 rounded-2xl shadow-[0_4px_12px_rgba(6,199,85,0.25)] [text-shadow:0_1px_2px_rgba(0,0,0,0.35)] transition-all"
         data-testid="submit-goal-cta"
       >
         ⚽️ Submit a goal
       </button>
-      {success ? (
-        <p
-          className="text-fg-mid text-center text-[11px] font-black uppercase tracking-widest mt-2"
-          data-testid="submit-goal-success"
-        >
-          ✅ Submitted. Tap again to add another.
-        </p>
-      ) : (
-        <p className="text-fg-low text-[10px] mt-2 text-center max-w-xs mx-auto">
-          Auto-approved. Admin can edit / delete via the Stats tab.
-        </p>
-      )}
 
       {open ? (
         <SubmitGoalModal
@@ -92,10 +74,7 @@ export default function SubmitGoalForm({
           players={players}
           teams={teams}
           onClose={() => setOpen(false)}
-          onSuccess={() => {
-            setSuccess(true)
-            setOpen(false)
-          }}
+          onSuccess={() => setOpen(false)}
         />
       ) : null}
     </div>
