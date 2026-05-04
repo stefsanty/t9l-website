@@ -1,9 +1,6 @@
-import { notFound } from 'next/navigation'
-import { getPublicLeagueData } from '@/lib/publicData'
-import { getLeagueIdFromRequest } from '@/lib/getLeagueFromHost'
-import { findNextMatchday } from '@/lib/stats'
-import Dashboard from '@/components/Dashboard'
-import type { Goal } from '@/types'
+import { redirect, notFound } from 'next/navigation'
+import { prisma } from '@/lib/prisma'
+import { DEFAULT_LEAGUE_SLUG } from '@/lib/leagueSlug'
 
 export const metadata = {
   title: 'Matchday | T9L',
@@ -12,89 +9,66 @@ export const metadata = {
 type Props = { params: Promise<{ id: string }> }
 
 /**
- * v1.45.0 (PR ε) — per-matchday public route. Subdomain-aware via
- * `getLeagueIdFromRequest()`. The `[id]` segment matches the public matchday
- * id (`md1`, `md4`, etc. — same shape `dbToPublicLeagueData` produces).
- * 404s when the matchday isn't in the resolved league.
+ * v1.51.0 (PR 2 of the path-routing chain) — legacy matchday route.
  *
- * v1.47.0 — page delegated to a `MatchdayPageView` client component that
- * mirrored the homepage Dashboard layout.
+ * Pre-v1.51.0 this route rendered the per-matchday Dashboard directly,
+ * resolving the league from the host header (subdomain logic).
+ * v1.51.0 introduces the canonical path-based form
+ * `/league/<slug>/md/<id>`; this legacy route now 308-redirects to it
+ * so shared links (Slack, LINE chat, bookmarks) keep working.
  *
- * v1.48.0 — homepage IS the matchday page. The route is now a thin server
- * component that resolves the league + verifies the matchday exists, then
- * hands data to the same `Dashboard` the apex renders, with
- * `initialMatchdayId` pre-selecting the URL matchday. The user can swipe /
- * arrow / dot between matchdays from there as on homepage; the URL is
- * the entry point, not a continuous source of truth, so subsequent
- * navigation is local state (no per-swipe URL push).
+ * Resolution strategy:
+ *   1. Take the URL matchday id (e.g. `md2`, `MD2`).
+ *   2. Lowercase it (matchday ids are canonical lowercase).
+ *   3. Find the GameWeek + League the matchday belongs to. We use the
+ *      Prisma `gameWeek` table because the public matchday id format is
+ *      `md<weekNumber>` per `dbToPublicLeagueData`. Look up by week
+ *      number and pick the league whose subdomain (slug) is non-null —
+ *      preferring the default league if multiple match (today there is
+ *      only one league with public matchdays, so this is unambiguous).
+ *   4. Compute the canonical URL `/league/<slug>/md/<id>`.
+ *   5. `redirect()` (Next.js issues a 308 by default for server-side
+ *      redirects in route handlers and pages).
  *
- * `MatchdayPageView` is gone — it was a thin shim and is no longer needed.
- * The Submit-goal CTA + modal that lived inside it now live inside the
- * Dashboard (homepage gets the CTA too, per v1.48.0's open-attribution
- * model).
+ * If the matchday cannot be resolved to a league with a slug, return
+ * `notFound()` so the user gets the standard 404 page rather than a
+ * silent fallback.
+ *
+ * The redirect is server-side (no client JS needed) so search engines
+ * and link previews follow it transparently.
  */
-export default async function MatchdayPage({ params }: Props) {
+export default async function LegacyMatchdayRedirect({ params }: Props) {
   const { id } = await params
-  const leagueId = await getLeagueIdFromRequest()
-
-  if (leagueId === null) {
-    return (
-      <div className="flex items-center justify-center min-h-dvh bg-midnight text-white px-6 text-center">
-        <div>
-          <p className="font-display text-3xl font-black uppercase text-white/80 mb-2">
-            League not found
-          </p>
-          <p className="text-sm text-white/80 font-bold uppercase tracking-widest">
-            This subdomain is not attached to a league.
-          </p>
-        </div>
-      </div>
-    )
-  }
-
-  const data = await getPublicLeagueData(leagueId)
-  // v1.49.1 — case-insensitive slug match. Matchday ids are canonical
-  // lowercase (`md1`, `md2`, ...) per `dbToPublicLeagueData`. Users sharing
-  // links may type or paste the URL with capital letters (`/matchday/MD2`,
-  // `/matchday/Md2`); normalize both sides so any common casing resolves
-  // to the same matchday.
   const idLower = id.toLowerCase()
-  const md = data.matchdays.find((m) => m.id.toLowerCase() === idLower)
-  if (!md) notFound()
 
-  const nextMd = findNextMatchday(data.matchdays)
-
-  return (
-    <Dashboard
-      teams={data.teams}
-      players={data.players}
-      matchdays={data.matchdays}
-      goals={data.goals}
-      availability={data.availability}
-      availabilityStatuses={data.availabilityStatuses}
-      played={data.played}
-      nextMd={nextMd}
-      initialMatchdayId={md.id}
-    />
-  )
-}
-
-/**
- * Pure helper retained for backward compat — used by tests + the homepage
- * MatchdayCard's per-goal decoration. Returns the short label for a goalType
- * enum value (or null when no decoration applies).
- */
-export function goalTypeLabel(t: Goal['goalType']): string | null {
-  switch (t) {
-    case 'OPEN_PLAY':
-      return null
-    case 'SET_PIECE':
-      return 'set piece'
-    case 'PENALTY':
-      return 'pen'
-    case 'OWN_GOAL':
-      return 'OG'
-    default:
-      return null
+  // Public matchday id format is `md<weekNumber>` (per
+  // dbToPublicLeagueData.ts). Parse the week number out and look up
+  // the matching GameWeek + League. There is no leakage risk here —
+  // we're already inside a published-route handler.
+  const match = idLower.match(/^md(\d+)$/)
+  if (!match) {
+    notFound()
   }
+  const weekNumber = Number(match![1])
+
+  // Find the GameWeek row for this week number across all leagues.
+  // Today the prod prod surface has one league with public matchdays;
+  // tomorrow with multi-league we prefer the default league's match
+  // when there's a tie (legacy /matchday URLs were always default
+  // pre-v1.51.0, so default is the conservative default).
+  const gameWeeks = await prisma.gameWeek.findMany({
+    where: { weekNumber },
+    select: {
+      leagueId: true,
+      league: { select: { isDefault: true, subdomain: true } },
+    },
+  })
+
+  if (gameWeeks.length === 0) notFound()
+
+  // Prefer the default league when multiple matches; fall back to first.
+  const preferred = gameWeeks.find((gw) => gw.league.isDefault) ?? gameWeeks[0]
+  const slug = preferred.league.subdomain ?? DEFAULT_LEAGUE_SLUG
+
+  redirect(`/league/${slug}/md/${idLower}`)
 }

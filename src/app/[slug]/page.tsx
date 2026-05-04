@@ -1,7 +1,7 @@
 import { notFound } from 'next/navigation'
 import Dashboard from '@/components/Dashboard'
 import { findNextMatchday } from '@/lib/stats'
-import { getLeagueIdBySlug } from '@/lib/leagueSlug'
+import { getLeagueIdBySlug, normalizeLeagueSlug } from '@/lib/leagueSlug'
 import { getPublicLeagueData } from '@/lib/publicData'
 
 export const metadata = {
@@ -70,6 +70,7 @@ export default async function LeagueShortAliasPage({ params }: Props) {
       availabilityStatuses={data.availabilityStatuses}
       played={data.played}
       nextMd={nextMd}
+      leagueSlug={normalizeLeagueSlug(slug)}
     />
   )
 }

@@ -2,6 +2,7 @@ import { findNextMatchday } from "@/lib/stats";
 import Dashboard from "@/components/Dashboard";
 import { getLeagueIdFromRequest } from "@/lib/getLeagueFromHost";
 import { getPublicLeagueData } from "@/lib/publicData";
+import { DEFAULT_LEAGUE_SLUG } from "@/lib/leagueSlug";
 
 /**
  * Public landing page — apex AND subdomain both render through here.
@@ -78,6 +79,7 @@ export default async function Home() {
       availabilityStatuses={data.availabilityStatuses}
       played={data.played}
       nextMd={nextMd}
+      leagueSlug={DEFAULT_LEAGUE_SLUG}
     />
   );
 }
