@@ -150,13 +150,13 @@ export default function NextMatchdayBanner({
         {/* Left chevron */}
         <button
           onClick={() => navigate('prev')}
-          className={`absolute left-0 top-1/2 -translate-y-1/2 z-20 flex items-center justify-center w-7 h-7 rounded-full bg-surface/80 border border-border-subtle text-fg-mid transition-all hover:text-fg-high hover:border-border-default -translate-x-3 ${
-            hasPrev ? 'opacity-60 hover:opacity-100' : 'opacity-0 pointer-events-none'
+          className={`absolute left-0 top-1/2 -translate-y-1/2 z-20 flex items-center justify-center w-9 h-9 rounded-full bg-header-bg backdrop-blur-md border border-border-default shadow-md text-fg-high transition-all hover:text-vibrant-pink hover:border-vibrant-pink hover:scale-110 -translate-x-3 ${
+            hasPrev ? 'opacity-100' : 'opacity-0 pointer-events-none'
           }`}
           aria-label="Previous matchday"
         >
-          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" />
+          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M15 19l-7-7 7-7" />
           </svg>
         </button>
 
@@ -176,13 +176,13 @@ export default function NextMatchdayBanner({
         {/* Right chevron */}
         <button
           onClick={() => navigate('next')}
-          className={`absolute right-0 top-1/2 -translate-y-1/2 z-20 flex items-center justify-center w-7 h-7 rounded-full bg-surface/80 border border-border-subtle text-fg-mid transition-all hover:text-fg-high hover:border-border-default translate-x-3 ${
-            hasNext ? 'opacity-60 hover:opacity-100' : 'opacity-0 pointer-events-none'
+          className={`absolute right-0 top-1/2 -translate-y-1/2 z-20 flex items-center justify-center w-9 h-9 rounded-full bg-header-bg backdrop-blur-md border border-border-default shadow-md text-fg-high transition-all hover:text-vibrant-pink hover:border-vibrant-pink hover:scale-110 translate-x-3 ${
+            hasNext ? 'opacity-100' : 'opacity-0 pointer-events-none'
           }`}
           aria-label="Next matchday"
         >
-          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
+          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M9 5l7 7-7 7" />
           </svg>
         </button>
       </div>
