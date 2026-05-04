@@ -244,6 +244,45 @@ describe('v1.48.1 — Submit-Goal CTA singleton across matchday changes', () => 
   })
 })
 
+describe('v1.49.1 — Dashboard locks the banner to the URL-pre-selected matchday', () => {
+  const DASHBOARD = readFileSync(DASHBOARD_PATH, 'utf-8')
+
+  // Regression target: pre-v1.49.1 Dashboard mounted NextMatchdayBanner without
+  // passing `lockToSelected`. Banner's "auto-default to user's next playing
+  // matchday" useEffect (NextMatchdayBanner.tsx:72) fired once `useSession`
+  // hydrated and silently jumped from the URL-pre-selected matchday to the
+  // user's "next playing" matchday — so visiting /matchday/md2 as a logged-in
+  // player whose next playing matchday was MD3 ended up showing MD3.
+  // Fix: pass `lockToSelected={initialMatchdayId != null}` so the URL is
+  // treated as the source of truth on the matchday route, while the homepage
+  // (initialMatchdayId === undefined) keeps the auto-default.
+  it('passes lockToSelected={initialMatchdayId != null} to NextMatchdayBanner', () => {
+    expect(DASHBOARD).toMatch(
+      /<NextMatchdayBanner[\s\S]{0,400}lockToSelected=\{initialMatchdayId\s*!=\s*null\}/
+    )
+  })
+})
+
+describe('v1.49.1 — /matchday/[id] case-insensitive slug match', () => {
+  const PAGE = readFileSync(PAGE_PATH, 'utf-8')
+
+  // Regression target: pre-v1.49.1 the page did `m.id === id` exactly, so
+  // /matchday/MD2 (capital, the way users naturally type "matchday 2")
+  // returned undefined → notFound(). Fix: normalize both sides to lowercase
+  // before comparing.
+  it('lowercases the URL slug before comparing to matchday.id', () => {
+    expect(PAGE).toMatch(/id\.toLowerCase\(\)/)
+  })
+
+  it('lowercases matchday.id when comparing (mirror normalization)', () => {
+    expect(PAGE).toMatch(/m\.id\.toLowerCase\(\)/)
+  })
+
+  it('does NOT do an exact-case `m.id === id` comparison anymore (regression target)', () => {
+    expect(stripComments(PAGE)).not.toMatch(/m\.id === id\b/)
+  })
+})
+
 describe('goalTypeLabel (export preserved for backward compat)', () => {
   it('returns null for OPEN_PLAY (no decoration)', () => {
     expect(goalTypeLabel('OPEN_PLAY')).toBeNull()

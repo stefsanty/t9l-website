@@ -145,6 +145,7 @@ export default function Dashboard({
                 onMatchdayChange={setSelectedMatchdayId}
                 teams={teams}
                 goals={goals}
+                lockToSelected={initialMatchdayId != null}
               />
 
               {submitGateOpen && selectedMatchday ? (
