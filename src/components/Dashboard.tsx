@@ -149,7 +149,6 @@ export default function Dashboard({
 
               {submitGateOpen && selectedMatchday ? (
                 <SubmitGoalForm
-                  key={selectedMatchday.id}
                   matchday={selectedMatchday}
                   matches={submitMatches}
                   players={players}
