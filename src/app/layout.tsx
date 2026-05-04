@@ -2,9 +2,11 @@ import type { Metadata } from "next";
 import { Inter, Barlow_Condensed, Barlow, DM_Mono } from "next/font/google";
 import Script from "next/script";
 import { Toaster } from "sonner";
+import { getServerSession } from "next-auth";
 import AuthProvider from "@/components/AuthProvider";
 import ThemeProvider from "@/components/ThemeProvider";
 import VersionFooter from "@/components/VersionFooter";
+import { authOptions } from "@/lib/auth";
 import "./globals.css";
 
 const inter = Inter({
@@ -35,11 +37,32 @@ export const metadata: Metadata = {
   description: "Mobile dashboard for the Tennozu 9-Aside League.",
 };
 
-export default function RootLayout({
+/**
+ * v1.49.0 — async layout that resolves the NextAuth session server-side
+ * and threads it into `<SessionProvider>` via the `session` prop. Pre-
+ * v1.49.0 the layout was synchronous and `SessionProvider` mounted with
+ * no seed, forcing a post-paint `/api/auth/session` round-trip on every
+ * load that re-rendered every `useSession()` consumer (Dashboard,
+ * UserTeamBadge, RsvpBar, NextMatchdayBanner, GuestLoginBanner, header
+ * LineLoginButton, etc.) — the user-visible "auth UI flashes in" lag.
+ *
+ * The JWT callback runs server-side in parallel with the page's RSC
+ * data fetch (Next.js automatically parallelizes layout + page on the
+ * same request), so total TTFB is unchanged. The user just sees the
+ * correct auth-aware UI on first paint instead of 300ms-1s later.
+ *
+ * `force-dynamic` is implicit: every authenticated route already reads
+ * the host header (`getLeagueIdFromRequest` in `app/page.tsx`, etc.) so
+ * the app was already dynamic per-request. Adding `getServerSession`
+ * here doesn't add new dynamic surface — auth was already gating
+ * dynamism upstream.
+ */
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const session = await getServerSession(authOptions);
   return (
     <html
       lang="en"
@@ -87,7 +110,7 @@ export default function RootLayout({
           `}
         </Script>
         <ThemeProvider>
-          <AuthProvider>
+          <AuthProvider session={session}>
             {children}
             <VersionFooter variant="public" />
           </AuthProvider>
