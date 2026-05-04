@@ -22,10 +22,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
  *      gate.
  */
 
-const { setRsvpOrThrowMock, waitUntilMock, getLeagueIdFromRequestMock } = vi.hoisted(() => ({
+const { setRsvpOrThrowMock, waitUntilMock, getDefaultLeagueIdMock } = vi.hoisted(() => ({
   setRsvpOrThrowMock: vi.fn(),
   waitUntilMock: vi.fn(),
-  getLeagueIdFromRequestMock: vi.fn(),
+  getDefaultLeagueIdMock: vi.fn(),
 }))
 
 vi.mock('@/lib/rsvpStore', () => ({
@@ -78,8 +78,8 @@ vi.mock('@vercel/functions', () => ({
   waitUntil: waitUntilMock,
 }))
 
-vi.mock('@/lib/getLeagueFromHost', () => ({
-  getLeagueIdFromRequest: getLeagueIdFromRequestMock,
+vi.mock('@/lib/leagueSlug', () => ({
+  getDefaultLeagueId: getDefaultLeagueIdMock,
 }))
 
 // Imports must come after vi.mock calls.
@@ -91,7 +91,7 @@ const upsertMock = vi.mocked(prisma.availability.upsert)
 beforeEach(() => {
   vi.clearAllMocks()
   setRsvpOrThrowMock.mockResolvedValue(undefined)
-  getLeagueIdFromRequestMock.mockResolvedValue('l-minato-2025')
+  getDefaultLeagueIdMock.mockResolvedValue('l-minato-2025')
   // Eagerly invoke the deferred callback so the Prisma upsert runs in the test.
   waitUntilMock.mockImplementation((p: unknown) => {
     ;(p as Promise<unknown>).catch(() => {})
@@ -170,11 +170,11 @@ describe('POST /api/rsvp — v1.8.0 Redis-canonical sync, Prisma deferred', () =
     expect(waitUntilMock).not.toHaveBeenCalled()
   })
 
-  it('threads the resolved leagueId from getLeagueIdFromRequest into gameWeek.findUnique (v1.22.0 regression)', async () => {
-    // Pre-v1.22.0 the route hardcoded leagueId='l-minato-2025'. This test
-    // pins the inversion: a subdomain RSVP routes to the per-subdomain
-    // league's GameWeeks, not the default league's.
-    getLeagueIdFromRequestMock.mockResolvedValueOnce('l-tamachi-2026')
+  it('v1.53.0 — threads the resolved default leagueId into gameWeek.findUnique', async () => {
+    // Post-subdomain-teardown the route always uses the default
+    // league. This pins the call shape so a regression that hardcodes
+    // a different leagueId or drops the lookup fails the test.
+    getDefaultLeagueIdMock.mockResolvedValueOnce('l-minato-2025')
 
     await POST(makeRequest('md3', 'GOING'))
 
@@ -182,13 +182,13 @@ describe('POST /api/rsvp — v1.8.0 Redis-canonical sync, Prisma deferred', () =
       (await import('@/lib/prisma')).prisma.gameWeek.findUnique,
     )
     expect(findUniqueMock).toHaveBeenCalledWith({
-      where: { leagueId_weekNumber: { leagueId: 'l-tamachi-2026', weekNumber: 3 } },
+      where: { leagueId_weekNumber: { leagueId: 'l-minato-2025', weekNumber: 3 } },
       select: { id: true, startDate: true },
     })
   })
 
-  it('returns 404 when getLeagueIdFromRequest returns null (unknown subdomain)', async () => {
-    getLeagueIdFromRequestMock.mockResolvedValueOnce(null)
+  it('v1.53.0 — returns 404 when getDefaultLeagueId returns null (catastrophic config)', async () => {
+    getDefaultLeagueIdMock.mockResolvedValueOnce(null)
 
     const res = await POST(makeRequest('md3', 'GOING'))
 

@@ -6,12 +6,13 @@ import AssignPlayerClient from '@/components/AssignPlayerClient';
 import { authOptions } from '@/lib/auth';
 import { getPublicLeagueData } from '@/lib/publicData';
 import { getLinkedPlayerIds } from '@/lib/linkedPlayers';
-import { getLeagueIdFromRequest } from '@/lib/getLeagueFromHost';
+import { getDefaultLeagueId } from '@/lib/leagueSlug';
 
 export default async function AssignPlayerPage() {
-  // v1.23.0 — resolve the active league from the request Host so subdomain
-  // viewers pick from their league's roster, not the default league's.
-  const leagueId = await getLeagueIdFromRequest();
+  // v1.53.0 — subdomain teardown. The legacy /assign-player picker is
+  // LINE-keyed end-to-end and always operates on the default league;
+  // multi-league self-serve binding belongs in /join/[code] (PR ζ).
+  const leagueId = await getDefaultLeagueId();
 
   // Both reads are in the SSR critical path. They're independent so we run
   // them in parallel — the Prisma findMany is cheap (few-dozen-row scan on

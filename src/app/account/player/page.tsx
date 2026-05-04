@@ -3,7 +3,7 @@ import Link from 'next/link'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
-import { getLeagueIdFromRequest } from '@/lib/getLeagueFromHost'
+import { getDefaultLeagueId } from '@/lib/leagueSlug'
 import AccountPlayerForm, { type AccountPlayerFormProps } from './AccountPlayerForm'
 
 /**
@@ -114,14 +114,14 @@ export default async function AccountPlayerPage() {
     )
   }
 
-  // Resolve the request's league context so we can show the right
-  // assignment + roster for the teammate-preference picker.
-  const leagueId = await getLeagueIdFromRequest()
+  // v1.53.0 — subdomain teardown. /account/player always operates on
+  // the default league. A future PR can scope this to a per-league URL
+  // if account editing per-league becomes a requirement.
+  const leagueId = await getDefaultLeagueId()
 
-  // Pick the assignment that matches the request league (default-league
-  // on apex; subdomain's league elsewhere) — falls back to the most
-  // recent assignment if there's no match (e.g. user visited the apex
-  // but is currently rostered in a subdomain league).
+  // Pick the assignment that matches the default league — falls back
+  // to the most recent assignment if there's no match (e.g. user is
+  // rostered only in a non-default league via /league/<slug>).
   const activeAssignment =
     (leagueId
       ? player.leagueAssignments.find((a) => a.leagueTeam.leagueId === leagueId && a.toGameWeek === null)

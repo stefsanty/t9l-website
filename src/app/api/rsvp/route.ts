@@ -6,7 +6,7 @@ import { writeRosterAvailability } from '@/lib/sheets'
 import { getWriteMode, type WriteMode } from '@/lib/settings'
 import { prisma } from '@/lib/prisma'
 import { setRsvpOrThrow } from '@/lib/rsvpStore'
-import { getLeagueIdFromRequest } from '@/lib/getLeagueFromHost'
+import { getDefaultLeagueId } from '@/lib/leagueSlug'
 import type { RsvpStatus } from '@prisma/client'
 
 type IncomingStatus = 'GOING' | 'UNDECIDED' | ''
@@ -139,14 +139,16 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Invalid matchdayId' }, { status: 400 })
   }
 
-  // v1.22.0 — resolve the active league from the request's Host header so
-  // subdomain RSVPs (e.g. tamachi.t9l.me) write to the correct League's
-  // GameWeeks. Pre-v1.22.0 this hardcoded `l-minato-2025`, silently
-  // mis-routing any non-default subdomain RSVP to the default league.
-  const leagueId = await getLeagueIdFromRequest()
+  // v1.53.0 — subdomain teardown. RSVPs always write to the default
+  // league. Multi-league RSVPs are out of scope for v1; the path-based
+  // routing (PRs 1-3) lets users navigate between leagues, but RSVP
+  // writes stay default-only until a future PR adds league context to
+  // the API request body. (Today only one league has public matchdays
+  // anyway, so this matches the observed behavior.)
+  const leagueId = await getDefaultLeagueId()
   if (!leagueId) {
     return NextResponse.json(
-      { error: 'League not found for this host' },
+      { error: 'No default league configured' },
       { status: 404 },
     )
   }

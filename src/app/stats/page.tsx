@@ -5,7 +5,7 @@ import {
 } from "@/lib/stats";
 import StatsDashboard from "@/components/StatsDashboard";
 import { getPublicLeagueData } from "@/lib/publicData";
-import { getLeagueIdFromRequest } from "@/lib/getLeagueFromHost";
+import { getDefaultLeagueId } from "@/lib/leagueSlug";
 
 async function fetchPlayerPictures(
   playerIds: string[],
@@ -36,9 +36,10 @@ async function fetchPlayerPictures(
 }
 
 export default async function StatsPage() {
-  // v1.23.0 — resolve active league from the request Host so subdomain
-  // dashboards show their league's stats, not the default league's.
-  const leagueId = await getLeagueIdFromRequest();
+  // v1.53.0 — subdomain teardown. /stats always renders the default
+  // league. Per-league stats can be added under /league/<slug>/stats
+  // in a future PR.
+  const leagueId = await getDefaultLeagueId();
 
   let data;
   try {

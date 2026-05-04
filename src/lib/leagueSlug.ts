@@ -6,11 +6,11 @@ import { prisma } from './prisma'
  * lookups for path-based league resolution.
  *
  * Pre-v1.50.0 the league context for a request came from the host header
- * (`getLeagueIdFromRequest()` in `lib/getLeagueFromHost.ts`). With path-based
- * routing, the slug is read from the URL pathname (`/league/[slug]` or the
- * `/[slug]` catch-all) and resolved here. The DB column powering this is
- * `League.subdomain` (kept under that name for legacy-compat — PR 4 may
- * rename it to `slug`).
+ * (subdomain → leagueId). PR 4 (v1.53.0) of the path-routing chain
+ * stripped that helper entirely. League context now flows from path
+ * params (`/league/[slug]`, `/[slug]`) and resolves here. The DB column
+ * powering this is `League.subdomain` (column rename to `slug` is
+ * deferred — keeping the name doesn't change semantics).
  *
  * Reserved-word policy is enforced both at admin-create time (PR 5) and
  * at route-resolve time (here) as defense in depth: even if a malformed
