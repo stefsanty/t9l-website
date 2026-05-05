@@ -106,39 +106,57 @@ export const getIdentityReadSource = unstable_cache(
 )
 
 /**
- * v1.65.2 — Membership-spec rework, stage 3 read-flip flag.
+ * v1.65.2 / v1.65.3 — Membership-spec rework, stage 3 read-flip flag.
  *
  * Per [outputs/data-model-spec-audit.md] §3 stage 3: switch reads from
  * the legacy `Player.position` / `Player.applicationStatus` /
  * `Player.applicationLeagueId` to the new `PlayerLeagueMembership.position` /
  * `PlayerLeagueMembership.applicationStatus` / direct PLM.leagueId fields.
  *
- *   - 'legacy' (default): reads use Player.* legacy fields.
- *   - 'plm':              reads use PlayerLeagueMembership.* fields (canonical
- *                         after dual-write soak in v1.65.1).
+ *   - 'plm' (DEFAULT after v1.65.3): reads use PlayerLeagueMembership.*
+ *     fields (canonical after dual-write soak in v1.65.1+v1.65.2).
+ *   - 'legacy' (revert path): reads use Player.* legacy fields.
+ *     Operator can flip back via the Setting row if v1.65.3 surfaces
+ *     issues during soak.
  *
- * v1.65.2 ships the flag + branches the recruiting banner viewer-state
- * helper to honor it. v1.65.3 flips the default to 'plm' (operator action
- * via Setting row update + soak window). v1.65.4 drops the legacy fields
- * entirely + the flag becomes meaningless (only one path remains).
+ * v1.65.2 shipped with default 'legacy' — code in place but inert.
+ * **v1.65.3 flips the default to 'plm'** — every authenticated session
+ * post-deploy reads from the new fields by default. The Setting row
+ * still overrides the default; operator can flip back to 'legacy' via:
+ *
+ *   INSERT INTO "Setting" (id, category, key, "leagueId", value, "updatedAt")
+ *   VALUES ('s-playerData-readSource-global', 'playerData', 'read-source',
+ *           NULL, 'legacy', NOW())
+ *   ON CONFLICT (id) DO UPDATE
+ *      SET value = 'legacy', "updatedAt" = NOW();
+ *
+ * v1.65.4 drops the legacy Player.* fields entirely; the flag becomes
+ * meaningless (only the PLM path remains).
  *
  * Position reads (SquadList / MatchdayAvailability / dbToPublicLeagueData)
- * are NOT branched at v1.65.2 — dual-write keeps `Player.position` and
- * `PlayerLeagueMembership.position` in sync, so the cosmetic divergence
+ * are NOT branched at v1.65.2/v1.65.3 — dual-write keeps `Player.position`
+ * and `PlayerLeagueMembership.position` in sync, so the cosmetic divergence
  * doesn't exist yet. v1.65.4 migrates these atomically when Player.position
  * is dropped.
- *
- * Default 'legacy' is the load-bearing safety property — v1.65.2 ships the
- * code inert. Reverts to 'legacy' if the v1.65.3 flip surfaces issues.
  */
 export type PlayerDataReadSource = 'legacy' | 'plm'
 
 export const SETTING_ID_PLAYER_DATA_READ_SOURCE = 's-playerData-readSource-global'
 
+/**
+ * v1.65.3 — default flipped from 'legacy' to 'plm'.
+ *
+ * Only the literal 'legacy' string returns 'legacy'. Everything else
+ * (null / undefined / unknown / 'plm' / etc.) returns 'plm'.
+ *
+ * The case sensitivity matters: 'LEGACY' / 'Legacy' / arbitrary strings
+ * all return 'plm'. Operator opt-out is intentionally precise — typos
+ * land on the new default rather than the legacy fallback.
+ */
 export function resolvePlayerDataReadSource(
   value: string | null | undefined,
 ): PlayerDataReadSource {
-  return value === 'plm' ? 'plm' : 'legacy'
+  return value === 'legacy' ? 'legacy' : 'plm'
 }
 
 export const getPlayerDataReadSource = unstable_cache(
@@ -149,11 +167,15 @@ export const getPlayerDataReadSource = unstable_cache(
       })
       return resolvePlayerDataReadSource(row?.value)
     } catch (err) {
-      // Defensive — Settings table read failures should not flip the
-      // entire authenticated population onto a half-tested read path.
-      // Fall back to 'legacy' (the safe default).
-      console.warn('[settings] getPlayerDataReadSource failed; falling back to legacy:', err)
-      return 'legacy'
+      // v1.65.3 — Settings outage falls back to the new 'plm' default.
+      // The Player.* legacy fields are still populated through v1.65.4,
+      // so the worst-case-flag-failure outcome is "PLM-canonical reads
+      // proceed", which is the post-soak target anyway.
+      console.warn(
+        '[settings] getPlayerDataReadSource failed; falling back to plm (v1.65.3 default):',
+        err,
+      )
+      return 'plm'
     }
   },
   ['setting:playerData:readSource:global'],
