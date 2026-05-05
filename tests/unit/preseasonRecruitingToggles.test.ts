@@ -345,7 +345,12 @@ describe('v1.63.0 — Dashboard branches on flags', () => {
   })
 
   it('mounts RecruitingBanner when recruiting is ON', () => {
-    expect(DASHBOARD_SRC).toMatch(/recruiting\s*&&\s*<RecruitingBanner\b/)
+    // v1.64.0 — banner now needs `league` + `recruitingState` props from
+    // the page-level RSC, so the branch is `recruiting && league &&
+    // recruitingState && <RecruitingBanner ...>`. Pin the chain.
+    expect(DASHBOARD_SRC).toMatch(
+      /recruiting\s*&&\s*league\s*&&\s*recruitingState\s*&&[\s\S]{0,200}<RecruitingBanner\b/,
+    )
   })
 
   it('passes hideStatsLink={preseasonMode} to Header', () => {
@@ -446,11 +451,18 @@ describe('v1.63.0 — RecruitingBanner', () => {
     expect(RECRUITING_SRC).toMatch(/Recruiting Now/)
   })
 
-  it('exposes the testid hook for the placeholder TODO destination', () => {
-    expect(RECRUITING_SRC).toMatch(/data-testid="recruiting-cta-todo"/)
+  it('exposes one of the v1.64.0 state-specific testids (CTA replaces the v1.63.0 TODO placeholder)', () => {
+    // v1.64.0 — the v1.63.0 placeholder `recruiting-cta-todo` testid was
+    // replaced by five state-specific testids:
+    //   recruiting-banner-approved / recruiting-banner-pending /
+    //   recruiting-banner-cta-unauth / recruiting-banner-cta-noplayer /
+    //   recruiting-banner-cta-otherleague
+    // Pin at least one to confirm the rewrite landed; the v1.64.0 unit
+    // tests pin the rest exhaustively.
+    expect(RECRUITING_SRC).toMatch(/data-testid="recruiting-banner-/)
   })
 
-  it('renders as a button (clickable) with no destination wired yet', () => {
+  it('renders as a button (clickable) for at least one CTA state', () => {
     expect(RECRUITING_SRC).toMatch(/<button[\s\S]+?onClick=/)
   })
 })

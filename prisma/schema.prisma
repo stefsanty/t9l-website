@@ -248,6 +248,17 @@ model Player {
   idBackUrl    String?
   idUploadedAt DateTime?
 
+  // v1.64.0 — application/recruiting workflow. `applicationStatus`
+  // gates whether a Player is a real roster member (APPROVED) or a
+  // pending self-service application from the recruiting banner
+  // (PENDING). Default APPROVED so every existing Player row backfills
+  // to "real" — only new Players created via the recruiting banner
+  // get PENDING. `applicationLeagueId` memos which league the
+  // application targets (admin reviews per-league); nullable on
+  // existing rows.
+  applicationStatus   PlayerApplicationStatus @default(APPROVED)
+  applicationLeagueId String?
+
   leagueAssignments PlayerLeagueAssignment[]
   goals             Goal[]
   assists           Assist[]
@@ -271,6 +282,18 @@ enum PlayerPosition {
   DF
   MF
   FW
+}
+
+// v1.64.0 — application status. APPROVED is the default for every
+// existing Player at v1.64.0 deploy time (real roster members; admin-
+// pre-staged or invite-redeemed). PENDING is set on new self-service
+// applications via the recruiting banner; admin reviews on the Players
+// tab and either approves (flips to APPROVED + creates a PlayerLeagueAssignment)
+// or rejects (deletes the Player record entirely since the data was
+// supplied by an unverified user).
+enum PlayerApplicationStatus {
+  APPROVED
+  PENDING
 }
 
 model PlayerLeagueAssignment {

@@ -1,48 +1,173 @@
 'use client'
 
+import { useState } from 'react'
+import { signIn } from 'next-auth/react'
+import { toast } from 'sonner'
+import Image from 'next/image'
+import ApplyToLeagueModal from './ApplyToLeagueModal'
+import type { RecruitingViewerState } from '@/lib/recruitingViewerState'
+
 /**
- * v1.63.0 — Recruiting banner.
+ * v1.64.0 — Context-aware recruiting banner.
  *
- * Surfaces a prominent "RECRUITING NOW" CTA at the top of the public
- * homepage when `League.recruiting === true`. Visual treatment is
- * eye-catching by design — vibrant-pink accent gradient + black text
- * + diagonal pattern — so it stands out above the rest of the
- * homepage chrome.
+ * Replaces the v1.63.0 placeholder TODO banner. Renders one of five
+ * surfaces based on the viewer's relationship to the recruiting league:
  *
- * Click target is currently a no-op TODO (the banner reads as a
- * placeholder for the future per-league recruiting destination, e.g.
- * a Google form, an admin-defined URL, or an in-app onboarding flow).
- * The `data-testid="recruiting-cta-todo"` hook lets us regression-pin
- * the placeholder so a future PR wiring a real target removes the
- * TODO surface intentionally rather than by accident.
+ * State A ('approved_this'):  status banner — "you are in <league>!
+ *                              your team [logo] <name>" — no click action.
+ * State B ('pending_this'):   "your application is being reviewed" —
+ *                              no click action.
+ * State C ('no_player'):      "RECRUITING NOW" CTA — click opens
+ *                              `<ApplyToLeagueModal>`.
+ * State D ('in_other_league'):"RECRUITING NOW" CTA — click surfaces a
+ *                              "contact admin" toast (v1.64.0 punts the
+ *                              multi-league apply flow per the brief:
+ *                              "expand to per-league later").
+ * State E ('unauthenticated'):"RECRUITING NOW" CTA — click routes to
+ *                              `/auth/signin` with a callback to retry
+ *                              the click after auth.
+ *
+ * The viewer state is computed server-side via
+ * `getRecruitingViewerState(leagueId)` and threaded through Dashboard
+ * as a prop — no extra round-trip on first render.
  */
 
-export default function RecruitingBanner() {
-  return (
-    <button
-      type="button"
-      data-testid="recruiting-cta-todo"
-      onClick={() => {
-        // TODO(v1.64.0+): wire to per-league recruiting target — admin-
-        // configurable URL, or an in-app sign-up flow. For now the
-        // banner is a visual surface only; no destination.
-      }}
-      className="w-full mt-2 mb-3 rounded-2xl border border-vibrant-pink/60 bg-gradient-to-r from-vibrant-pink to-orange-500 px-4 py-3 text-left relative overflow-hidden hover:opacity-95 transition-opacity active:scale-[0.99]"
-    >
-      <div className="absolute inset-0 bg-diagonal-pattern opacity-10 pointer-events-none" />
-      <div className="relative flex items-center justify-between gap-3">
-        <div>
-          <p className="font-display text-2xl font-black uppercase tracking-tight text-white leading-none">
-            Recruiting Now
-          </p>
-          <p className="text-[11px] font-bold uppercase tracking-widest text-white/90 mt-1">
-            Looking for new players — tap to learn more
-          </p>
+interface Props {
+  league: { id: string; name: string }
+  viewer: RecruitingViewerState
+}
+
+export default function RecruitingBanner({ league, viewer }: Props) {
+  const [applyOpen, setApplyOpen] = useState(false)
+
+  // ── State A — approved member of this league ─────────────────────────
+  if (viewer.kind === 'approved_this') {
+    return (
+      <div
+        data-testid="recruiting-banner-approved"
+        className="w-full mt-2 mb-3 rounded-2xl border border-electric-green/40 bg-gradient-to-r from-electric-green/15 to-electric-green/5 px-4 py-3 relative overflow-hidden"
+      >
+        <div className="flex items-center gap-3">
+          {viewer.team.logoUrl ? (
+            <div className="w-10 h-10 rounded-full overflow-hidden bg-background border border-border-default shrink-0">
+              <Image
+                src={viewer.team.logoUrl}
+                alt={viewer.team.name}
+                width={40}
+                height={40}
+                className="object-cover"
+                unoptimized
+              />
+            </div>
+          ) : (
+            <div className="w-10 h-10 rounded-full bg-electric-green/20 border border-electric-green/40 flex items-center justify-center text-electric-green font-black text-sm shrink-0">
+              {viewer.team.name[0]?.toUpperCase() ?? '?'}
+            </div>
+          )}
+          <div className="min-w-0">
+            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-electric-green">
+              You are in {league.name}!
+            </p>
+            <p className="font-display text-base font-black uppercase tracking-tight text-fg-high leading-tight truncate">
+              Your team — {viewer.team.name}
+            </p>
+          </div>
         </div>
-        <span aria-hidden className="text-2xl text-white/90 shrink-0">
-          →
-        </span>
       </div>
-    </button>
+    )
+  }
+
+  // ── State B — pending application for this league ────────────────────
+  if (viewer.kind === 'pending_this') {
+    return (
+      <div
+        data-testid="recruiting-banner-pending"
+        className="w-full mt-2 mb-3 rounded-2xl border border-amber-400/50 bg-gradient-to-r from-amber-500/15 to-amber-500/5 px-4 py-3 relative overflow-hidden"
+      >
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-full bg-amber-500/20 border border-amber-500/40 flex items-center justify-center shrink-0">
+            <svg className="w-5 h-5 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </div>
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-amber-400">
+              Application submitted
+            </p>
+            <p className="font-display text-base font-black uppercase tracking-tight text-fg-high leading-tight">
+              Being reviewed by league admins
+            </p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // ── States C / D / E — recruiting CTA ─────────────────────────────────
+  function handleClick() {
+    switch (viewer.kind) {
+      case 'unauthenticated':
+        // State E — sign in then retry. NextAuth's signIn will route
+        // back to the current page after auth; the user can re-click
+        // the banner from the authenticated state (state C).
+        signIn(undefined, { callbackUrl: window.location.href })
+        return
+      case 'no_player':
+        // State C — open application modal.
+        setApplyOpen(true)
+        return
+      case 'in_other_league':
+        // State D — punted in v1.64.0. Show a friendly admin-contact
+        // message rather than wiring a half-baked multi-league flow.
+        toast.message('Contact the league admin', {
+          description:
+            'You already have a player profile. Reach out to the league admin to be added to ' +
+            league.name +
+            '.',
+        })
+        return
+    }
+  }
+
+  const ctaTestid =
+    viewer.kind === 'unauthenticated'
+      ? 'recruiting-banner-cta-unauth'
+      : viewer.kind === 'no_player'
+        ? 'recruiting-banner-cta-noplayer'
+        : 'recruiting-banner-cta-otherleague'
+
+  return (
+    <>
+      <button
+        type="button"
+        data-testid={ctaTestid}
+        onClick={handleClick}
+        className="w-full mt-2 mb-3 rounded-2xl border border-vibrant-pink/60 bg-gradient-to-r from-vibrant-pink to-orange-500 px-4 py-3 text-left relative overflow-hidden hover:opacity-95 transition-opacity active:scale-[0.99]"
+      >
+        <div className="absolute inset-0 bg-diagonal-pattern opacity-10 pointer-events-none" />
+        <div className="relative flex items-center justify-between gap-3">
+          <div>
+            <p className="font-display text-2xl font-black uppercase tracking-tight text-white leading-none">
+              Recruiting Now
+            </p>
+            <p className="text-[11px] font-bold uppercase tracking-widest text-white/90 mt-1">
+              Looking for new players — tap to apply
+            </p>
+          </div>
+          <span aria-hidden className="text-2xl text-white/90 shrink-0">
+            →
+          </span>
+        </div>
+      </button>
+
+      {viewer.kind === 'no_player' && (
+        <ApplyToLeagueModal
+          open={applyOpen}
+          onClose={() => setApplyOpen(false)}
+          leagueId={league.id}
+          leagueName={league.name}
+        />
+      )}
+    </>
   )
 }

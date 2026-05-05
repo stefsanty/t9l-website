@@ -20,6 +20,8 @@ import {
   adminUpdatePlayerName,
   adminUpdatePlayerPosition,
   adminResetOnboarding,
+  adminApproveApplication,
+  adminRejectApplication,
 } from '@/app/admin/leagues/actions'
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -74,6 +76,12 @@ interface PlayerRow {
   // chip below the player name to flag cross-league rosters at a
   // glance. Optional: when undefined or empty, no badge is rendered.
   otherLeagues?: string[]
+  // v1.64.0 — APPROVED for real roster members; PENDING for self-service
+  // applications via the recruiting banner that haven't been reviewed
+  // yet. PENDING players have empty `assignments` (no team assigned yet)
+  // and trigger the "Application" status badge + Approve/Reject kebab
+  // items.
+  applicationStatus: 'APPROVED' | 'PENDING'
   assignments: Assignment[]
 }
 
@@ -233,6 +241,32 @@ export default function PlayersTab({
     }
   }
 
+  // v1.64.0 — open the Approve dialog for a pending application Player.
+  // Approve requires a team selection; the dialog asks for it and then
+  // calls adminApproveApplication, which atomically flips
+  // applicationStatus + creates a PlayerLeagueAssignment.
+  const [approvePlayerId, setApprovePlayerId] = useState<string | null>(null)
+  const approveTarget = approvePlayerId
+    ? players.find((p) => p.id === approvePlayerId) ?? null
+    : null
+
+  async function handleRejectApplication(playerId: string, playerName: string | null) {
+    if (
+      typeof window !== 'undefined' &&
+      !window.confirm(
+        `Reject ${playerName ?? 'this'} application? The player record will be deleted. This cannot be undone.`,
+      )
+    ) {
+      return
+    }
+    try {
+      await adminRejectApplication({ playerId, leagueId })
+      toast(`Application rejected — ${playerName ?? 'player'} record deleted.`)
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Failed to reject application', 'error')
+    }
+  }
+
   const remapTarget = remapPlayerId ? players.find((p) => p.id === remapPlayerId) ?? null : null
 
   return (
@@ -364,11 +398,20 @@ export default function PlayersTab({
                       </span>
                     )}
                   </div>
-                  <div className="mt-1.5">
+                  <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
                     <SignInStatusBadge
                       status={signInStatus}
                       testid={`signin-status-mobile-${player.id}`}
                     />
+                    {player.applicationStatus === 'PENDING' && (
+                      <span
+                        data-testid={`application-status-mobile-${player.id}`}
+                        className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 border border-amber-500/40 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-400"
+                      >
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                        Application
+                      </span>
+                    )}
                   </div>
                   {/* v1.56.0 (PR 3 of route-shortening chain) —
                       cross-league differentiation cue. When the player has
@@ -429,6 +472,9 @@ export default function PlayersTab({
                         onRemap: () => setRemapPlayerId(player.id),
                         onClearLine: () => handleClearLine(player.id, player.name),
                         onRemove: () => handleRemove(player.id, player.name),
+                        onApproveApplication: () => setApprovePlayerId(player.id),
+                        onRejectApplication: () =>
+                          handleRejectApplication(player.id, player.name),
                       },
                     })}
                   />
@@ -600,11 +646,20 @@ export default function PlayersTab({
                   {player.position ?? <span className="text-admin-text3">—</span>}
                 </span>
 
-                <span>
+                <span className="flex items-center gap-1.5 flex-wrap">
                   <SignInStatusBadge
                     status={signInStatus}
                     testid={`signin-status-${player.id}`}
                   />
+                  {player.applicationStatus === 'PENDING' && (
+                    <span
+                      data-testid={`application-status-${player.id}`}
+                      className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 border border-amber-500/40 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-400"
+                    >
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                      Application
+                    </span>
+                  )}
                 </span>
 
                 <span className="flex items-center justify-end gap-0.5">
@@ -640,6 +695,9 @@ export default function PlayersTab({
                         onRemap: () => setRemapPlayerId(player.id),
                         onClearLine: () => handleClearLine(player.id, player.name),
                         onRemove: () => handleRemove(player.id, player.name),
+                        onApproveApplication: () => setApprovePlayerId(player.id),
+                        onRejectApplication: () =>
+                          handleRejectApplication(player.id, player.name),
                       },
                     })}
                   />
@@ -745,6 +803,20 @@ export default function PlayersTab({
           />
         )
       })()}
+
+      {/* v1.64.0 — Approve application dialog. Mounts when admin clicks
+          "Approve application…" in the kebab for a PENDING player.
+          Asks for team selection (a PLA needs a leagueTeamId) then
+          calls adminApproveApplication. */}
+      {approveTarget && (
+        <ApproveApplicationDialog
+          player={{ id: approveTarget.id, name: approveTarget.name, position: approveTarget.position }}
+          leagueId={leagueId}
+          leagueTeams={leagueTeams}
+          maxGameWeek={maxGameWeek}
+          onClose={() => setApprovePlayerId(null)}
+        />
+      )}
     </>
   )
 }
@@ -787,6 +859,10 @@ interface BuildPlayerMenuArgs {
     onRemap: () => void
     onClearLine: () => Promise<void>
     onRemove: () => Promise<void>
+    // v1.64.0 — application workflow handlers. Only surface in the menu
+    // when player.applicationStatus === 'PENDING'.
+    onApproveApplication: () => void
+    onRejectApplication: () => Promise<void>
   }
 }
 
@@ -798,6 +874,18 @@ function buildPlayerMenuItems(args: BuildPlayerMenuArgs) {
     tone?: 'default' | 'danger'
   }> = []
 
+  // v1.64.0 — pending applications get top-priority Approve / Reject
+  // entries. The rest of the menu (Transfer, Remove, etc.) doesn't
+  // really apply until they're approved, but we still surface it for
+  // operator flexibility.
+  if (player.applicationStatus === 'PENDING') {
+    items.push({ label: 'Approve application…', onSelect: handlers.onApproveApplication })
+    items.push({
+      label: 'Reject application',
+      tone: 'danger',
+      onSelect: handlers.onRejectApplication,
+    })
+  }
   if (!player.lineId) {
     items.push({ label: 'Generate invite', onSelect: handlers.onInvite })
   }
@@ -1033,6 +1121,134 @@ interface TransferPanelProps {
   leagueTeams: LeagueTeamRef[]
   maxGameWeek: number
   onClose: () => void
+}
+
+// ── Approve application dialog (v1.64.0) ────────────────────────────────────
+
+/**
+ * v1.64.0 — modal that gates the Approve flow for a PENDING application
+ * Player. Approval requires picking a team (the new
+ * `PlayerLeagueAssignment` needs a `leagueTeamId`) and optionally
+ * picking the GW1+ start. Submission calls `adminApproveApplication`,
+ * which atomically flips `Player.applicationStatus` to APPROVED, clears
+ * `applicationLeagueId`, and creates the PLA.
+ */
+interface ApproveApplicationDialogProps {
+  player: { id: string; name: string | null; position: string | null }
+  leagueId: string
+  leagueTeams: LeagueTeamRef[]
+  maxGameWeek: number
+  onClose: () => void
+}
+
+function ApproveApplicationDialog({
+  player,
+  leagueId,
+  leagueTeams,
+  maxGameWeek,
+  onClose,
+}: ApproveApplicationDialogProps) {
+  const { toast } = useToast()
+  const [leagueTeamId, setLeagueTeamId] = useState<string>(leagueTeams[0]?.id ?? '')
+  const [fromGameWeek, setFromGameWeek] = useState<number>(maxGameWeek > 0 ? maxGameWeek : 1)
+  const [pending, startTransition] = useTransition()
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!leagueTeamId) {
+      toast('Pick a team to approve into', 'error')
+      return
+    }
+    startTransition(async () => {
+      try {
+        await adminApproveApplication({
+          playerId: player.id,
+          leagueId,
+          leagueTeamId,
+          fromGameWeek,
+        })
+        toast(`${player.name ?? 'Player'} approved`)
+        onClose()
+      } catch (err) {
+        toast(err instanceof Error ? err.message : 'Failed to approve', 'error')
+      }
+    })
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-[200] flex items-center justify-center px-5"
+      role="dialog"
+      aria-modal="true"
+      data-testid="approve-application-dialog"
+    >
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative w-full max-w-sm mx-auto bg-admin-surface border border-admin-border rounded-2xl overflow-hidden shadow-2xl">
+        <div className="px-5 pt-4 pb-5">
+          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-admin-text3">
+            Approve application
+          </p>
+          <h2 className="font-condensed text-xl font-bold text-admin-text leading-tight mb-3">
+            {nameOrPlaceholder(player.name)}
+            {player.position ? (
+              <span className="text-admin-text3 text-sm font-normal ml-2">— {player.position}</span>
+            ) : null}
+          </h2>
+          <form onSubmit={handleSubmit} className="space-y-3">
+            <label className="block">
+              <span className="block text-admin-text3 text-[11px] uppercase tracking-wider font-bold mb-1">
+                Assign to team
+              </span>
+              <select
+                value={leagueTeamId}
+                onChange={(e) => setLeagueTeamId(e.target.value)}
+                className="w-full bg-admin-surface2 border border-admin-border rounded-md px-2.5 py-2 text-sm text-admin-text"
+                data-testid="approve-team-select"
+                required
+              >
+                {leagueTeams.map((lt) => (
+                  <option key={lt.id} value={lt.id}>
+                    {lt.team.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="block">
+              <span className="block text-admin-text3 text-[11px] uppercase tracking-wider font-bold mb-1">
+                Active from GW
+              </span>
+              <input
+                type="number"
+                min={1}
+                value={fromGameWeek}
+                onChange={(e) => setFromGameWeek(Math.max(1, Number(e.target.value)))}
+                className="w-full bg-admin-surface2 border border-admin-border rounded-md px-2.5 py-2 text-sm text-admin-text"
+                data-testid="approve-from-gw"
+              />
+            </label>
+            <div className="flex gap-2 pt-2">
+              <button
+                type="button"
+                onClick={onClose}
+                disabled={pending}
+                className="flex-1 rounded-md border border-admin-border px-3 py-2 text-sm font-bold text-admin-text3 hover:text-admin-text disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={pending || !leagueTeamId}
+                className="flex-1 rounded-md bg-admin-green px-3 py-2 text-sm font-bold text-admin-ink hover:opacity-90 disabled:opacity-50"
+                data-testid="approve-submit"
+              >
+                {pending ? 'Approving…' : 'Approve'}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 function TransferPanel({

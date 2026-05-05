@@ -4,6 +4,8 @@ import { findNextMatchday } from '@/lib/stats'
 import { getLeagueIdBySlug, normalizeLeagueSlug } from '@/lib/leagueSlug'
 import { getPublicLeagueData } from '@/lib/publicData'
 import { getLeagueFlags } from '@/lib/leagueFlags'
+import { getRecruitingViewerState } from '@/lib/recruitingViewerState'
+import { prisma } from '@/lib/prisma'
 
 export const metadata = {
   title: 'League | T9L',
@@ -42,12 +44,22 @@ export default async function LeagueByIdPage({ params }: Props) {
 
   let data
   let flags
+  let recruitingState
+  let leagueRow
   try {
     // v1.63.0 — per-league flags fetched in parallel with public data.
     // Each league has its own preseason/recruiting state.
-    ;[data, flags] = await Promise.all([
+    //
+    // v1.64.0 — also fetch the recruiting viewer state and league row
+    // (name needed by the banner). Mirror of the apex `/` page.
+    ;[data, flags, recruitingState, leagueRow] = await Promise.all([
       getPublicLeagueData(leagueId),
       getLeagueFlags(leagueId),
+      getRecruitingViewerState(leagueId),
+      prisma.league.findUnique({
+        where: { id: leagueId },
+        select: { id: true, name: true },
+      }),
     ])
   } catch {
     return (
@@ -79,6 +91,8 @@ export default async function LeagueByIdPage({ params }: Props) {
       leagueSlug={normalizeLeagueSlug(slug)}
       preseasonMode={flags.preseasonMode}
       recruiting={flags.recruiting}
+      recruitingState={recruitingState}
+      league={leagueRow ?? undefined}
     />
   )
 }
