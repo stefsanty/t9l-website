@@ -186,6 +186,52 @@ export async function setLeagueAllowSelfLink(leagueId: string, value: boolean) {
   })
 }
 
+/**
+ * v1.63.0 — per-league pre-season toggle. When true, the homepage swaps
+ * the "Classic League Homepage" (NextMatchdayBanner + MatchdayAvailability
+ * + RsvpBar) for `CompressedMatchdaySchedule`, and the `/stats` page is
+ * hidden (header link removed; route redirects to home). Default false
+ * preserves the existing experience.
+ *
+ * Validation: rejects non-boolean values defensively.
+ */
+export async function setLeaguePreseasonMode(leagueId: string, value: boolean) {
+  await assertAdmin()
+  if (typeof value !== 'boolean') {
+    throw new Error('preseasonMode must be a boolean')
+  }
+  await prisma.league.update({
+    where: { id: leagueId },
+    data: { preseasonMode: value },
+  })
+  revalidate({
+    domain: 'admin',
+    paths: [`/admin/leagues/${leagueId}/settings`, `/admin/leagues/${leagueId}`, '/admin'],
+  })
+}
+
+/**
+ * v1.63.0 — per-league recruiting toggle. When true, surfaces a prominent
+ * "RECRUITING NOW" banner at the top of the homepage. Independent of
+ * `preseasonMode` — both can be on simultaneously. Default false.
+ *
+ * Validation: rejects non-boolean values defensively.
+ */
+export async function setLeagueRecruiting(leagueId: string, value: boolean) {
+  await assertAdmin()
+  if (typeof value !== 'boolean') {
+    throw new Error('recruiting must be a boolean')
+  }
+  await prisma.league.update({
+    where: { id: leagueId },
+    data: { recruiting: value },
+  })
+  revalidate({
+    domain: 'admin',
+    paths: [`/admin/leagues/${leagueId}/settings`, `/admin/leagues/${leagueId}`, '/admin'],
+  })
+}
+
 // ── GameWeek ────────────────────────────────────────────────────────────────
 
 export async function createGameWeek(leagueId: string, data: {

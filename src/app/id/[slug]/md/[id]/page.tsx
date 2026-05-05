@@ -3,6 +3,7 @@ import Dashboard from '@/components/Dashboard'
 import { findNextMatchday } from '@/lib/stats'
 import { getLeagueIdBySlug, normalizeLeagueSlug } from '@/lib/leagueSlug'
 import { getPublicLeagueData } from '@/lib/publicData'
+import { getLeagueFlags } from '@/lib/leagueFlags'
 
 export const metadata = {
   title: 'Matchday | T9L',
@@ -35,8 +36,19 @@ export default async function LeagueByIdMatchdayPage({ params }: Props) {
   if (!leagueId) notFound()
 
   let data
+  let flags
   try {
-    data = await getPublicLeagueData(leagueId)
+    // v1.63.0 — fetch flags in parallel with public data; per-matchday
+    // route honors the league's preseason/recruiting state same as the
+    // homepage. Note: the URL pre-selects a matchday, so the banner is
+    // locked to it via `initialMatchdayId` regardless of preseason mode.
+    // If preseason is on, ClassicLeagueHomepage doesn't render at all
+    // (CompressedMatchdaySchedule does); the matchday-id URL still
+    // routes here cleanly because the page-level resolver is shared.
+    ;[data, flags] = await Promise.all([
+      getPublicLeagueData(leagueId),
+      getLeagueFlags(leagueId),
+    ])
   } catch {
     return (
       <div className="flex items-center justify-center min-h-dvh bg-midnight text-white px-6 text-center">
@@ -73,6 +85,8 @@ export default async function LeagueByIdMatchdayPage({ params }: Props) {
       nextMd={nextMd}
       initialMatchdayId={md.id}
       leagueSlug={normalizeLeagueSlug(slug)}
+      preseasonMode={flags.preseasonMode}
+      recruiting={flags.recruiting}
     />
   )
 }

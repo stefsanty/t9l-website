@@ -199,8 +199,17 @@ describe('v1.48.0 Dashboard — converges homepage + matchday route', () => {
   })
 
   it('v1.51.0 — accepts optional leagueSlug prop and threads to NextMatchdayBanner', () => {
+    // v1.63.0 — NextMatchdayBanner is now mounted inside ClassicLeagueHomepage,
+    // not Dashboard directly. Dashboard passes `leagueSlug` to the wrapper;
+    // the wrapper forwards it to NextMatchdayBanner. Both legs of the chain
+    // are pinned here.
     expect(DASHBOARD).toMatch(/leagueSlug\?:\s*string/)
-    expect(DASHBOARD).toMatch(/<NextMatchdayBanner[\s\S]{0,500}leagueSlug=\{leagueSlug\}/)
+    expect(DASHBOARD).toMatch(/<ClassicLeagueHomepage[\s\S]{0,800}leagueSlug=\{leagueSlug\}/)
+    const CLASSIC = readFileSync(
+      join(ROOT, 'src/components/ClassicLeagueHomepage.tsx'),
+      'utf-8',
+    )
+    expect(CLASSIC).toMatch(/<NextMatchdayBanner[\s\S]{0,500}leagueSlug=\{leagueSlug\}/)
   })
 })
 
@@ -436,7 +445,19 @@ describe('v1.49.1 — Dashboard locks the banner to the URL-pre-selected matchda
   // treated as the source of truth on the matchday route, while the homepage
   // (initialMatchdayId === undefined) keeps the auto-default.
   it('passes lockToSelected={initialMatchdayId != null} to NextMatchdayBanner', () => {
+    // v1.63.0 — NextMatchdayBanner moved into ClassicLeagueHomepage. Dashboard
+    // threads `initialMatchdayId` to the wrapper; the wrapper computes
+    // `lockToSelected={initialMatchdayId != null}` for the banner. Pin both
+    // legs of the chain so a regression that drops the lock-to-URL contract
+    // surfaces here regardless of which file is being audited.
     expect(DASHBOARD).toMatch(
+      /<ClassicLeagueHomepage[\s\S]{0,800}initialMatchdayId=\{initialMatchdayId\}/
+    )
+    const CLASSIC = readFileSync(
+      join(ROOT, 'src/components/ClassicLeagueHomepage.tsx'),
+      'utf-8',
+    )
+    expect(CLASSIC).toMatch(
       /<NextMatchdayBanner[\s\S]{0,400}lockToSelected=\{initialMatchdayId\s*!=\s*null\}/
     )
   })

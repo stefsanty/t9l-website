@@ -7,7 +7,18 @@ import LanguageToggle from './LanguageToggle';
 import LineLoginButton from './LineLoginButton';
 import LeagueSwitcher from './LeagueSwitcher';
 
-export default function Header() {
+interface HeaderProps {
+  /**
+   * v1.63.0 — when true, the STATS nav link is hidden. Threaded from
+   * Dashboard when `League.preseasonMode === true` (the /stats route is
+   * also redirected at the server level for direct visits). Defaults
+   * false so other pages that mount Header without per-league context
+   * (admin, /assign-player, etc.) keep the existing behavior.
+   */
+  hideStatsLink?: boolean;
+}
+
+export default function Header({ hideStatsLink = false }: HeaderProps) {
   const pathname = usePathname();
 
   // v1.41.2 — mobile sizing trim. Pre-fix the header wrapped to two rows
@@ -31,16 +42,22 @@ export default function Header() {
             open via /api/me/memberships. */}
         <LeagueSwitcher />
 
-        <nav className="flex items-center gap-1 ml-2 md:ml-3">
-          <Link
-            href="/stats"
-            className={`text-[11px] font-black uppercase tracking-widest px-2 md:px-2.5 py-1 rounded-lg transition-colors ${
-              pathname === '/stats' ? 'bg-primary/15 text-primary' : 'text-fg-mid hover:text-fg-high'
-            }`}
-          >
-            Stats
-          </Link>
-        </nav>
+        {/* v1.63.0 — STATS nav suppressed when the active league is in
+            pre-season mode. Direct visits to /stats are redirected at the
+            server level; this hides the link from the navbar so users
+            don't see a dead-end affordance. */}
+        {!hideStatsLink && (
+          <nav className="flex items-center gap-1 ml-2 md:ml-3" data-testid="header-stats-nav">
+            <Link
+              href="/stats"
+              className={`text-[11px] font-black uppercase tracking-widest px-2 md:px-2.5 py-1 rounded-lg transition-colors ${
+                pathname === '/stats' ? 'bg-primary/15 text-primary' : 'text-fg-mid hover:text-fg-high'
+              }`}
+            >
+              Stats
+            </Link>
+          </nav>
+        )}
 
         <div className="flex-1 flex justify-end items-center gap-1.5 md:gap-2">
           <ThemeToggle />

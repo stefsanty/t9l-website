@@ -3,6 +3,7 @@ import Dashboard from '@/components/Dashboard'
 import { findNextMatchday } from '@/lib/stats'
 import { getLeagueIdBySlug, normalizeLeagueSlug } from '@/lib/leagueSlug'
 import { getPublicLeagueData } from '@/lib/publicData'
+import { getLeagueFlags } from '@/lib/leagueFlags'
 
 export const metadata = {
   title: 'League | T9L',
@@ -40,8 +41,14 @@ export default async function LeagueByIdPage({ params }: Props) {
   if (!leagueId) notFound()
 
   let data
+  let flags
   try {
-    data = await getPublicLeagueData(leagueId)
+    // v1.63.0 — per-league flags fetched in parallel with public data.
+    // Each league has its own preseason/recruiting state.
+    ;[data, flags] = await Promise.all([
+      getPublicLeagueData(leagueId),
+      getLeagueFlags(leagueId),
+    ])
   } catch {
     return (
       <div className="flex items-center justify-center min-h-dvh bg-midnight text-white px-6 text-center">
@@ -70,6 +77,8 @@ export default async function LeagueByIdPage({ params }: Props) {
       played={data.played}
       nextMd={nextMd}
       leagueSlug={normalizeLeagueSlug(slug)}
+      preseasonMode={flags.preseasonMode}
+      recruiting={flags.recruiting}
     />
   )
 }

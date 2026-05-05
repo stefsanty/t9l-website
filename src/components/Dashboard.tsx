@@ -5,13 +5,13 @@ import { useSession } from 'next-auth/react';
 import type {
   Team, Player, Matchday, Goal, Availability, AvailabilityStatuses, PlayedStatus,
 } from '@/types';
-import NextMatchdayBanner from './NextMatchdayBanner';
 import GuestLoginBanner from './GuestLoginBanner';
-import MatchdayAvailability from './MatchdayAvailability';
 import Header from './Header';
-import RsvpBar from './RsvpBar';
 import UserTeamBadge from './UserTeamBadge';
 import SubmitGoalForm from './matchday/SubmitGoalForm';
+import ClassicLeagueHomepage from './ClassicLeagueHomepage';
+import CompressedMatchdaySchedule from './CompressedMatchdaySchedule';
+import RecruitingBanner from './RecruitingBanner';
 import { selfReportGateOpen } from '@/lib/playerSelfReportGate';
 import { combineJstDateAndTime } from '@/lib/jst';
 
@@ -42,6 +42,20 @@ interface DashboardProps {
    * those cases CopyMatchdayLink falls back to the default-league slug.
    */
   leagueSlug?: string;
+  /**
+   * v1.63.0 — per-league pre-season toggle. When true, the homepage
+   * swaps the `ClassicLeagueHomepage` (NextMatchdayBanner +
+   * MatchdayAvailability + RsvpBar) for `CompressedMatchdaySchedule`,
+   * AND tells `Header` to hide the STATS link. Defaults false so
+   * existing leagues behave exactly as today.
+   */
+  preseasonMode?: boolean;
+  /**
+   * v1.63.0 — per-league recruiting toggle. When true, surfaces a
+   * `RecruitingBanner` at the top of the homepage. Independent of
+   * `preseasonMode` — both can be on simultaneously. Defaults false.
+   */
+  recruiting?: boolean;
 }
 
 /**
@@ -53,15 +67,11 @@ interface DashboardProps {
  * subsequent navigation via local state (URL doesn't update on swipe —
  * the URL is the entry point, not a continuous source of truth).
  *
- * The Submit-goal CTA (PR ζ / v1.46.0) now lives here — visible on the
- * homepage too, not just on the per-matchday route. Per v1.48.0's open-
- * attribution model, ANY logged-in linked player can submit a goal for
- * ANY player. The kickoff-time gate stays — button hidden if before
- * earliest kickoff or no kickoff data on the selected matchday.
- *
- * The MatchdayCard's eyebrow ("MATCHDAY RESULTS" / "YOUR NEXT MATCHDAY")
- * is now click-to-copy via `<CopyMatchdayLink>` — copies
- * `https://<host>/matchday/<id>` to the clipboard with a Sonner toast.
+ * v1.63.0 — per-league pre-season + recruiting toggles. Pre-season
+ * swaps the `ClassicLeagueHomepage` (NextMatchdayBanner +
+ * MatchdayAvailability + RsvpBar) for `CompressedMatchdaySchedule`,
+ * and tells `Header` to hide the STATS link. Recruiting surfaces a
+ * `RecruitingBanner` above the matchday surface. Both default false.
  */
 export default function Dashboard({
   teams,
@@ -74,6 +84,8 @@ export default function Dashboard({
   nextMd,
   initialMatchdayId,
   leagueSlug,
+  preseasonMode = false,
+  recruiting = false,
 }: DashboardProps) {
   const { data: session } = useSession();
   const [selectedMatchdayId, setSelectedMatchdayId] = useState(
@@ -88,17 +100,21 @@ export default function Dashboard({
   const userTeam = userTeamId ? (teams.find((t) => t.id === userTeamId) ?? null) : null;
   const userTeamIsPlaying = !!(userTeamId && selectedMatchday && selectedMatchday.sittingOutTeamId !== userTeamId);
   const isCompleted = !!(selectedMatchday && selectedMatchday.matches[0].homeGoals !== null);
-  const userRsvpStatus: 'GOING' | 'UNDECIDED' | 'Y' | 'EXPECTED' | '' =
-    (userPlayerId && userTeamId && selectedMatchday
-      ? availabilityStatuses?.[selectedMatchday.id]?.[userTeamId]?.[userPlayerId] ?? ''
-      : '') as 'GOING' | 'UNDECIDED' | 'Y' | 'EXPECTED' | '';
 
-  const showRsvpBar = !!(session?.playerId && userTeamIsPlaying && !isCompleted);
+  // v1.63.0 — RsvpBar lives inside ClassicLeagueHomepage. Pre-season mode
+  // hides Classic entirely, so the bottom-padding budget of `<main>`
+  // collapses from `pb-32` (RsvpBar height) to `pb-2`.
+  const showRsvpBar =
+    !preseasonMode && !!(session?.playerId && userTeamIsPlaying && !isCompleted);
 
   // v1.48.0 — Submit-goal gate (PR ζ kickoff gate, evaluated client-side
   // from selected matchday's matchday.date + match.kickoff via the
   // canonical JST helpers). The matchday's earliest kickoff is the
   // minimum across its matches.
+  //
+  // v1.63.0 — Submit Goal stays in both modes per design, but the
+  // kickoff gate naturally suppresses it during pre-season (no kickoff
+  // has passed yet); no extra suppression needed.
   const submitGateOpen = useMemo(() => {
     if (!session?.playerId || !selectedMatchday?.date) return false;
     const kickoffs: Date[] = [];
@@ -138,44 +154,52 @@ export default function Dashboard({
     }));
   }, [selectedMatchday, teamLookup]);
 
+  const submitGoalSlot =
+    submitGateOpen && selectedMatchday ? (
+      <SubmitGoalForm
+        matchday={selectedMatchday}
+        matches={submitMatches}
+        players={players}
+        teams={teams}
+      />
+    ) : null;
+
   return (
     <div className="flex flex-col min-h-dvh pb-0 max-w-lg mx-auto bg-background selection:bg-vibrant-pink selection:text-white">
-      <Header />
+      <Header hideStatsLink={preseasonMode} />
 
       <main className={`flex-1 px-4 relative z-10 pt-12 ${showRsvpBar ? 'pb-32' : 'pb-2'}`}>
         <div className="animate-in pt-2">
+          {recruiting && <RecruitingBanner />}
+
           {nextMd ? (
             <>
               <GuestLoginBanner />
               <UserTeamBadge teams={teams} />
-              <NextMatchdayBanner
-                matchdays={matchdays}
-                selectedMatchdayId={selectedMatchdayId}
-                onMatchdayChange={setSelectedMatchdayId}
-                teams={teams}
-                goals={goals}
-                lockToSelected={initialMatchdayId != null}
-                leagueSlug={leagueSlug}
-              />
 
-              {submitGateOpen && selectedMatchday ? (
-                <SubmitGoalForm
-                  matchday={selectedMatchday}
-                  matches={submitMatches}
-                  players={players}
+              {preseasonMode ? (
+                <CompressedMatchdaySchedule matchdays={matchdays} teams={teams} />
+              ) : (
+                <ClassicLeagueHomepage
+                  selectedMatchdayId={selectedMatchdayId}
+                  setSelectedMatchdayId={setSelectedMatchdayId}
+                  matchdays={matchdays}
                   teams={teams}
+                  players={players}
+                  goals={goals}
+                  availability={availability}
+                  availabilityStatuses={availabilityStatuses}
+                  played={played}
+                  initialMatchdayId={initialMatchdayId}
+                  leagueSlug={leagueSlug}
+                  submitGoalSlot={submitGoalSlot}
+                  userTeam={userTeam}
+                  userTeamIsPlaying={userTeamIsPlaying}
+                  isCompleted={isCompleted}
+                  userPlayerId={userPlayerId}
+                  userTeamId={userTeamId}
                 />
-              ) : null}
-
-              <MatchdayAvailability
-                key={selectedMatchdayId}
-                matchday={selectedMatchday}
-                teams={teams}
-                players={players}
-                availability={availability}
-                availabilityStatuses={availabilityStatuses}
-                played={played}
-              />
+              )}
             </>
           ) : (
             <div className="text-center py-24 bg-white/[0.05] rounded-3xl border border-white/10 relative overflow-hidden">
@@ -192,17 +216,6 @@ export default function Dashboard({
           © 2026 Tennozu 9-Aside League • Tokyo
         </p>
       </footer>
-
-      {selectedMatchday && (
-        <RsvpBar
-          key={`${selectedMatchday.id}-${session?.playerId ?? 'anon'}`}
-          matchday={selectedMatchday}
-          initialStatus={userRsvpStatus}
-          userTeam={userTeam}
-          userTeamIsPlaying={userTeamIsPlaying}
-          isCompleted={isCompleted}
-        />
-      )}
     </div>
   );
 }

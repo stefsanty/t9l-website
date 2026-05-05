@@ -2,6 +2,7 @@ import { findNextMatchday } from "@/lib/stats";
 import Dashboard from "@/components/Dashboard";
 import { getPublicLeagueData } from "@/lib/publicData";
 import { DEFAULT_LEAGUE_SLUG, getDefaultLeagueId } from "@/lib/leagueSlug";
+import { getLeagueFlags } from "@/lib/leagueFlags";
 
 /**
  * Public landing page — apex `/` always renders the default league.
@@ -41,8 +42,16 @@ export default async function Home() {
   }
 
   let data;
+  let flags;
   try {
-    data = await getPublicLeagueData(leagueId);
+    // v1.63.0 — fetch LeagueData + per-league flags in parallel. Flags
+    // are cached separately under the same `leagues` tag so admin writes
+    // bust both. Defaults to `{ preseasonMode: false, recruiting: false }`
+    // on Prisma failure so a transient blip doesn't flip the homepage UX.
+    [data, flags] = await Promise.all([
+      getPublicLeagueData(leagueId),
+      getLeagueFlags(leagueId),
+    ]);
   } catch {
     return (
       <div className="flex items-center justify-center min-h-dvh bg-midnight text-white px-6 text-center">
@@ -67,6 +76,8 @@ export default async function Home() {
       played={data.played}
       nextMd={nextMd}
       leagueSlug={DEFAULT_LEAGUE_SLUG}
+      preseasonMode={flags.preseasonMode}
+      recruiting={flags.recruiting}
     />
   );
 }

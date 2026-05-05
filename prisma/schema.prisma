@@ -138,6 +138,21 @@ model League {
   // DELETE is unaffected so already-linked players can still unlink.
   allowSelfLink Boolean   @default(true)
 
+  // v1.63.0 — pre-season mode. When true, the homepage swaps the
+  // single-matchday banner (`NextMatchdayBanner`) for a vertically
+  // compact "all matchdays at a glance" view (`CompressedMatchdaySchedule`),
+  // and the `STATS` page is hidden — the header link disappears and
+  // visiting `/stats` redirects to the homepage. Defaults false so
+  // existing leagues behave exactly as before v1.63.0.
+  preseasonMode Boolean   @default(false)
+
+  // v1.63.0 — recruiting toggle. When true, surfaces a prominent
+  // "RECRUITING NOW" banner at the top of the homepage. Independent
+  // of `preseasonMode` — both can be on simultaneously, each off by
+  // default. Click target is currently a no-op TODO; future PR wires
+  // it to a per-league recruiting CTA target.
+  recruiting    Boolean   @default(false)
+
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
