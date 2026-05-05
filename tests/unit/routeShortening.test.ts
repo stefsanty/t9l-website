@@ -121,11 +121,9 @@ describe('v1.54.0 — internal callers use /id/<slug> URL form', () => {
     expect(stripComments(src)).not.toMatch(/router\.push\(`\/league\//)
   })
 
-  it('AccountMenuLeagueSwitch href uses /id/<slug>', () => {
-    const src = read('src/components/AccountMenuLeagueSwitch.tsx')
-    expect(src).toMatch(/href=\{`\/id\/\$\{m\.slug\}`\}/)
-    expect(stripComments(src)).not.toMatch(/href=\{`\/league\//)
-  })
+  // v1.62.0 — AccountMenuLeagueSwitch is deleted (the dropdown entry was
+  // removed in favor of the navbar chevron LeagueSwitcher only). The
+  // path-routing assertion has nothing to test against.
 })
 
 describe('v1.54.0 — admin CreateLeagueModal preview uses /id/<slug>', () => {

@@ -193,43 +193,11 @@ describe('v1.59.0 — LeagueSwitcher reads from context (no fetch)', () => {
   })
 })
 
-describe('v1.59.0 — AccountMenuLeagueSwitch reads from context', () => {
+describe('v1.62.0 — AccountMenuLeagueSwitch removed (account-menu Switch league entry gone)', () => {
   const componentPath = 'src/components/AccountMenuLeagueSwitch.tsx'
 
-  it('exists', () => {
-    expect(existsSync(path.join(process.cwd(), componentPath))).toBe(true)
-  })
-
-  it("declares 'use client'", () => {
-    const src = read(componentPath)
-    expect(src.split('\n')[0].trim().replace(/['";]/g, '')).toBe('use client')
-  })
-
-  it('reads memberships from useMemberships() context', () => {
-    const src = stripComments(read(componentPath))
-    expect(src).toMatch(/useMemberships\(\)/)
-  })
-
-  it('renders nothing when memberships.length < 2', () => {
-    const src = stripComments(read(componentPath))
-    expect(src).toMatch(/memberships\.length\s*<\s*2/)
-  })
-
-  it('renders Link to /id/<slug> per membership', () => {
-    const src = stripComments(read(componentPath))
-    expect(src).toMatch(/href=\{`\/id\/\$\{m\.slug\}`\}/)
-    expect(src).not.toMatch(/href=\{`\/league\//)
-  })
-
-  it('exposes account-menu-switch-league testids', () => {
-    const src = stripComments(read(componentPath))
-    expect(src).toContain('data-testid="account-menu-switch-league"')
-    expect(src).toMatch(/data-testid=\{`account-menu-switch-league-\$\{m\.slug\}`\}/)
-  })
-
-  it('marks the current league with the vibrant-pink highlight', () => {
-    const src = stripComments(read(componentPath))
-    expect(src).toMatch(/isCurrent.*vibrant-pink|vibrant-pink.*isCurrent/)
+  it('component file is deleted (regression target — re-introducing it would re-add the dropdown submenu)', () => {
+    expect(existsSync(path.join(process.cwd(), componentPath))).toBe(false)
   })
 })
 
@@ -247,17 +215,26 @@ describe('v1.59.0 — Header mounts LeagueSwitcher next to brand title', () => {
   })
 })
 
-describe('v1.59.0 — LineLoginButton mounts AccountMenuLeagueSwitch in dropdown', () => {
+describe('v1.62.0 — LineLoginButton no longer mounts the AccountMenuLeagueSwitch entry', () => {
   const buttonPath = 'src/components/LineLoginButton.tsx'
 
-  it('imports AccountMenuLeagueSwitch', () => {
+  it('does NOT import AccountMenuLeagueSwitch', () => {
     const src = stripComments(read(buttonPath))
-    expect(src).toMatch(/import\s+AccountMenuLeagueSwitch\s+from\s+['"]\.\/AccountMenuLeagueSwitch['"]/)
+    expect(src).not.toMatch(/import\s+AccountMenuLeagueSwitch/)
   })
 
-  it('mounts <AccountMenuLeagueSwitch /> in the dropdown', () => {
+  it('does NOT render <AccountMenuLeagueSwitch /> in the dropdown', () => {
     const src = stripComments(read(buttonPath))
-    expect(src).toMatch(/<AccountMenuLeagueSwitch/)
+    expect(src).not.toMatch(/<AccountMenuLeagueSwitch/)
+  })
+
+  it('still imports + renders LeagueSwitcher (header chevron stays as the only switcher) — verified in Header tests above', () => {
+    // Sanity: the navbar chevron LeagueSwitcher is in Header.tsx, not in
+    // LineLoginButton.tsx. This test pins that LineLoginButton itself
+    // does NOT import LeagueSwitcher (it shouldn't have to — the chevron
+    // is rendered separately in Header.tsx).
+    const src = stripComments(read(buttonPath))
+    expect(src).not.toMatch(/import\s+LeagueSwitcher\s+from/)
   })
 })
 

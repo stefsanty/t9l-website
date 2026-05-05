@@ -46,14 +46,13 @@ export default async function OnboardingPage({ params }: Props) {
     redirect(`/join/${code}`)
   }
 
-  const [league, leagueTeams, currentBinding, existingPlayers] = await Promise.all([
+  // v1.62.0 — preferred-team / preferred-teammate fields removed from
+  // the form. We no longer fetch leagueTeams or the in-league roster
+  // for the picker.
+  const [league, currentBinding] = await Promise.all([
     prisma.league.findUnique({
       where: { id: invite.leagueId },
       select: { id: true, name: true, subdomain: true },
-    }),
-    prisma.leagueTeam.findMany({
-      where: { leagueId: invite.leagueId },
-      include: { team: true },
     }),
     prisma.playerLeagueAssignment.findFirst({
       where: {
@@ -66,20 +65,10 @@ export default async function OnboardingPage({ params }: Props) {
             id: true,
             name: true,
             position: true,
-            onboardingPreferences: true,
           },
         },
         leagueTeam: { include: { team: true } },
       },
-    }),
-    prisma.player.findMany({
-      where: {
-        leagueAssignments: {
-          some: { leagueTeam: { leagueId: invite.leagueId } },
-        },
-      },
-      select: { id: true, name: true },
-      orderBy: { name: 'asc' },
     }),
   ])
 
@@ -87,19 +76,6 @@ export default async function OnboardingPage({ params }: Props) {
     // Not bound — re-route through the resolver.
     redirect(`/join/${code}`)
   }
-
-  // Pre-populate existing values from a prior submission (idempotent
-  // re-render after admin resets onboarding, or after user came back
-  // mid-flow). The JSON shape mirrors the `submitOnboarding` write.
-  const prefs = (currentBinding.player.onboardingPreferences ?? null) as null | {
-    preferredLeagueTeamId?: string | null
-    preferredTeammateIds?: string[]
-    preferredTeammatesFreeText?: string | null
-  }
-
-  const teammateOptions = existingPlayers
-    .filter((p) => p.id !== currentBinding.player.id)
-    .map((p) => ({ id: p.id, name: p.name ?? 'Unnamed' }))
 
   return (
     <main
@@ -125,11 +101,6 @@ export default async function OnboardingPage({ params }: Props) {
           playerId={currentBinding.player.id}
           initialName={currentBinding.player.name ?? ''}
           initialPosition={(currentBinding.player.position as 'GK' | 'DF' | 'MF' | 'FW' | null) ?? null}
-          initialPreferredLeagueTeamId={prefs?.preferredLeagueTeamId ?? null}
-          initialPreferredTeammateIds={prefs?.preferredTeammateIds ?? []}
-          initialPreferredTeammatesFreeText={prefs?.preferredTeammatesFreeText ?? null}
-          leagueTeams={leagueTeams.map((lt) => ({ id: lt.id, name: lt.team.name }))}
-          teammateOptions={teammateOptions}
         />
       </div>
     </main>

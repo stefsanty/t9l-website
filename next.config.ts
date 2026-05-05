@@ -1,6 +1,16 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // v1.62.0 — raise the server-action body limit. Default is 1MB; the
+  // /account/player profile-picture upload claims a 5MB max, so files
+  // between 1MB and 5MB hit the framework's body-limit error and surface
+  // as "An unexpected response was received from the server" before our
+  // own validation can run. 6MB gives FormData overhead headroom.
+  experimental: {
+    serverActions: {
+      bodySizeLimit: '6mb',
+    },
+  },
   images: {
     remotePatterns: [
       {
