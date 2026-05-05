@@ -16,7 +16,7 @@ export default async function PlayersPage({ params }: Props) {
   // as the 5th element so the new "Invited" sign-in-status badge can
   // render without a separate fetch.
   const [
-    [assignments, leagueTeams, gameWeeks, lineLoginsByLineId, activeInviteCountByPlayerId],
+    [assignments, leagueTeams, gameWeeks, lineLoginsByLineId, activeInviteCountByPlayerId, pendingApplications],
     orphansRaw,
     allLineLoginsRaw,
     linkableCandidates,
@@ -69,6 +69,12 @@ export default async function PlayersPage({ params }: Props) {
     // the player's only league. Drives the per-row "Also in: <league>"
     // differentiation cue.
     otherLeagues: string[]
+    // v1.64.0 — application status. APPROVED is the steady state for
+    // every existing Player; PENDING means the user submitted a
+    // recruiting application via the homepage banner and is awaiting
+    // admin review. PlayersTab renders a status badge for PENDING + adds
+    // Approve/Reject kebab items.
+    applicationStatus: 'APPROVED' | 'PENDING'
     assignments: {
       id: string
       fromGameWeek: number
@@ -117,9 +123,43 @@ export default async function PlayersPage({ params }: Props) {
         // `.toISOString()` here would crash post-cache. v1.17.1.
         lineLastSeenAt: ll?.lastSeenAt ?? null,
         otherLeagues: otherLeaguesByPlayerId[a.player.id] ?? [],
+        applicationStatus: a.player.applicationStatus,
         assignments: [a],
       })
     }
+  }
+
+  // v1.64.0 — append pending applications as synthetic player rows.
+  // These Player rows have NO PlayerLeagueAssignment (admin creates
+  // one on Approve), so they don't surface in the assignments-driven
+  // loop above. PlayersTab renders them with empty `assignments`
+  // (currentTeam → null) plus a PENDING status badge.
+  for (const p of pendingApplications) {
+    if (playerMap.has(p.id)) continue // safety: a pending player should not also have a PLA
+    const ll = p.lineId ? lineLoginsByLineId[p.lineId] : undefined
+    playerMap.set(p.id, {
+      id: p.id,
+      name: p.name,
+      position: p.position ?? null,
+      profilePictureUrl: p.profilePictureUrl ?? null,
+      pictureUrl: p.pictureUrl ?? null,
+      userId: p.userId ?? null,
+      activeInviteCount: activeInviteCountByPlayerId[p.id] ?? 0,
+      idFrontUrl: p.idFrontUrl ?? null,
+      idBackUrl: p.idBackUrl ?? null,
+      idUploadedAt: p.idUploadedAt
+        ? p.idUploadedAt instanceof Date
+          ? p.idUploadedAt.toISOString()
+          : String(p.idUploadedAt)
+        : null,
+      lineId: p.lineId ?? null,
+      lineDisplayName: ll?.name ?? null,
+      linePictureUrl: ll?.pictureUrl ?? null,
+      lineLastSeenAt: ll?.lastSeenAt ?? null,
+      otherLeagues: otherLeaguesByPlayerId[p.id] ?? [],
+      applicationStatus: p.applicationStatus,
+      assignments: [],
+    })
   }
 
   const players = Array.from(playerMap.values())

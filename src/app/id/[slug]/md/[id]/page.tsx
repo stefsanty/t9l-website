@@ -4,6 +4,8 @@ import { findNextMatchday } from '@/lib/stats'
 import { getLeagueIdBySlug, normalizeLeagueSlug } from '@/lib/leagueSlug'
 import { getPublicLeagueData } from '@/lib/publicData'
 import { getLeagueFlags } from '@/lib/leagueFlags'
+import { getRecruitingViewerState } from '@/lib/recruitingViewerState'
+import { prisma } from '@/lib/prisma'
 
 export const metadata = {
   title: 'Matchday | T9L',
@@ -37,17 +39,22 @@ export default async function LeagueByIdMatchdayPage({ params }: Props) {
 
   let data
   let flags
+  let recruitingState
+  let leagueRow
   try {
     // v1.63.0 — fetch flags in parallel with public data; per-matchday
     // route honors the league's preseason/recruiting state same as the
-    // homepage. Note: the URL pre-selects a matchday, so the banner is
-    // locked to it via `initialMatchdayId` regardless of preseason mode.
-    // If preseason is on, ClassicLeagueHomepage doesn't render at all
-    // (CompressedMatchdaySchedule does); the matchday-id URL still
-    // routes here cleanly because the page-level resolver is shared.
-    ;[data, flags] = await Promise.all([
+    // homepage. v1.64.0 — also fetch the recruiting viewer state +
+    // league row so the per-matchday route surfaces the same context-
+    // aware banner as the homepage.
+    ;[data, flags, recruitingState, leagueRow] = await Promise.all([
       getPublicLeagueData(leagueId),
       getLeagueFlags(leagueId),
+      getRecruitingViewerState(leagueId),
+      prisma.league.findUnique({
+        where: { id: leagueId },
+        select: { id: true, name: true },
+      }),
     ])
   } catch {
     return (
@@ -87,6 +94,8 @@ export default async function LeagueByIdMatchdayPage({ params }: Props) {
       leagueSlug={normalizeLeagueSlug(slug)}
       preseasonMode={flags.preseasonMode}
       recruiting={flags.recruiting}
+      recruitingState={recruitingState}
+      league={leagueRow ?? undefined}
     />
   )
 }

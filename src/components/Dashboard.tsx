@@ -13,6 +13,7 @@ import ClassicLeagueHomepage from './ClassicLeagueHomepage';
 import CompressedMatchdaySchedule from './CompressedMatchdaySchedule';
 import RecruitingBanner from './RecruitingBanner';
 import RsvpBar from './RsvpBar';
+import type { RecruitingViewerState } from '@/lib/recruitingViewerState';
 import { selfReportGateOpen } from '@/lib/playerSelfReportGate';
 import { combineJstDateAndTime } from '@/lib/jst';
 
@@ -57,6 +58,22 @@ interface DashboardProps {
    * `preseasonMode` — both can be on simultaneously. Defaults false.
    */
   recruiting?: boolean;
+  /**
+   * v1.64.0 — context-aware recruiting state. When `recruiting === true`,
+   * the page-level RSC computes the viewer's relationship to this league
+   * via `getRecruitingViewerState(leagueId)` and threads the result
+   * through. The five-way discriminated union drives the
+   * `RecruitingBanner`'s rendered surface (approved / pending / no-player
+   * apply / in-other-league / unauthenticated). When `recruiting === false`
+   * this prop is ignored.
+   */
+  recruitingState?: RecruitingViewerState;
+  /**
+   * v1.64.0 — league identity needed by RecruitingBanner CTAs (apply
+   * action passes leagueId + leagueName for display). Threaded as a
+   * single prop so a future per-league rebrand only touches one site.
+   */
+  league?: { id: string; name: string };
 }
 
 /**
@@ -87,6 +104,8 @@ export default function Dashboard({
   leagueSlug,
   preseasonMode = false,
   recruiting = false,
+  recruitingState,
+  league,
 }: DashboardProps) {
   const { data: session } = useSession();
   const [selectedMatchdayId, setSelectedMatchdayId] = useState(
@@ -179,7 +198,9 @@ export default function Dashboard({
 
       <main className={`flex-1 px-4 relative z-10 pt-12 ${showRsvpBar ? 'pb-32' : 'pb-2'}`}>
         <div className="animate-in pt-2">
-          {recruiting && <RecruitingBanner />}
+          {recruiting && league && recruitingState && (
+            <RecruitingBanner league={league} viewer={recruitingState} />
+          )}
 
           {nextMd ? (
             <>

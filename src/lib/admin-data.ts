@@ -109,7 +109,7 @@ export const getLeagueTeams = unstable_cache(
  */
 export const getLeaguePlayers = unstable_cache(
   async (leagueId: string) => {
-    const [assignments, leagueTeams, gameWeeks, allLineLogins, activeInvites] = await Promise.all([
+    const [assignments, leagueTeams, gameWeeks, allLineLogins, activeInvites, pendingApplications] = await Promise.all([
       prisma.playerLeagueAssignment.findMany({
         where: { leagueTeam: { leagueId } },
         include: {
@@ -156,6 +156,19 @@ export const getLeaguePlayers = unstable_cache(
           usedCount: true,
         },
       }),
+      // v1.64.0 — pending applications targeting THIS league. These
+      // Player rows have NO PlayerLeagueAssignment yet (admin creates
+      // one on approval) so the existing `assignments` query above
+      // wouldn't surface them. The page-level merger appends these as
+      // synthetic rows with empty `assignments`, and PlayersTab renders
+      // an "Application" status badge + Approve/Reject kebab items.
+      prisma.player.findMany({
+        where: {
+          applicationLeagueId: leagueId,
+          applicationStatus: 'PENDING',
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
     ])
     const lineLoginsByLineId: Record<
       string,
@@ -190,6 +203,7 @@ export const getLeaguePlayers = unstable_cache(
       gameWeeks,
       lineLoginsByLineId,
       activeInviteCountByPlayerId,
+      pendingApplications,
     ] as const
   },
   ['league-players'],

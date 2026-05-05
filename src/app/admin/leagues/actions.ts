@@ -750,6 +750,132 @@ export async function adminPurgePlayerId(input: {
   revalidate({ domain: 'admin', paths: [`/admin/leagues/${input.leagueId}/players`] })
 }
 
+// ── Application/recruiting workflow (v1.64.0) ───────────────────────────────
+
+/**
+ * v1.64.0 — Approve a pending application Player.
+ *
+ * Atomically:
+ *   1. Verifies the Player exists with `applicationStatus = PENDING`.
+ *   2. Verifies the supplied `leagueTeamId` belongs to the supplied
+ *      `leagueId` (cross-league isolation).
+ *   3. Flips `applicationStatus` to APPROVED, clears `applicationLeagueId`.
+ *   4. Creates a new `PlayerLeagueAssignment` with the chosen team,
+ *      `joinSource: 'SELF_SERVE'` (the user applied themselves),
+ *      `onboardingStatus: 'COMPLETED'` (no separate redemption step
+ *      since the user provided name + position during application).
+ *   5. Busts admin + public caches.
+ *
+ * Idempotency: throws if the player is already APPROVED rather than
+ * silently no-op'ing — admin shouldn't be able to "double-approve" by
+ * accident; the row should be gone from the pending list after the
+ * first click.
+ */
+export async function adminApproveApplication(input: {
+  playerId: string
+  leagueId: string
+  leagueTeamId: string
+  fromGameWeek?: number
+}): Promise<void> {
+  await assertAdmin()
+  if (!input.playerId) throw new Error('playerId is required')
+  if (!input.leagueId) throw new Error('leagueId is required')
+  if (!input.leagueTeamId) throw new Error('leagueTeamId is required')
+
+  const player = await prisma.player.findUnique({
+    where: { id: input.playerId },
+    select: { id: true, applicationStatus: true, applicationLeagueId: true },
+  })
+  if (!player) throw new Error('Player not found')
+  if (player.applicationStatus !== 'PENDING') {
+    throw new Error('Player is not a pending application')
+  }
+
+  const leagueTeam = await prisma.leagueTeam.findUnique({
+    where: { id: input.leagueTeamId },
+    select: { id: true, leagueId: true },
+  })
+  if (!leagueTeam) throw new Error('Team not found')
+  if (leagueTeam.leagueId !== input.leagueId) {
+    throw new Error('Team does not belong to this league')
+  }
+
+  const fromGameWeek = input.fromGameWeek && input.fromGameWeek > 0 ? input.fromGameWeek : 1
+
+  await prisma.$transaction(async (tx) => {
+    await tx.player.update({
+      where: { id: input.playerId },
+      data: {
+        applicationStatus: 'APPROVED',
+        applicationLeagueId: null,
+      },
+    })
+    await tx.playerLeagueAssignment.create({
+      data: {
+        playerId: input.playerId,
+        leagueTeamId: input.leagueTeamId,
+        fromGameWeek,
+        joinSource: 'SELF_SERVE',
+        onboardingStatus: 'COMPLETED',
+      },
+    })
+  })
+
+  revalidate({ domain: 'admin', paths: [`/admin/leagues/${input.leagueId}/players`] })
+  revalidate({ domain: 'public' })
+}
+
+/**
+ * v1.64.0 — Reject a pending application Player.
+ *
+ * The brief: "delete the Player record OR set a separate REJECTED status —
+ * simpler: just delete/cancel the application since the data was provided
+ * by an unverified user."
+ *
+ * Atomically:
+ *   1. Verifies the Player exists with `applicationStatus = PENDING`.
+ *      (Refuses to delete an APPROVED Player — that's a different
+ *      operation: admin should use the existing "Remove from league" /
+ *      Unlink flows.)
+ *   2. Clears `User.playerId` (the v1.27.0 dual-write invariant — if we
+ *      delete the Player without clearing the User pointer, the User
+ *      ends up with a dangling FK).
+ *   3. Deletes the Player. Cascading FK constraints delete the
+ *      (typically empty) PlayerLeagueAssignment + Availability rows.
+ *      Goal/Assist/MatchEvent FKs are RESTRICT/SET NULL — but a fresh
+ *      pending application Player has none of those.
+ *   4. Busts admin + public caches.
+ */
+export async function adminRejectApplication(input: {
+  playerId: string
+  leagueId: string
+}): Promise<void> {
+  await assertAdmin()
+  if (!input.playerId) throw new Error('playerId is required')
+
+  const player = await prisma.player.findUnique({
+    where: { id: input.playerId },
+    select: { id: true, applicationStatus: true, userId: true },
+  })
+  if (!player) throw new Error('Player not found')
+  if (player.applicationStatus !== 'PENDING') {
+    throw new Error('Player is not a pending application')
+  }
+
+  await prisma.$transaction(async (tx) => {
+    if (player.userId) {
+      await tx.user.update({
+        where: { id: player.userId },
+        data: { playerId: null },
+      })
+    }
+    await tx.player.delete({ where: { id: input.playerId } })
+  })
+
+  revalidate({ domain: 'admin', paths: [`/admin/leagues/${input.leagueId}/players`] })
+  revalidate({ domain: 'public' })
+}
+
 // ── Invite generation (PR ε / v1.33.0) ──────────────────────────────────────
 
 const VALID_POSITIONS: readonly PlayerPosition[] = ['GK', 'DF', 'MF', 'FW']

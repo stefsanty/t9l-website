@@ -3,6 +3,8 @@ import Dashboard from "@/components/Dashboard";
 import { getPublicLeagueData } from "@/lib/publicData";
 import { DEFAULT_LEAGUE_SLUG, getDefaultLeagueId } from "@/lib/leagueSlug";
 import { getLeagueFlags } from "@/lib/leagueFlags";
+import { getRecruitingViewerState } from "@/lib/recruitingViewerState";
+import { prisma } from "@/lib/prisma";
 
 /**
  * Public landing page — apex `/` always renders the default league.
@@ -43,14 +45,28 @@ export default async function Home() {
 
   let data;
   let flags;
+  let recruitingState;
+  let leagueRow;
   try {
     // v1.63.0 — fetch LeagueData + per-league flags in parallel. Flags
     // are cached separately under the same `leagues` tag so admin writes
     // bust both. Defaults to `{ preseasonMode: false, recruiting: false }`
     // on Prisma failure so a transient blip doesn't flip the homepage UX.
-    [data, flags] = await Promise.all([
+    //
+    // v1.64.0 — also fetch the recruiting viewer state and league name
+    // in the same Promise.all. The viewer state read is uncached
+    // (per-session) but cheap (a single User → Player join). The league
+    // name fetch is bounded by the cached LeagueData but we need the
+    // canonical row for the banner (LeagueData carries teams + matches,
+    // not the League's own fields).
+    [data, flags, recruitingState, leagueRow] = await Promise.all([
       getPublicLeagueData(leagueId),
       getLeagueFlags(leagueId),
+      getRecruitingViewerState(leagueId),
+      prisma.league.findUnique({
+        where: { id: leagueId },
+        select: { id: true, name: true },
+      }),
     ]);
   } catch {
     return (
@@ -78,6 +94,8 @@ export default async function Home() {
       leagueSlug={DEFAULT_LEAGUE_SLUG}
       preseasonMode={flags.preseasonMode}
       recruiting={flags.recruiting}
+      recruitingState={recruitingState}
+      league={leagueRow ?? undefined}
     />
   );
 }
