@@ -7,6 +7,7 @@ import { authOptions } from '@/lib/auth';
 import { getPublicLeagueData } from '@/lib/publicData';
 import { getLinkedPlayerIds } from '@/lib/linkedPlayers';
 import { getDefaultLeagueId } from '@/lib/leagueSlug';
+import { getLeagueAllowSelfLink } from '@/lib/leagueSelfLink';
 
 export default async function AssignPlayerPage() {
   // v1.53.0 — subdomain teardown. The legacy /assign-player picker is
@@ -35,6 +36,19 @@ export default async function AssignPlayerPage() {
   // users to a clear "need invite" surface instead of the broken picker.
   if (session && !session.lineId) {
     return <NeedInviteSurface />;
+  }
+
+  // v1.60.0 — per-league self-link toggle. When the admin has disabled open
+  // self-linking for this league, surface a "self-linking disabled" message
+  // instead of the picker. Existing LINE users who are already linked can
+  // still unbind themselves via the API DELETE path (the gate is on POST
+  // only); but the picker UI doesn't surface unassign on its own — they
+  // hit it via /assign-player too, so we route them through with a
+  // dedicated copy that explains the situation. Default true preserves
+  // backward compat: leagues that haven't been touched behave as before.
+  const allowSelfLink = leagueId ? await getLeagueAllowSelfLink(leagueId) : true;
+  if (!allowSelfLink) {
+    return <SelfLinkDisabledSurface />;
   }
 
   // PR 15 / v1.4.3 — hide players already linked to OTHER LINE users entirely
@@ -79,6 +93,51 @@ function NeedInviteSurface() {
           <p className="text-sm text-fg-mid leading-relaxed mb-6">
             Ask your league admin for an invite link to claim your roster spot,
             or contact{' '}
+            <a
+              href="mailto:vitoriatamachi@gmail.com"
+              className="text-electric-green hover:underline"
+            >
+              vitoriatamachi@gmail.com
+            </a>
+            .
+          </p>
+          <Link
+            href="/"
+            className="flex items-center justify-center w-full py-3.5 rounded-2xl bg-electric-green text-black font-display text-base font-black uppercase tracking-wider hover:bg-electric-green/90 active:scale-[0.98] transition-all"
+          >
+            Back to home
+          </Link>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// v1.60.0 — per-league self-link toggle. Surface for any visitor (LINE,
+// Google/email, or unauthenticated) who hits `/assign-player` for a
+// league where the admin has disabled open self-linking. The copy points
+// users at the invite-redemption flow (`/join/[code]`) and the operator
+// mailto for the case where they don't have an invite yet. Mirrors the
+// visual language of `NeedInviteSurface` so the two messages feel like
+// siblings.
+function SelfLinkDisabledSurface() {
+  return (
+    <div
+      data-testid="assign-player-self-link-disabled"
+      className="min-h-dvh bg-background flex items-center justify-center px-5"
+    >
+      <div className="w-full max-w-sm bg-card border border-border-default rounded-3xl overflow-hidden shadow-2xl">
+        <div className="px-7 pt-6 pb-8">
+          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-primary mb-2">
+            Self-linking disabled
+          </p>
+          <h1 className="font-display text-2xl font-black uppercase tracking-tight text-fg-high leading-tight mb-3">
+            Ask the league admin for an invite link
+          </h1>
+          <p className="text-sm text-fg-mid leading-relaxed mb-6">
+            Open self-linking is turned off for this league. Your league admin
+            will send you a personal invite link that confirms your roster
+            spot. If you don&apos;t have one yet, contact{' '}
             <a
               href="mailto:vitoriatamachi@gmail.com"
               className="text-electric-green hover:underline"

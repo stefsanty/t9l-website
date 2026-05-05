@@ -162,6 +162,30 @@ export async function deleteLeague(id: string) {
   redirect('/admin')
 }
 
+/**
+ * v1.60.0 — per-league self-link toggle. Sets `League.allowSelfLink` to
+ * the supplied boolean. Default for a new League is `true` (backward
+ * compat); admins flip to `false` to disable the legacy `/assign-player`
+ * open picker for THIS league only. Other leagues are unaffected.
+ *
+ * Validation: rejects non-boolean values defensively. The admin UI is
+ * the affordance; this is the server contract.
+ */
+export async function setLeagueAllowSelfLink(leagueId: string, value: boolean) {
+  await assertAdmin()
+  if (typeof value !== 'boolean') {
+    throw new Error('allowSelfLink must be a boolean')
+  }
+  await prisma.league.update({
+    where: { id: leagueId },
+    data: { allowSelfLink: value },
+  })
+  revalidate({
+    domain: 'admin',
+    paths: [`/admin/leagues/${leagueId}/settings`, `/admin/leagues/${leagueId}`, '/admin'],
+  })
+}
+
 // ── GameWeek ────────────────────────────────────────────────────────────────
 
 export async function createGameWeek(leagueId: string, data: {

@@ -1,0 +1,22 @@
+-- v1.60.0 — per-league self-link toggle.
+--
+-- Adds `League.allowSelfLink BOOLEAN NOT NULL DEFAULT true` so admins can
+-- disable the legacy `/assign-player` open picker on a league-by-league
+-- basis. Default true preserves backward compatibility — every existing
+-- league behaves exactly as today.
+--
+-- When false, the public `/assign-player` route surfaces a "self-linking
+-- disabled" message (per-league copy points users at `/join/[code]`
+-- invite redemption) and the API POST returns 403. DELETE (unassign) is
+-- unaffected so a previously-linked player can still unbind themselves.
+--
+-- Purely additive: no DROP, no ALTER COLUMN against existing data, no
+-- destructive backfill. Existing rows pick up the DEFAULT true at write
+-- time of the migration.
+--
+-- Rollback recipe (if reverting v1.60.0):
+--   ALTER TABLE "League" DROP COLUMN "allowSelfLink";
+-- Code revert restores the pre-v1.60.0 behavior (route always renders
+-- the picker for LINE users, no admin toggle in SettingsTab).
+
+ALTER TABLE "League" ADD COLUMN "allowSelfLink" BOOLEAN NOT NULL DEFAULT true;
