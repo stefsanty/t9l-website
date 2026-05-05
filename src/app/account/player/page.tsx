@@ -9,13 +9,30 @@ import AccountPlayerForm, { type AccountPlayerFormProps } from './AccountPlayerF
 /**
  * v1.37.0 (PR ι) — user self-service "Change player details".
  *
- * Auth gates (in order):
- *   - No session → redirect to /auth/signin so the user picks a provider.
- *   - admin-credentials session (no userId) → friendly "this surface is
- *     for player accounts" message with a /admin link.
- *   - authenticated lurker (userId but no playerId) → friendly
- *     "redeem your invite first" message.
- *   - bound user → render the form.
+ * v1.59.1 — fixed gate that blocked legitimate LINE-auth users with a
+ * linked Player but no `session.userId` (pre-v1.28.0 sessions, or any
+ * case where `User.lineId` linkage drifted). Pre-v1.59.1 the page
+ * rejected any session without `userId` as an "admin session" — but
+ * `userId` is only set on JWTs created post-v1.28.0 by the PrismaAdapter.
+ * A LINE user signed in before v1.28.0 deployed retains a `lineId`-only
+ * JWT and was incorrectly bucketed with admin-credentials. This also
+ * blocked LINE-auth admins (e.g. Stefan S, whose LINE ID is in
+ * `ADMIN_LINE_IDS`) from editing their own player details — admin role
+ * is orthogonal to "have a linked Player".
+ *
+ * New auth model: resolve the linked Player via `userId` first
+ * (canonical post-α.5 / v1.27.0 binding) with `lineId` fallback (legacy
+ * for grandfathered LINE sessions). The Player lookup is the gate; if
+ * no Player resolves, render the appropriate empty state based on
+ * what the session offers.
+ *
+ * Branches (in order):
+ *   - No session → redirect to /auth/signin.
+ *   - No userId AND no lineId (admin-credentials only) → friendly
+ *     "this surface is for player accounts" message.
+ *   - Player resolves → render form.
+ *   - Otherwise (Google/email lurker, or LINE user with no link) →
+ *     friendly "redeem your invite first" message.
  *
  * `force-dynamic` because the page reads the request session and Host
  * header (for league context). Revalidate on every navigation.
@@ -32,15 +49,22 @@ export default async function AccountPlayerPage() {
   }
 
   const userId = (session as { userId?: string | null }).userId ?? null
-  if (!userId) {
+  // session.lineId is typed `string` (empty when admin-credentials);
+  // coerce empty → null so the OR-fallback chain treats it as absent.
+  const lineId = session.lineId || null
+
+  // Admin-credentials sessions have neither — they can't have a player
+  // bound. Show the friendly admin shell pointer.
+  if (!userId && !lineId) {
     return (
       <Shell>
         <div className="bg-card border border-border-default rounded-2xl p-6 text-fg-mid">
           <h1 className="font-display text-2xl font-black uppercase tracking-tight text-fg-high mb-3">
-            Admin sessions can't edit here
+            Admin-only sessions can't edit here
           </h1>
           <p className="text-sm leading-relaxed">
-            This page is for player accounts. Admins manage players through{' '}
+            This page is for player accounts. Sign in via LINE / Google /
+            email to edit your linked player, or manage players through{' '}
             <Link href="/admin" className="text-electric-green hover:underline">
               the admin shell
             </Link>
@@ -51,8 +75,28 @@ export default async function AccountPlayerPage() {
     )
   }
 
-  const playerId = session.playerId ?? null
-  if (!playerId) {
+  // Try userId first (canonical post-α.5 / v1.27.0 binding), then
+  // fallback to lineId (legacy for pre-v1.28.0 LINE sessions). Both
+  // identifiers are minted by the auth server; either is a safe lookup
+  // key. Looking up by session.playerId (slug) alone is unsafe — admin
+  // remap can leave the slug stale relative to the canonical binding.
+  const playerInclude = {
+    leagueAssignments: {
+      include: { leagueTeam: { include: { team: true, league: true } } },
+      orderBy: { fromGameWeek: 'desc' as const },
+    },
+  }
+  let player = userId
+    ? await prisma.player.findUnique({ where: { userId }, include: playerInclude })
+    : null
+  if (!player && lineId) {
+    player = await prisma.player.findUnique({ where: { lineId }, include: playerInclude })
+  }
+
+  if (!player) {
+    // Authenticated but no Player linked. Two sub-cases share this
+    // copy — Google/email lurker who hasn't redeemed an invite, or
+    // LINE user with a session but no Player.lineId/userId match.
     return (
       <Shell>
         <div className="bg-card border border-border-default rounded-2xl p-6 text-fg-mid">
@@ -66,41 +110,6 @@ export default async function AccountPlayerPage() {
           </p>
           <p className="text-sm leading-relaxed">
             Need a link? Email{' '}
-            <a
-              href={`mailto:${ADMIN_CONTACT_EMAIL}`}
-              className="text-electric-green hover:underline"
-            >
-              {ADMIN_CONTACT_EMAIL}
-            </a>
-            .
-          </p>
-        </div>
-      </Shell>
-    )
-  }
-
-  const player = await prisma.player.findUnique({
-    where: { userId },
-    include: {
-      leagueAssignments: {
-        include: { leagueTeam: { include: { team: true, league: true } } },
-        orderBy: { fromGameWeek: 'desc' },
-      },
-    },
-  })
-
-  if (!player) {
-    // Session has playerId but Player.userId doesn't resolve. Possible
-    // post-admin-remap drift; surface as the lurker view rather than 500.
-    return (
-      <Shell>
-        <div className="bg-card border border-border-default rounded-2xl p-6 text-fg-mid">
-          <h1 className="font-display text-2xl font-black uppercase tracking-tight text-fg-high mb-3">
-            Player not found
-          </h1>
-          <p className="text-sm leading-relaxed mb-4">
-            Your session references a player that no longer exists or has
-            been remapped. Sign out and back in, or contact{' '}
             <a
               href={`mailto:${ADMIN_CONTACT_EMAIL}`}
               className="text-electric-green hover:underline"

@@ -7,9 +7,12 @@
  *   3. removePlayerProfilePicture — clear column + DEL Blob
  *
  * Pin:
- *   - Auth gate: no session → throws; admin session (no userId) → throws;
- *     authenticated lurker (no playerId) → throws.
- *   - Owner gate: resolves Player by `userId @unique`, throws if no row.
+ *   - Auth gate: no session → throws; admin-credentials session (no
+ *     userId AND no lineId) → throws. v1.59.1: LINE-only sessions
+ *     (lineId present, userId absent — pre-v1.28.0 grandfathered
+ *     sessions OR LINE-auth admins) are NOT rejected.
+ *   - Owner gate (v1.59.1): resolves Player by `userId @unique` first,
+ *     falling back to `lineId @unique`. Throws if neither resolves.
  *   - File validation: MIME (jpeg/png/webp), size (≤5MB).
  *   - Blob token gate: upload throws when BLOB_READ_WRITE_TOKEN missing.
  *   - Replace-only: prior URL is DEL'd after successful new put.
@@ -77,22 +80,70 @@ describe('updatePlayerSelf — auth gates', () => {
     expect(playerUpdateMock).not.toHaveBeenCalled()
   })
 
-  it('throws when admin-credentials session has no userId', async () => {
-    sessionMock.mockResolvedValue({ playerId: null })
+  it('throws when admin-credentials session has no userId AND no lineId', async () => {
+    sessionMock.mockResolvedValue({ playerId: null, lineId: '' })
     await expect(updatePlayerSelf({ name: 'Stefan' })).rejects.toThrow(/admin/i)
     expect(playerUpdateMock).not.toHaveBeenCalled()
   })
 
-  it('throws when authenticated lurker has no playerId', async () => {
-    sessionMock.mockResolvedValue({ userId: 'u-1', playerId: null })
-    await expect(updatePlayerSelf({ name: 'Stefan' })).rejects.toThrow(/redeem/i)
-    expect(playerUpdateMock).not.toHaveBeenCalled()
-  })
-
-  it("throws when Player.userId can't be resolved", async () => {
+  it("throws when neither userId nor lineId resolves a Player", async () => {
+    sessionMock.mockResolvedValue({ userId: 'u-1', lineId: 'L-1' })
     playerFindUniqueMock.mockResolvedValue(null)
     await expect(updatePlayerSelf({ name: 'Stefan' })).rejects.toThrow(/no player/i)
     expect(playerUpdateMock).not.toHaveBeenCalled()
+  })
+
+  // v1.59.1 — pre-v1.28.0 LINE sessions (and LINE-auth admins like
+  // Stefan S) have lineId set but no userId. They MUST be allowed in,
+  // resolving the Player via the lineId fallback.
+  it('v1.59.1 — accepts LINE-only session (no userId, has lineId) and resolves Player via lineId fallback', async () => {
+    sessionMock.mockResolvedValue({ userId: null, lineId: 'L-stefan' })
+    // First findUnique (where: { userId }) is skipped because userId is null.
+    // Fallback findUnique (where: { lineId }) returns the player.
+    playerFindUniqueMock.mockResolvedValueOnce({ id: 'p-stefan-s' })
+    await updatePlayerSelf({ name: 'Stefan S' })
+    // Verify the lookup was by lineId, not userId
+    expect(playerFindUniqueMock).toHaveBeenCalledWith({
+      where: { lineId: 'L-stefan' },
+      select: { id: true },
+    })
+    expect(playerUpdateMock).toHaveBeenCalledWith({
+      where: { id: 'p-stefan-s' },
+      data: expect.objectContaining({ name: 'Stefan S' }),
+    })
+  })
+
+  // v1.59.1 — userId-first preference: when both are present, userId
+  // resolves first. lineId is the fallback only.
+  it('v1.59.1 — prefers userId lookup when both userId and lineId are present', async () => {
+    sessionMock.mockResolvedValue({ userId: 'u-1', lineId: 'L-1' })
+    playerFindUniqueMock.mockResolvedValueOnce({ id: 'p-stefan-s' })
+    await updatePlayerSelf({ name: 'Stefan' })
+    expect(playerFindUniqueMock).toHaveBeenCalledTimes(1)
+    expect(playerFindUniqueMock).toHaveBeenCalledWith({
+      where: { userId: 'u-1' },
+      select: { id: true },
+    })
+  })
+
+  // v1.59.1 — drift case: session has userId but Player.userId column
+  // isn't populated (e.g. v1.29.0 backfill missed this row). Falls
+  // through to lineId.
+  it('v1.59.1 — falls back to lineId when userId lookup misses', async () => {
+    sessionMock.mockResolvedValue({ userId: 'u-1', lineId: 'L-stefan' })
+    playerFindUniqueMock
+      .mockResolvedValueOnce(null) // userId miss
+      .mockResolvedValueOnce({ id: 'p-stefan-s' }) // lineId hit
+    await updatePlayerSelf({ name: 'Stefan S' })
+    expect(playerFindUniqueMock).toHaveBeenCalledTimes(2)
+    expect(playerFindUniqueMock).toHaveBeenNthCalledWith(1, {
+      where: { userId: 'u-1' },
+      select: { id: true },
+    })
+    expect(playerFindUniqueMock).toHaveBeenNthCalledWith(2, {
+      where: { lineId: 'L-stefan' },
+      select: { id: true },
+    })
   })
 })
 
@@ -325,8 +376,8 @@ describe('removePlayerProfilePicture', () => {
     expect(delMock).not.toHaveBeenCalled()
   })
 
-  it('throws on auth gate failure (admin session)', async () => {
-    sessionMock.mockResolvedValue({ playerId: null })
+  it('throws on auth gate failure (admin-credentials with no userId/lineId)', async () => {
+    sessionMock.mockResolvedValue({ playerId: null, lineId: '' })
     await expect(removePlayerProfilePicture()).rejects.toThrow(/admin/i)
   })
 })

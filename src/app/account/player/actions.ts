@@ -43,38 +43,67 @@ export const PROFILE_PIC_ALLOWED_TYPES = [
 ] as const
 
 interface AuthedSession {
-  userId: string
-  playerId: string
+  userId: string | null
+  lineId: string | null
 }
 
+/**
+ * v1.59.1 — gate loosened to accept either `userId` (canonical post-α.5)
+ * OR `lineId` (legacy fallback for pre-v1.28.0 LINE sessions). Pre-v1.59.1
+ * the gate threw "Admin sessions cannot edit" for any session without
+ * `userId`, which incorrectly rejected grandfathered LINE users (and
+ * LINE-auth admins like Stefan S whose role is orthogonal to player
+ * binding). Admin role is NOT a gate here — it's about whether the
+ * session can resolve to a linked Player row.
+ *
+ * Admin-credentials sessions (no userId, no lineId) still throw — they
+ * have no auth-provider link to any Player and edit players via
+ * /admin/leagues/[id]/players instead.
+ *
+ * The session.playerId presence check is dropped — the gate is now
+ * "can we resolve a linked Player from `userId` or `lineId`," and that
+ * resolution happens in `resolveOwnedPlayerId` below. session.playerId
+ * can be stale post-admin-remap; userId/lineId stay canonical.
+ */
 async function requireSelfPlayerSession(): Promise<AuthedSession> {
   const session = await getServerSession(authOptions)
   if (!session) throw new Error('Sign in required')
   const userId = (session as { userId?: string | null }).userId ?? null
-  const playerId = session.playerId ?? null
-  if (!userId) {
+  // session.lineId is typed `string` (empty for admin-credentials).
+  const lineId = session.lineId || null
+  if (!userId && !lineId) {
     throw new Error('Admin sessions cannot edit player details')
   }
-  if (!playerId) {
-    throw new Error('Redeem your league invite to set up your player profile')
-  }
-  return { userId, playerId }
+  return { userId, lineId }
 }
 
 /**
- * Resolve the calling user's Player row id from session.playerId, which
- * is the v1.5.0 slug shape (no `p-` prefix). DB rows carry the prefix —
- * but we cannot trust the slug alone; we MUST verify against
- * Player.userId so a session that's been tampered with (or carries a
- * stale playerId after admin remap) can't edit a row it no longer owns.
+ * Resolve the calling user's Player row id by trying `userId` first
+ * (canonical post-α.5 / v1.27.0 binding from PR β/v1.29.0 dual-write),
+ * falling back to `lineId` (legacy pre-v1.28.0 binding). Both
+ * identifiers are minted by the auth server, so either is a safe
+ * lookup key.
+ *
+ * Looking up by session.playerId (slug) alone is unsafe — admin remap
+ * can leave the slug stale relative to the canonical lineId/userId
+ * binding. The userId/lineId pair always reflects the current binding.
  *
  * Returns the DB-prefixed Player.id on success; throws on mismatch.
  */
 async function resolveOwnedPlayerId(session: AuthedSession): Promise<string> {
-  const player = await prisma.player.findUnique({
-    where: { userId: session.userId },
-    select: { id: true },
-  })
+  let player: { id: string } | null = null
+  if (session.userId) {
+    player = await prisma.player.findUnique({
+      where: { userId: session.userId },
+      select: { id: true },
+    })
+  }
+  if (!player && session.lineId) {
+    player = await prisma.player.findUnique({
+      where: { lineId: session.lineId },
+      select: { id: true },
+    })
+  }
   if (!player) {
     throw new Error('No player linked to your account')
   }
