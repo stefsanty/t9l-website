@@ -139,8 +139,17 @@ describe('v1.25.0 — feature-parity surfaces present in unified Dashboard', () 
     expect(classicSrc).toMatch(/<MatchdayAvailability\b/)
   })
 
-  it('renders RsvpBar (inside ClassicLeagueHomepage)', () => {
-    expect(classicSrc).toMatch(/<RsvpBar\b/)
+  it('renders RsvpBar (at Dashboard outer-wrapper level — v1.63.1 fix)', () => {
+    // v1.63.1 — RsvpBar moved BACK out of ClassicLeagueHomepage to fix
+    // the lost-fixed-anchor bug. The `.animate-in` div inside <main>
+    // sets `transform: translateY(0)` (animation-fill-mode: forwards)
+    // which establishes a containing block for fixed descendants. RsvpBar
+    // must render at Dashboard's outer wrapper level (sibling of <main>
+    // and <footer>) so its `position: fixed; bottom: 0` anchors to the
+    // viewport. Regression target — moving RsvpBar back into
+    // ClassicLeagueHomepage would re-break the bottom-anchor.
+    expect(dashboardSrc).toMatch(/<RsvpBar\b/)
+    expect(classicSrc).not.toMatch(/<RsvpBar\b/)
   })
 
   it('renders UserTeamBadge', () => {
