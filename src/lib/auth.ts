@@ -710,14 +710,30 @@ export const authOptions: AuthOptions = {
       // the subdomain mechanism, but the JWT callback has no path
       // access in next-auth v4. The conservative choice is "session
       // surfaces the default-league mapping". When a user browses a
-      // non-default league via /league/<slug>, the page-level league
+      // non-default league via /id/<slug>, the page-level league
       // context drives data; session.{playerId,teamId} reflect their
       // default-league membership and are typically not used by the
       // page chrome (Dashboard's render-null branches handle a
       // session.teamId not in the rendered league).
       //
+      // v1.58.0 (PR 5 of route-shortening chain) — perf: skip the
+      // league lookup + mapping fetch entirely when there's no
+      // `token.lineId`. Google/email sessions have userId but no
+      // lineId; their player mapping is null by definition (until
+      // they redeem a LeagueInvite). Pre-v1.58.0 the callback ran
+      // both `getDefaultLeagueId()` (cached, ~1ms warm; cold-Prisma
+      // query on cache miss) and the `getPlayerMapping` block
+      // unconditionally. Skipping when no lineId means non-LINE
+      // sessions get a noticeably tighter callback path.
+      //
       // Lazy import to keep the helper out of the static import graph
       // for non-request-context callers (recovery scripts, etc.).
+      if (!token.lineId) {
+        token.leagueId = null;
+        token.playerId = null;
+        token.playerName = null;
+        token.teamId = null;
+      } else {
       let requestLeagueId: string | null = null;
       try {
         const { getDefaultLeagueId } = await import("@/lib/leagueSlug");
@@ -764,6 +780,7 @@ export const authOptions: AuthOptions = {
           }
         }
       }
+      } // end: if (token.lineId) — v1.58.0 perf gate
 
       // Recompute isAdmin on every token refresh so env changes take effect
       const adminIds = (process.env.ADMIN_LINE_IDS ?? "")
