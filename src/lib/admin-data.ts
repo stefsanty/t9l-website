@@ -444,6 +444,135 @@ export async function getAllLineLoginsWithLinkedPlayer(): Promise<
 }
 
 /**
+ * v1.57.0 (PR 4 of route-shortening chain) — every User row in the
+ * system, annotated with the auth providers that have signed in for
+ * them, the Player they're bound to (if any), and the leagues that
+ * Player is currently in.
+ *
+ * Drives the new `/admin/users` admin list. The list is global (not
+ * per-league) because Users are a global concept — one User can play in
+ * multiple leagues via a single Player. Filtering by league is a
+ * client-side concern in the list component.
+ *
+ * Cardinality: bounded by the number of distinct sign-in identities
+ * across the org. Today: ~32 LINE users + a handful of Google/email
+ * users; expected ceiling: a few hundred. Single Prisma query with
+ * relation includes is plenty.
+ *
+ * Provider list is derived from `Account.provider` rows — distinct +
+ * sorted for stable display. Login dates come from the corresponding
+ * `LineLogin.lastSeenAt` (LINE-specific; the non-LINE providers don't
+ * have a parallel login-tracking table — Account row's update doesn't
+ * track activity, only the binding moment).
+ */
+export async function getAllUsersForAdmin(): Promise<
+  Array<{
+    id: string
+    name: string | null
+    email: string | null
+    image: string | null
+    pictureUrl: string | null
+    lineId: string | null
+    role: 'ADMIN' | 'VIEWER'
+    createdAt: string
+    providers: string[]
+    linkedPlayer: {
+      id: string
+      name: string | null
+      otherLeagues: string[]
+    } | null
+    lineLastSeenAt: string | null
+  }>
+> {
+  const users = await prisma.user.findMany({
+    orderBy: [{ createdAt: 'desc' }],
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      image: true,
+      pictureUrl: true,
+      lineId: true,
+      role: true,
+      createdAt: true,
+      playerId: true,
+      accounts: { select: { provider: true } },
+    },
+  })
+
+  // Two parallel side queries to enrich:
+  //   - LineLogin.lastSeenAt by lineId (only LINE providers tracked)
+  //   - Linked Player + their active league names
+  const lineIds = users.map((u) => u.lineId).filter((x): x is string => !!x)
+  const playerIds = users.map((u) => u.playerId).filter((x): x is string => !!x)
+
+  const [lineLogins, linkedPlayers] = await Promise.all([
+    lineIds.length > 0
+      ? prisma.lineLogin.findMany({
+          where: { lineId: { in: lineIds } },
+          select: { lineId: true, lastSeenAt: true },
+        })
+      : Promise.resolve([] as Array<{ lineId: string; lastSeenAt: Date }>),
+    playerIds.length > 0
+      ? prisma.player.findMany({
+          where: { id: { in: playerIds } },
+          select: {
+            id: true,
+            name: true,
+            leagueAssignments: {
+              where: { toGameWeek: null },
+              select: {
+                leagueTeam: { select: { league: { select: { name: true } } } },
+              },
+            },
+          },
+        })
+      : Promise.resolve(
+          [] as Array<{
+            id: string
+            name: string | null
+            leagueAssignments: Array<{ leagueTeam: { league: { name: string | null } } }>
+          }>,
+        ),
+  ])
+
+  const lastSeenByLineId = new Map<string, Date>()
+  for (const ll of lineLogins) {
+    lastSeenByLineId.set(ll.lineId, ll.lastSeenAt)
+  }
+  const playerById = new Map<
+    string,
+    { id: string; name: string | null; otherLeagues: string[] }
+  >()
+  for (const p of linkedPlayers) {
+    const otherLeagues: string[] = []
+    for (const a of p.leagueAssignments) {
+      const name = a.leagueTeam.league.name
+      if (name && !otherLeagues.includes(name)) otherLeagues.push(name)
+    }
+    playerById.set(p.id, { id: p.id, name: p.name, otherLeagues })
+  }
+
+  return users.map((u) => {
+    const providers = Array.from(new Set(u.accounts.map((a) => a.provider))).sort()
+    const lastSeen = u.lineId ? lastSeenByLineId.get(u.lineId) ?? null : null
+    return {
+      id: u.id,
+      name: u.name,
+      email: u.email,
+      image: u.image,
+      pictureUrl: u.pictureUrl,
+      lineId: u.lineId,
+      role: u.role,
+      createdAt: u.createdAt.toISOString(),
+      providers,
+      linkedPlayer: u.playerId ? playerById.get(u.playerId) ?? null : null,
+      lineLastSeenAt: lastSeen ? lastSeen.toISOString() : null,
+    }
+  })
+}
+
+/**
  * v1.56.0 (PR 3 of route-shortening chain) — for every Player on THIS
  * league's roster, return the names of OTHER active leagues they're
  * also in. Empty array when this is the player's only league.
