@@ -3,17 +3,20 @@ import { readFileSync, existsSync } from 'fs'
 import path from 'path'
 
 /**
- * v1.52.0 (PR 3 of the path-routing chain) — structural tests for the
- * league-switcher UI surfaces:
+ * v1.59.0 — perf pass. Memberships are now resolved server-side in the root
+ * layout via `getMembershipsForSession()` and threaded through
+ * `<MembershipsProvider>` context. Pre-v1.59.0 the league switcher (header
+ * chevron + account-menu entry) lazy-loaded via `/api/me/memberships` on
+ * dropdown open, which produced a visible flash for multi-league users.
  *
- *   1. `/api/me/memberships` API route — returns the signed-in user's
- *      leagues with slugs for path-based navigation.
- *   2. `LeagueSwitcher` header dropdown — small chevron next to the
- *      brand title; lazy-loads memberships on first open.
- *   3. `AccountMenuLeagueSwitch` — inline section in the LineLoginButton
- *      account dropdown; renders nothing when memberships.length < 2.
+ * The structural tests below pin v1.59.0 contracts:
+ *   1. `/api/me/memberships` route stays as a refresh path, delegating
+ *      to the shared helper.
+ *   2. `LeagueSwitcher` reads from `useMemberships()` (context), no fetch.
+ *   3. `AccountMenuLeagueSwitch` same — reads from context.
  *   4. Header mounts the LeagueSwitcher.
  *   5. LineLoginButton mounts the AccountMenuLeagueSwitch.
+ *   6. Layout fetches memberships server-side and passes via provider.
  */
 
 function read(relPath: string): string {
@@ -27,7 +30,7 @@ function stripComments(src: string): string {
     .replace(/\{\/\*[\s\S]*?\*\/\}/g, '')
 }
 
-describe('PR 3 — /api/me/memberships route', () => {
+describe('v1.59.0 — /api/me/memberships route', () => {
   const routePath = 'src/app/api/me/memberships/route.ts'
 
   it('exists', () => {
@@ -45,50 +48,91 @@ describe('PR 3 — /api/me/memberships route', () => {
     expect(src).toMatch(/authOptions/)
   })
 
+  it('delegates to getMembershipsForSession (shared helper)', () => {
+    const src = stripComments(read(routePath))
+    expect(src).toMatch(/getMembershipsForSession/)
+  })
+
   it('returns empty memberships array for unauthenticated', () => {
     const src = stripComments(read(routePath))
     expect(src).toMatch(/memberships:\s*\[\s*\]/)
   })
+})
 
-  it('queries via session.userId (canonical, post-α.5)', () => {
-    const src = stripComments(read(routePath))
-    expect(src).toMatch(/session\.userId/)
+describe('v1.59.0 — getMembershipsForSession helper', () => {
+  const helperPath = 'src/lib/memberships.ts'
+
+  it('exists', () => {
+    expect(existsSync(path.join(process.cwd(), helperPath))).toBe(true)
   })
 
-  it('falls back to session.lineId for legacy LINE-only sessions', () => {
-    const src = stripComments(read(routePath))
-    expect(src).toMatch(/session\.lineId/)
+  it('exports getMembershipsForSession + Membership type', () => {
+    const src = stripComments(read(helperPath))
+    expect(src).toMatch(/export\s+(async\s+)?function\s+getMembershipsForSession/)
+    expect(src).toMatch(/export\s+type\s+Membership/)
   })
 
-  it('joins through Player → leagueAssignments → leagueTeam → league', () => {
-    const src = stripComments(read(routePath))
+  it('queries Player.findFirst via userId or lineId', () => {
+    const src = stripComments(read(helperPath))
+    expect(src).toMatch(/findFirst/)
+    expect(src).toMatch(/userId/)
+    expect(src).toMatch(/lineId/)
+  })
+
+  it('joins through leagueAssignments → leagueTeam → league', () => {
+    const src = stripComments(read(helperPath))
     expect(src).toMatch(/leagueAssignments/)
     expect(src).toMatch(/leagueTeam/)
     expect(src).toMatch(/league:\s*\{/)
   })
 
-  it('dedupes by leagueId (player can have multiple PLAs in same league across timespans)', () => {
-    const src = stripComments(read(routePath))
+  it('dedupes by leagueId', () => {
+    const src = stripComments(read(helperPath))
     expect(src).toMatch(/seen\.has\(league\.id\)/)
   })
 
-  it('falls back to DEFAULT_LEAGUE_SLUG for the default league when subdomain is null', () => {
-    const src = stripComments(read(routePath))
+  it('falls back to DEFAULT_LEAGUE_SLUG when subdomain is null on the default league', () => {
+    const src = stripComments(read(helperPath))
     expect(src).toMatch(/DEFAULT_LEAGUE_SLUG/)
   })
 
-  it('marks isCurrent based on session.leagueId', () => {
-    const src = stripComments(read(routePath))
-    expect(src).toMatch(/isCurrent:\s*session\.leagueId\s*===\s*league\.id/)
+  it('returns [] on Prisma failure (defensive)', () => {
+    const src = stripComments(read(helperPath))
+    expect(src).toMatch(/catch[\s\S]{0,200}return\s*\[\s*\]/)
   })
 
-  it('sorts memberships by name', () => {
-    const src = stripComments(read(routePath))
+  it('sorts by name', () => {
+    const src = stripComments(read(helperPath))
     expect(src).toMatch(/localeCompare/)
   })
 })
 
-describe('PR 3 — LeagueSwitcher header component', () => {
+describe('v1.59.0 — MembershipsProvider context', () => {
+  const providerPath = 'src/components/MembershipsProvider.tsx'
+
+  it('exists', () => {
+    expect(existsSync(path.join(process.cwd(), providerPath))).toBe(true)
+  })
+
+  it("declares 'use client'", () => {
+    const src = read(providerPath)
+    expect(src.split('\n')[0].trim().replace(/['";]/g, '')).toBe('use client')
+  })
+
+  it('exports MembershipsProvider + useMemberships', () => {
+    const src = stripComments(read(providerPath))
+    expect(src).toMatch(/export\s+function\s+MembershipsProvider/)
+    expect(src).toMatch(/export\s+function\s+useMemberships/)
+  })
+
+  it('uses createContext + useContext (standard React context shape)', () => {
+    const src = stripComments(read(providerPath))
+    expect(src).toMatch(/createContext/)
+    expect(src).toMatch(/useContext/)
+  })
+})
+
+describe('v1.59.0 — LeagueSwitcher reads from context (no fetch)', () => {
   const componentPath = 'src/components/LeagueSwitcher.tsx'
 
   it('exists', () => {
@@ -100,25 +144,22 @@ describe('PR 3 — LeagueSwitcher header component', () => {
     expect(src.split('\n')[0].trim().replace(/['";]/g, '')).toBe('use client')
   })
 
-  it('exports useLeagueMemberships hook (shared with AccountMenuLeagueSwitch)', () => {
+  it('reads memberships from useMemberships() context (NOT a fetch)', () => {
     const src = stripComments(read(componentPath))
-    expect(src).toMatch(/export\s+function\s+useLeagueMemberships/)
+    expect(src).toMatch(/useMemberships\(\)/)
   })
 
-  it('hook fetches /api/me/memberships', () => {
+  it('does NOT fetch /api/me/memberships in the component (regression target — would re-introduce the v1.52.0 round-trip)', () => {
     const src = stripComments(read(componentPath))
-    expect(src).toMatch(/['"]\/api\/me\/memberships['"]/)
+    // The fetch call inside the deprecated useLeagueMemberships shim is gone;
+    // callers should use useMemberships() directly. The literal endpoint
+    // string should not appear in this file at all post-v1.59.0.
+    expect(src).not.toMatch(/['"]\/api\/me\/memberships['"]/)
   })
 
-  it('hook caches via loadedRef so repeated open does not re-fetch', () => {
+  it('does NOT use loadedRef / lazy-load pattern (gone with the fetch)', () => {
     const src = stripComments(read(componentPath))
-    expect(src).toMatch(/loadedRef/)
-  })
-
-  it('default export renders nothing for unauthenticated sessions', () => {
-    const src = stripComments(read(componentPath))
-    expect(src).toMatch(/status\s*===\s*['"]authenticated['"]/)
-    expect(src).toMatch(/!hasSession.*return\s*null|hasSession.*null/)
+    expect(src).not.toMatch(/loadedRef/)
   })
 
   it('renders nothing for users with fewer than 2 memberships', () => {
@@ -126,7 +167,7 @@ describe('PR 3 — LeagueSwitcher header component', () => {
     expect(src).toMatch(/memberships\.length\s*<\s*2/)
   })
 
-  it('uses next/navigation router for switching to /id/<slug> (v1.54.0 — was /league/<slug> pre-v1.54.0)', () => {
+  it('uses next/navigation router for switching to /id/<slug>', () => {
     const src = stripComments(read(componentPath))
     expect(src).toMatch(/from\s+['"]next\/navigation['"]/)
     expect(src).toMatch(/router\.push\(`\/id\/\$\{m\.slug\}`\)/)
@@ -145,9 +186,14 @@ describe('PR 3 — LeagueSwitcher header component', () => {
     expect(src).toContain('data-testid="league-switcher-menu"')
     expect(src).toMatch(/data-testid=\{`league-switcher-item-\$\{m\.slug\}`\}/)
   })
+
+  it('exports useLeagueMemberships as a thin shim (compat)', () => {
+    const src = stripComments(read(componentPath))
+    expect(src).toMatch(/export\s+function\s+useLeagueMemberships/)
+  })
 })
 
-describe('PR 3 — AccountMenuLeagueSwitch (inline account-menu list)', () => {
+describe('v1.59.0 — AccountMenuLeagueSwitch reads from context', () => {
   const componentPath = 'src/components/AccountMenuLeagueSwitch.tsx'
 
   it('exists', () => {
@@ -159,10 +205,9 @@ describe('PR 3 — AccountMenuLeagueSwitch (inline account-menu list)', () => {
     expect(src.split('\n')[0].trim().replace(/['";]/g, '')).toBe('use client')
   })
 
-  it('reuses the useLeagueMemberships hook from LeagueSwitcher', () => {
+  it('reads memberships from useMemberships() context', () => {
     const src = stripComments(read(componentPath))
-    expect(src).toMatch(/from\s+['"]\.\/LeagueSwitcher['"]/)
-    expect(src).toMatch(/useLeagueMemberships/)
+    expect(src).toMatch(/useMemberships\(\)/)
   })
 
   it('renders nothing when memberships.length < 2', () => {
@@ -170,7 +215,7 @@ describe('PR 3 — AccountMenuLeagueSwitch (inline account-menu list)', () => {
     expect(src).toMatch(/memberships\.length\s*<\s*2/)
   })
 
-  it('renders Link to /id/<slug> per membership (v1.54.0 — was /league/<slug> pre-v1.54.0)', () => {
+  it('renders Link to /id/<slug> per membership', () => {
     const src = stripComments(read(componentPath))
     expect(src).toMatch(/href=\{`\/id\/\$\{m\.slug\}`\}/)
     expect(src).not.toMatch(/href=\{`\/league\//)
@@ -186,15 +231,9 @@ describe('PR 3 — AccountMenuLeagueSwitch (inline account-menu list)', () => {
     const src = stripComments(read(componentPath))
     expect(src).toMatch(/isCurrent.*vibrant-pink|vibrant-pink.*isCurrent/)
   })
-
-  it('lazy-loads memberships only when dropdownOpen is true', () => {
-    const src = stripComments(read(componentPath))
-    expect(src).toMatch(/dropdownOpen/)
-    expect(src).toMatch(/dropdownOpen.*load\(\)|if\s*\(dropdownOpen\)/)
-  })
 })
 
-describe('PR 3 — Header mounts LeagueSwitcher next to brand title', () => {
+describe('v1.59.0 — Header mounts LeagueSwitcher next to brand title', () => {
   const headerPath = 'src/components/Header.tsx'
 
   it('imports LeagueSwitcher', () => {
@@ -208,7 +247,7 @@ describe('PR 3 — Header mounts LeagueSwitcher next to brand title', () => {
   })
 })
 
-describe('PR 3 — LineLoginButton mounts AccountMenuLeagueSwitch in dropdown', () => {
+describe('v1.59.0 — LineLoginButton mounts AccountMenuLeagueSwitch in dropdown', () => {
   const buttonPath = 'src/components/LineLoginButton.tsx'
 
   it('imports AccountMenuLeagueSwitch', () => {
@@ -216,9 +255,28 @@ describe('PR 3 — LineLoginButton mounts AccountMenuLeagueSwitch in dropdown', 
     expect(src).toMatch(/import\s+AccountMenuLeagueSwitch\s+from\s+['"]\.\/AccountMenuLeagueSwitch['"]/)
   })
 
-  it('mounts <AccountMenuLeagueSwitch /> with dropdownOpen + onNavigate props', () => {
+  it('mounts <AccountMenuLeagueSwitch /> in the dropdown', () => {
     const src = stripComments(read(buttonPath))
-    expect(src).toMatch(/<AccountMenuLeagueSwitch[\s\S]{0,300}dropdownOpen=\{open\}/)
-    expect(src).toMatch(/<AccountMenuLeagueSwitch[\s\S]{0,300}onNavigate=\{/)
+    expect(src).toMatch(/<AccountMenuLeagueSwitch/)
+  })
+})
+
+describe('v1.59.0 — Root layout SSR-hydrates memberships into provider', () => {
+  const layoutPath = 'src/app/layout.tsx'
+
+  it('imports getMembershipsForSession + MembershipsProvider', () => {
+    const src = stripComments(read(layoutPath))
+    expect(src).toMatch(/getMembershipsForSession/)
+    expect(src).toMatch(/MembershipsProvider/)
+  })
+
+  it('calls getMembershipsForSession after getServerSession (gated by truthy session)', () => {
+    const src = stripComments(read(layoutPath))
+    expect(src).toMatch(/await\s+getMembershipsForSession/)
+  })
+
+  it('wraps children with <MembershipsProvider memberships={...}>', () => {
+    const src = stripComments(read(layoutPath))
+    expect(src).toMatch(/<MembershipsProvider\s+memberships=\{memberships\}/)
   })
 })

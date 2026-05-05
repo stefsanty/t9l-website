@@ -6,7 +6,9 @@ import { getServerSession } from "next-auth";
 import AuthProvider from "@/components/AuthProvider";
 import ThemeProvider from "@/components/ThemeProvider";
 import VersionFooter from "@/components/VersionFooter";
+import { MembershipsProvider } from "@/components/MembershipsProvider";
 import { authOptions } from "@/lib/auth";
+import { getMembershipsForSession, type Membership } from "@/lib/memberships";
 import "./globals.css";
 
 const inter = Inter({
@@ -63,6 +65,21 @@ export default async function RootLayout({
   children: React.ReactNode;
 }>) {
   const session = await getServerSession(authOptions);
+  // v1.59.0 — fetch memberships server-side so the league switcher
+  // (header chevron + account-menu entry) can render with the correct
+  // visibility decision on first paint instead of flashing in after a
+  // post-paint /api/me/memberships round-trip. The query is bounded by
+  // the user's roster size (typically 1-3 leagues) and runs after the
+  // session resolves; a misconfigured prod (no Player.userId/lineId
+  // match) returns [] without throwing.
+  let memberships: Membership[] = [];
+  if (session) {
+    memberships = await getMembershipsForSession({
+      userId: session.userId ?? null,
+      lineId: session.lineId || null,
+      currentLeagueId: session.leagueId ?? null,
+    });
+  }
   return (
     <html
       lang="en"
@@ -111,8 +128,10 @@ export default async function RootLayout({
         </Script>
         <ThemeProvider>
           <AuthProvider session={session}>
-            {children}
-            <VersionFooter variant="public" />
+            <MembershipsProvider memberships={memberships}>
+              {children}
+              <VersionFooter variant="public" />
+            </MembershipsProvider>
           </AuthProvider>
         </ThemeProvider>
         <Toaster

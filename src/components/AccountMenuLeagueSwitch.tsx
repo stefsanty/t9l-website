@@ -1,47 +1,30 @@
 'use client'
 
-import { useEffect } from 'react'
 import Link from 'next/link'
-import { useLeagueMemberships } from './LeagueSwitcher'
+import { useMemberships } from './MembershipsProvider'
 
 /**
- * v1.52.0 (PR 3 of the path-routing chain) — account-menu "Switch
- * league" entry. Mounted inside the `LineLoginButton` dropdown.
+ * Account-menu "Switch league" entry mounted inside the LineLoginButton
+ * dropdown.
  *
- * Renders nothing when the user has < 2 memberships (no need to
- * switch). When the user has multiple, surfaces a small section
- * header + inline list of leagues. Each row is a `<Link>` so the
- * browser handles the navigation natively (no router.push); active
- * league is visually marked.
+ * v1.59.0 — perf: reads memberships from context (SSR-hydrated by the root
+ * layout) instead of doing a `/api/me/memberships` fetch on dropdown open.
+ * Renders nothing when the user has < 2 memberships.
  *
- * Memberships are fetched via the shared `useLeagueMemberships` hook
- * (defined in `LeagueSwitcher.tsx`); the hook caches per-component
- * instance, so the navbar dropdown and this account-menu list each
- * trigger their own fetch on first open. That's acceptable — the
- * memberships list is small (a few rows per user) and changes rarely.
- *
- * The parent `LineLoginButton` controls whether the dropdown is open;
- * this component only loads the memberships when the dropdown is
- * actually showing (gated by the `dropdownOpen` prop).
+ * The component no longer cares whether the dropdown is open — the data is
+ * already present. The `dropdownOpen` prop is kept for API compatibility
+ * with the existing call site in LineLoginButton.tsx but is unused.
  */
 export default function AccountMenuLeagueSwitch({
-  dropdownOpen,
   onNavigate,
 }: {
-  dropdownOpen: boolean
+  // Kept for backwards compat with the existing call site; unused after
+  // v1.59.0 since memberships are no longer lazy-loaded.
+  dropdownOpen?: boolean
   onNavigate?: () => void
 }) {
-  const { memberships, loading, load } = useLeagueMemberships()
+  const memberships = useMemberships()
 
-  useEffect(() => {
-    if (dropdownOpen) {
-      void load()
-    }
-  }, [dropdownOpen, load])
-
-  // Hide entirely when the user has < 2 memberships. The navbar
-  // dropdown does the same — single-league users see no extra chrome.
-  if (loading) return null
   if (memberships.length < 2) return null
 
   return (

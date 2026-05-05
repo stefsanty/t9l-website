@@ -12,6 +12,7 @@ import {
 } from "@/lib/playerMappingStore";
 import { playerIdToSlug, teamIdToSlug } from "@/lib/ids";
 import { getIdentityReadSource } from "@/lib/settings";
+import { getDefaultLeagueId } from "@/lib/leagueSlug";
 
 /**
  * Resolve the cookie domain for the NextAuth session token from
@@ -726,8 +727,13 @@ export const authOptions: AuthOptions = {
       // unconditionally. Skipping when no lineId means non-LINE
       // sessions get a noticeably tighter callback path.
       //
-      // Lazy import to keep the helper out of the static import graph
-      // for non-request-context callers (recovery scripts, etc.).
+      // v1.59.0 — flipped the lazy `await import("@/lib/leagueSlug")`
+      // to a static import at the top of the file. The dynamic import
+      // forced V8 to re-resolve the module on every JWT callback (cheap
+      // after first hit due to module cache, but adds an extra
+      // microtask hop on the auth hot path). Static import is the
+      // straight path; the helper has no request-context dependencies
+      // that would justify lazy loading.
       if (!token.lineId) {
         token.leagueId = null;
         token.playerId = null;
@@ -736,7 +742,6 @@ export const authOptions: AuthOptions = {
       } else {
       let requestLeagueId: string | null = null;
       try {
-        const { getDefaultLeagueId } = await import("@/lib/leagueSlug");
         requestLeagueId = await getDefaultLeagueId();
       } catch (err) {
         console.error("[auth] getDefaultLeagueId failed in JWT callback: %o", err);
