@@ -5,6 +5,7 @@ import { ArrowRight, Send, Pencil } from 'lucide-react'
 import ConfirmDialog from './ConfirmDialog'
 import AssignLineDialog from './AssignLineDialog'
 import AddPlayerDialog from './AddPlayerDialog'
+import LinkExistingPlayerDialog, { type LinkablePlayerRow } from './LinkExistingPlayerDialog'
 import GenerateInviteDialog from './GenerateInviteDialog'
 import IdViewerDialog from './IdViewerDialog'
 import AdminPlayerAvatar from './AdminPlayerAvatar'
@@ -68,6 +69,11 @@ interface PlayerRow {
   lineDisplayName: string | null
   linePictureUrl: string | null
   lineLastSeenAt: string | null
+  // v1.56.0 (PR 3 of route-shortening chain) — names of OTHER active
+  // leagues this player is in. Renders as a small "Also in: <league>"
+  // chip below the player name to flag cross-league rosters at a
+  // glance. Optional: when undefined or empty, no badge is rendered.
+  otherLeagues?: string[]
   assignments: Assignment[]
 }
 
@@ -91,6 +97,11 @@ interface PlayersTabProps {
   maxGameWeek: number
   orphans: OrphanLineLogin[]
   allLineLogins: AllLineLogin[]
+  // v1.56.0 (PR 3 of route-shortening chain) — global Players that
+  // are NOT yet on this league's roster, plus the names of OTHER
+  // leagues each one is in. Drives the LinkExistingPlayerDialog.
+  // Empty array when there's no global pool to attach from.
+  linkableCandidates?: LinkablePlayerRow[]
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -137,6 +148,7 @@ export default function PlayersTab({
   maxGameWeek,
   orphans,
   allLineLogins,
+  linkableCandidates = [],
 }: PlayersTabProps) {
   const { toast } = useToast()
   const [transferPanelId, setTransferPanelId] = useState<string | null>(null)
@@ -256,6 +268,15 @@ export default function PlayersTab({
             </>
           )}
           <AddPlayerDialog leagueId={leagueId} leagueTeams={leagueTeams} />
+          {/* v1.56.0 (PR 3 of route-shortening chain) — sibling to
+              AddPlayerDialog. Surfaces global Players (not yet on this
+              league's roster) so admins can attach an existing human to
+              this league without creating a duplicate Player record. */}
+          <LinkExistingPlayerDialog
+            leagueId={leagueId}
+            leagueTeams={leagueTeams}
+            candidates={linkableCandidates}
+          />
           <AssignLineDialog
             leagueId={leagueId}
             orphans={orphans}
@@ -349,6 +370,19 @@ export default function PlayersTab({
                       testid={`signin-status-mobile-${player.id}`}
                     />
                   </div>
+                  {/* v1.56.0 (PR 3 of route-shortening chain) —
+                      cross-league differentiation cue. When the player has
+                      active assignments in OTHER leagues, surface a small
+                      "Also in: <league names>" chip so admins can scan
+                      cross-league vs league-staged rosters at a glance. */}
+                  {player.otherLeagues && player.otherLeagues.length > 0 && (
+                    <p
+                      className="mt-1 text-[10px] text-admin-text3 font-mono leading-tight"
+                      data-testid={`player-other-leagues-mobile-${player.id}`}
+                    >
+                      Also in: {player.otherLeagues.join(', ')}
+                    </p>
+                  )}
                   {player.lineDisplayName && (
                     <p
                       className="text-admin-text3 text-[10px] mt-1 truncate"
@@ -526,6 +560,16 @@ export default function PlayersTab({
                   >
                     {player.name ?? <span className="italic text-admin-text3 font-normal">Unnamed</span>}
                   </p>
+                  {/* v1.56.0 — cross-league differentiation cue. See
+                      mobile branch for rationale. */}
+                  {player.otherLeagues && player.otherLeagues.length > 0 && (
+                    <p
+                      className="text-admin-text3 text-[10px] mt-0.5 truncate font-mono"
+                      data-testid={`player-other-leagues-${player.id}`}
+                    >
+                      Also in: {player.otherLeagues.join(', ')}
+                    </p>
+                  )}
                   {player.lineDisplayName && (
                     <p
                       className="text-admin-text3 text-[10px] mt-0.5 truncate"

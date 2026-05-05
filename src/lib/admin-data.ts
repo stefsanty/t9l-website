@@ -442,3 +442,150 @@ export async function getAllLineLoginsWithLinkedPlayer(): Promise<
     linkedPlayer: playerByLineId.get(l.lineId) ?? null,
   }))
 }
+
+/**
+ * v1.56.0 (PR 3 of route-shortening chain) — for every Player on THIS
+ * league's roster, return the names of OTHER active leagues they're
+ * also in. Empty array when this is the player's only league.
+ *
+ * Drives the per-row "Also in: <league names>" differentiation cue on
+ * PlayersTab so admins can tell at-a-glance which roster slots are
+ * cross-league (the human plays in multiple leagues) vs league-staged
+ * (the human only exists for this league's purposes).
+ *
+ * Not part of `getLeaguePlayers` because that function is cached under
+ * the `leagues` tag with a 30s TTL — adding cross-league data would
+ * either require a finer-grained cache key (one per leagueId) or
+ * accept that any league-scoped admin write busts every league's view.
+ * Surfacing this as a separate, uncached query keeps the cache
+ * footprint lean; admin writes already revalidate `domain: 'admin'`
+ * which busts the leagues tag.
+ */
+export async function getPlayerOtherLeaguesForLeague(leagueId: string): Promise<
+  Record<string, string[]>
+> {
+  // Fetch every active assignment for every player who has at least one
+  // active assignment in THIS league. Group by playerId, exclude
+  // assignments under this league, return the league names.
+  const playersInThisLeague = await prisma.playerLeagueAssignment.findMany({
+    where: { toGameWeek: null, leagueTeam: { leagueId } },
+    select: { playerId: true },
+  })
+  const playerIds = Array.from(new Set(playersInThisLeague.map((a) => a.playerId)))
+  if (playerIds.length === 0) return {}
+
+  const otherAssignments = await prisma.playerLeagueAssignment.findMany({
+    where: {
+      playerId: { in: playerIds },
+      toGameWeek: null,
+      leagueTeam: { leagueId: { not: leagueId } },
+    },
+    select: {
+      playerId: true,
+      leagueTeam: { select: { league: { select: { name: true } } } },
+    },
+  })
+
+  const result: Record<string, string[]> = {}
+  for (const a of otherAssignments) {
+    const name = a.leagueTeam.league.name
+    if (!name) continue
+    const existing = result[a.playerId] ?? []
+    if (!existing.includes(name)) {
+      existing.push(name)
+      result[a.playerId] = existing
+    }
+  }
+  return result
+}
+
+/**
+ * v1.56.0 (PR 3 of route-shortening chain) — global Players that are
+ * NOT currently on this league's roster, annotated with the OTHER
+ * leagues they're in.
+ *
+ * Drives the admin "Link existing player" dialog: the operator wants
+ * to attach a known Player (e.g. someone who joined T9L's default
+ * league via PR ζ invite) to a different league's roster without
+ * creating a duplicate Player record.
+ *
+ * "Currently on this league's roster" = at least one
+ * `PlayerLeagueAssignment` with `toGameWeek: null` (active) under one
+ * of this league's `LeagueTeam` rows.
+ *
+ * Players with NO active assignment in ANY league are surfaced too —
+ * they're often pre-staged Players from `adminCreatePlayer` whose
+ * default-league assignment was archived (toGameWeek set), or
+ * truly-orphaned Players from data quality issues. The dialog can
+ * still attach them to this league.
+ *
+ * Each row's `otherLeagues` field lists the league names where the
+ * player has an active assignment, so the operator gets context like
+ * "Stefan Santos · also in T9L 2026 Spring" before clicking Link.
+ *
+ * Cardinality: bounded by the number of distinct Players across the
+ * org (today: ~50; expected ceiling: a few hundred). Single-query
+ * with Prisma include — same shape as `getAllPlayers` plus the
+ * filtering the dialog needs.
+ */
+export async function getLinkablePlayersForLeague(leagueId: string): Promise<
+  Array<{
+    id: string
+    name: string | null
+    position: string | null
+    profilePictureUrl: string | null
+    pictureUrl: string | null
+    userId: string | null
+    lineId: string | null
+    // Names of OTHER leagues where the player has an active assignment.
+    // Empty array if this is the player's first roster slot ever.
+    otherLeagues: string[]
+  }>
+> {
+  // Two parallel queries: (1) every Player + every active assignment +
+  // its league name; (2) the set of player ids already on this league.
+  // Then filter (1) by NOT-IN (2) and project the otherLeagues list.
+  const [players, currentLeagueAssignments] = await Promise.all([
+    prisma.player.findMany({
+      orderBy: { name: 'asc' },
+      select: {
+        id: true,
+        name: true,
+        position: true,
+        profilePictureUrl: true,
+        pictureUrl: true,
+        userId: true,
+        lineId: true,
+        leagueAssignments: {
+          where: { toGameWeek: null },
+          select: {
+            leagueTeam: { select: { league: { select: { id: true, name: true } } } },
+          },
+        },
+      },
+    }),
+    prisma.playerLeagueAssignment.findMany({
+      where: {
+        toGameWeek: null,
+        leagueTeam: { leagueId },
+      },
+      select: { playerId: true },
+    }),
+  ])
+
+  const inThisLeague = new Set(currentLeagueAssignments.map((a) => a.playerId))
+  return players
+    .filter((p) => !inThisLeague.has(p.id))
+    .map((p) => ({
+      id: p.id,
+      name: p.name,
+      position: p.position,
+      profilePictureUrl: p.profilePictureUrl,
+      pictureUrl: p.pictureUrl,
+      userId: p.userId,
+      lineId: p.lineId,
+      otherLeagues: p.leagueAssignments
+        .map((a) => a.leagueTeam.league.name)
+        .filter((name): name is string => !!name),
+    }))
+}

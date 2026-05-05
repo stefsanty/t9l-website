@@ -771,6 +771,147 @@ export async function adminCreatePlayer(input: {
 }
 
 /**
+ * v1.56.0 (PR 3 of route-shortening chain) — admin attaches an existing
+ * global Player to this league's roster.
+ *
+ * Use case: a user already has a Player record (e.g. they joined T9L's
+ * default league via PR ζ invite redemption — so `Player.userId` is set,
+ * `LineLogin` exists, profile picture mirrored, etc.). A new league
+ * spinning up wants the same human on its roster, but with a different
+ * team / start week. Pre-v1.56.0 the only path was `adminCreatePlayer`,
+ * which always creates a NEW global Player record — leading to duplicate
+ * Players-per-human across leagues.
+ *
+ * Distinct from `transferPlayer` (which moves a player from team A to
+ * team B WITHIN a single league) and `adminCreatePlayer` (which creates
+ * a fresh Player). This action takes an existing Player and creates ONE
+ * new `PlayerLeagueAssignment` row pointing into the supplied league.
+ *
+ * Validation:
+ *   - Player must exist
+ *   - leagueTeam must belong to leagueId (cross-league isolation)
+ *   - Player must NOT already have an active assignment in this league
+ *     (no double-roster — a player can only be on one team per league at
+ *     a time; admins use `transferPlayer` to move between teams)
+ *   - fromGameWeek defaults to 1 if not supplied or invalid
+ *
+ * The created assignment is tagged `joinSource: 'ADMIN'` (same as
+ * `adminCreatePlayer`'s pre-stage flow — both are admin-driven roster
+ * adds; the `joinSource` audit doesn't distinguish between "create new
+ * Player" vs "link existing Player" because the Player itself isn't
+ * being modified).
+ */
+export async function adminLinkExistingPlayer(input: {
+  leagueId: string
+  playerId: string
+  leagueTeamId: string
+  fromGameWeek?: number | null
+}): Promise<{ assignmentId: string }> {
+  await assertAdmin()
+  const { leagueId, playerId, leagueTeamId } = input
+  if (!leagueId) throw new Error('leagueId is required')
+  if (!playerId) throw new Error('playerId is required')
+  if (!leagueTeamId) throw new Error('leagueTeamId is required')
+
+  const fromGameWeek = input.fromGameWeek && input.fromGameWeek > 0
+    ? Math.floor(input.fromGameWeek)
+    : 1
+
+  // Player exists?
+  const player = await prisma.player.findUnique({
+    where: { id: playerId },
+    select: { id: true },
+  })
+  if (!player) throw new Error('Player not found')
+
+  // leagueTeam belongs to this league? (cross-league isolation —
+  // mirrors `adminCreatePlayer` and the match-event actions)
+  const lt = await prisma.leagueTeam.findUnique({
+    where: { id: leagueTeamId },
+    select: { leagueId: true },
+  })
+  if (!lt || lt.leagueId !== leagueId) {
+    throw new Error('leagueTeamId does not belong to this league')
+  }
+
+  // Already on this league's roster? Block double-roster — admin should
+  // use `transferPlayer` to move between teams within the same league.
+  const existingAssignment = await prisma.playerLeagueAssignment.findFirst({
+    where: {
+      playerId,
+      leagueTeam: { leagueId },
+      toGameWeek: null, // active (open-ended) assignment
+    },
+    select: { id: true },
+  })
+  if (existingAssignment) {
+    throw new Error('Player is already on this league\'s roster (use Transfer to change teams)')
+  }
+
+  const created = await prisma.playerLeagueAssignment.create({
+    data: { playerId, leagueTeamId, fromGameWeek, joinSource: 'ADMIN' },
+    select: { id: true },
+  })
+
+  revalidate({ domain: 'admin', paths: [`/admin/leagues/${leagueId}/players`] })
+  return { assignmentId: created.id }
+}
+
+/**
+ * v1.56.0 — bulk variant of `adminLinkExistingPlayer`. Takes a list of
+ * `{ playerId, leagueTeamId }` items (one per row of the bulk dialog)
+ * and runs them sequentially. Returns per-row results so the caller
+ * can surface partial-failure feedback.
+ *
+ * Sequential rather than parallel because Prisma transactions on a
+ * pooled connection don't always parallelize cleanly under typical
+ * Vercel serverless conditions, and the bulk size is bounded (~10s of
+ * players per batch). Each row's create is independent — a failure on
+ * row 5 doesn't affect rows 1-4 or row 6.
+ */
+export async function adminLinkExistingPlayersBulk(input: {
+  leagueId: string
+  items: Array<{ playerId: string; leagueTeamId: string }>
+  fromGameWeek?: number | null
+}): Promise<{
+  results: Array<{ playerId: string; ok: true; assignmentId: string } | { playerId: string; ok: false; error: string }>
+}> {
+  await assertAdmin()
+  const { leagueId, items } = input
+  if (!leagueId) throw new Error('leagueId is required')
+  if (items.length === 0) return { results: [] }
+  if (items.length > 100) throw new Error('Cap of 100 items per bulk-link batch')
+
+  const fromGameWeek = input.fromGameWeek ?? 1
+
+  const results: Array<
+    { playerId: string; ok: true; assignmentId: string } | { playerId: string; ok: false; error: string }
+  > = []
+  for (const item of items) {
+    try {
+      const { assignmentId } = await adminLinkExistingPlayer({
+        leagueId,
+        playerId: item.playerId,
+        leagueTeamId: item.leagueTeamId,
+        fromGameWeek,
+      })
+      results.push({ playerId: item.playerId, ok: true, assignmentId })
+    } catch (err) {
+      results.push({
+        playerId: item.playerId,
+        ok: false,
+        error: err instanceof Error ? err.message : 'Failed to link',
+      })
+    }
+  }
+
+  // adminLinkExistingPlayer revalidates per-call; one final bust ensures
+  // the players page reflects the full batch state on next render.
+  revalidate({ domain: 'admin', paths: [`/admin/leagues/${leagueId}/players`] })
+  return { results }
+}
+
+/**
  * v1.33.0 (PR ε) — admin generates a single PERSONAL invite for a target
  * Player. Returns the canonical row + the absolute redemption URL so the
  * caller can render the copy/QR surface immediately without an extra
