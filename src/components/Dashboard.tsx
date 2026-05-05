@@ -12,6 +12,7 @@ import SubmitGoalForm from './matchday/SubmitGoalForm';
 import ClassicLeagueHomepage from './ClassicLeagueHomepage';
 import CompressedMatchdaySchedule from './CompressedMatchdaySchedule';
 import RecruitingBanner from './RecruitingBanner';
+import RsvpBar from './RsvpBar';
 import { selfReportGateOpen } from '@/lib/playerSelfReportGate';
 import { combineJstDateAndTime } from '@/lib/jst';
 
@@ -101,9 +102,17 @@ export default function Dashboard({
   const userTeamIsPlaying = !!(userTeamId && selectedMatchday && selectedMatchday.sittingOutTeamId !== userTeamId);
   const isCompleted = !!(selectedMatchday && selectedMatchday.matches[0].homeGoals !== null);
 
-  // v1.63.0 — RsvpBar lives inside ClassicLeagueHomepage. Pre-season mode
-  // hides Classic entirely, so the bottom-padding budget of `<main>`
-  // collapses from `pb-32` (RsvpBar height) to `pb-2`.
+  // v1.63.1 — RsvpBar must render at Dashboard's outer-wrapper level (NOT
+  // inside <main>) so its `position: fixed; bottom: 0` anchors to the
+  // viewport. The `.animate-in` div inside <main> sets a non-none
+  // `transform: translateY(0)` (animation-fill-mode: forwards) which
+  // would establish a containing block for fixed descendants and break
+  // the bottom-anchor. Pre-season mode hides RsvpBar entirely.
+  const userRsvpStatus: 'GOING' | 'UNDECIDED' | 'Y' | 'EXPECTED' | '' =
+    (userPlayerId && userTeamId && selectedMatchday
+      ? availabilityStatuses?.[selectedMatchday.id]?.[userTeamId]?.[userPlayerId] ?? ''
+      : '') as 'GOING' | 'UNDECIDED' | 'Y' | 'EXPECTED' | '';
+
   const showRsvpBar =
     !preseasonMode && !!(session?.playerId && userTeamIsPlaying && !isCompleted);
 
@@ -193,11 +202,6 @@ export default function Dashboard({
                   initialMatchdayId={initialMatchdayId}
                   leagueSlug={leagueSlug}
                   submitGoalSlot={submitGoalSlot}
-                  userTeam={userTeam}
-                  userTeamIsPlaying={userTeamIsPlaying}
-                  isCompleted={isCompleted}
-                  userPlayerId={userPlayerId}
-                  userTeamId={userTeamId}
                 />
               )}
             </>
@@ -216,6 +220,24 @@ export default function Dashboard({
           © 2026 Tennozu 9-Aside League • Tokyo
         </p>
       </footer>
+
+      {/* v1.63.1 — RsvpBar at the OUTER wrapper level (sibling of <main>
+          and <footer>). Cannot live inside <main> because the
+          `.animate-in` ancestor sets `transform: translateY(0)` which
+          establishes a containing block for `position: fixed`
+          descendants, breaking RsvpBar's viewport-anchored bottom
+          positioning. Hidden in pre-season mode (no scheduled matches
+          to RSVP for). */}
+      {!preseasonMode && selectedMatchday && (
+        <RsvpBar
+          key={`${selectedMatchday.id}-${userPlayerId ?? 'anon'}`}
+          matchday={selectedMatchday}
+          initialStatus={userRsvpStatus}
+          userTeam={userTeam}
+          userTeamIsPlaying={userTeamIsPlaying}
+          isCompleted={isCompleted}
+        />
+      )}
     </div>
   );
 }

@@ -352,7 +352,7 @@ describe('v1.63.0 — Dashboard branches on flags', () => {
     expect(DASHBOARD_SRC).toMatch(/<Header\s+hideStatsLink=\{preseasonMode\}/)
   })
 
-  it('Dashboard no longer mounts NextMatchdayBanner / MatchdayAvailability / RsvpBar directly (those moved into ClassicLeagueHomepage)', () => {
+  it('Dashboard no longer mounts NextMatchdayBanner / MatchdayAvailability directly (those moved into ClassicLeagueHomepage)', () => {
     // Strip JSX-like comments from a working copy so the docstring at the
     // top of the file doesn't trip the negative regex.
     const stripped = stripComments(DASHBOARD_SRC)
@@ -360,7 +360,11 @@ describe('v1.63.0 — Dashboard branches on flags', () => {
     // ergonomics, but the JSX usage tag must be gone.
     expect(stripped).not.toMatch(/<NextMatchdayBanner\b/)
     expect(stripped).not.toMatch(/<MatchdayAvailability\b/)
-    expect(stripped).not.toMatch(/<RsvpBar\b/)
+    // v1.63.1 — RsvpBar lives at Dashboard's outer wrapper level (NOT
+    // inside <main>) because the `.animate-in` div sets a non-none
+    // `transform` that establishes a containing block for fixed
+    // descendants. Regression target: Dashboard MUST mount RsvpBar.
+    expect(stripped).toMatch(/<RsvpBar\b/)
   })
 
   it('Dashboard suppresses the bottom RsvpBar padding when preseasonMode is on', () => {
@@ -375,10 +379,14 @@ describe('v1.63.0 — Dashboard branches on flags', () => {
 // ────────────────────────────────────────────────────────────────────────────
 
 describe('v1.63.0 — ClassicLeagueHomepage', () => {
-  it('renders the trio of NextMatchdayBanner + MatchdayAvailability + RsvpBar', () => {
+  it('renders the pair of NextMatchdayBanner + MatchdayAvailability', () => {
+    // v1.63.1 — RsvpBar moved out of this wrapper back to Dashboard's
+    // outer level. ClassicLeagueHomepage owns just the two surfaces that
+    // are safe to nest inside the `.animate-in` ancestor (no fixed
+    // positioning that would be broken by the containing-block rule).
     expect(CLASSIC_SRC).toMatch(/<NextMatchdayBanner\b/)
     expect(CLASSIC_SRC).toMatch(/<MatchdayAvailability\b/)
-    expect(CLASSIC_SRC).toMatch(/<RsvpBar\b/)
+    expect(CLASSIC_SRC).not.toMatch(/<RsvpBar\b/)
   })
 
   it('accepts a submitGoalSlot prop and renders it between banner and availability', () => {
