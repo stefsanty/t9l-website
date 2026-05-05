@@ -73,32 +73,42 @@ describe('v1.58.0 — getAllLeagues uses minimal select projection', () => {
   })
 })
 
-describe('v1.58.0 — JWT callback skips league lookup when no lineId', () => {
+// v1.61.0 — the v1.58.0 perf optimization that gated `getDefaultLeagueId`
+// + `getPlayerMapping` behind `if (!token.lineId)` is REVERTED. v1.61.0
+// surfaces `session.allowSelfLink` (per-league `League.allowSelfLink`
+// toggle) on every JWT callback regardless of provider; the helper read
+// is the source of the toggle, so it has to run for non-LINE sessions
+// too. Additionally v1.61.0 introduces a `getPlayerMappingByUserId`
+// resolver that runs in the non-LINE branch (Google / email post-link)
+// so `session.playerId` populates for them too. Cost: one cached
+// (`unstable_cache` + `'leagues'` tag) read on the warm path; one
+// Prisma round-trip per JWT refresh for non-LINE users with a
+// User.playerId binding.
+describe('v1.61.0 — JWT callback resolves leagueId for both LINE and non-LINE sessions', () => {
   const authPath = 'src/lib/auth.ts'
 
-  it('JWT branches on token.lineId before calling getDefaultLeagueId', () => {
-    const src = stripComments(read(authPath))
-    // The new shape is: `if (!token.lineId) { ... } else { ... getDefaultLeagueId ... }`
-    expect(src).toMatch(/if\s*\(\s*!token\.lineId\s*\)\s*\{[\s\S]{0,400}token\.leagueId\s*=\s*null/)
-  })
-
-  it('non-LINE branch nulls leagueId/playerId/playerName/teamId on the token', () => {
-    const src = stripComments(read(authPath))
-    // The early-return for non-LINE sessions sets all four fields to null.
-    const branchMatch = src.match(/if\s*\(\s*!token\.lineId\s*\)\s*\{([\s\S]{0,500})\}/)
-    expect(branchMatch).toBeTruthy()
-    if (branchMatch) {
-      const body = branchMatch[1]
-      expect(body).toMatch(/token\.leagueId\s*=\s*null/)
-      expect(body).toMatch(/token\.playerId\s*=\s*null/)
-      expect(body).toMatch(/token\.playerName\s*=\s*null/)
-      expect(body).toMatch(/token\.teamId\s*=\s*null/)
-    }
-  })
-
-  it('LINE-id branch still reaches getDefaultLeagueId + getPlayerMapping', () => {
+  it('always reaches getDefaultLeagueId (v1.58.0 short-circuit reverted)', () => {
     const src = stripComments(read(authPath))
     expect(src).toMatch(/getDefaultLeagueId/)
+    // Regression target: the v1.58.0 `if (!token.lineId)` short-circuit
+    // that nulled leagueId before any helper call must NOT survive in
+    // v1.61.0. The helper now runs for both branches.
+    expect(src).not.toMatch(/if\s*\(\s*!token\.lineId\s*\)\s*\{\s*token\.leagueId\s*=\s*null/)
+  })
+
+  it('LINE branch reaches getPlayerMapping with leagueId', () => {
+    const src = stripComments(read(authPath))
     expect(src).toMatch(/getPlayerMapping\(/)
+  })
+
+  it('non-LINE branch reaches getPlayerMappingByUserId (v1.61.0)', () => {
+    const src = stripComments(read(authPath))
+    expect(src).toMatch(/getPlayerMappingByUserId\(/)
+  })
+
+  it('JWT callback reads getLeagueAllowSelfLink and surfaces token.allowSelfLink', () => {
+    const src = stripComments(read(authPath))
+    expect(src).toMatch(/getLeagueAllowSelfLink/)
+    expect(src).toMatch(/token\.allowSelfLink\s*=/)
   })
 })

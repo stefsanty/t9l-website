@@ -10,7 +10,12 @@ import { setMappingOrThrow } from "@/lib/playerMappingStore";
 import { playerIdToSlug, slugToPlayerId } from "@/lib/ids";
 import { getDefaultLeagueId } from "@/lib/leagueSlug";
 import { getLeagueAllowSelfLink } from "@/lib/leagueSelfLink";
-import { linkPlayerToUser, unlinkPlayerFromUser } from "@/lib/identityLink";
+import {
+  linkPlayerToUser,
+  linkUserToPlayer,
+  unlinkPlayerFromUser,
+  unlinkUserFromPlayer,
+} from "@/lib/identityLink";
 
 function slugify(name: string): string {
   return name
@@ -207,10 +212,69 @@ async function persistUnassignmentToPrisma(lineId: string): Promise<void> {
   }
 }
 
+// v1.61.0 — non-LINE (Google / email) link path. Pre-v1.61.0 the API
+// gated on `session.lineId` so non-LINE users were rejected at 401.
+// v1.61.0 drops that gate behind the `League.allowSelfLink` toggle so
+// any logged-in user can claim a roster slot when self-linking is on.
+//
+// SYNCHRONOUS (not deferred via `waitUntil`): for LINE users the v1.8.0
+// inversion uses Redis as the canonical store consulted by the JWT
+// callback's read path, so the durable Prisma write can defer. Non-LINE
+// users have no Redis-canonical store today; the JWT callback resolves
+// their playerId via Prisma `User.playerId @unique`. If we deferred the
+// Prisma write here, the immediate `await update()` on the client would
+// race the deferred write and surface stale (orphan) state in the
+// session. The cost is ~50-300ms warm and 1-3s cold per link — paid by
+// non-LINE users only, who are a minority. A future v1.62.0 can add a
+// userId-keyed Redis namespace to invert this back.
+async function persistAssignmentToPrismaForUser(args: {
+  userId: string;
+  dbPlayerId: string;
+}): Promise<void> {
+  const { userId, dbPlayerId } = args;
+  await prisma.$transaction(async (tx) => {
+    // v1.39.0 (PR λ) — generic User↔Player binder keyed on User.id.
+    // Handles non-LINE flows (Google / email) where User.lineId is
+    // null. Clears stale User.playerId / Player.userId pointers
+    // defensively (1:1 invariant). Does NOT touch Player.lineId for
+    // non-LINE flows.
+    await linkUserToPlayer(tx, { userId, playerId: dbPlayerId });
+    // Tag the PlayerLeagueAssignment rows with joinSource = SELF_SERVE
+    // (matching the LINE branch's audit trail).
+    await tx.playerLeagueAssignment.updateMany({
+      where: { playerId: dbPlayerId, joinSource: null },
+      data: { joinSource: "SELF_SERVE" },
+    });
+  });
+}
+
+// v1.61.0 — non-LINE (Google / email) unlink path. Mirror of
+// `persistUnassignmentToPrisma` but keyed on `User.id`. Returns the
+// public-slug id of the cleared player so the caller can drop the
+// picture-mirror Redis key. SYNCHRONOUS for the same reason as the
+// link path above.
+async function persistUnassignmentToPrismaForUser(
+  userId: string,
+): Promise<{ unlinkedSlug: string | null }> {
+  let unlinkedSlug: string | null = null;
+  await prisma.$transaction(async (tx) => {
+    const result = await unlinkUserFromPlayer(tx, { userId });
+    if (result.unlinkedPlayerId) {
+      unlinkedSlug = playerIdToSlug(result.unlinkedPlayerId);
+    }
+  });
+  return { unlinkedSlug };
+}
+
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
 
-  if (!session?.lineId) {
+  // v1.61.0 — drop the v1.39.2 LINE-only gate. Any authenticated session
+  // (LINE / Google / email) can attempt a self-link; the per-league
+  // `allowSelfLink` toggle (v1.60.0) is the gate that decides whether
+  // self-linking is open for this league. Sessions without either
+  // identifier are rejected at 401.
+  if (!session || (!session.lineId && !session.userId)) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 
@@ -221,9 +285,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "playerId required" }, { status: 400 });
   }
 
-  // v1.53.0 — subdomain teardown. /assign-player is the legacy LINE-only
-  // self-serve picker; it always operates on the default league.
-  // Multi-league self-serve binding is via /join/[code] (PR ζ).
+  // v1.53.0 — subdomain teardown. /assign-player is the legacy self-serve
+  // picker; it always operates on the default league. Multi-league self-
+  // serve binding is via /join/[code] (PR ζ).
   const leagueId = await getDefaultLeagueId();
   if (!leagueId) {
     return NextResponse.json(
@@ -262,65 +326,83 @@ export async function POST(req: Request) {
   const teamId = player.teamId;
   const dbPlayerId = slugToPlayerId(playerId);
 
-  // ── Synchronous canonical write: Redis ──────────────────────────────────
-  // v1.8.0: Redis is the canonical store consulted by the JWT callback on
-  // every authenticated request. Writing it synchronously here means the
-  // user's next /api/auth/session (via `await update()` on the client) sees
-  // the new mapping immediately — no Prisma round-trip on the read path.
-  // Throwing variant: silent failure here would leave both stores empty
-  // after the response, since the Prisma write is deferred below.
-  try {
-    // v1.26.0 — per-league key. Same league context (`leagueId`) the
-    // request is being served against; the JWT callback's read uses the
-    // same key shape on the next session refresh.
-    await setMappingOrThrow(session.lineId, leagueId, {
-      playerId,
-      playerName,
-      teamId,
-    });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Storage error";
-    return NextResponse.json({ error: message }, { status: 500 });
-  }
-
-  // ── Deferred durable write: Prisma transaction (background) ─────────────
-  // The atomic clear-then-set runs in waitUntil. On failure the catch in
-  // `persistAssignmentToPrisma` emits a `[v1.8.0 DRIFT]` log line; operator
-  // recovery via `scripts/auditRedisVsPrisma.ts --repair-prisma`.
-  waitUntil(persistAssignmentToPrisma({ lineId: session.lineId, dbPlayerId }));
-
-  // ── Deferred picture mirror (independent of Prisma) ─────────────────────
-  // PR 12 already moved this off the critical path. Kept independent of the
-  // Prisma waitUntil above so a Prisma failure doesn't tank the picture
-  // mirror and vice versa. The picture-upload path runs its own
-  // `revalidate({ domain: 'public', mode: 'route' })` once the Blob URL lands
-  // so the new avatar appears on the next dashboard render.
-  if (session.linePictureUrl && process.env.BLOB_READ_WRITE_TOKEN) {
-    waitUntil(
-      uploadAndPersistLinePic({
-        dbPlayerId,
-        publicPlayerId: playerId,
+  // ── Branch by auth provider ─────────────────────────────────────────────
+  // LINE users (with `session.lineId`) take the v1.5.0 + v1.8.0 path:
+  // Redis-canonical synchronous write → Prisma deferred via waitUntil. The
+  // JWT callback's next read hits Redis directly. Read-your-own-writes is
+  // tight (~50-100ms warm).
+  //
+  // Non-LINE users (Google / email — `session.userId` only) take the
+  // v1.61.0 path: synchronous Prisma transaction binds via
+  // User.playerId / Player.userId. No Redis-canonical store for them
+  // today; the JWT callback's User-side resolver reads via Prisma.
+  // Synchronous Prisma here keeps read-your-own-writes correct on the
+  // immediate `await update()` from AssignSubmit.
+  if (session.lineId) {
+    // ── LINE flow ────────────────────────────────────────────────────────
+    try {
+      // v1.26.0 — per-league key. Same league context (`leagueId`) the
+      // request is being served against; the JWT callback's read uses the
+      // same key shape on the next session refresh.
+      await setMappingOrThrow(session.lineId, leagueId, {
+        playerId,
         playerName,
-        lineUrl: session.linePictureUrl,
-      }),
+        teamId,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Storage error";
+      return NextResponse.json({ error: message }, { status: 500 });
+    }
+
+    // Deferred durable write: Prisma transaction (background). On failure
+    // the catch in `persistAssignmentToPrisma` emits a `[v1.8.0 DRIFT]`
+    // log line; operator recovery via `auditRedisVsPrisma.ts`.
+    waitUntil(
+      persistAssignmentToPrisma({ lineId: session.lineId, dbPlayerId }),
     );
+
+    // Deferred picture mirror (independent of Prisma). LINE-only.
+    if (session.linePictureUrl && process.env.BLOB_READ_WRITE_TOKEN) {
+      waitUntil(
+        uploadAndPersistLinePic({
+          dbPlayerId,
+          publicPlayerId: playerId,
+          playerName,
+          lineUrl: session.linePictureUrl,
+        }),
+      );
+    }
+  } else {
+    // ── Non-LINE flow (Google / email) — v1.61.0 ────────────────────────
+    // Synchronous Prisma write. session.userId is non-null per the gate
+    // at the top of this handler.
+    try {
+      await persistAssignmentToPrismaForUser({
+        userId: session.userId!,
+        dbPlayerId,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Storage error";
+      return NextResponse.json({ error: message }, { status: 500 });
+    }
   }
 
-  // v1.8.2 — no public-data revalidate here on the synchronous path.
-  // The link state is owned by the JWT (refreshed via next-auth `update()`
-  // on the client) and Redis (canonical store consulted by `getPlayerMapping`
-  // on the next session read). Neither flows through the static `public-data`
-  // cache, so busting it would only force a needless re-derivation on the
-  // user's next `/` render. Mirrors v1.7.0's drop of these calls from
-  // `/api/rsvp` for the same reason. The picture mirror handles its own
-  // revalidate above when it actually has new data to expose.
+  // v1.8.2 — no public-data revalidate here on the synchronous path. The
+  // link state is owned by the JWT (refreshed via next-auth `update()` on
+  // the client) and Redis / Prisma User.playerId. Neither flows through
+  // the static `public-data` cache, so busting it would only force a
+  // needless re-derivation on the user's next `/` render.
   return NextResponse.json({ ok: true, playerId, playerName, teamId });
 }
 
 export async function DELETE() {
   const session = await getServerSession(authOptions);
 
-  if (!session?.lineId) {
+  // v1.61.0 — drop the v1.39.2 LINE-only gate. Mirror of POST. DELETE is
+  // intentionally NOT gated by `League.allowSelfLink` per v1.60.0 — an
+  // already-linked player must be able to unbind themselves regardless
+  // of the toggle (the toggle only controls NEW links).
+  if (!session || (!session.lineId && !session.userId)) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 
@@ -334,24 +416,30 @@ export async function DELETE() {
     );
   }
 
-  // ── Synchronous canonical write: Redis (null sentinel) ──────────────────
-  // The user's next session refresh reads `null` from Redis directly —
-  // orphan state served without a Prisma round-trip.
-  //
-  // v1.26.0 — null sentinel is per-league. The user remains linked in
-  // OTHER leagues (if any); only the current league context's mapping is
-  // reset. This matches the user-visible "I want to switch which player
-  // I'm on this league" intent without affecting their assignments
-  // elsewhere.
-  try {
-    await setMappingOrThrow(session.lineId, leagueId, null);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Storage error";
-    return NextResponse.json({ error: message }, { status: 500 });
-  }
+  if (session.lineId) {
+    // ── LINE flow ────────────────────────────────────────────────────────
+    // Synchronous Redis (null sentinel) → JWT callback's next refresh
+    // serves orphan without a Prisma round-trip.
+    try {
+      await setMappingOrThrow(session.lineId, leagueId, null);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Storage error";
+      return NextResponse.json({ error: message }, { status: 500 });
+    }
 
-  // ── Deferred durable write: clear Prisma Player.lineId (background) ─────
-  waitUntil(persistUnassignmentToPrisma(session.lineId));
+    // Deferred durable write: clear Prisma Player.lineId (background).
+    waitUntil(persistUnassignmentToPrisma(session.lineId));
+  } else {
+    // ── Non-LINE flow (Google / email) — v1.61.0 ────────────────────────
+    // Synchronous Prisma transaction; no Redis-canonical store for this
+    // path today.
+    try {
+      await persistUnassignmentToPrismaForUser(session.userId!);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Storage error";
+      return NextResponse.json({ error: message }, { status: 500 });
+    }
+  }
 
   // v1.8.2 — see POST handler above for the rationale on dropping the
   // public-data revalidation. Same shape applies on unlink.

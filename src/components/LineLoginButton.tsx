@@ -186,20 +186,26 @@ export default function LineLoginButton() {
 
   // Show the assign modal on first login (no player assigned, not previously dismissed).
   //
-  // v1.39.2 — gated on `session?.lineId`. The modal CTAs route to
-  // `/assign-player`, which is LINE-keyed end-to-end (`/api/assign-player`
-  // POST/DELETE check `session.lineId` and 401 on Google/email sessions).
-  // Non-LINE users redeem invites via `/join/[code]` (PR ζ); they should not
-  // see this modal at all. The dropdown's needsSetup branch surfaces a
-  // separate "Need an invite" message for them instead.
+  // v1.61.0 — gate on `allowSelfLink` instead of `session.lineId`. The
+  // /assign-player route now accepts non-LINE sessions (Google / email)
+  // when the league's `allowSelfLink` toggle is on. When the toggle is
+  // off, the modal stays hidden — directing users to /assign-player only
+  // to land on the disabled surface would be confusing UX. Any
+  // authenticated session with no playerId AND allowSelfLink === true
+  // sees the popup once (until they dismiss it).
   useEffect(() => {
-    if (status === 'authenticated' && session?.lineId && !session?.playerId) {
+    if (
+      status === 'authenticated' &&
+      session?.allowSelfLink &&
+      !session?.playerId &&
+      (session?.lineId || session?.userId)
+    ) {
       const dismissed = localStorage.getItem(GUEST_DISMISSED_KEY);
       if (!dismissed) {
         setShowAssignModal(true);
       }
     }
-  }, [status, session?.lineId, session?.playerId]);
+  }, [status, session?.lineId, session?.userId, session?.playerId, session?.allowSelfLink]);
 
   // Show install modal for authenticated users who haven't dismissed it
   useEffect(() => {
@@ -326,11 +332,12 @@ export default function LineLoginButton() {
   }
 
   const needsSetup = !session.playerId;
-  // v1.39.2 — `/assign-player` is LINE-keyed end-to-end. Gate every CTA into
-  // it on `session.lineId`. Non-LINE users (Google / email magic-link) get a
-  // "need invite" message in the same dropdown slot and switch player by
-  // redeeming a fresh `/join/[code]` invite instead.
-  const hasLine = !!session.lineId;
+  // v1.61.0 — `/assign-player` accepts any authenticated session (LINE,
+  // Google, email) when the league's `allowSelfLink` toggle is on. The
+  // gate is per-league via `session.allowSelfLink` (computed in the JWT
+  // callback). When OFF, the dropdown shows the friendly "Need an invite"
+  // message instead of the picker CTA.
+  const allowSelfLink = session.allowSelfLink !== false; // default-true
 
   return (
     <>
@@ -380,7 +387,7 @@ export default function LineLoginButton() {
               <div className="px-4 py-3 border-b border-border-subtle">
                 <p className="text-[10px] font-black uppercase tracking-widest text-fg-mid">{"Signed in as guest"}</p>
                 <p className="text-xs text-fg-high mt-0.5">
-                  {hasLine ? "No player assigned yet" : "Need an invite to join"}
+                  {allowSelfLink ? "No player assigned yet" : "Need an invite to join"}
                 </p>
               </div>
             ) : (
@@ -391,7 +398,13 @@ export default function LineLoginButton() {
             )}
 
             {needsSetup ? (
-              hasLine ? (
+              allowSelfLink ? (
+                /*
+                 * v1.61.0 — open self-link CTA, available to any
+                 * authenticated user (LINE / Google / email). The
+                 * /assign-player route accepts the session regardless of
+                 * provider when League.allowSelfLink === true.
+                 */
                 <Link
                   href="/assign-player"
                   onClick={() => setOpen(false)}
@@ -405,11 +418,11 @@ export default function LineLoginButton() {
                 </Link>
               ) : (
                 /*
-                 * v1.39.2 — non-LINE users (Google / email) cannot use the
-                 * legacy LINE-keyed picker. Surface the invite path instead:
-                 * a static "need invite" hint plus a mailto so they can ask
-                 * the operator directly. No /assign-player link in this
-                 * branch — the API would 401 them anyway.
+                 * v1.61.0 — self-link toggle OFF for this league. Surface
+                 * the invite path with a mailto so the user has a path
+                 * forward. Replaces the v1.39.2 LINE-only gate (now
+                 * obsolete — the API accepts non-LINE sessions when
+                 * allowSelfLink === true).
                  */
                 <div
                   data-testid="account-menu-need-invite"
@@ -443,27 +456,25 @@ export default function LineLoginButton() {
                   {"Edit my details"}
                 </Link>
                 {/*
-                 * v1.39.2 — gate the legacy "Change/Unassign player" surface
-                 * on session.lineId. Non-LINE users switch player by
-                 * redeeming a fresh /join/[code] invite (PR ζ /
-                 * `redeemInvite`'s linkUserToPlayer helper handles rebinding
-                 * a previously bound User onto a new Player atomically — see
-                 * v1.39.0 PR λ). The legacy picker stays for grandfathered
-                 * LINE users.
+                 * v1.61.0 — drop the v1.39.2 `hasLine` gate. Any linked
+                 * session (LINE / Google / email) can use /assign-player
+                 * to change or unassign their player; the API DELETE
+                 * path is ungated by `allowSelfLink` (per v1.60.0), and
+                 * the POST path accepts all providers when allowSelfLink
+                 * is on. When allowSelfLink is off, the link routes to
+                 * the SelfLinkDisabledSurface — matches v1.60.0 behavior.
                  */}
-                {hasLine && (
-                  <Link
-                    href="/assign-player"
-                    onClick={() => setOpen(false)}
-                    className="flex items-center gap-2 px-4 py-3 text-[12px] font-bold text-fg-high hover:text-fg-mid hover:bg-surface transition-colors"
-                    data-testid="account-menu-change-player"
-                  >
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                    </svg>
-                    {"Change/Unassign player"}
-                  </Link>
-                )}
+                <Link
+                  href="/assign-player"
+                  onClick={() => setOpen(false)}
+                  className="flex items-center gap-2 px-4 py-3 text-[12px] font-bold text-fg-high hover:text-fg-mid hover:bg-surface transition-colors"
+                  data-testid="account-menu-change-player"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                  </svg>
+                  {"Change/Unassign player"}
+                </Link>
               </>
             )}
 

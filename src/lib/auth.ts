@@ -13,6 +13,7 @@ import {
 import { playerIdToSlug, teamIdToSlug } from "@/lib/ids";
 import { getIdentityReadSource } from "@/lib/settings";
 import { getDefaultLeagueId } from "@/lib/leagueSlug";
+import { getLeagueAllowSelfLink } from "@/lib/leagueSelfLink";
 
 /**
  * Resolve the cookie domain for the NextAuth session token from
@@ -183,6 +184,41 @@ function pickAssignmentMapping(
     playerName: player.name ?? "",
     teamId: assignment ? teamIdToSlug(assignment.leagueTeam.team.id) : "",
   };
+}
+
+/**
+ * v1.61.0 — non-LINE resolver. Same chain as `getPlayerMappingViaUser`
+ * but keyed on `User.id` instead of `User.lineId @unique`. Used by the
+ * JWT callback's non-LINE branch (Google / email magic-link sessions
+ * have a userId but no lineId). Returns null when the User has no
+ * playerId yet (the orphan / lurker state — pre-redemption).
+ *
+ * No Redis caching today: non-LINE users are a minority, the JWT
+ * callback's per-refresh Prisma round-trip is acceptable. v1.62.0+ may
+ * add a userId-keyed Redis namespace if the population grows.
+ */
+async function getPlayerMappingByUserId(
+  userId: string,
+  leagueId?: string | null,
+): Promise<PlayerMapping | null> {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { playerId: true },
+  });
+  if (!user?.playerId) return null;
+
+  const player = await prisma.player.findUnique({
+    where: { id: user.playerId },
+    include: {
+      leagueAssignments: {
+        include: { leagueTeam: { include: { team: true } } },
+        orderBy: { fromGameWeek: "desc" },
+      },
+    },
+  });
+  if (!player) return null;
+
+  return pickAssignmentMapping(player, leagueId);
 }
 
 /**
@@ -734,12 +770,13 @@ export const authOptions: AuthOptions = {
       // microtask hop on the auth hot path). Static import is the
       // straight path; the helper has no request-context dependencies
       // that would justify lazy loading.
-      if (!token.lineId) {
-        token.leagueId = null;
-        token.playerId = null;
-        token.playerName = null;
-        token.teamId = null;
-      } else {
+      // v1.61.0 — resolve the request's league context for both LINE and
+      // non-LINE sessions. The v1.58.0 perf optimization (skip the league
+      // lookup entirely for non-LINE sessions) is reverted in v1.61.0
+      // because the new `allowSelfLink` surface needs the leagueId on
+      // every callback. The cost is one cached read per JWT callback —
+      // `getDefaultLeagueId` is wrapped in `unstable_cache` with the
+      // `leagues` tag, ~ms warm.
       let requestLeagueId: string | null = null;
       try {
         requestLeagueId = await getDefaultLeagueId();
@@ -748,15 +785,26 @@ export const authOptions: AuthOptions = {
       }
       token.leagueId = requestLeagueId;
 
-      // Always check the canonical mapping (Redis-canonical, Prisma fallback
-      // on miss/error per v1.26.0 semantics) so the session reflects
-      // admin-driven (re)assignments and unassignments.
+      // v1.61.0 — surface `allowSelfLink` on the token so the account-menu
+      // dropdown (and the AssignModal popup gate) can read the toggle
+      // without an extra fetch. Defaults to true on lookup failure (matches
+      // the helper's defensive default and the column's @default(true)).
+      let allowSelfLink = true;
+      if (requestLeagueId) {
+        try {
+          allowSelfLink = await getLeagueAllowSelfLink(requestLeagueId);
+        } catch (err) {
+          console.error(
+            "[auth] getLeagueAllowSelfLink failed in JWT callback: %o",
+            err,
+          );
+        }
+      }
+      token.allowSelfLink = allowSelfLink;
+
       if (token.lineId) {
+        // ── LINE branch — v1.5.0 Redis-canonical resolver ──────────────
         if (!requestLeagueId) {
-          // No league context (apex with no default-league flag set, or
-          // unknown subdomain). Serve the linked user as logged-in but with
-          // no team — Dashboard's render-null branches treat this as
-          // "guest" for in-team affordances, which is the safest behavior.
           token.playerId = null;
           token.playerName = null;
           token.teamId = null;
@@ -784,8 +832,46 @@ export const authOptions: AuthOptions = {
             );
           }
         }
+      } else if (token.userId) {
+        // ── Non-LINE branch (Google / email) — v1.61.0 ─────────────────
+        // Resolve via User.playerId @unique. No Redis caching today;
+        // per-refresh Prisma round-trip is acceptable while non-LINE
+        // populations are small. v1.62.0+ may add a userId-keyed cache.
+        if (!requestLeagueId) {
+          token.playerId = null;
+          token.playerName = null;
+          token.teamId = null;
+        } else {
+          try {
+            const mapping = await getPlayerMappingByUserId(
+              token.userId as string,
+              requestLeagueId,
+            );
+            if (mapping) {
+              token.playerId = mapping.playerId;
+              token.playerName = mapping.playerName;
+              token.teamId = mapping.teamId;
+            } else {
+              token.playerId = null;
+              token.playerName = null;
+              token.teamId = null;
+            }
+          } catch (err) {
+            console.error(
+              "[auth] getPlayerMappingByUserId failed for userId=%s leagueId=%s: %o",
+              token.userId,
+              requestLeagueId,
+              err,
+            );
+          }
+        }
+      } else {
+        // No identifier (transient state during admin-credentials
+        // sign-in, or pre-adapter resolution). Null out the player chrome.
+        token.playerId = null;
+        token.playerName = null;
+        token.teamId = null;
       }
-      } // end: if (token.lineId) — v1.58.0 perf gate
 
       // Recompute isAdmin on every token refresh so env changes take effect
       const adminIds = (process.env.ADMIN_LINE_IDS ?? "")
@@ -816,6 +902,12 @@ export const authOptions: AuthOptions = {
       // (PR #8) keys on this. Null for admin-credentials sessions and for
       // the (transient) state between sign-in start and adapter resolution.
       session.userId = (token.userId as string | null) ?? null;
+      // v1.61.0 — surface the per-league `allowSelfLink` toggle so the
+      // account-menu dropdown can render the right CTA (Pick-a-player
+      // when on, Need-an-invite when off) without an extra fetch.
+      // Defaults to true on missing token field (consistent with the
+      // helper's defensive default).
+      session.allowSelfLink = (token.allowSelfLink as boolean | undefined) ?? true;
       return session;
     },
   },
