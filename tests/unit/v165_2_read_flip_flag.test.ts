@@ -31,9 +31,9 @@ const VIEWER_STATE_SRC = readFileSync(
   'utf8',
 )
 
-describe('v1.65.2 — APP_VERSION bumped', () => {
-  it('APP_VERSION is 1.65.2', () => {
-    expect(VERSION_SRC).toMatch(/APP_VERSION\s*=\s*['"]1\.65\.2['"]/)
+describe('v1.65.2 — APP_VERSION bumped (chain ships sequentially)', () => {
+  it('APP_VERSION is at least 1.65.2', () => {
+    expect(VERSION_SRC).toMatch(/APP_VERSION\s*=\s*['"]1\.65\.[2-9]['"]/)
   })
 })
 
@@ -63,27 +63,30 @@ describe('v1.65.2 — Setting helper', () => {
   })
 })
 
-describe('v1.65.2 — resolvePlayerDataReadSource pure helper', () => {
-  it('returns "plm" only on the literal "plm" string', () => {
+describe('v1.65.3 — resolvePlayerDataReadSource pure helper (default flipped)', () => {
+  // v1.65.3 — default flipped from 'legacy' to 'plm'. Only literal
+  // 'legacy' returns 'legacy'; everything else returns 'plm'.
+  it('returns "plm" on the literal "plm" string', () => {
     expect(resolvePlayerDataReadSource('plm')).toBe('plm')
   })
 
-  it('returns "legacy" on null', () => {
-    expect(resolvePlayerDataReadSource(null)).toBe('legacy')
+  it('returns "plm" on null (v1.65.3 default flip)', () => {
+    expect(resolvePlayerDataReadSource(null)).toBe('plm')
   })
 
-  it('returns "legacy" on undefined', () => {
-    expect(resolvePlayerDataReadSource(undefined)).toBe('legacy')
+  it('returns "plm" on undefined (v1.65.3 default flip)', () => {
+    expect(resolvePlayerDataReadSource(undefined)).toBe('plm')
   })
 
-  it('returns "legacy" on the literal "legacy" string', () => {
+  it('returns "legacy" on the literal "legacy" string (revert path)', () => {
     expect(resolvePlayerDataReadSource('legacy')).toBe('legacy')
   })
 
-  it('returns "legacy" on any unknown string (defensive)', () => {
-    expect(resolvePlayerDataReadSource('some-other-value')).toBe('legacy')
-    expect(resolvePlayerDataReadSource('PLM')).toBe('legacy') // case-sensitive — only "plm" lower-case flips
-    expect(resolvePlayerDataReadSource('')).toBe('legacy')
+  it('returns "plm" on any unknown string (typos land on the new default)', () => {
+    expect(resolvePlayerDataReadSource('some-other-value')).toBe('plm')
+    expect(resolvePlayerDataReadSource('LEGACY')).toBe('plm') // case-sensitive — only literal lowercase 'legacy' reverts
+    expect(resolvePlayerDataReadSource('Legacy')).toBe('plm')
+    expect(resolvePlayerDataReadSource('')).toBe('plm')
   })
 
   it('return type narrows to the union literal', () => {
@@ -92,13 +95,14 @@ describe('v1.65.2 — resolvePlayerDataReadSource pure helper', () => {
   })
 })
 
-describe('v1.65.2 — getPlayerDataReadSource defensive fallback', () => {
-  it('falls back to legacy on Settings read failure', () => {
-    // The fallback is a try/catch around the prisma.setting.findUnique
-    // call. Pin the structure.
+describe('v1.65.3 — getPlayerDataReadSource defensive fallback (default flipped)', () => {
+  it('falls back to "plm" on Settings read failure (v1.65.3 default)', () => {
+    // v1.65.3 — Settings outage falls back to 'plm' (the new default),
+    // not 'legacy'. The dual-write through v1.65.4 keeps Player.* in
+    // sync so a transient Settings outage doesn't break reads.
     expect(SETTINGS_SRC).toMatch(/getPlayerDataReadSource[\s\S]*?try\s*\{/)
     expect(SETTINGS_SRC).toMatch(
-      /catch\s*\(err\)[\s\S]*?return\s+['"]legacy['"]/,
+      /catch\s*\(err\)[\s\S]*?return\s+['"]plm['"]/,
     )
   })
 })
