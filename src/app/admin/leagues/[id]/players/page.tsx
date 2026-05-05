@@ -2,6 +2,8 @@ import {
   getLeaguePlayers,
   getOrphanLineLogins,
   getAllLineLoginsWithLinkedPlayer,
+  getLinkablePlayersForLeague,
+  getPlayerOtherLeaguesForLeague,
 } from '@/lib/admin-data'
 import PlayersTab from '@/components/admin/PlayersTab'
 
@@ -17,10 +19,20 @@ export default async function PlayersPage({ params }: Props) {
     [assignments, leagueTeams, gameWeeks, lineLoginsByLineId, activeInviteCountByPlayerId],
     orphansRaw,
     allLineLoginsRaw,
+    linkableCandidates,
+    otherLeaguesByPlayerId,
   ] = await Promise.all([
     getLeaguePlayers(id),
     getOrphanLineLogins(),
     getAllLineLoginsWithLinkedPlayer(),
+    // v1.56.0 (PR 3 of route-shortening chain) — global Players NOT
+    // currently on this league's roster, with the names of other
+    // leagues they're in. Drives the LinkExistingPlayerDialog.
+    getLinkablePlayersForLeague(id),
+    // v1.56.0 — for every player ON this league's roster, the names of
+    // OTHER active leagues they're in. Drives the per-row "Also in:
+    // <league>" differentiation cue on PlayersTab.
+    getPlayerOtherLeaguesForLeague(id),
   ])
 
   const playerMap = new Map<string, {
@@ -52,6 +64,11 @@ export default async function PlayersPage({ params }: Props) {
     lineDisplayName: string | null
     linePictureUrl: string | null
     lineLastSeenAt: string | null
+    // v1.56.0 (PR 3 of route-shortening chain) — names of OTHER leagues
+    // where this player has an active assignment. Empty when this is
+    // the player's only league. Drives the per-row "Also in: <league>"
+    // differentiation cue.
+    otherLeagues: string[]
     assignments: {
       id: string
       fromGameWeek: number
@@ -99,6 +116,7 @@ export default async function PlayersPage({ params }: Props) {
         // `unstable_cache`, which JSON-round-trips its return value. Calling
         // `.toISOString()` here would crash post-cache. v1.17.1.
         lineLastSeenAt: ll?.lastSeenAt ?? null,
+        otherLeagues: otherLeaguesByPlayerId[a.player.id] ?? [],
         assignments: [a],
       })
     }
@@ -133,6 +151,7 @@ export default async function PlayersPage({ params }: Props) {
       maxGameWeek={maxGameWeek}
       orphans={orphans}
       allLineLogins={allLineLogins}
+      linkableCandidates={linkableCandidates}
     />
   )
 }
