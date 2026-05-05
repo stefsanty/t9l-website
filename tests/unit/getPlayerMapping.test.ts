@@ -12,7 +12,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
  *
  * v1.26.0 changes:
  *   - The read path is per-league (`leagueId` required parameter). The
- *     mapping resolves the right `PlayerLeagueAssignment` for the
+ *     mapping resolves the right `PlayerLeagueMembership` for the
  *     supplied league; absence of an assignment in this league produces
  *     `teamId: ""` even when the player exists globally.
  *   - The miss policy flips from "return null" (v1.5.0 semantics) to

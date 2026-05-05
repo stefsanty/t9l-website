@@ -49,7 +49,7 @@ export default async function WelcomePage({ params }: Props) {
       where: { id: invite.leagueId },
       select: { id: true, name: true, subdomain: true },
     }),
-    prisma.playerLeagueAssignment.findFirst({
+    prisma.playerLeagueMembership.findFirst({
       where: {
         leagueTeam: { leagueId: invite.leagueId },
         player: { userId },
@@ -66,7 +66,11 @@ export default async function WelcomePage({ params }: Props) {
   }
 
   const playerName = assignment.player.name ?? 'Unnamed'
-  const teamName = assignment.leagueTeam.team.name
+  // v1.65.0 — leagueTeam nullable post-rework. The welcome page only
+  // renders for COMPLETED memberships which always have a real team
+  // (admin or invite-redemption flow always assigns one); defensive
+  // fallback for the off-chance shape mismatch.
+  const teamName = assignment.leagueTeam?.team.name ?? 'your team'
   // v1.55.0 (PR 2 of admin-UI-compat-audit chain): post-redemption home
   // URL flipped from the legacy subdomain form (`<slug>.t9l.me`) to the
   // v1.54.0 canonical path-based form (`/id/<slug>`). Apex stays as the

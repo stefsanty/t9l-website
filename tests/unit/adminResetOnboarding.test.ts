@@ -2,12 +2,12 @@
  * v1.36.0 (PR θ) — adminResetOnboarding server action contract.
  *
  * Pin the load-bearing behavior:
- *   - Flips PlayerLeagueAssignment.onboardingStatus from COMPLETED → NOT_YET.
+ *   - Flips PlayerLeagueMembership.onboardingStatus from COMPLETED → NOT_YET.
  *   - Preserves all other Player + assignment data (the action only touches
  *     onboardingStatus). PR ζ's onboarding form is idempotent on re-entry,
  *     so re-routing the user through it surfaces their prior submission
  *     pre-filled — no data loss.
- *   - League-scoped (PlayerLeagueAssignment.leagueTeam.leagueId join).
+ *   - League-scoped (PlayerLeagueMembership.leagueTeam.leagueId join).
  *   - Idempotent no-op when assignment is already NOT_YET.
  *   - Rejects when the player has no assignment in the supplied league
  *     (cross-league isolation; admin in League A can't reset onboarding
@@ -29,7 +29,7 @@ const {
 
 vi.mock('@/lib/prisma', () => ({
   prisma: {
-    playerLeagueAssignment: {
+    playerLeagueMembership: {
       findFirst: findFirstMock,
       update: updateMock,
       updateMany: vi.fn(),

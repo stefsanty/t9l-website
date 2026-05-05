@@ -43,7 +43,7 @@ vi.mock('@/lib/prisma', () => ({
       create: inviteCreateMock,
     },
     leagueTeam: { findUnique: vi.fn() },
-    playerLeagueAssignment: { create: vi.fn() },
+    playerLeagueMembership: { create: vi.fn() },
     $transaction: vi.fn().mockResolvedValue([]),
   },
 }))

@@ -392,7 +392,7 @@ export async function removeTeamFromLeague(leagueTeamId: string, leagueId: strin
 export async function assignPlayer(playerId: string, leagueTeamId: string, fromGameWeek: number) {
   await assertAdmin()
   // v1.34.0 (PR ζ) — admin-driven assignment carries `joinSource: ADMIN`.
-  await prisma.playerLeagueAssignment.create({
+  await prisma.playerLeagueMembership.create({
     data: { playerId, leagueTeamId, fromGameWeek, joinSource: 'ADMIN' },
   })
   const lt = await prisma.leagueTeam.findUnique({ where: { id: leagueTeamId }, select: { leagueId: true } })
@@ -410,11 +410,11 @@ export async function transferPlayer(
 ) {
   await assertAdmin()
   await prisma.$transaction(async (tx) => {
-    await tx.playerLeagueAssignment.updateMany({
+    await tx.playerLeagueMembership.updateMany({
       where: { playerId, leagueTeamId: fromLeagueTeamId, toGameWeek: null },
       data: { toGameWeek: fromGameWeek - 1 },
     })
-    await tx.playerLeagueAssignment.create({
+    await tx.playerLeagueMembership.create({
       data: { playerId, leagueTeamId: toLeagueTeamId, fromGameWeek },
     })
   })
@@ -426,7 +426,7 @@ export async function removePlayerFromLeague(playerId: string, leagueId: string)
   const leagueTeamIds = (
     await prisma.leagueTeam.findMany({ where: { leagueId }, select: { id: true } })
   ).map((lt) => lt.id)
-  await prisma.playerLeagueAssignment.deleteMany({
+  await prisma.playerLeagueMembership.deleteMany({
     where: { playerId, leagueTeamId: { in: leagueTeamIds } },
   })
   revalidate({ domain: 'admin', paths: [`/admin/leagues/${leagueId}/players`] })
@@ -655,7 +655,7 @@ export async function adminUpdatePlayerPosition(input: {
  * is no automatic notification.
  *
  * Why league-scoped (not global):
- *   - `onboardingStatus` lives on `PlayerLeagueAssignment`, not on
+ *   - `onboardingStatus` lives on `PlayerLeagueMembership`, not on
  *     `Player`. A user can be in N leagues and the reset is per-league
  *     (the brainstorm called this out — different leagues have
  *     different onboarding requirements, e.g. ID retention).
@@ -674,7 +674,7 @@ export async function adminResetOnboarding(input: {
 
   // Verify the player has an assignment in this league. Without this
   // check, a leagueId mismatch would silently update zero rows.
-  const assignment = await prisma.playerLeagueAssignment.findFirst({
+  const assignment = await prisma.playerLeagueMembership.findFirst({
     where: {
       playerId: input.playerId,
       leagueTeam: { leagueId: input.leagueId },
@@ -688,7 +688,7 @@ export async function adminResetOnboarding(input: {
     return // already reset; idempotent no-op
   }
 
-  await prisma.playerLeagueAssignment.update({
+  await prisma.playerLeagueMembership.update({
     where: { id: assignment.id },
     data: { onboardingStatus: 'NOT_YET' },
   })
@@ -760,7 +760,7 @@ export async function adminPurgePlayerId(input: {
  *   2. Verifies the supplied `leagueTeamId` belongs to the supplied
  *      `leagueId` (cross-league isolation).
  *   3. Flips `applicationStatus` to APPROVED, clears `applicationLeagueId`.
- *   4. Creates a new `PlayerLeagueAssignment` with the chosen team,
+ *   4. Creates a new `PlayerLeagueMembership` with the chosen team,
  *      `joinSource: 'SELF_SERVE'` (the user applied themselves),
  *      `onboardingStatus: 'COMPLETED'` (no separate redemption step
  *      since the user provided name + position during application).
@@ -810,7 +810,7 @@ export async function adminApproveApplication(input: {
         applicationLeagueId: null,
       },
     })
-    await tx.playerLeagueAssignment.create({
+    await tx.playerLeagueMembership.create({
       data: {
         playerId: input.playerId,
         leagueTeamId: input.leagueTeamId,
@@ -841,7 +841,7 @@ export async function adminApproveApplication(input: {
  *      delete the Player without clearing the User pointer, the User
  *      ends up with a dangling FK).
  *   3. Deletes the Player. Cascading FK constraints delete the
- *      (typically empty) PlayerLeagueAssignment + Availability rows.
+ *      (typically empty) PlayerLeagueMembership + Availability rows.
  *      Goal/Assist/MatchEvent FKs are RESTRICT/SET NULL — but a fresh
  *      pending application Player has none of those.
  *   4. Busts admin + public caches.
@@ -901,7 +901,7 @@ function normalizePosition(input: string | null | undefined): PlayerPosition | n
  *
  * `fromGameWeek` defaults to 1 when an assignment is created without one
  * (the most common case — admin pre-stages the slot at the start of the
- * season). Subsequent transfers create new `PlayerLeagueAssignment` rows
+ * season). Subsequent transfers create new `PlayerLeagueMembership` rows
  * with the right `fromGameWeek`.
  *
  * Cache invalidation: `revalidate({ domain: 'admin' })` busts the public
@@ -952,7 +952,7 @@ export async function adminCreatePlayer(input: {
       },
     })
     if (leagueTeamId) {
-      await tx.playerLeagueAssignment.create({
+      await tx.playerLeagueMembership.create({
         // v1.34.0 (PR ζ) — tag admin-created assignments with `joinSource: ADMIN`
         // so audit / abuse-mitigation queries can distinguish them from
         // CODE / PERSONAL / SELF_SERVE rows.
@@ -1028,7 +1028,7 @@ export async function adminUnlinkUserFromPlayer(input: {
  * Distinct from `transferPlayer` (which moves a player from team A to
  * team B WITHIN a single league) and `adminCreatePlayer` (which creates
  * a fresh Player). This action takes an existing Player and creates ONE
- * new `PlayerLeagueAssignment` row pointing into the supplied league.
+ * new `PlayerLeagueMembership` row pointing into the supplied league.
  *
  * Validation:
  *   - Player must exist
@@ -1079,7 +1079,7 @@ export async function adminLinkExistingPlayer(input: {
 
   // Already on this league's roster? Block double-roster — admin should
   // use `transferPlayer` to move between teams within the same league.
-  const existingAssignment = await prisma.playerLeagueAssignment.findFirst({
+  const existingAssignment = await prisma.playerLeagueMembership.findFirst({
     where: {
       playerId,
       leagueTeam: { leagueId },
@@ -1091,7 +1091,7 @@ export async function adminLinkExistingPlayer(input: {
     throw new Error('Player is already on this league\'s roster (use Transfer to change teams)')
   }
 
-  const created = await prisma.playerLeagueAssignment.create({
+  const created = await prisma.playerLeagueMembership.create({
     data: { playerId, leagueTeamId, fromGameWeek, joinSource: 'ADMIN' },
     select: { id: true },
   })
@@ -1561,7 +1561,7 @@ export async function adminCreateMatchEvent(input: {
   // - For OG: scorer must be on opposingTeamId.
   const requiredScorerTeamId =
     goalType === 'OWN_GOAL' ? opposingTeamId : beneficiaryTeamId
-  const scorerOnTeam = await prisma.playerLeagueAssignment.findFirst({
+  const scorerOnTeam = await prisma.playerLeagueMembership.findFirst({
     where: { playerId: scorerId, leagueTeamId: requiredScorerTeamId },
     select: { id: true },
   })
@@ -1575,7 +1575,7 @@ export async function adminCreateMatchEvent(input: {
 
   // Assister, when supplied, must be on the beneficiary team.
   if (assisterId) {
-    const assisterOnTeam = await prisma.playerLeagueAssignment.findFirst({
+    const assisterOnTeam = await prisma.playerLeagueMembership.findFirst({
       where: { playerId: assisterId, leagueTeamId: beneficiaryTeamId },
       select: { id: true },
     })
@@ -1671,7 +1671,7 @@ export async function adminUpdateMatchEvent(input: {
   const requiredScorerTeamId =
     goalType === 'OWN_GOAL' ? opposingTeamId : beneficiaryTeamId
 
-  const scorerOnTeam = await prisma.playerLeagueAssignment.findFirst({
+  const scorerOnTeam = await prisma.playerLeagueMembership.findFirst({
     where: { playerId: scorerId, leagueTeamId: requiredScorerTeamId },
     select: { id: true },
   })
@@ -1683,7 +1683,7 @@ export async function adminUpdateMatchEvent(input: {
     )
   }
   if (assisterId) {
-    const assisterOnTeam = await prisma.playerLeagueAssignment.findFirst({
+    const assisterOnTeam = await prisma.playerLeagueMembership.findFirst({
       where: { playerId: assisterId, leagueTeamId: beneficiaryTeamId },
       select: { id: true },
     })

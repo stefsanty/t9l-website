@@ -110,7 +110,7 @@ export const getLeagueTeams = unstable_cache(
 export const getLeaguePlayers = unstable_cache(
   async (leagueId: string) => {
     const [assignments, leagueTeams, gameWeeks, allLineLogins, activeInvites, pendingApplications] = await Promise.all([
-      prisma.playerLeagueAssignment.findMany({
+      prisma.playerLeagueMembership.findMany({
         where: { leagueTeam: { leagueId } },
         include: {
           player: true,
@@ -157,7 +157,7 @@ export const getLeaguePlayers = unstable_cache(
         },
       }),
       // v1.64.0 — pending applications targeting THIS league. These
-      // Player rows have NO PlayerLeagueAssignment yet (admin creates
+      // Player rows have NO PlayerLeagueMembership yet (admin creates
       // one on approval) so the existing `assignments` query above
       // wouldn't surface them. The page-level merger appends these as
       // synthetic rows with empty `assignments`, and PlayersTab renders
@@ -591,6 +591,10 @@ export async function getAllUsersForAdmin(): Promise<
   for (const p of linkedPlayers) {
     const otherLeagues: string[] = []
     for (const a of p.leagueAssignments) {
+      // v1.65.0 — `leagueTeam` is nullable post-membership-spec rework
+      // (PENDING-application memberships have no team). Skip such rows
+      // here; they're not relevant to the "other leagues" display.
+      if (!a.leagueTeam) continue
       const name = a.leagueTeam.league.name
       if (name && !otherLeagues.includes(name)) otherLeagues.push(name)
     }
@@ -640,14 +644,14 @@ export async function getPlayerOtherLeaguesForLeague(leagueId: string): Promise<
   // Fetch every active assignment for every player who has at least one
   // active assignment in THIS league. Group by playerId, exclude
   // assignments under this league, return the league names.
-  const playersInThisLeague = await prisma.playerLeagueAssignment.findMany({
+  const playersInThisLeague = await prisma.playerLeagueMembership.findMany({
     where: { toGameWeek: null, leagueTeam: { leagueId } },
     select: { playerId: true },
   })
   const playerIds = Array.from(new Set(playersInThisLeague.map((a) => a.playerId)))
   if (playerIds.length === 0) return {}
 
-  const otherAssignments = await prisma.playerLeagueAssignment.findMany({
+  const otherAssignments = await prisma.playerLeagueMembership.findMany({
     where: {
       playerId: { in: playerIds },
       toGameWeek: null,
@@ -661,6 +665,10 @@ export async function getPlayerOtherLeaguesForLeague(leagueId: string): Promise<
 
   const result: Record<string, string[]> = {}
   for (const a of otherAssignments) {
+    // v1.65.0 — defensive null-check; `leagueTeam` is nullable post-rework.
+    // The query's `where: { leagueTeam: { leagueId: { not: leagueId } } }`
+    // implicitly filters out null-leagueTeam rows, but TS can't narrow that.
+    if (!a.leagueTeam) continue
     const name = a.leagueTeam.league.name
     if (!name) continue
     const existing = result[a.playerId] ?? []
@@ -683,7 +691,7 @@ export async function getPlayerOtherLeaguesForLeague(leagueId: string): Promise<
  * creating a duplicate Player record.
  *
  * "Currently on this league's roster" = at least one
- * `PlayerLeagueAssignment` with `toGameWeek: null` (active) under one
+ * `PlayerLeagueMembership` with `toGameWeek: null` (active) under one
  * of this league's `LeagueTeam` rows.
  *
  * Players with NO active assignment in ANY league are surfaced too —
@@ -737,7 +745,7 @@ export async function getLinkablePlayersForLeague(leagueId: string): Promise<
         },
       },
     }),
-    prisma.playerLeagueAssignment.findMany({
+    prisma.playerLeagueMembership.findMany({
       where: {
         toGameWeek: null,
         leagueTeam: { leagueId },
@@ -758,7 +766,8 @@ export async function getLinkablePlayersForLeague(leagueId: string): Promise<
       userId: p.userId,
       lineId: p.lineId,
       otherLeagues: p.leagueAssignments
-        .map((a) => a.leagueTeam.league.name)
+        // v1.65.0 — defensive null-filter for nullable leagueTeam.
+        .map((a) => a.leagueTeam?.league.name ?? null)
         .filter((name): name is string => !!name),
     }))
 }

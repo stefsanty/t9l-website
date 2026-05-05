@@ -122,7 +122,7 @@ async function main() {
     }
     console.log(`✓ Test players: ${testPlayers.length}`)
 
-    // ── PlayerLeagueAssignments (all from GW1) ─────────────────────────────────
+    // ── PlayerLeagueMemberships (all from GW1) ─────────────────────────────────
     const assignments: Array<{ playerId: string; ltId: string }> = [
       { playerId: stefanId,               ltId: ltIdMap.get('Mariners FC')!  },
       { playerId: mkPlayerId('Player Alpha'),   ltId: ltIdMap.get('Mariners FC')!  },
@@ -134,13 +134,13 @@ async function main() {
 
     for (const { playerId, ltId } of assignments) {
       const plaId = mkPlaId(playerId, ltId)
-      await prisma.playerLeagueAssignment.upsert({
+      await prisma.playerLeagueMembership.upsert({
         where:  { id: plaId },
         create: { id: plaId, playerId, leagueTeamId: ltId, fromGameWeek: 1 },
         update: {},
       })
     }
-    console.log(`✓ PlayerLeagueAssignments: ${assignments.length}`)
+    console.log(`✓ PlayerLeagueMemberships: ${assignments.length}`)
 
     // ── GameWeeks ──────────────────────────────────────────────────────────────
     const gwDefs = [

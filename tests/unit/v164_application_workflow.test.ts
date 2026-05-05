@@ -210,7 +210,7 @@ describe('v1.64.0 — admin approve/reject actions', () => {
     expect(block).toMatch(/prisma\.\$transaction\b/)
     expect(block).toMatch(/applicationStatus:\s*['"]APPROVED['"]/)
     expect(block).toMatch(/applicationLeagueId:\s*null/)
-    expect(block).toMatch(/tx\.playerLeagueAssignment\.create/)
+    expect(block).toMatch(/tx\.playerLeagueMembership\.create/)
   })
 
   it('reject gates on assertAdmin and verifies PENDING status (cannot delete APPROVED player by mistake)', () => {

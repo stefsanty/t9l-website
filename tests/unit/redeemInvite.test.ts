@@ -38,7 +38,7 @@ const {
     const tx = {
       player: { update: playerUpdateMock, findUnique: vi.fn() },
       user: { update: userUpdateMock },
-      playerLeagueAssignment: {
+      playerLeagueMembership: {
         findFirst: assignmentFindFirstMock,
         update: assignmentUpdateMock,
       },
@@ -68,7 +68,7 @@ vi.mock('@/lib/prisma', () => ({
     leagueInvite: { findUnique: inviteFindUniqueMock, update: inviteUpdateMock },
     player: { findUnique: playerFindUniqueMock, update: playerUpdateMock },
     user: { update: userUpdateMock },
-    playerLeagueAssignment: {
+    playerLeagueMembership: {
       findFirst: assignmentFindFirstMock,
       update: assignmentUpdateMock,
       updateMany: vi.fn(),
@@ -258,7 +258,7 @@ describe('v1.34.0 (PR ζ) — redeemInvite — PERSONAL happy path', () => {
     expect(linkPlayerToUserMock).not.toHaveBeenCalled()
   })
 
-  it('updates the existing PlayerLeagueAssignment with PERSONAL + correct status', async () => {
+  it('updates the existing PlayerLeagueMembership with PERSONAL + correct status', async () => {
     await redeemInvite({ code: 'ABCD1234EFGH' })
     expect(assignmentUpdateMock).toHaveBeenCalledWith({
       where: { id: 'pla-1' },

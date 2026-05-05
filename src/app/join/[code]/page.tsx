@@ -101,7 +101,7 @@ export default async function JoinPage({ params }: Props) {
   // If already signed in AND already bound to a player in this league,
   // route to the right step in the flow. Idempotent re-visit.
   if (isSignedIn && userId) {
-    const existingBinding = await prisma.playerLeagueAssignment.findFirst({
+    const existingBinding = await prisma.playerLeagueMembership.findFirst({
       where: {
         leagueTeam: { leagueId: invite.leagueId },
         player: { userId },
@@ -152,7 +152,8 @@ export default async function JoinPage({ params }: Props) {
       name: target.name,
       position: target.position,
       pictureUrl: target.pictureUrl,
-      teamName: target.leagueAssignments[0]?.leagueTeam.team.name ?? null,
+      // v1.65.0 — leagueTeam nullable post-rework. Find first membership with a real team.
+      teamName: target.leagueAssignments.find((a) => a.leagueTeam !== null)?.leagueTeam?.team.name ?? null,
     }
 
     return (

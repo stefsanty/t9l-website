@@ -220,14 +220,20 @@ describe('v1.27.0 — Identity rework α: stage-1 invariants', () => {
     // The test is documenting "α was strictly schema-additive for User-Player";
     // future stages may grow the schema without invalidating that claim.
     expect(migration).not.toMatch(/CREATE TYPE\s+"JoinSource"/)
+    // v1.65.0 — SQL table name stays "PlayerLeagueAssignment" via @@map.
     expect(migration).not.toMatch(/ALTER TABLE\s+"PlayerLeagueAssignment"\s+ADD COLUMN\s+"joinSource"/)
   })
 
-  it('schema does NOT rename PlayerLeagueAssignment to LeagueMembership', () => {
-    // Per user-decided 2026-05-01: keep the name unchanged across all stages.
-    // A regression that lands the @@map rename here must fail CI.
-    expect(schema).not.toMatch(/model LeagueMembership\s*\{/)
-    expect(schema).toMatch(/model PlayerLeagueAssignment\s*\{/)
+  it('schema model name evolves to PlayerLeagueMembership in v1.65.0 via @@map', () => {
+    // Pre-v1.65.0 (the membership-spec rework): the comment in this test
+    // claimed the model name should NEVER rename. v1.65.0 contradicted
+    // that decision by aligning with the data-model spec
+    // ([outputs/data-model-spec-audit.md]). The Prisma model name is now
+    // PlayerLeagueMembership, with @@map keeping the SQL table name
+    // unchanged (zero DDL rename). The new model name is the regression
+    // target — ensures the rename stays landed.
+    expect(schema).toMatch(/model PlayerLeagueMembership\s*\{/)
+    expect(schema).toMatch(/@@map\("PlayerLeagueAssignment"\)/)
   })
 
   it('migration is purely additive: no DROP COLUMN, DROP TABLE, or ALTER TYPE', () => {

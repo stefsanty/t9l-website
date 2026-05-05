@@ -34,7 +34,7 @@ import type { PrismaClient, Prisma, GoalType } from '@prisma/client'
  * Player→team resolution
  * ----------------------
  * Each event's scorer is mapped to a "scoring team" via the
- * PlayerLeagueAssignment for the match's GameWeek. The pure helper takes
+ * PlayerLeagueMembership for the match's GameWeek. The pure helper takes
  * the lookup as input; `recomputeMatchScore` builds the lookup from a fresh
  * Prisma query (the eventual roster size is bounded — ~30/team — so cost is
  * negligible). If a scorer cannot be resolved to either match team's roster
@@ -79,7 +79,7 @@ export type ResolvedDisplayScore = {
  *    contribute (others are filtered out implicitly — currently only GOAL
  *    exists, but the filter shape is robust to future EventKinds).
  *  - `scorerTeamLookup` — `playerId → leagueTeamId`. Built by the caller
- *    from `PlayerLeagueAssignment` covering the match's GameWeek.
+ *    from `PlayerLeagueMembership` covering the match's GameWeek.
  *
  * Behavior:
  *  - For each goal event, resolve the scorer's team. If unresolvable (player
@@ -199,7 +199,7 @@ export async function recomputeMatchScore(
       where: { matchId, kind: 'GOAL' },
       select: { scorerId: true, goalType: true },
     }),
-    prisma.playerLeagueAssignment.findMany({
+    prisma.playerLeagueMembership.findMany({
       where: {
         leagueTeamId: { in: [match.homeTeamId, match.awayTeamId] },
       },
@@ -208,6 +208,11 @@ export async function recomputeMatchScore(
   ])
   const lookup = new Map<string, string>()
   for (const a of assignments) {
+    // v1.65.0 — leagueTeamId is nullable; PENDING applicants cannot
+    // contribute to match scoring. The where-filter
+    // `leagueTeamId: { in: [...] }` already excludes nulls implicitly,
+    // but TS doesn't narrow that.
+    if (a.leagueTeamId === null) continue
     // If a player has multiple assignments (rare — joining mid-season,
     // moving teams), keep the first. Future PRs can refine via
     // fromGameWeek/toGameWeek when the score-time matchday is known.

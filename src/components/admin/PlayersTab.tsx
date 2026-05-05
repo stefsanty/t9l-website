@@ -244,7 +244,7 @@ export default function PlayersTab({
   // v1.64.0 — open the Approve dialog for a pending application Player.
   // Approve requires a team selection; the dialog asks for it and then
   // calls adminApproveApplication, which atomically flips
-  // applicationStatus + creates a PlayerLeagueAssignment.
+  // applicationStatus + creates a PlayerLeagueMembership.
   const [approvePlayerId, setApprovePlayerId] = useState<string | null>(null)
   const approveTarget = approvePlayerId
     ? players.find((p) => p.id === approvePlayerId) ?? null
@@ -1128,7 +1128,7 @@ interface TransferPanelProps {
 /**
  * v1.64.0 — modal that gates the Approve flow for a PENDING application
  * Player. Approval requires picking a team (the new
- * `PlayerLeagueAssignment` needs a `leagueTeamId`) and optionally
+ * `PlayerLeagueMembership` needs a `leagueTeamId`) and optionally
  * picking the GW1+ start. Submission calls `adminApproveApplication`,
  * which atomically flips `Player.applicationStatus` to APPROVED, clears
  * `applicationLeagueId`, and creates the PLA.

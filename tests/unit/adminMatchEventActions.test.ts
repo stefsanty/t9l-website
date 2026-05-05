@@ -70,7 +70,7 @@ vi.mock('@/lib/prisma', () => ({
       update: matchEventUpdateMock,
       delete: matchEventDeleteMock,
     },
-    playerLeagueAssignment: { findFirst: plaFindFirstMock },
+    playerLeagueMembership: { findFirst: plaFindFirstMock },
     $transaction: txMock,
     league: { findUnique: vi.fn() },
     leagueTeam: { findUnique: vi.fn() },

@@ -37,7 +37,7 @@ const {
 
 vi.mock('@/lib/prisma', () => ({
   prisma: {
-    playerLeagueAssignment: { findMany: findManyAssignmentsMock },
+    playerLeagueMembership: { findMany: findManyAssignmentsMock },
     leagueTeam: { findMany: findManyLeagueTeamsMock },
     gameWeek: { findMany: findManyGameWeeksMock },
     lineLogin: { findMany: findManyLineLoginsMock },

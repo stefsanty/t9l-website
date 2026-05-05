@@ -90,8 +90,12 @@ export async function submitOwnMatchEvent(input: {
     },
   })
   if (!callerPlayer) throw new Error('Caller player not found')
-  const callerAssignment = callerPlayer.leagueAssignments[0]
-  if (!callerAssignment) throw new Error('Caller not assigned to a league')
+  // v1.65.0 — leagueTeam nullable post-rework; only memberships with a
+  // real team can submit goals. Pick the first such membership.
+  const callerAssignment = callerPlayer.leagueAssignments.find((a) => a.leagueTeam !== null)
+  if (!callerAssignment || !callerAssignment.leagueTeam) {
+    throw new Error('Caller not assigned to a league')
+  }
   const leagueId = callerAssignment.leagueTeam.leagueId
 
   // Find the matchday + match within this league.
@@ -127,7 +131,7 @@ export async function submitOwnMatchEvent(input: {
   const scorerSlug = input.scorerPlayerSlug?.trim()
   if (!scorerSlug) throw new Error('Scorer is required')
   const scorerId = slugToPlayerId(scorerSlug)
-  const scorerAssignment = await prisma.playerLeagueAssignment.findFirst({
+  const scorerAssignment = await prisma.playerLeagueMembership.findFirst({
     where: {
       playerId: scorerId,
       leagueTeamId: { in: [match.homeTeamId, match.awayTeamId] },
@@ -155,7 +159,7 @@ export async function submitOwnMatchEvent(input: {
     if (assisterCandidateId === scorerId) {
       throw new Error('Assister cannot be the scorer')
     }
-    const assisterAssignment = await prisma.playerLeagueAssignment.findFirst({
+    const assisterAssignment = await prisma.playerLeagueMembership.findFirst({
       where: {
         playerId: assisterCandidateId,
         leagueTeamId: scorerLeagueTeamId,

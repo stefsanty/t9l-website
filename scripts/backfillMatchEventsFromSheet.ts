@@ -360,7 +360,7 @@ async function fetchGoalsRaw(): Promise<string[][]> {
  * (`playerToLt: Map<playerId, leagueTeamId>` in `dbToPublicLeagueData`) maps
  * each Guest to exactly one team.
  *
- * The single legacy `p-guest` Player record (with no PlayerLeagueAssignment)
+ * The single legacy `p-guest` Player record (with no PlayerLeagueMembership)
  * predates this and is left untouched. It's harmless — the public read path
  * iterates PLA rows so an unassigned Player never surfaces.
  */
@@ -373,13 +373,13 @@ interface GuestSeedSummary {
   guestByLeagueTeam: Map<string, string>
   /** Number of NEW Player rows created (already-existing rows are no-ops). */
   playersCreated: number
-  /** Number of NEW PlayerLeagueAssignment rows created. */
+  /** Number of NEW PlayerLeagueMembership rows created. */
   assignmentsCreated: number
 }
 
 /**
  * Idempotently ensure a Guest Player exists on every LeagueTeam in the league,
- * with a current `PlayerLeagueAssignment`. Re-running is safe — already-present
+ * with a current `PlayerLeagueMembership`. Re-running is safe — already-present
  * rows are detected and skipped.
  *
  * Why per-team and not one global Guest with multiple assignments: the public
@@ -418,11 +418,11 @@ export async function ensureGuestPlayers(
       })
       out.playersCreated++
     }
-    const existingPla = await prisma.playerLeagueAssignment.findFirst({
+    const existingPla = await prisma.playerLeagueMembership.findFirst({
       where: { playerId: guestId, leagueTeamId: lt.id },
     })
     if (!existingPla) {
-      await prisma.playerLeagueAssignment.create({
+      await prisma.playerLeagueMembership.create({
         data: {
           playerId: guestId,
           leagueTeamId: lt.id,
@@ -536,7 +536,7 @@ async function runBackfill(prisma: PrismaClient, flags: Flags): Promise<RunRepor
   report.guestSeed = guestSeed
 
   // Roster — players assigned to one of this league's teams
-  const plas = await prisma.playerLeagueAssignment.findMany({
+  const plas = await prisma.playerLeagueMembership.findMany({
     where: { leagueTeam: { leagueId } },
     include: { player: true },
   })
@@ -556,6 +556,9 @@ async function runBackfill(prisma: PrismaClient, flags: Flags): Promise<RunRepor
   const guestPlayerIds = new Set(guestSeed.guestByLeagueTeam.values())
   for (const pla of plas) {
     if (!pla.player.name) continue
+    // v1.65.0 — leagueTeamId nullable post-rework; PENDING applicants
+    // can't have scored historical goals. Skip them defensively.
+    if (pla.leagueTeamId === null) continue
     if (!guestPlayerIds.has(pla.player.id)) {
       playerByLcName.set(pla.player.name.trim().toLowerCase(), pla.player.id)
       playerBySlug.set(slugify(pla.player.name), pla.player.id)
@@ -640,7 +643,11 @@ async function runBackfill(prisma: PrismaClient, flags: Flags): Promise<RunRepor
         select: { scorerId: true, goalType: true },
       })
       const lookup = new Map<string, string>()
-      for (const pla of plas) lookup.set(pla.player.id, pla.leagueTeamId)
+      // v1.65.0 — defensive null-skip for nullable leagueTeamId.
+      for (const pla of plas) {
+        if (pla.leagueTeamId === null) continue
+        lookup.set(pla.player.id, pla.leagueTeamId)
+      }
       const cache = computeScoreFromEvents(match.homeTeamId, match.awayTeamId, events, lookup)
       homeFromEvents = cache.home
       awayFromEvents = cache.away
@@ -652,7 +659,11 @@ async function runBackfill(prisma: PrismaClient, flags: Flags): Promise<RunRepor
         )
         .map((d) => ({ scorerId: d.scorerId, goalType: d.goalType }))
       const lookup = new Map<string, string>()
-      for (const pla of plas) lookup.set(pla.player.id, pla.leagueTeamId)
+      // v1.65.0 — defensive null-skip for nullable leagueTeamId.
+      for (const pla of plas) {
+        if (pla.leagueTeamId === null) continue
+        lookup.set(pla.player.id, pla.leagueTeamId)
+      }
       const cache = computeScoreFromEvents(match.homeTeamId, match.awayTeamId, simulated, lookup)
       homeFromEvents = cache.home
       awayFromEvents = cache.away

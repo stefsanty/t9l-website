@@ -3,7 +3,7 @@
  * adminLinkExistingPlayersBulk contract.
  *
  * The action attaches an existing global Player to a league's roster
- * by creating a new `PlayerLeagueAssignment` row. Distinct from
+ * by creating a new `PlayerLeagueMembership` row. Distinct from
  * `adminCreatePlayer` (which creates a new global Player) and
  * `transferPlayer` (which moves a player between teams within a single
  * league).
@@ -33,7 +33,7 @@ const {
 vi.mock('@/lib/prisma', () => ({
   prisma: {
     player: { findUnique: playerFindUniqueMock, update: vi.fn(), updateMany: vi.fn() },
-    playerLeagueAssignment: {
+    playerLeagueMembership: {
       findFirst: assignmentFindFirstMock,
       create: assignmentCreateMock,
       updateMany: vi.fn(),

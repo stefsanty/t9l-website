@@ -19,7 +19,7 @@ import { revalidate } from '@/lib/revalidate'
  *     simple: we just throw a friendly error directing them to contact
  *     the admin. The PR description punts the multi-league per-Player
  *     application flow to "expand to per-league later" — wiring it now
- *     would require a `PlayerLeagueAssignment.applicationStatus` mirror
+ *     would require a `PlayerLeagueMembership.applicationStatus` mirror
  *     plus an admin UI to surface PLA-level pending state.
  *
  * The application is identified per-league via `Player.applicationLeagueId`

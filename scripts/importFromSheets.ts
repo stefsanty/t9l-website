@@ -181,7 +181,7 @@ async function main() {
     }
     console.log(`✓ Players: ${playerIdMap.size}`)
 
-    // ── 5. PlayerLeagueAssignments ─────────────────────────────────────────────
+    // ── 5. PlayerLeagueMemberships ─────────────────────────────────────────────
     // Replaces the old PlayerTeam model. fromGameWeek=1 (assigned from the start).
     let plaCount = 0
     for (const row of rosterRows) {
@@ -191,14 +191,14 @@ async function main() {
       const ltId     = leagueTeamIdMap.get(teamName)
       if (!pId || !ltId) continue
       const plaId = mkPlaId(pId, ltId)
-      await prisma.playerLeagueAssignment.upsert({
+      await prisma.playerLeagueMembership.upsert({
         where:  { id: plaId },
         create: { id: plaId, playerId: pId, leagueTeamId: ltId, fromGameWeek: 1 },
         update: {},
       })
       plaCount++
     }
-    console.log(`✓ PlayerLeagueAssignments: ${plaCount}`)
+    console.log(`✓ PlayerLeagueMemberships: ${plaCount}`)
 
     // ── 6. GameWeeks ──────────────────────────────────────────────────────────
     const weekNumbers = new Set<number>()

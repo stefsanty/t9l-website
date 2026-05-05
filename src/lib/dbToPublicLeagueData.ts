@@ -127,8 +127,12 @@ export async function dbToPublicLeagueData(
     league.leagueTeams.map((lt) => [lt.id, teamIdToSlug(lt.team.id)]),
   )
 
-  // ── players[] (via PlayerLeagueAssignment) ───────────────────────────────
-  const plas = await prisma.playerLeagueAssignment.findMany({
+  // ── players[] (via PlayerLeagueMembership) ───────────────────────────────
+  // v1.65.0 — only fetch APPROVED memberships with a real team assignment.
+  // PENDING-application memberships (no team yet) are not roster members
+  // and must not appear in the public Squad list. The leagueTeam.leagueId
+  // filter implicitly skips null-leagueTeam rows (no FK to filter on).
+  const plas = await prisma.playerLeagueMembership.findMany({
     where: { leagueTeam: { leagueId: league.id } },
     include: { player: true, leagueTeam: true },
     orderBy: { player: { name: 'asc' } },
@@ -137,6 +141,10 @@ export async function dbToPublicLeagueData(
   const players: Player[] = []
   for (const pla of plas) {
     if (pla.player.id === GUEST_ID) continue
+    // v1.65.0 — defensive: leagueTeamId is nullable post-rework. The
+    // outer where-filter restricts to leagueTeam.leagueId, which already
+    // excludes null-leagueTeam rows, but TS can't narrow that.
+    if (pla.leagueTeamId === null) continue
     const slug = playerIdToSlug(pla.player.id)
     const teamSlug = ltToSlug.get(pla.leagueTeamId) ?? ''
     players.push({
@@ -212,7 +220,12 @@ export async function dbToPublicLeagueData(
     // from the league's PLA fetch) and flip on OWN_GOAL — same logic
     // as `computeScoreFromEvents` in `lib/matchScore.ts`.
     const playerToLt = new Map<string, string>()
-    for (const pla of plas) playerToLt.set(pla.playerId, pla.leagueTeamId)
+    for (const pla of plas) {
+      // v1.65.0 — only members with a leagueTeam contribute. PENDING
+      // applicants (null leagueTeamId) cannot have scored a goal.
+      if (pla.leagueTeamId === null) continue
+      playerToLt.set(pla.playerId, pla.leagueTeamId)
+    }
 
     for (const m of gw.matches) {
       const publicMatchId = publicMatchIdByDbId.get(m.id) ?? ''

@@ -269,7 +269,7 @@ async function runBackfill(prisma: PrismaClient, parsed: LeagueData, flags: Flag
     counts.leagueTeams++
   }
 
-  // 3. Players + PlayerLeagueAssignments
+  // 3. Players + PlayerLeagueMemberships
   const playerIdBySlug = new Map<string, string>()
   for (const p of parsed.players) {
     const pId = ids.player(p.id)
@@ -299,7 +299,7 @@ async function runBackfill(prisma: PrismaClient, parsed: LeagueData, flags: Flag
     const ltId = ltIdBySlug.get(p.teamId)
     if (!ltId) continue
     const plaId = ids.pla(pId, ltId)
-    await prisma.playerLeagueAssignment.upsert({
+    await prisma.playerLeagueMembership.upsert({
       where: { id: plaId },
       create: { id: plaId, playerId: pId, leagueTeamId: ltId, fromGameWeek: 1 },
       update: {}, // don't disturb admin transfers

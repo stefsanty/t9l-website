@@ -88,7 +88,7 @@ type PlayerMapping = {
 // route through this function.
 //
 // v1.26.0 — `leagueId` parameter resolves the per-league
-// `PlayerLeagueAssignment`. When supplied, the function picks the open
+// `PlayerLeagueMembership`. When supplied, the function picks the open
 // assignment (`toGameWeek IS NULL`) within that league, falling back to the
 // most-recent past assignment for that league, falling back to `teamId: ""`
 // (player exists globally but has no roster slot in this league — the
@@ -143,7 +143,7 @@ async function getPlayerMappingViaUser(
 }
 
 /**
- * Pure helper: pick the right `PlayerLeagueAssignment` for the requested
+ * Pure helper: pick the right `PlayerLeagueMembership` for the requested
  * leagueId and project the mapping shape. Shared by both resolvers so
  * leagueId resolution semantics are identical regardless of which path
  * the caller took. Stage γ's parity check relies on this — the only
@@ -158,25 +158,39 @@ function pickAssignmentMapping(
     // pre-staging flow (PR ε); the JWT can carry "" until the user fills
     // their name via PR ζ's onboarding.
     name: string | null;
+    // v1.65.0 — `leagueTeam` is now nullable on PlayerLeagueMembership
+    // (PENDING-application memberships have no team yet). Filter out
+    // such rows here — JWT mapping must never carry a "you're on team X"
+    // signal for a PENDING applicant (no team has been assigned).
     leagueAssignments: Array<{
-      leagueTeam: { leagueId: string; team: { id: string } };
+      leagueTeam: { leagueId: string; team: { id: string } } | null;
       toGameWeek: number | null;
     }>;
   },
   leagueId?: string | null,
 ): PlayerMapping {
+  // v1.65.0 — only consider memberships that actually have a leagueTeam.
+  // PENDING applicants without a team are not roster members yet.
+  const realAssignments = player.leagueAssignments.filter(
+    (
+      a,
+    ): a is {
+      leagueTeam: { leagueId: string; team: { id: string } };
+      toGameWeek: number | null;
+    } => a.leagueTeam !== null,
+  );
   let assignment;
   if (leagueId) {
     assignment =
-      player.leagueAssignments.find(
+      realAssignments.find(
         (a) => a.leagueTeam.leagueId === leagueId && a.toGameWeek === null,
       ) ??
-      player.leagueAssignments.find((a) => a.leagueTeam.leagueId === leagueId) ??
+      realAssignments.find((a) => a.leagueTeam.leagueId === leagueId) ??
       null;
   } else {
     assignment =
-      player.leagueAssignments.find((a) => a.toGameWeek === null) ??
-      player.leagueAssignments[0] ??
+      realAssignments.find((a) => a.toGameWeek === null) ??
+      realAssignments[0] ??
       null;
   }
   return {

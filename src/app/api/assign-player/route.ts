@@ -147,14 +147,14 @@ async function persistAssignmentToPrisma(args: {
       // hasn't authenticated post-α.5 won't have a User row; their next
       // sign-in creates one and the next link populates the new columns.
       await linkPlayerToUser(tx, { playerId: dbPlayerId, lineId });
-      // v1.34.0 (PR ζ) — tag the player's existing PlayerLeagueAssignment
+      // v1.34.0 (PR ζ) — tag the player's existing PlayerLeagueMembership
       // rows with `joinSource: SELF_SERVE` so the audit trail records that
       // this binding came through the legacy `/assign-player` picker (vs
       // ADMIN pre-stage / CODE / PERSONAL invite). updateMany is a no-op
       // when the player has no current assignment — that's fine; the
       // SELF_SERVE picker is gated to in-league players, but if a stale
       // call hits an unassigned player, we don't want the join to throw.
-      await tx.playerLeagueAssignment.updateMany({
+      await tx.playerLeagueMembership.updateMany({
         where: { playerId: dbPlayerId, joinSource: null },
         data: { joinSource: 'SELF_SERVE' },
       });
@@ -239,9 +239,9 @@ async function persistAssignmentToPrismaForUser(args: {
     // defensively (1:1 invariant). Does NOT touch Player.lineId for
     // non-LINE flows.
     await linkUserToPlayer(tx, { userId, playerId: dbPlayerId });
-    // Tag the PlayerLeagueAssignment rows with joinSource = SELF_SERVE
+    // Tag the PlayerLeagueMembership rows with joinSource = SELF_SERVE
     // (matching the LINE branch's audit trail).
-    await tx.playerLeagueAssignment.updateMany({
+    await tx.playerLeagueMembership.updateMany({
       where: { playerId: dbPlayerId, joinSource: null },
       data: { joinSource: "SELF_SERVE" },
     });
