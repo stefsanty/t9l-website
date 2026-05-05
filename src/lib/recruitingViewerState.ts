@@ -30,6 +30,7 @@
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { getPlayerDataReadSource } from '@/lib/settings'
 
 export type RecruitingViewerState =
   | { kind: 'unauthenticated' }
@@ -112,6 +113,17 @@ export async function getRecruitingViewerState(
       return { kind: 'no_player' }
     }
 
+    // v1.65.2 — read-source flag dispatch.
+    //   - 'legacy' (default): UNION read (v1.65.1 shape) — checks both
+    //     `Player.applicationStatus` legacy fields AND PLM signals.
+    //   - 'plm': PLM-only read — ignores legacy Player.* fields. Used
+    //     after v1.65.3 default flip + v1.65.4 cleanup.
+    //
+    // The legacy default keeps v1.65.1's exact behavior. The 'plm' branch
+    // simulates the post-v1.65.4 world for parity testing + early-rollout
+    // operator flips.
+    const readSource = await getPlayerDataReadSource()
+
     // ── State A check ─ APPROVED PLM with a real team in this league ─
     // (highest priority — admin already approved this player here)
     const approvedPlm = player.leagueAssignments.find(
@@ -120,11 +132,11 @@ export async function getRecruitingViewerState(
         a.toGameWeek === null &&
         a.leagueTeam !== null,
     )
-    // Legacy v1.64.0 fallback: APPROVED on Player AND any active PLM
-    // with team in this league (covers pre-v1.65.1 backfilled rows
-    // where PLM.applicationStatus may still be its DEFAULT 'APPROVED'
-    // even if Player.applicationStatus says otherwise).
+    // Legacy v1.64.0 fallback ONLY active under 'legacy' source: APPROVED
+    // on Player AND any active PLM with team in this league. The 'plm'
+    // path doesn't consult Player.applicationStatus.
     const legacyApprovedActive =
+      readSource === 'legacy' &&
       player.applicationStatus === 'APPROVED' &&
       player.leagueAssignments.find(
         (a) => a.toGameWeek === null && a.leagueTeam !== null,
@@ -145,7 +157,9 @@ export async function getRecruitingViewerState(
     const pendingPlm = player.leagueAssignments.find(
       (a) => a.applicationStatus === 'PENDING',
     )
+    // Legacy Player.* memo only honored under 'legacy' source.
     const legacyPending =
+      readSource === 'legacy' &&
       player.applicationStatus === 'PENDING' &&
       player.applicationLeagueId === leagueId
     if (pendingPlm || legacyPending) {

@@ -104,3 +104,58 @@ export const getIdentityReadSource = unstable_cache(
   ['setting:identity:readSource:global'],
   { revalidate: 30, tags: ['settings'] },
 )
+
+/**
+ * v1.65.2 — Membership-spec rework, stage 3 read-flip flag.
+ *
+ * Per [outputs/data-model-spec-audit.md] §3 stage 3: switch reads from
+ * the legacy `Player.position` / `Player.applicationStatus` /
+ * `Player.applicationLeagueId` to the new `PlayerLeagueMembership.position` /
+ * `PlayerLeagueMembership.applicationStatus` / direct PLM.leagueId fields.
+ *
+ *   - 'legacy' (default): reads use Player.* legacy fields.
+ *   - 'plm':              reads use PlayerLeagueMembership.* fields (canonical
+ *                         after dual-write soak in v1.65.1).
+ *
+ * v1.65.2 ships the flag + branches the recruiting banner viewer-state
+ * helper to honor it. v1.65.3 flips the default to 'plm' (operator action
+ * via Setting row update + soak window). v1.65.4 drops the legacy fields
+ * entirely + the flag becomes meaningless (only one path remains).
+ *
+ * Position reads (SquadList / MatchdayAvailability / dbToPublicLeagueData)
+ * are NOT branched at v1.65.2 — dual-write keeps `Player.position` and
+ * `PlayerLeagueMembership.position` in sync, so the cosmetic divergence
+ * doesn't exist yet. v1.65.4 migrates these atomically when Player.position
+ * is dropped.
+ *
+ * Default 'legacy' is the load-bearing safety property — v1.65.2 ships the
+ * code inert. Reverts to 'legacy' if the v1.65.3 flip surfaces issues.
+ */
+export type PlayerDataReadSource = 'legacy' | 'plm'
+
+export const SETTING_ID_PLAYER_DATA_READ_SOURCE = 's-playerData-readSource-global'
+
+export function resolvePlayerDataReadSource(
+  value: string | null | undefined,
+): PlayerDataReadSource {
+  return value === 'plm' ? 'plm' : 'legacy'
+}
+
+export const getPlayerDataReadSource = unstable_cache(
+  async (): Promise<PlayerDataReadSource> => {
+    try {
+      const row = await prisma.setting.findUnique({
+        where: { id: SETTING_ID_PLAYER_DATA_READ_SOURCE },
+      })
+      return resolvePlayerDataReadSource(row?.value)
+    } catch (err) {
+      // Defensive — Settings table read failures should not flip the
+      // entire authenticated population onto a half-tested read path.
+      // Fall back to 'legacy' (the safe default).
+      console.warn('[settings] getPlayerDataReadSource failed; falling back to legacy:', err)
+      return 'legacy'
+    }
+  },
+  ['setting:playerData:readSource:global'],
+  { revalidate: 30, tags: ['settings'] },
+)
