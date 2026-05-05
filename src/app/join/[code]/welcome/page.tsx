@@ -12,7 +12,8 @@ import { prisma } from '@/lib/prisma'
  *   - normal flow: after `submitOnboarding` flips onboardingStatus to COMPLETED.
  *
  * Resolves the user's now-bound Player + the league. Displays a
- * confirmation card and a CTA to the league's home (subdomain or apex).
+ * confirmation card and a CTA to the league's home (`/id/<slug>` for
+ * non-default leagues, apex `/` for the default league).
  *
  * If the user lands here without being signed in, or without a binding,
  * we redirect back to `/join/[code]` to let the route's normal
@@ -66,7 +67,12 @@ export default async function WelcomePage({ params }: Props) {
 
   const playerName = assignment.player.name ?? 'Unnamed'
   const teamName = assignment.leagueTeam.team.name
-  const homeUrl = league.subdomain ? `https://${league.subdomain}.t9l.me/` : '/'
+  // v1.55.0 (PR 2 of admin-UI-compat-audit chain): post-redemption home
+  // URL flipped from the legacy subdomain form (`<slug>.t9l.me`) to the
+  // v1.54.0 canonical path-based form (`/id/<slug>`). Apex stays as the
+  // home URL when the league has no slug (only the default league
+  // surfaces the apex shortcut).
+  const homeUrl = league.subdomain ? `/id/${league.subdomain}` : '/'
 
   return (
     <main
