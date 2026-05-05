@@ -65,9 +65,12 @@ const ADMIN_DATA_SRC = readFileSync(
 )
 const VERSION_SRC = readFileSync(join(REPO_ROOT, 'src/lib/version.ts'), 'utf8')
 
-describe('v1.65.1 — APP_VERSION bumped', () => {
-  it('APP_VERSION is 1.65.1', () => {
-    expect(VERSION_SRC).toMatch(/APP_VERSION\s*=\s*['"]1\.65\.1['"]/)
+describe('v1.65.1 — APP_VERSION bumped (chain proceeds)', () => {
+  it('APP_VERSION is at least 1.65.1 (chain ships v1.65.x sequentially)', () => {
+    // Pin the bump that landed in v1.65.1; subsequent chain PRs (v1.65.2+)
+    // can bump higher. Match v1.65.1, v1.65.2, ... v1.65.9 (single-digit
+    // patch is plenty for the chain).
+    expect(VERSION_SRC).toMatch(/APP_VERSION\s*=\s*['"]1\.65\.[1-9]['"]/)
   })
 })
 
