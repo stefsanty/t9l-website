@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 /**
  * v1.26.0 — `getPlayerMappingFromDb(lineId, leagueId?)` resolves the
- * per-league `PlayerLeagueAssignment` for the supplied league.
+ * per-league `PlayerLeagueMembership` for the supplied league.
  *
  * Pre-v1.26.0 (v1.5.0 shape) the function picked the first open assignment
  * regardless of league, which was non-deterministic when a player was

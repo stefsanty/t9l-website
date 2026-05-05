@@ -76,6 +76,9 @@ export async function getMembershipsForSession(args: {
 
   const seen = new Map<string, Membership>()
   for (const assignment of player.leagueAssignments) {
+    // v1.65.0 — leagueTeam nullable post-rework; PENDING applicants without
+    // a team don't surface in the league switcher (no league to switch to).
+    if (!assignment.leagueTeam) continue
     const league = assignment.leagueTeam.league
     if (seen.has(league.id)) continue
     const slug = league.subdomain ?? (league.isDefault ? DEFAULT_LEAGUE_SLUG : null)

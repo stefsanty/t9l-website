@@ -41,7 +41,7 @@ interface LinkExistingPlayerDialogProps {
  * roster without creating a duplicate Player.
  *
  * Sibling to `AddPlayerDialog` which CREATES a fresh Player. This
- * dialog ATTACHES an existing Player via a new `PlayerLeagueAssignment`
+ * dialog ATTACHES an existing Player via a new `PlayerLeagueMembership`
  * row; nothing about the global Player record is modified.
  *
  * Two flows:

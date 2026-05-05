@@ -55,7 +55,7 @@ export default async function IdUploadPage({ params }: Props) {
       where: { id: invite.leagueId },
       select: { id: true, name: true, subdomain: true },
     }),
-    prisma.playerLeagueAssignment.findFirst({
+    prisma.playerLeagueMembership.findFirst({
       where: {
         leagueTeam: { leagueId: invite.leagueId },
         player: { userId },

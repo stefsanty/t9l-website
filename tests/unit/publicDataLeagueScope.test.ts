@@ -33,7 +33,7 @@ vi.mock('next/cache', () => ({
 vi.mock('@/lib/prisma', () => ({
   prisma: {
     league: { findFirst: leagueFindFirstMock },
-    playerLeagueAssignment: { findMany: pleagueFindManyMock },
+    playerLeagueMembership: { findMany: pleagueFindManyMock },
   },
 }))
 

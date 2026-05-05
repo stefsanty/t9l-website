@@ -104,7 +104,7 @@ export async function updatePlayer(formData: FormData) {
 
   // v1.26.0 — `updatePlayer` operates on a global `Player` record without a
   // single league context (the player may be in N leagues via
-  // PlayerLeagueAssignment). Both the OLD and NEW lineId need their
+  // PlayerLeagueMembership). Both the OLD and NEW lineId need their
   // per-league caches invalidated across every league they might be cached
   // in. Lazy-fill on next read per league via the v1.26.0 miss policy —
   // first JWT callback per (leagueId, lineId) hits Prisma + writes back.

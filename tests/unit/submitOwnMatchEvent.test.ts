@@ -46,7 +46,7 @@ vi.mock('@/lib/prisma', () => ({
   prisma: {
     player: { findUnique: playerFindUniqueMock },
     gameWeek: { findFirst: gameWeekFindFirstMock },
-    playerLeagueAssignment: { findFirst: plaFindFirstMock },
+    playerLeagueMembership: { findFirst: plaFindFirstMock },
     $transaction: txMock,
   },
 }))

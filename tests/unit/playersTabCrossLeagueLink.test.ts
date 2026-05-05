@@ -184,9 +184,9 @@ describe('v1.56.0 — admin-data helpers', () => {
 
   it('getLinkablePlayersForLeague filters by NOT-IN current-league active assignments', () => {
     const src = stripComments(read(dataPath))
-    // The helper queries playerLeagueAssignment.findMany with toGameWeek: null
+    // The helper queries playerLeagueMembership.findMany with toGameWeek: null
     // and leagueTeam.leagueId, then filters players by NOT IN that set.
-    expect(src).toMatch(/playerLeagueAssignment\.findMany\(\{[\s\S]{0,200}toGameWeek:\s*null[\s\S]{0,200}leagueTeam:\s*\{\s*leagueId\s*\}/)
+    expect(src).toMatch(/playerLeagueMembership\.findMany\(\{[\s\S]{0,200}toGameWeek:\s*null[\s\S]{0,200}leagueTeam:\s*\{\s*leagueId\s*\}/)
     expect(src).toMatch(/inThisLeague\.has\(p\.id\)/)
   })
 

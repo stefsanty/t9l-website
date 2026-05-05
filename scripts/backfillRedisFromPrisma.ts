@@ -187,9 +187,13 @@ async function main() {
     if (!p.lineId) continue
     result.scanned++
 
+    // v1.65.0 — leagueTeam nullable post-rework. Only consider memberships
+    // with a real team for the canonical Redis mapping (Pending applicants
+    // shouldn't surface a "you're on team X" signal).
+    const realAssignments = p.leagueAssignments.filter((a) => a.leagueTeam !== null)
     const current =
-      p.leagueAssignments.find((a) => a.toGameWeek === null) ??
-      p.leagueAssignments[0] ??
+      realAssignments.find((a) => a.toGameWeek === null) ??
+      realAssignments[0] ??
       null
     const prismaMapping: PlayerMapping = {
       playerId: playerIdToSlug(p.id),
@@ -197,7 +201,7 @@ async function main() {
       // shape carries a string for downstream serialization; coerce null →
       // empty string at the boundary (mirror of the JWT-callback path).
       playerName: p.name ?? '',
-      teamId: current ? teamIdToSlug(current.leagueTeam.team.id) : '',
+      teamId: current && current.leagueTeam ? teamIdToSlug(current.leagueTeam.team.id) : '',
     }
 
     const key = `${KEY_PREFIX}${p.lineId}`

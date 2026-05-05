@@ -39,7 +39,7 @@ vi.mock('@/lib/prisma', () => ({
   prisma: {
     user: { findUnique: userFindUniqueMock, update: userUpdateMock },
     player: { updateMany: playerUpdateManyMock, findUnique: vi.fn() },
-    playerLeagueAssignment: { create: vi.fn(), findFirst: vi.fn() },
+    playerLeagueMembership: { create: vi.fn(), findFirst: vi.fn() },
     leagueTeam: { findUnique: vi.fn(), findMany: vi.fn() },
     leagueInvite: { findFirst: vi.fn(), create: vi.fn() },
     $transaction: txMock,

@@ -23,7 +23,7 @@ const {
   const txMock = vi.fn(async (cb: (tx: unknown) => Promise<unknown>) => {
     const tx = {
       player: { create: playerCreateMock },
-      playerLeagueAssignment: { create: assignmentCreateMock },
+      playerLeagueMembership: { create: assignmentCreateMock },
     }
     return cb(tx)
   })
@@ -39,7 +39,7 @@ const {
 vi.mock('@/lib/prisma', () => ({
   prisma: {
     player: { create: playerCreateMock, update: vi.fn(), findUnique: vi.fn(), updateMany: vi.fn() },
-    playerLeagueAssignment: { create: assignmentCreateMock },
+    playerLeagueMembership: { create: assignmentCreateMock },
     leagueTeam: { findUnique: leagueTeamFindUniqueMock },
     leagueInvite: { findFirst: vi.fn(), create: vi.fn() },
     $transaction: txMock,

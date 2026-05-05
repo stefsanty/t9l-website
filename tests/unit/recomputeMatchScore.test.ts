@@ -3,7 +3,7 @@
  * a fake Prisma client. Pins:
  *   1. Reads match (homeTeamId/awayTeamId/gameWeekId).
  *   2. Reads MatchEvent rows for the match (kind=GOAL filter).
- *   3. Reads PlayerLeagueAssignment for both LeagueTeam ids.
+ *   3. Reads PlayerLeagueMembership for both LeagueTeam ids.
  *   4. Builds the player→team lookup (first-assignment-wins).
  *   5. Calls computeScoreFromEvents and writes the result via match.update.
  *   6. Logs a structured warning when an event scorer is unresolved.
@@ -44,7 +44,7 @@ function makeFakePrisma(opts: {
         return opts.events
       }),
     },
-    playerLeagueAssignment: {
+    playerLeagueMembership: {
       findMany: vi.fn(async ({ where }: { where: { leagueTeamId: { in: string[] } } }) => {
         return opts.assignments.filter((a) =>
           where.leagueTeamId.in.includes(a.leagueTeamId),
@@ -157,7 +157,7 @@ describe('recomputeMatchScore', () => {
     expect(both[0]).toEqual(both[1])
   })
 
-  it('only counts the FIRST PlayerLeagueAssignment when a player has multiple', async () => {
+  it('only counts the FIRST PlayerLeagueMembership when a player has multiple', async () => {
     // Defensive — a player who moved teams mid-season has multiple PLA
     // rows. The simple lookup keeps the first assignment seen; future PRs
     // can refine via fromGameWeek/toGameWeek when the score-time matchday

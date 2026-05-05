@@ -136,7 +136,7 @@ model League {
   // the route surfaces a "self-linking disabled" message and the API
   // POST 403s; users must redeem an invite via `/join/[code]` instead.
   // DELETE is unaffected so already-linked players can still unlink.
-  allowSelfLink Boolean   @default(true)
+  allowSelfLink Boolean @default(true)
 
   // v1.63.0 — pre-season mode. When true, the homepage swaps the
   // single-matchday banner (`NextMatchdayBanner`) for a vertically
@@ -144,23 +144,32 @@ model League {
   // and the `STATS` page is hidden — the header link disappears and
   // visiting `/stats` redirects to the homepage. Defaults false so
   // existing leagues behave exactly as before v1.63.0.
-  preseasonMode Boolean   @default(false)
+  preseasonMode Boolean @default(false)
 
   // v1.63.0 — recruiting toggle. When true, surfaces a prominent
   // "RECRUITING NOW" banner at the top of the homepage. Independent
   // of `preseasonMode` — both can be on simultaneously, each off by
   // default. Click target is currently a no-op TODO; future PR wires
   // it to a per-league recruiting CTA target.
-  recruiting    Boolean   @default(false)
+  recruiting Boolean @default(false)
 
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   leagueTeams LeagueTeam[]
   gameWeeks   GameWeek[]
   matches     Match[]
   settings    Setting[]
   invites     LeagueInvite[]
+
+  // v1.65.0 (membership-spec rework PR 1) — back-relations for the new
+  // direct League FKs on PlayerLeagueMembership and PlayerLeagueStat.
+  // PlayerLeagueMembership.leagueId is a direct FK so PENDING-application
+  // memberships (no team yet) still know their league; PlayerLeagueStat
+  // is keyed on leagueId for per-league aggregate stats. Both cascade
+  // on League delete.
+  memberships PlayerLeagueMembership[]
+  playerStats PlayerLeagueStat[]
 
   @@index([isDefault])
 }
@@ -185,7 +194,9 @@ model LeagueTeam {
 
   league            League                   @relation(fields: [leagueId], references: [id], onDelete: Cascade)
   team              Team                     @relation(fields: [teamId], references: [id], onDelete: Cascade)
-  playerAssignments PlayerLeagueAssignment[]
+  // v1.65.0 — relation type renamed via @@map; field name stays through
+  // this PR (rename to `playerMemberships` deferred to v1.65.4 cleanup).
+  playerAssignments PlayerLeagueMembership[]
   homeMatches       Match[]                  @relation("HomeTeam")
   awayMatches       Match[]                  @relation("AwayTeam")
   goals             Goal[]
@@ -259,10 +270,23 @@ model Player {
   applicationStatus   PlayerApplicationStatus @default(APPROVED)
   applicationLeagueId String?
 
-  leagueAssignments PlayerLeagueAssignment[]
+  // v1.65.0 (membership-spec rework PR 1) — date of birth, per spec
+  // ("profile-level data: name, avatar, DOB"). Optional — historical
+  // rows have no DOB and there's no UI surface for it yet. Future
+  // surfaces (`/account/player`, admin Players tab) will populate it.
+  dob DateTime?
+
+  // v1.65.0 — relation to the renamed PlayerLeagueMembership model.
+  // The Prisma model rename is done via `@@map("PlayerLeagueAssignment")`
+  // so the SQL table name stays `PlayerLeagueAssignment` — no DDL rename.
+  // The TypeScript-level relation field name is kept as `leagueAssignments`
+  // through this PR; rename to `leagueMemberships` is deferred to v1.65.4
+  // (the cleanup PR) to keep this stage purely additive.
+  leagueAssignments PlayerLeagueMembership[]
   goals             Goal[]
   assists           Assist[]
   availability      Availability[]
+  playerStats       PlayerLeagueStat[]
 
   // v1.42.0 (epic match events PR α) — back-relations for MatchEvent.
   // Two named relations because a Player can be either the scorer or the
@@ -296,10 +320,47 @@ enum PlayerApplicationStatus {
   PENDING
 }
 
-model PlayerLeagueAssignment {
+// v1.65.0 (membership-spec rework PR 1) — model RENAMED from
+// `PlayerLeagueAssignment` to `PlayerLeagueMembership` per the data-model
+// spec ([outputs/data-model-spec-audit.md]). The SQL table name stays
+// `PlayerLeagueAssignment` via `@@map`, so the migration is zero-DDL for
+// the rename itself. The TypeScript Prisma client property changes from
+// `prisma.playerLeagueAssignment` to `prisma.playerLeagueMembership`;
+// every call site in src/, scripts/, and tests/ is updated mechanically
+// in this PR.
+//
+// New columns on this PR:
+//   - leagueId:           direct FK to League. PENDING-application
+//                         memberships (no team yet) still know their
+//                         league. Existing rows backfilled from the
+//                         leagueTeam.leagueId join.
+//   - position:           per-league. Stage-2 dual-write copies from
+//                         Player.position. Stage-4 drops Player.position.
+//   - jerseyNumber:       per-league, new. Optional.
+//   - status:             ACTIVE / INACTIVE / SUSPENDED. New. Defaults
+//                         ACTIVE for every existing row.
+//   - applicationStatus:  per-league. Stage-2 dual-write copies from
+//                         Player.applicationStatus. Defaults APPROVED
+//                         (every existing PLM is a real member).
+//   - idShared:           per-league consent flag for ID-photo sharing
+//                         with this league's admins. Defaults true (the
+//                         only league using ID upload today is T9L; by
+//                         uploading, the player consented to T9L admins
+//                         viewing).
+//
+// `leagueTeamId` becomes nullable because PENDING-application memberships
+// don't have a team assigned yet (admin assigns on approval).
+model PlayerLeagueMembership {
   id           String   @id @default(cuid())
   playerId     String
-  leagueTeamId String
+  leagueTeamId String?
+  // v1.65.0 — direct FK to League. Necessary for PENDING-application
+  // memberships that don't have a leagueTeam yet (admin assigns on
+  // approval). For APPROVED memberships, this mirrors leagueTeam.leagueId
+  // and is kept in sync by stage-2 write paths. Nullable through stage 1
+  // so the additive migration doesn't fail on existing rows; backfilled
+  // synchronously in the migration's UPDATE clause.
+  leagueId     String?
   fromGameWeek Int
   toGameWeek   Int?
   createdAt    DateTime @default(now())
@@ -317,11 +378,91 @@ model PlayerLeagueAssignment {
   // future abuse-mitigation forensics (the rework plan's A1/A2/A3 vectors).
   joinSource JoinSource?
 
-  player     Player     @relation(fields: [playerId], references: [id], onDelete: Cascade)
-  leagueTeam LeagueTeam @relation(fields: [leagueTeamId], references: [id], onDelete: Cascade)
+  // v1.65.0 — per-league position. Migrates from Player.position in
+  // stage 4 (v1.65.4 drop). Backfilled in the migration from
+  // Player.position so existing reads return the same value via either
+  // path. Optional — FC Torpedo players have no positions; admin
+  // pre-stages start with no position.
+  position PlayerPosition?
+
+  // v1.65.0 — per-league jersey number. New, no backfill source.
+  // Optional. Future admin UI surface populates it.
+  jerseyNumber Int?
+
+  // v1.65.0 — membership lifecycle. ACTIVE (default), INACTIVE (on
+  // hiatus, retains roster slot), SUSPENDED (admin disciplinary).
+  // Distinct from `applicationStatus` (gates whether the membership is
+  // a real one yet) and from `toGameWeek` (which records past
+  // membership ranges via fromGameWeek/toGameWeek bracketing).
+  status MembershipStatus @default(ACTIVE)
+
+  // v1.65.0 — per-league application status. Defaults APPROVED so every
+  // existing row backfills to "real member". PENDING is set on new
+  // self-service applications via the recruiting banner (v1.65.1
+  // dual-write). Replaces `Player.applicationStatus` in stage 4
+  // (v1.65.4 drop). The same memo of "which league did this person
+  // apply to" that was on `Player.applicationLeagueId` is now implicit
+  // in the (leagueId, applicationStatus) pair on this row.
+  applicationStatus PlayerApplicationStatus @default(APPROVED)
+
+  // v1.65.0 — per-league consent flag for the player's uploaded ID
+  // (Player.idFrontUrl/idBackUrl) being viewable by THIS league's
+  // admins. Defaults true on backfill (the only league using ID upload
+  // today is T9L; by uploading, the player has consented to T9L admins
+  // viewing). Stage-2 admin UI surfaces this for explicit per-league
+  // toggling.
+  idShared Boolean @default(true)
+
+  player     Player      @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  leagueTeam LeagueTeam? @relation(fields: [leagueTeamId], references: [id], onDelete: Cascade)
+  league     League?     @relation(fields: [leagueId], references: [id], onDelete: Cascade)
 
   @@index([playerId])
   @@index([leagueTeamId])
+  @@index([leagueId])
+  @@map("PlayerLeagueAssignment")
+}
+
+// v1.65.0 (membership-spec rework PR 1) — membership lifecycle status.
+// ACTIVE: real, current member. INACTIVE: on hiatus, retains roster
+// slot for re-activation. SUSPENDED: admin-imposed (disciplinary,
+// payment, etc.). Distinct from `applicationStatus` (gates whether
+// the membership is a real one yet — PENDING vs APPROVED) and from
+// `toGameWeek` (which records past membership ranges).
+enum MembershipStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+// v1.65.0 (membership-spec rework PR 1) — per-league aggregate stats
+// table. Schema only at v1.65.0; no read or write site populates it
+// yet. Keyed on (playerId, leagueId, seasonId?) so a player's stats
+// can be queried, aggregated, or reset per season without touching
+// membership records. `seasonId` is nullable for now (no Season model
+// yet); future stats chain may add it.
+//
+// Defer of the recompute logic to a future chain (out of scope for
+// v1.65.x). Today's read path remains MatchEvent-derived via
+// `src/lib/matchScore.ts` and `src/components/admin/StatsTab.tsx#buildScorerStatsFromEvents`.
+model PlayerLeagueStat {
+  id           String   @id @default(cuid())
+  playerId     String
+  leagueId     String
+  seasonId     String?
+  goals        Int      @default(0)
+  assists      Int      @default(0)
+  yellowCards  Int      @default(0)
+  redCards     Int      @default(0)
+  appearances  Int      @default(0)
+  recomputedAt DateTime @default(now())
+
+  player Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  league League @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+
+  @@unique([playerId, leagueId, seasonId])
+  @@index([leagueId])
+  @@index([playerId])
 }
 
 // v1.34.0 (PR ζ) — has a player completed the onboarding form for this

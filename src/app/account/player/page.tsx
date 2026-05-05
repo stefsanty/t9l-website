@@ -133,12 +133,15 @@ export default async function AccountPlayerPage() {
   // Pick the assignment that matches the default league — falls back
   // to the most recent assignment if there's no match (e.g. user is
   // rostered only in a non-default league via /league/<slug>).
+  // v1.65.0 — only consider memberships with a real leagueTeam (PENDING
+  // applicants without a team aren't shown a "your team is X" surface).
+  const realAssignments = player.leagueAssignments.filter((a) => a.leagueTeam !== null)
   const activeAssignment =
     (leagueId
-      ? player.leagueAssignments.find((a) => a.leagueTeam.leagueId === leagueId && a.toGameWeek === null)
+      ? realAssignments.find((a) => a.leagueTeam!.leagueId === leagueId && a.toGameWeek === null)
       : null) ??
-    player.leagueAssignments.find((a) => a.toGameWeek === null) ??
-    player.leagueAssignments[0] ??
+    realAssignments.find((a) => a.toGameWeek === null) ??
+    realAssignments[0] ??
     null
 
   // v1.62.0 — `sessionPictureUrl` is the OAuth-provided picture (LINE
@@ -159,8 +162,8 @@ export default async function AccountPlayerPage() {
     pictureUrl: player.pictureUrl ?? null,
     sessionPictureUrl,
     blobConfigured: !!process.env.BLOB_READ_WRITE_TOKEN,
-    currentTeamName: activeAssignment?.leagueTeam.team.name ?? null,
-    currentLeagueName: activeAssignment?.leagueTeam.league.name ?? null,
+    currentTeamName: activeAssignment?.leagueTeam?.team.name ?? null,
+    currentLeagueName: activeAssignment?.leagueTeam?.league.name ?? null,
     hasUploadedId: !!player.idUploadedAt,
     adminContactEmail: ADMIN_CONTACT_EMAIL,
   }

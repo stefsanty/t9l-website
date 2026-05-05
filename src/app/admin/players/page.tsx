@@ -28,7 +28,8 @@ export default async function PlayersPage() {
           </thead>
           <tbody className="divide-y divide-gray-700">
             {players.map((player) => {
-              const team = player.leagueAssignments[0]?.leagueTeam.team
+              // v1.65.0 — leagueTeam is nullable post-rework.
+              const team = player.leagueAssignments.find((a) => a.leagueTeam !== null)?.leagueTeam?.team
               return (
                 <tr key={player.id} className="hover:bg-gray-750">
                   <td className="px-4 py-3 text-white">{player.name}</td>

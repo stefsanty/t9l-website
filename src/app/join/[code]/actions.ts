@@ -32,7 +32,7 @@ import { deleteMapping } from '@/lib/playerMappingStore'
  *      with `Player.lineId IS NULL` — the first time the codebase has
  *      a logged-in Player with no lineId. γ's Setting flag will
  *      eventually flip the read path so this works transparently.
- *   5. Sets `joinSource` on the existing PlayerLeagueAssignment for
+ *   5. Sets `joinSource` on the existing PlayerLeagueMembership for
  *      this player+league (or creates one if none exists — admins may
  *      have pre-staged a Player without an assignment).
  *   6. Sets `onboardingStatus`: COMPLETED if `LeagueInvite.skipOnboarding`,
@@ -115,10 +115,10 @@ export async function redeemInvite(input: RedeemInviteInput): Promise<RedeemInvi
   }
 
   // For CODE invites, also validate that the picked player belongs to
-  // this invite's league via an existing PlayerLeagueAssignment in the
+  // this invite's league via an existing PlayerLeagueMembership in the
   // league. PERSONAL invites trust the admin-set `targetPlayerId`.
   if (invite.kind === 'CODE') {
-    const inLeague = await prisma.playerLeagueAssignment.findFirst({
+    const inLeague = await prisma.playerLeagueMembership.findFirst({
       where: {
         playerId: targetPlayerId,
         leagueTeam: { leagueId: invite.leagueId },
@@ -157,10 +157,10 @@ export async function redeemInvite(input: RedeemInviteInput): Promise<RedeemInvi
       ...(lineId ? { lineId } : {}),
     })
 
-    // (b) Mark / create the PlayerLeagueAssignment with onboardingStatus
+    // (b) Mark / create the PlayerLeagueMembership with onboardingStatus
     // + joinSource. Admin pre-stages may have already created one; if
     // not, create with fromGameWeek = 1 (the most-common default).
-    const existingAssignment = await tx.playerLeagueAssignment.findFirst({
+    const existingAssignment = await tx.playerLeagueMembership.findFirst({
       where: {
         playerId: targetPlayerId,
         leagueTeam: { leagueId: invite.leagueId },
@@ -168,7 +168,7 @@ export async function redeemInvite(input: RedeemInviteInput): Promise<RedeemInvi
       select: { id: true },
     })
     if (existingAssignment) {
-      await tx.playerLeagueAssignment.update({
+      await tx.playerLeagueMembership.update({
         where: { id: existingAssignment.id },
         data: {
           onboardingStatus: newOnboardingStatus,
@@ -398,7 +398,7 @@ export async function submitIdUpload(formData: FormData): Promise<void> {
         idUploadedAt: new Date(),
       },
     })
-    await tx.playerLeagueAssignment.updateMany({
+    await tx.playerLeagueMembership.updateMany({
       where: {
         playerId,
         leagueTeam: { leagueId: invite.leagueId },
@@ -449,7 +449,7 @@ export async function skipIdUpload(input: { code: string; playerId: string }): P
   })
   if (!invite) throw new Error('Invite not found')
 
-  await prisma.playerLeagueAssignment.updateMany({
+  await prisma.playerLeagueMembership.updateMany({
     where: {
       playerId: input.playerId,
       leagueTeam: { leagueId: invite.leagueId },

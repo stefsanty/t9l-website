@@ -12,7 +12,7 @@
  *      `applicationStatus = PENDING` AND `applicationLeagueId` matches
  *      THIS league — banner shows "your application is being reviewed."
  *   - 'approved_this' (A): authenticated, has a Player with
- *      `applicationStatus = APPROVED` AND an active `PlayerLeagueAssignment`
+ *      `applicationStatus = APPROVED` AND an active `PlayerLeagueMembership`
  *      in THIS league — banner shows "you are in <league>! your team is X".
  *   - 'in_other_league' (D): authenticated, has a Player but no PLA in
  *      THIS league — banner shows the recruiting CTA but the click
@@ -104,8 +104,17 @@ export async function getRecruitingViewerState(
       return { kind: 'pending_this' }
     }
 
-    const activeAssignment = player.leagueAssignments[0] ?? null
-    if (player.applicationStatus === 'APPROVED' && activeAssignment) {
+    // v1.65.0 — `leagueTeam` is nullable on PlayerLeagueMembership post-rework.
+    // The Prisma `where: { leagueTeam: { leagueId } }` filter implicitly
+    // excludes null-leagueTeam rows, but TS can't narrow that. Filter
+    // defensively so State A only fires for memberships with real teams.
+    const activeAssignment =
+      player.leagueAssignments.find((a) => a.leagueTeam !== null) ?? null
+    if (
+      player.applicationStatus === 'APPROVED' &&
+      activeAssignment &&
+      activeAssignment.leagueTeam
+    ) {
       return {
         kind: 'approved_this',
         team: {

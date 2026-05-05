@@ -87,9 +87,15 @@ export default async function PlayersPage({ params }: Props) {
   }>()
 
   for (const a of assignments) {
+    // v1.65.0 — leagueTeam is nullable post-rework; the Prisma query's
+    // `where: { leagueTeam: { leagueId } }` filter implicitly excludes
+    // null-leagueTeam rows but TS can't narrow that. PENDING-application
+    // memberships from v1.65.1+ come through `pendingApplications` below.
+    if (!a.leagueTeam) continue
+    const aWithTeam = a as typeof a & { leagueTeam: NonNullable<typeof a.leagueTeam> }
     const existing = playerMap.get(a.playerId)
     if (existing) {
-      existing.assignments.push(a)
+      existing.assignments.push(aWithTeam)
     } else {
       const ll = a.player.lineId ? lineLoginsByLineId[a.player.lineId] : undefined
       playerMap.set(a.playerId, {
@@ -124,13 +130,13 @@ export default async function PlayersPage({ params }: Props) {
         lineLastSeenAt: ll?.lastSeenAt ?? null,
         otherLeagues: otherLeaguesByPlayerId[a.player.id] ?? [],
         applicationStatus: a.player.applicationStatus,
-        assignments: [a],
+        assignments: [aWithTeam],
       })
     }
   }
 
   // v1.64.0 — append pending applications as synthetic player rows.
-  // These Player rows have NO PlayerLeagueAssignment (admin creates
+  // These Player rows have NO PlayerLeagueMembership (admin creates
   // one on Approve), so they don't surface in the assignments-driven
   // loop above. PlayersTab renders them with empty `assignments`
   // (currentTeam → null) plus a PENDING status badge.

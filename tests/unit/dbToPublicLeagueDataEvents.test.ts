@@ -24,7 +24,7 @@ const plaFindManyMock = vi.fn()
 vi.mock('@/lib/prisma', () => ({
   prisma: {
     league: { findFirst: findFirstMock },
-    playerLeagueAssignment: { findMany: plaFindManyMock },
+    playerLeagueMembership: { findMany: plaFindManyMock },
   },
 }))
 

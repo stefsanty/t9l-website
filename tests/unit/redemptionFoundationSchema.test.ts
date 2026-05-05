@@ -5,8 +5,8 @@
  *
  *   1. `enum OnboardingStatus { NOT_YET COMPLETED }`
  *   2. `enum JoinSource { ADMIN SELF_SERVE CODE PERSONAL }`
- *   3. `PlayerLeagueAssignment.onboardingStatus OnboardingStatus @default(NOT_YET)`
- *   4. `PlayerLeagueAssignment.joinSource JoinSource?` (nullable)
+ *   3. `PlayerLeagueMembership.onboardingStatus OnboardingStatus @default(NOT_YET)`
+ *   4. `PlayerLeagueMembership.joinSource JoinSource?` (nullable)
  *   5. `Player.onboardingPreferences Json?` (nullable jsonb)
  *   6. Migration is purely additive: COMPLETED-default-then-flip-to-NOT_YET
  *      backfill so existing rows aren't gated, no DROP COLUMN against any
@@ -50,15 +50,15 @@ describe('v1.34.0 (PR ζ) — schema enums', () => {
   })
 })
 
-describe('v1.34.0 (PR ζ) — PlayerLeagueAssignment columns', () => {
+describe('v1.34.0 (PR ζ) — PlayerLeagueMembership columns', () => {
   it('onboardingStatus is OnboardingStatus with default NOT_YET (post-migration default)', () => {
-    const block = SCHEMA.match(/model PlayerLeagueAssignment\s*\{[^}]+\}/)
+    const block = SCHEMA.match(/model PlayerLeagueMembership\s*\{[^}]+\}/)
     expect(block).toBeTruthy()
     expect(block![0]).toMatch(/onboardingStatus\s+OnboardingStatus\s+@default\(NOT_YET\)/)
   })
 
   it('joinSource is nullable JoinSource? (existing rows backfill to null)', () => {
-    const block = SCHEMA.match(/model PlayerLeagueAssignment\s*\{[^}]+\}/)
+    const block = SCHEMA.match(/model PlayerLeagueMembership\s*\{[^}]+\}/)
     expect(block![0]).toMatch(/joinSource\s+JoinSource\?/)
   })
 })
@@ -83,6 +83,9 @@ describe('v1.34.0 (PR ζ) — migration SQL invariants', () => {
 
   it('adds onboardingStatus with default COMPLETED first (existing rows backfill to onboarded)', () => {
     expect(MIGRATION).toMatch(
+      // v1.65.0 — model renamed via @@map; the underlying SQL table name
+      // stays "PlayerLeagueAssignment" so existing migrations are
+      // unaffected and this regex still matches the historical SQL.
       /ALTER TABLE\s+"PlayerLeagueAssignment"\s+ADD COLUMN\s+"onboardingStatus"\s+"OnboardingStatus"\s+NOT NULL\s+DEFAULT\s+'COMPLETED'/,
     )
   })
@@ -96,6 +99,7 @@ describe('v1.34.0 (PR ζ) — migration SQL invariants', () => {
 
   it('adds joinSource as nullable (no NOT NULL — existing rows leave null)', () => {
     expect(MIGRATION).toMatch(
+      // v1.65.0 — SQL table name stays "PlayerLeagueAssignment" via @@map.
       /ALTER TABLE\s+"PlayerLeagueAssignment"\s+ADD COLUMN\s+"joinSource"\s+"JoinSource"\s*;/,
     )
     // Sanity: NOT NULL absent from this specific ADD COLUMN line

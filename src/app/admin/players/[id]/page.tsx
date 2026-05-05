@@ -10,7 +10,9 @@ export default async function EditPlayerPage({ params }: Props) {
   const player = players.find((p) => p.id === id)
   if (!player) notFound()
 
-  const team = player.leagueAssignments[0]?.leagueTeam.team
+  // v1.65.0 — `leagueTeam` is nullable post-rework. Pick the first
+  // membership with a real team for display.
+  const team = player.leagueAssignments.find((a) => a.leagueTeam !== null)?.leagueTeam?.team
 
   return (
     <div>

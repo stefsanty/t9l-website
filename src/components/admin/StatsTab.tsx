@@ -75,8 +75,12 @@ interface EventMatch {
 interface EventLeagueTeam {
   id: string
   team: { name: string }
+  // v1.65.0 — `leagueTeamId` becomes nullable post-membership-spec rework
+  // (PENDING-app PLMs have null teamId). Within this component the field
+  // is only carried structurally; `rosterFor` reads `player` not the FK,
+  // so widening to nullable is safe.
   playerAssignments: Array<{
-    leagueTeamId: string
+    leagueTeamId: string | null
     player: { id: string; name: string | null }
   }>
 }

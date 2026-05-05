@@ -54,7 +54,7 @@ export default async function OnboardingPage({ params }: Props) {
       where: { id: invite.leagueId },
       select: { id: true, name: true, subdomain: true },
     }),
-    prisma.playerLeagueAssignment.findFirst({
+    prisma.playerLeagueMembership.findFirst({
       where: {
         leagueTeam: { leagueId: invite.leagueId },
         player: { userId },
@@ -92,7 +92,7 @@ export default async function OnboardingPage({ params }: Props) {
           <strong className="text-fg-high">
             {currentBinding.player.name ?? 'this slot'}
           </strong>{' '}
-          on <strong className="text-fg-high">{currentBinding.leagueTeam.team.name}</strong>.
+          on <strong className="text-fg-high">{currentBinding.leagueTeam?.team.name ?? 'this team'}</strong>.
           Filling this in helps the admin schedule matches.
         </p>
 
