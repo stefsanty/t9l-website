@@ -133,12 +133,19 @@ describe('LineLoginButton — non-LINE dropdown gate (v1.39.2)', () => {
 
   it('non-LINE no-player branch surfaces a "Need an invite" message + mailto', () => {
     expect(HEADER_SRC).toMatch(/data-testid="account-menu-need-invite"/)
-    // The non-LINE branch contains the mailto so the user has a path forward.
+    // The header above the testid block carries the "Need an invite to join"
+    // eyebrow line for non-LINE users; that's the single user-facing header.
+    expect(HEADER_SRC).toMatch(/Need an invite to join/)
+    // v1.60.1 — the body block is a one-line sentence with the mailto path;
+    // no second duplicate header is rendered inside the block.
     const needInviteIdx = HEADER_SRC.indexOf('account-menu-need-invite')
     expect(needInviteIdx).toBeGreaterThan(0)
     const block = HEADER_SRC.slice(needInviteIdx, needInviteIdx + 1000)
-    expect(block).toMatch(/Need an invite/)
+    expect(block).toMatch(/Ask an admin or/)
     expect(block).toMatch(/mailto:vitoriatamachi@gmail\.com/)
+    // Regression target: the redundant "Need an invite link" subtitle (which
+    // duplicated the eyebrow above) must NOT reappear inside the body block.
+    expect(block).not.toMatch(/Need an invite link/)
   })
 
   it('LINE no-player branch keeps the "Assign to my player" link', () => {
