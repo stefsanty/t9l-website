@@ -198,17 +198,15 @@ describe('/assign-player page — SelfLinkDisabledSurface gate (v1.60.0)', () =>
     expect(PAGE_SRC).toMatch(/data-testid="assign-player-self-link-disabled"/)
   })
 
-  it('the gate fires AFTER the v1.39.2 non-LINE gate but BEFORE the picker render', () => {
-    // Order matters: LINE users with the toggle OFF should see the
-    // self-link-disabled surface (with copy about admin invite links),
-    // not the need-invite surface (which is for non-LINE users on
-    // multi-provider auth). Non-LINE users still see need-invite
-    // because they hit that gate first.
-    const needInviteGateIdx = PAGE_SRC.indexOf('return <NeedInviteSurface />')
+  it('the gate fires BEFORE the picker render (v1.61.0 — unified gate)', () => {
+    // v1.61.0 — the v1.39.2 non-LINE gate is gone. allowSelfLink is now
+    // the only gate that decides between picker render and disabled
+    // surface. The v1.61.0 page also threads viewer { lineId, userId }
+    // into getLinkedPlayerIds so the call shape changed; assert the
+    // new shape via the lookup body.
     const selfLinkGateIdx = PAGE_SRC.indexOf('return <SelfLinkDisabledSurface />')
-    const linkedIdsIdx = PAGE_SRC.indexOf('getLinkedPlayerIds(session?.lineId')
-    expect(needInviteGateIdx).toBeGreaterThan(0)
-    expect(selfLinkGateIdx).toBeGreaterThan(needInviteGateIdx)
+    const linkedIdsIdx = PAGE_SRC.indexOf('getLinkedPlayerIds(')
+    expect(selfLinkGateIdx).toBeGreaterThan(0)
     expect(linkedIdsIdx).toBeGreaterThan(selfLinkGateIdx)
   })
 

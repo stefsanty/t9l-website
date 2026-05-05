@@ -27,6 +27,16 @@ declare module "next-auth" {
      * and for the upcoming /join/[code] LeagueInvite redemption flow.
      */
     userId: string | null;
+    /**
+     * v1.61.0 — `League.allowSelfLink` for the session's resolved league
+     * context. When `true`, any logged-in user (LINE / Google / email)
+     * can use `/assign-player` to claim an unlinked player. When `false`,
+     * the picker is gated and the account-menu dropdown surfaces the
+     * "Need an invite" message instead. Defaults to `true` if the league
+     * lookup fails (matches the helper's defensive default and the
+     * column's @default(true)).
+     */
+    allowSelfLink: boolean;
   }
 }
 
@@ -52,5 +62,10 @@ declare module "next-auth/jwt" {
      * passed through on session refresh.
      */
     userId?: string | null;
+    /**
+     * v1.61.0 — see `Session.allowSelfLink` above. Recomputed on every
+     * JWT callback from `getLeagueAllowSelfLink(requestLeagueId)`.
+     */
+    allowSelfLink?: boolean;
   }
 }

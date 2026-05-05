@@ -209,3 +209,43 @@ export async function unlinkPlayerFromUser(
 
   return true;
 }
+
+/**
+ * v1.61.0 — inverse of `linkUserToPlayer` keyed on `User.id`. Used by
+ * `/api/assign-player` DELETE for non-LINE users (Google / email) who
+ * unbind themselves from their current player. Clears `User.playerId`
+ * AND `Player.userId` for the User identified by userId. Returns the
+ * cleared player's id so the caller can run downstream cleanup
+ * (revalidate, picture-mirror, etc.) without a second query.
+ *
+ * Mirror of `unlinkPlayerFromUser` but keyed on `User.id @unique`
+ * instead of `User.lineId @unique`. Non-LINE users typically have
+ * `User.lineId === null`, so `unlinkPlayerFromUser` would no-op for
+ * them; this helper handles their case.
+ */
+export async function unlinkUserFromPlayer(
+  tx: Tx,
+  args: { userId: string },
+): Promise<{ unlinkedPlayerId: string | null }> {
+  const user = await tx.user.findUnique({
+    where: { id: args.userId },
+    select: { id: true, playerId: true },
+  });
+  if (!user) return { unlinkedPlayerId: null };
+
+  const unlinkedPlayerId = user.playerId;
+
+  if (unlinkedPlayerId) {
+    await tx.player.updateMany({
+      where: { id: unlinkedPlayerId, userId: user.id },
+      data: { userId: null },
+    });
+  }
+
+  await tx.user.update({
+    where: { id: user.id },
+    data: { playerId: null },
+  });
+
+  return { unlinkedPlayerId };
+}

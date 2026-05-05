@@ -1,5 +1,9 @@
 import { describe, it, expect, vi } from 'vitest'
-import { linkPlayerToUser, unlinkPlayerFromUser } from '@/lib/identityLink'
+import {
+  linkPlayerToUser,
+  unlinkPlayerFromUser,
+  unlinkUserFromPlayer,
+} from '@/lib/identityLink'
 
 /**
  * v1.29.0 — User ↔ Player dual-write helpers (stage β).
@@ -190,6 +194,65 @@ describe('unlinkPlayerFromUser', () => {
     expect(tx.user.update).toHaveBeenCalledWith({
       where: { id: 'user-stefan' },
       data: { playerId: null },
+    })
+  })
+})
+
+/**
+ * v1.61.0 — `unlinkUserFromPlayer` is the inverse of `linkUserToPlayer`
+ * keyed on `User.id`. Used by the `/api/assign-player` DELETE handler
+ * for non-LINE sessions (Google / email) — `unlinkPlayerFromUser` is
+ * keyed on `User.lineId @unique` which is null for non-LINE Users, so
+ * it would no-op for them.
+ */
+describe('unlinkUserFromPlayer', () => {
+  it('returns { unlinkedPlayerId: null } and skips writes when no User exists', async () => {
+    const tx = makeTx({ user: null })
+    const result = await unlinkUserFromPlayer(tx as never, {
+      userId: 'unknown-user',
+    })
+    expect(result).toEqual({ unlinkedPlayerId: null })
+    expect(tx.user.update).not.toHaveBeenCalled()
+    expect(tx.player.updateMany).not.toHaveBeenCalled()
+  })
+
+  it('clears Player.userId then User.playerId and returns the cleared playerId', async () => {
+    const tx = makeTx({
+      user: { id: 'user-google-123', playerId: 'p-stefan-s' },
+    })
+    const result = await unlinkUserFromPlayer(tx as never, {
+      userId: 'user-google-123',
+    })
+    expect(result).toEqual({ unlinkedPlayerId: 'p-stefan-s' })
+    expect(tx.player.updateMany).toHaveBeenCalledWith({
+      where: { id: 'p-stefan-s', userId: 'user-google-123' },
+      data: { userId: null },
+    })
+    expect(tx.user.update).toHaveBeenCalledWith({
+      where: { id: 'user-google-123' },
+      data: { playerId: null },
+    })
+  })
+
+  it('idempotent — still clears User.playerId when Player.userId was already null', async () => {
+    const tx = makeTx({ user: { id: 'user-google-123', playerId: null } })
+    const result = await unlinkUserFromPlayer(tx as never, {
+      userId: 'user-google-123',
+    })
+    expect(result).toEqual({ unlinkedPlayerId: null })
+    expect(tx.player.updateMany).not.toHaveBeenCalled()
+    expect(tx.user.update).toHaveBeenCalledWith({
+      where: { id: 'user-google-123' },
+      data: { playerId: null },
+    })
+  })
+
+  it('keys lookup on User.id (not User.lineId) — supports non-LINE Users', async () => {
+    const tx = makeTx({ user: { id: 'user-email-456', playerId: null } })
+    await unlinkUserFromPlayer(tx as never, { userId: 'user-email-456' })
+    expect(tx.user.findUnique).toHaveBeenCalledWith({
+      where: { id: 'user-email-456' },
+      select: { id: true, playerId: true },
     })
   })
 })
