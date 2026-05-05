@@ -2,7 +2,7 @@
  * v1.37.0 (PR ι) — server actions for /account/player.
  *
  * Three actions:
- *   1. updatePlayerSelf — name + position + preferences
+ *   1. updatePlayerSelf — name + position
  *   2. uploadPlayerProfilePicture — file → Blob → Player.profilePictureUrl
  *   3. removePlayerProfilePicture — clear column + DEL Blob
  *
@@ -17,6 +17,12 @@
  *   - Blob token gate: upload throws when BLOB_READ_WRITE_TOKEN missing.
  *   - Replace-only: prior URL is DEL'd after successful new put.
  *   - Validation: name required, ≤100 chars; position enum or null.
+ *
+ * v1.62.0 — preferred-team / preferred-teammate fields are removed. The
+ * input shape no longer carries `preferredLeagueTeamId` etc., and the
+ * server action no longer writes `Player.onboardingPreferences`. The
+ * action also calls `deleteMapping(lineId)` to bust the v1.5.0 Redis
+ * mapping store so the next JWT callback re-reads the fresh playerName.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
@@ -27,6 +33,7 @@ const {
   putMock,
   delMock,
   sessionMock,
+  deleteMappingMock,
 } = vi.hoisted(() => ({
   playerFindUniqueMock: vi.fn(),
   playerUpdateMock: vi.fn().mockResolvedValue({}),
@@ -34,6 +41,7 @@ const {
   putMock: vi.fn(),
   delMock: vi.fn(),
   sessionMock: vi.fn(),
+  deleteMappingMock: vi.fn().mockResolvedValue(undefined),
 }))
 
 vi.mock('@/lib/prisma', () => ({
@@ -42,6 +50,7 @@ vi.mock('@/lib/prisma', () => ({
   },
 }))
 vi.mock('@/lib/revalidate', () => ({ revalidate: revalidateMock }))
+vi.mock('@/lib/playerMappingStore', () => ({ deleteMapping: deleteMappingMock }))
 vi.mock('next-auth', () => ({ getServerSession: sessionMock }))
 vi.mock('@/lib/auth', () => ({ authOptions: {} }))
 vi.mock('@vercel/blob', () => ({
@@ -173,19 +182,35 @@ describe('updatePlayerSelf — validation', () => {
     })
   })
 
-  it('persists preferences as JSON shape', async () => {
-    await updatePlayerSelf({
-      name: 'Stefan',
-      preferredLeagueTeamId: 'lt-1',
-      preferredTeammateIds: ['p-a', 'p-b'],
-      preferredTeammatesFreeText: 'Riki',
-    })
+  // v1.62.0 — preference fields removed from the form. The action no
+  // longer writes `Player.onboardingPreferences` (the column stays in
+  // the schema for compat).
+  it('v1.62.0 — does NOT write onboardingPreferences (field removed)', async () => {
+    await updatePlayerSelf({ name: 'Stefan', position: 'MF' })
     const call = playerUpdateMock.mock.calls[0][0]
-    expect(call.data.onboardingPreferences).toEqual({
-      preferredLeagueTeamId: 'lt-1',
-      preferredTeammateIds: ['p-a', 'p-b'],
-      preferredTeammatesFreeText: 'Riki',
-    })
+    expect(call.data.onboardingPreferences).toBeUndefined()
+  })
+
+  // v1.62.0 — busts the per-league Redis mapping cache so the next JWT
+  // callback re-reads the new playerName. Without this, the account
+  // menu would show the old name until the 24h sliding TTL expires.
+  it('v1.62.0 — calls deleteMapping(lineId) to bust the Redis mapping cache', async () => {
+    sessionMock.mockResolvedValue({ userId: 'u-1', lineId: 'L-stefan' })
+    await updatePlayerSelf({ name: 'Stefan' })
+    expect(deleteMappingMock).toHaveBeenCalledWith('L-stefan')
+  })
+
+  it('v1.62.0 — does NOT call deleteMapping when session has no lineId (Google/email user)', async () => {
+    sessionMock.mockResolvedValue({ userId: 'u-1', lineId: null })
+    await updatePlayerSelf({ name: 'Stefan' })
+    expect(deleteMappingMock).not.toHaveBeenCalled()
+  })
+
+  it('v1.62.0 — survives deleteMapping rejection (best-effort, no throw)', async () => {
+    sessionMock.mockResolvedValue({ userId: 'u-1', lineId: 'L-stefan' })
+    deleteMappingMock.mockRejectedValueOnce(new Error('upstash blip'))
+    await expect(updatePlayerSelf({ name: 'Stefan' })).resolves.toBeUndefined()
+    expect(playerUpdateMock).toHaveBeenCalled()
   })
 
   it('treats empty position string as null', async () => {

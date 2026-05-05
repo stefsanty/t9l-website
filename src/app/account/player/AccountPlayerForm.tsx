@@ -2,6 +2,7 @@
 
 import { useRef, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
+import { useSession } from 'next-auth/react'
 import {
   removePlayerProfilePicture,
   updatePlayerSelf,
@@ -15,19 +16,22 @@ import {
 /**
  * v1.37.0 (PR ι) — client form for "Change player details".
  *
+ * v1.62.0 — preferred-team / preferred-teammate fields removed from the
+ * form. Preferences are no longer captured here; the underlying
+ * `Player.onboardingPreferences` JSON column stays in the schema for
+ * compatibility but is no longer read or written.
+ *
  * Two save flows:
- *   - The text/select form (name + position + preferences) submits
- *     through `updatePlayerSelf`, returning to the same page on success
- *     with a green status pill.
+ *   - Text form (name + position) submits through `updatePlayerSelf`,
+ *     returning to the same page on success with a green status pill.
+ *     v1.62.0 — also calls `useSession().update()` after save so the JWT
+ *     refreshes and the account-menu dropdown reflects the new name.
  *   - The picture upload runs through `uploadPlayerProfilePicture`
  *     independently — uploading is a side flow with its own progress UI.
  *
  * Read-only blocks at the bottom:
  *   - Team assignment ("set by admin — contact …")
  *   - ID front/back ("ask admin to reset onboarding to re-upload")
- *
- * Mirror of OnboardingForm's field shape so users see the same
- * controls when re-editing what they entered during /join/[code].
  */
 
 const POSITIONS: ReadonlyArray<{ value: '' | 'GK' | 'DF' | 'MF' | 'FW'; label: string }> = [
@@ -41,13 +45,17 @@ const POSITIONS: ReadonlyArray<{ value: '' | 'GK' | 'DF' | 'MF' | 'FW'; label: s
 export interface AccountPlayerFormProps {
   initialName: string
   initialPosition: 'GK' | 'DF' | 'MF' | 'FW' | null
-  initialPreferredLeagueTeamId: string | null
-  initialPreferredTeammateIds: string[]
-  initialPreferredTeammatesFreeText: string | null
   profilePictureUrl: string | null
   pictureUrl: string | null
-  leagueTeams: Array<{ id: string; name: string }>
-  teammateOptions: Array<{ id: string; name: string }>
+  /**
+   * v1.62.0 — fallback picture when the user has neither a custom
+   * `profilePictureUrl` nor an `assign-player`-mirrored `pictureUrl`. For
+   * LINE users, this is the LINE-CDN URL from `session.linePictureUrl`;
+   * for Google users, it's `session.user.image`. Resolved server-side on
+   * the page so the avatar / form preview render with the right default
+   * on first paint.
+   */
+  sessionPictureUrl: string | null
   blobConfigured: boolean
   currentTeamName: string | null
   currentLeagueName: string | null
@@ -57,19 +65,11 @@ export interface AccountPlayerFormProps {
 
 export default function AccountPlayerForm(props: AccountPlayerFormProps) {
   const router = useRouter()
+  const { update: updateSession } = useSession()
   const [pending, startTransition] = useTransition()
   const [name, setName] = useState(props.initialName)
   const [position, setPosition] = useState<'' | 'GK' | 'DF' | 'MF' | 'FW'>(
     props.initialPosition ?? '',
-  )
-  const [preferredLeagueTeamId, setPreferredLeagueTeamId] = useState(
-    props.initialPreferredLeagueTeamId ?? '',
-  )
-  const [preferredTeammateIds, setPreferredTeammateIds] = useState<string[]>(
-    props.initialPreferredTeammateIds,
-  )
-  const [preferredTeammatesFreeText, setPreferredTeammatesFreeText] = useState(
-    props.initialPreferredTeammatesFreeText ?? '',
   )
   const [error, setError] = useState<string | null>(null)
   const [successAt, setSuccessAt] = useState<number | null>(null)
@@ -79,13 +79,11 @@ export default function AccountPlayerForm(props: AccountPlayerFormProps) {
   const [picturePending, setPicturePending] = useState(false)
   const [pictureError, setPictureError] = useState<string | null>(null)
 
-  const displayedPicture = props.profilePictureUrl ?? props.pictureUrl
-
-  function toggleTeammate(id: string) {
-    setPreferredTeammateIds((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
-    )
-  }
+  // v1.62.0 — fall through profilePictureUrl > pictureUrl >
+  // sessionPictureUrl so users see their existing OAuth picture as the
+  // default upload preview when they haven't customised one.
+  const displayedPicture =
+    props.profilePictureUrl ?? props.pictureUrl ?? props.sessionPictureUrl
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -96,12 +94,15 @@ export default function AccountPlayerForm(props: AccountPlayerFormProps) {
         await updatePlayerSelf({
           name: name.trim(),
           position: position === '' ? null : position,
-          preferredLeagueTeamId: preferredLeagueTeamId === '' ? null : preferredLeagueTeamId,
-          preferredTeammateIds,
-          preferredTeammatesFreeText:
-            preferredTeammatesFreeText.trim() === '' ? null : preferredTeammatesFreeText.trim(),
         })
         setSuccessAt(Date.now())
+        // v1.62.0 — force a JWT refresh so session.playerName picks up
+        // the new value, and the account-menu dropdown re-renders with
+        // the new name. router.refresh() alone wouldn't help — the
+        // session token is set on a server-issued cookie, and useSession
+        // caches the session payload client-side until update() is
+        // called. Fire-and-forget; failures don't affect the saved data.
+        updateSession?.().catch(() => undefined)
         router.refresh()
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to save')
@@ -282,64 +283,6 @@ export default function AccountPlayerForm(props: AccountPlayerFormProps) {
             ))}
           </select>
         </label>
-
-        <label className="block">
-          <span className="block text-fg-mid text-xs uppercase tracking-widest font-bold mb-1.5">
-            Preferred team
-          </span>
-          <select
-            value={preferredLeagueTeamId}
-            onChange={(e) => setPreferredLeagueTeamId(e.target.value)}
-            className="w-full bg-background border border-border-default rounded-lg px-3 py-2 text-sm text-fg-high"
-            data-testid="account-player-preferred-team"
-          >
-            <option value="">No preference</option>
-            {props.leagueTeams.map((lt) => (
-              <option key={lt.id} value={lt.id}>{lt.name}</option>
-            ))}
-          </select>
-          <p className="text-fg-low text-xs mt-1">
-            Doesn't change your current team — for admin reference only.
-          </p>
-        </label>
-
-        <fieldset className="space-y-2">
-          <legend className="block text-fg-mid text-xs uppercase tracking-widest font-bold mb-1.5">
-            Preferred teammates
-          </legend>
-          <div className="space-y-1 max-h-48 overflow-y-auto pr-1 border border-border-default rounded-lg p-2 bg-background">
-            {props.teammateOptions.length === 0 ? (
-              <p className="text-fg-low text-xs italic">No other players to choose from yet.</p>
-            ) : (
-              props.teammateOptions.map((opt) => {
-                const checked = preferredTeammateIds.includes(opt.id)
-                return (
-                  <label
-                    key={opt.id}
-                    className="flex items-center gap-2 text-sm text-fg-mid cursor-pointer"
-                    data-testid={`account-player-teammate-${opt.id}`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={() => toggleTeammate(opt.id)}
-                    />
-                    <span>{opt.name}</span>
-                  </label>
-                )
-              })
-            )}
-          </div>
-          <input
-            type="text"
-            value={preferredTeammatesFreeText}
-            onChange={(e) => setPreferredTeammatesFreeText(e.target.value)}
-            maxLength={500}
-            placeholder="Other (someone not on the list)"
-            className="w-full bg-background border border-border-default rounded-lg px-3 py-2 text-sm text-fg-high"
-            data-testid="account-player-teammates-other"
-          />
-        </fieldset>
 
         <div className="flex items-center justify-between pt-2 border-t border-border-subtle">
           <div className="text-xs">

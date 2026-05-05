@@ -7,7 +7,7 @@ import { prisma } from '@/lib/prisma'
 import { revalidate } from '@/lib/revalidate'
 import { validateInvite } from '@/lib/joinValidation'
 import { linkUserToPlayer } from '@/lib/identityLink'
-import type { Prisma } from '@prisma/client'
+import { deleteMapping } from '@/lib/playerMappingStore'
 
 /**
  * v1.34.0 (PR ζ) — public redemption endpoint.
@@ -248,9 +248,6 @@ export interface SubmitOnboardingInput {
   playerId: string
   name: string
   position?: 'GK' | 'DF' | 'MF' | 'FW' | null
-  preferredLeagueTeamId?: string | null
-  preferredTeammateIds?: string[]
-  preferredTeammatesFreeText?: string | null
 }
 
 export async function submitOnboarding(input: SubmitOnboardingInput): Promise<void> {
@@ -258,6 +255,7 @@ export async function submitOnboarding(input: SubmitOnboardingInput): Promise<vo
   if (!session) throw new Error('Sign in required')
   const userId = (session as { userId?: string | null }).userId ?? null
   if (!userId) throw new Error('Admin sessions cannot submit onboarding')
+  const lineId = session.lineId ?? null
 
   const trimmedName = input.name.trim()
   if (!trimmedName) throw new Error('Your name is required')
@@ -280,28 +278,39 @@ export async function submitOnboarding(input: SubmitOnboardingInput): Promise<vo
   })
   if (!invite) throw new Error('Invite not found')
 
-  const preferences: Prisma.InputJsonValue = {
-    preferredLeagueTeamId: input.preferredLeagueTeamId ?? null,
-    preferredTeammateIds: input.preferredTeammateIds ?? [],
-    preferredTeammatesFreeText: input.preferredTeammatesFreeText ?? null,
-  }
-
   // v1.35.0 (PR η) — onboarding form completion no longer flips
   // `onboardingStatus` to COMPLETED. The ID-upload step does that. Form
   // submission only persists the form data and routes to the next step.
+  // v1.62.0 — `Player.onboardingPreferences` is no longer written. The
+  // column stays in the schema for compatibility but the form no longer
+  // captures preference fields.
   await prisma.$transaction(async (tx) => {
     await tx.player.update({
       where: { id: input.playerId },
       data: {
         name: trimmedName,
         position: input.position ?? null,
-        onboardingPreferences: preferences,
       },
     })
     // No onboardingStatus update — that flips in submitIdUpload (or
     // skipIdUpload when BLOB is unconfigured). The form-completed state
     // is "you've named yourself but still owe an ID."
   })
+
+  // v1.62.0 — invalidate the per-league Redis mapping store so the next
+  // JWT callback re-reads the fresh `playerName`. Mirror of the same
+  // shape in `updatePlayerSelf` — without it, the account menu would
+  // show the old name (or, for a new redemption, "" / empty) until the
+  // 24h sliding TTL expires. Best-effort.
+  if (lineId) {
+    await deleteMapping(lineId).catch((err) => {
+      console.warn(
+        '[join] deleteMapping failed for lineId=%s: %o',
+        lineId,
+        err,
+      )
+    })
+  }
 
   revalidate({ domain: 'admin', paths: [`/admin/leagues/${invite.leagueId}/players`] })
   revalidate({ domain: 'public' })

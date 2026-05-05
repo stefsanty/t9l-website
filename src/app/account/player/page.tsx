@@ -80,6 +80,8 @@ export default async function AccountPlayerPage() {
   // identifiers are minted by the auth server; either is a safe lookup
   // key. Looking up by session.playerId (slug) alone is unsafe — admin
   // remap can leave the slug stale relative to the canonical binding.
+  // v1.62.0 — drop the now-unused `Player.onboardingPreferences` JSON
+  // read from the include (the form no longer surfaces preferences).
   const playerInclude = {
     leagueAssignments: {
       include: { leagueTeam: { include: { team: true, league: true } } },
@@ -139,43 +141,23 @@ export default async function AccountPlayerPage() {
     player.leagueAssignments[0] ??
     null
 
-  // Roster for the teammate-preference picker — every player in the
-  // SAME league as the active assignment (or empty if no assignment yet).
-  const teammateOptions = activeAssignment
-    ? await prisma.player.findMany({
-        where: {
-          id: { not: player.id },
-          leagueAssignments: {
-            some: { leagueTeam: { leagueId: activeAssignment.leagueTeam.leagueId } },
-          },
-        },
-        select: { id: true, name: true },
-        orderBy: { name: 'asc' },
-      })
-    : []
-
-  // Teams in the same league for the team-preference picker.
-  const leagueTeams = activeAssignment
-    ? await prisma.leagueTeam.findMany({
-        where: { leagueId: activeAssignment.leagueTeam.leagueId },
-        include: { team: true },
-        orderBy: { team: { name: 'asc' } },
-      })
-    : []
-
-  // Decode prior preferences (JSON) into form-friendly shape.
-  const prefs = parsePreferences(player.onboardingPreferences)
+  // v1.62.0 — `sessionPictureUrl` is the OAuth-provided picture (LINE
+  // CDN for LINE users via `session.linePictureUrl`; Google profile
+  // image is exposed at `session.user?.image` for non-LINE users). It
+  // surfaces as the avatar/upload-preview default when the user has
+  // neither uploaded a custom picture nor linked via the legacy
+  // `/assign-player` mirror flow.
+  const sessionPictureUrl =
+    session.linePictureUrl ||
+    (session.user as { image?: string | null } | undefined)?.image ||
+    null
 
   const formProps: AccountPlayerFormProps = {
     initialName: player.name ?? '',
     initialPosition: player.position ?? null,
-    initialPreferredLeagueTeamId: prefs.preferredLeagueTeamId,
-    initialPreferredTeammateIds: prefs.preferredTeammateIds,
-    initialPreferredTeammatesFreeText: prefs.preferredTeammatesFreeText,
     profilePictureUrl: player.profilePictureUrl ?? null,
     pictureUrl: player.pictureUrl ?? null,
-    leagueTeams: leagueTeams.map((lt) => ({ id: lt.id, name: lt.team.name })),
-    teammateOptions: teammateOptions.map((t) => ({ id: t.id, name: t.name ?? 'Unnamed' })),
+    sessionPictureUrl,
     blobConfigured: !!process.env.BLOB_READ_WRITE_TOKEN,
     currentTeamName: activeAssignment?.leagueTeam.team.name ?? null,
     currentLeagueName: activeAssignment?.leagueTeam.league.name ?? null,
@@ -212,29 +194,3 @@ function Shell({ children }: { children: React.ReactNode }) {
   )
 }
 
-interface ParsedPreferences {
-  preferredLeagueTeamId: string | null
-  preferredTeammateIds: string[]
-  preferredTeammatesFreeText: string | null
-}
-
-function parsePreferences(raw: unknown): ParsedPreferences {
-  if (!raw || typeof raw !== 'object') {
-    return {
-      preferredLeagueTeamId: null,
-      preferredTeammateIds: [],
-      preferredTeammatesFreeText: null,
-    }
-  }
-  const obj = raw as Record<string, unknown>
-  const ids = Array.isArray(obj.preferredTeammateIds)
-    ? (obj.preferredTeammateIds as unknown[]).filter((x): x is string => typeof x === 'string')
-    : []
-  return {
-    preferredLeagueTeamId:
-      typeof obj.preferredLeagueTeamId === 'string' ? obj.preferredLeagueTeamId : null,
-    preferredTeammateIds: ids,
-    preferredTeammatesFreeText:
-      typeof obj.preferredTeammatesFreeText === 'string' ? obj.preferredTeammatesFreeText : null,
-  }
-}

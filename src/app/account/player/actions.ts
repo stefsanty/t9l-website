@@ -4,7 +4,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { revalidate } from '@/lib/revalidate'
-import type { Prisma } from '@prisma/client'
+import { deleteMapping } from '@/lib/playerMappingStore'
 import { PROFILE_PIC_ALLOWED_TYPES, PROFILE_PIC_MAX_BYTES } from './validation'
 
 /**
@@ -113,9 +113,6 @@ async function resolveOwnedPlayerId(session: AuthedSession): Promise<string> {
 export interface UpdatePlayerSelfInput {
   name: string
   position?: 'GK' | 'DF' | 'MF' | 'FW' | null
-  preferredLeagueTeamId?: string | null
-  preferredTeammateIds?: string[]
-  preferredTeammatesFreeText?: string | null
 }
 
 export async function updatePlayerSelf(input: UpdatePlayerSelfInput): Promise<void> {
@@ -126,20 +123,35 @@ export async function updatePlayerSelf(input: UpdatePlayerSelfInput): Promise<vo
   if (!trimmedName) throw new Error('Name is required')
   if (trimmedName.length > 100) throw new Error('Name must be 100 characters or fewer')
 
-  const preferences: Prisma.InputJsonValue = {
-    preferredLeagueTeamId: input.preferredLeagueTeamId ?? null,
-    preferredTeammateIds: input.preferredTeammateIds ?? [],
-    preferredTeammatesFreeText: input.preferredTeammatesFreeText ?? null,
-  }
-
+  // v1.62.0 — `Player.onboardingPreferences` is no longer written here.
+  // The column stays in the schema for compatibility (existing JSON data
+  // is preserved). The form no longer captures preference fields.
   await prisma.player.update({
     where: { id: playerId },
     data: {
       name: trimmedName,
       position: input.position ?? null,
-      onboardingPreferences: preferences,
     },
   })
+
+  // v1.62.0 — invalidate the per-league Redis mapping store (v1.5.0
+  // canonical store) for this LINE id so the next JWT callback re-reads
+  // the fresh `playerName` from Prisma. Without this, the account-menu
+  // dropdown keeps showing the old name until the 24h sliding TTL
+  // expires. `deleteMapping(lineId)` (no leagueId arg) SCANs the
+  // namespace and DELs every per-league entry — the right shape because
+  // we don't know which league(s) the user is currently routed to.
+  // Best-effort; failure here is silent (the next JWT callback will
+  // still get the stale value but eventually self-heals).
+  if (session.lineId) {
+    await deleteMapping(session.lineId).catch((err) => {
+      console.warn(
+        '[account/player] deleteMapping failed for lineId=%s: %o',
+        session.lineId,
+        err,
+      )
+    })
+  }
 
   revalidate({ domain: 'public', paths: ['/account/player'] })
 }

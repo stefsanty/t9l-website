@@ -5,17 +5,14 @@ import { submitOnboarding } from '../actions'
 
 /**
  * v1.34.0 (PR ζ) — client-side onboarding form for the redeemed-but-not-
- * yet-onboarded state. Captures:
+ * yet-onboarded state.
  *
- *   - Name (required, ≤100 chars; prefilled if admin pre-staged a name).
- *   - Position (optional: GK / DF / MF / FW).
- *   - Preferred team (optional, only if the bound assignment doesn't
- *     already pin one — admin pre-stages with a team usually do, leaving
- *     this dropdown unused).
- *   - Preferred teammates (multi-select of existing players in the
- *     league; "Other" free-text for names not on the roster yet).
+ * v1.62.0 — preferred-team / preferred-teammate fields removed. Only
+ * captures name + position now. The underlying
+ * `Player.onboardingPreferences` JSON column stays in the schema for
+ * compatibility but is no longer read or written.
  *
- * Submit → `submitOnboarding` server action → redirect to welcome.
+ * Submit → `submitOnboarding` server action → redirect to /id-upload.
  *
  * The form is idempotent: revisiting after a prior submit re-renders
  * with prefilled values (PR θ's "Reset onboarding" flow flips
@@ -36,11 +33,6 @@ interface Props {
   playerId: string
   initialName: string
   initialPosition: 'GK' | 'DF' | 'MF' | 'FW' | null
-  initialPreferredLeagueTeamId: string | null
-  initialPreferredTeammateIds: string[]
-  initialPreferredTeammatesFreeText: string | null
-  leagueTeams: Array<{ id: string; name: string }>
-  teammateOptions: Array<{ id: string; name: string }>
 }
 
 export default function OnboardingForm({
@@ -48,31 +40,11 @@ export default function OnboardingForm({
   playerId,
   initialName,
   initialPosition,
-  initialPreferredLeagueTeamId,
-  initialPreferredTeammateIds,
-  initialPreferredTeammatesFreeText,
-  leagueTeams,
-  teammateOptions,
 }: Props) {
   const [pending, startTransition] = useTransition()
   const [name, setName] = useState(initialName)
   const [position, setPosition] = useState<'' | 'GK' | 'DF' | 'MF' | 'FW'>(initialPosition ?? '')
-  const [preferredLeagueTeamId, setPreferredLeagueTeamId] = useState(
-    initialPreferredLeagueTeamId ?? '',
-  )
-  const [preferredTeammateIds, setPreferredTeammateIds] = useState<string[]>(
-    initialPreferredTeammateIds,
-  )
-  const [preferredTeammatesFreeText, setPreferredTeammatesFreeText] = useState(
-    initialPreferredTeammatesFreeText ?? '',
-  )
   const [error, setError] = useState<string | null>(null)
-
-  function toggleTeammate(id: string) {
-    setPreferredTeammateIds((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
-    )
-  }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -84,10 +56,6 @@ export default function OnboardingForm({
           playerId,
           name: name.trim(),
           position: position === '' ? null : position,
-          preferredLeagueTeamId: preferredLeagueTeamId === '' ? null : preferredLeagueTeamId,
-          preferredTeammateIds,
-          preferredTeammatesFreeText:
-            preferredTeammatesFreeText.trim() === '' ? null : preferredTeammatesFreeText.trim(),
         })
         // submitOnboarding redirects on success — this code is unreachable
         // unless a future variant returns instead of throwing/redirecting.
@@ -137,64 +105,6 @@ export default function OnboardingForm({
           ))}
         </select>
       </label>
-
-      <label className="block">
-        <span className="block text-fg-mid text-xs uppercase tracking-widest font-bold mb-1.5">
-          Preferred team (optional)
-        </span>
-        <select
-          value={preferredLeagueTeamId}
-          onChange={(e) => setPreferredLeagueTeamId(e.target.value)}
-          className="w-full bg-background border border-border-default rounded-lg px-3 py-2 text-sm text-fg-high"
-          data-testid="onboarding-preferred-team"
-        >
-          <option value="">No preference</option>
-          {leagueTeams.map((lt) => (
-            <option key={lt.id} value={lt.id}>{lt.name}</option>
-          ))}
-        </select>
-        <p className="text-fg-low text-xs mt-1">
-          The admin will see this when assigning teams. Doesn't change your current team.
-        </p>
-      </label>
-
-      <fieldset className="space-y-2">
-        <legend className="block text-fg-mid text-xs uppercase tracking-widest font-bold mb-1.5">
-          Players I'd like to play with (optional)
-        </legend>
-        <div className="space-y-1 max-h-48 overflow-y-auto pr-1 border border-border-default rounded-lg p-2 bg-background">
-          {teammateOptions.length === 0 ? (
-            <p className="text-fg-low text-xs italic">No other players to choose from yet.</p>
-          ) : (
-            teammateOptions.map((opt) => {
-              const checked = preferredTeammateIds.includes(opt.id)
-              return (
-                <label
-                  key={opt.id}
-                  className="flex items-center gap-2 text-sm text-fg-mid cursor-pointer"
-                  data-testid={`onboarding-teammate-${opt.id}`}
-                >
-                  <input
-                    type="checkbox"
-                    checked={checked}
-                    onChange={() => toggleTeammate(opt.id)}
-                  />
-                  <span>{opt.name}</span>
-                </label>
-              )
-            })
-          )}
-        </div>
-        <input
-          type="text"
-          value={preferredTeammatesFreeText}
-          onChange={(e) => setPreferredTeammatesFreeText(e.target.value)}
-          maxLength={500}
-          placeholder="Other (someone not on the list)"
-          className="w-full bg-background border border-border-default rounded-lg px-3 py-2 text-sm text-fg-high"
-          data-testid="onboarding-teammates-other"
-        />
-      </fieldset>
 
       <button
         type="submit"
