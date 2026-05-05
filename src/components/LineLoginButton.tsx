@@ -415,7 +415,6 @@ export default function LineLoginButton() {
                   data-testid="account-menu-need-invite"
                   className="px-4 py-3 text-[12px] text-fg-mid leading-relaxed"
                 >
-                  <p className="font-bold text-fg-high mb-1">{"Need an invite link"}</p>
                   <p>
                     {"Ask an admin or "}
                     <a
