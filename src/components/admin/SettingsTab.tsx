@@ -30,6 +30,9 @@ function fmtDate(d: Date | null) {
   return formatJstDate(d)
 }
 
+// v1.55.0 — internal type alias kept as `SubdomainStatus` because the
+// underlying `League.subdomain` column is unchanged (column rename to
+// `slug` deferred). Externally-facing copy uses "URL slug".
 type SubdomainStatus = 'idle' | 'checking' | 'available' | 'taken' | 'invalid'
 
 interface SettingsTabProps {
@@ -187,9 +190,13 @@ export default function SettingsTab({
           />
         </div>
 
-        {/* Subdomain */}
+        {/* URL slug — v1.55.0 (PR 2 of admin-UI-compat-audit chain): label
+            flipped from "Subdomain" to "URL slug"; URL preview flipped from
+            `<slug>.t9l.me` to `/id/<slug>` (matches the v1.54.0 canonical
+            tenant URL form). The underlying DB column is still
+            `League.subdomain` — column rename to `slug` is deferred. */}
         <div className="space-y-1.5">
-          <label className="text-xs font-medium text-admin-text2 uppercase tracking-wide">Subdomain</label>
+          <label className="text-xs font-medium text-admin-text2 uppercase tracking-wide">URL slug</label>
           <div className="relative">
             <input
               type="text"
@@ -203,6 +210,7 @@ export default function SettingsTab({
                                             'border-admin-border focus:border-admin-border2',
               )}
               placeholder="my-league"
+              data-testid="settings-tab-slug-input"
             />
             <div className="absolute right-2.5 top-1/2 -translate-y-1/2">
               {subStatus === 'checking'  && <Loader2 className="w-4 h-4 text-admin-text3 animate-spin" />}
@@ -211,10 +219,12 @@ export default function SettingsTab({
               {subStatus === 'invalid'   && <XCircle className="w-4 h-4 text-admin-amber" />}
             </div>
           </div>
-          <p className="text-xs text-admin-text3">
-            {subStatus === 'taken'   && 'This subdomain is already taken'}
+          <p className="text-xs text-admin-text3" data-testid="settings-tab-slug-helper">
+            {subStatus === 'taken'   && 'This slug is already taken'}
             {subStatus === 'invalid' && 'Lowercase letters, numbers, hyphens only. Must start/end with alphanumeric.'}
-            {subStatus !== 'taken' && subStatus !== 'invalid' && 'Used for the public-facing URL (e.g. my-league.t9l.me)'}
+            {subStatus !== 'taken' && subStatus !== 'invalid' && (
+              <>Used for the public-facing URL (<span className="font-mono text-admin-text2">/id/{subdomain || 'my-league'}</span>)</>
+            )}
           </p>
         </div>
 
@@ -267,7 +277,7 @@ export default function SettingsTab({
         <div>
           <h2 className="font-condensed font-bold text-admin-text text-lg">Public site source-of-truth</h2>
           <p className="text-xs text-admin-text3 mt-1">
-            Apex (t9l.me/) only — subdomain leagues already read from the database.
+            Apex (t9l.me/) only — non-default leagues already read from the database.
           </p>
         </div>
 

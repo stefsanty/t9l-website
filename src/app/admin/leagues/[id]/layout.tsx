@@ -42,7 +42,11 @@ export default async function LeagueLayout({ params, children }: Props) {
     (gw) => gw.matches.length === 0 || !gw.matches.every((m) => m.status === 'COMPLETED'),
   )
 
-  const subdomain = toSlug(league.name)
+  // v1.55.0 (PR 2 of admin-UI-compat-audit chain): use the configured
+  // `League.subdomain` as the canonical slug; fall back to the
+  // toSlug(name) heuristic when the column is null (legacy unconfigured
+  // leagues — the UI link is best-effort).
+  const slug = league.subdomain ?? toSlug(league.name)
 
   // All admin display goes through canonical JST helpers — see lib/jst.ts.
   const formatDate = formatJstDayMonth
@@ -69,12 +73,13 @@ export default async function LeagueLayout({ params, children }: Props) {
               {league.name}
             </h1>
             <a
-              href={`https://${subdomain}.t9l.me`}
+              href={`/id/${slug}`}
               target="_blank"
               rel="noopener noreferrer"
               className="font-mono text-admin-green text-xs no-underline hover:underline"
+              data-testid="admin-league-shell-public-link"
             >
-              {subdomain}.t9l.me
+              /id/{slug}
             </a>
           </div>
 

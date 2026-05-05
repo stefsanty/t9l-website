@@ -50,7 +50,7 @@ export default async function AdminDashboard() {
           )
 
           const isEnded = league.endDate ? new Date(league.endDate).getTime() < now : !nextGW
-          const subdomain = league.subdomain ?? toSlug(league.name)
+          const slug = league.subdomain ?? toSlug(league.name)
           const venueName = nextGW?.venue?.name ?? null
 
           return (
@@ -59,13 +59,16 @@ export default async function AdminDashboard() {
               href={`/admin/leagues/${league.id}/schedule`}
               className="group flex flex-col gap-4 rounded-lg border border-admin-border bg-admin-surface p-5 no-underline transition-colors hover:border-admin-border2"
             >
-              {/* Name + subdomain */}
+              {/* Name + URL slug — v1.55.0 (PR 2 of admin-UI-compat-audit
+                  chain): URL preview flipped from `<slug>.t9l.me` to
+                  `/id/<slug>` to match the v1.54.0 canonical tenant URL
+                  form. */}
               <div>
                 <h2 className="font-condensed font-bold text-[22px] leading-none tracking-[0.5px] text-admin-text">
                   {league.name}
                 </h2>
-                <p className="mt-1 font-mono text-xs text-admin-green">
-                  {subdomain}.t9l.me ↗
+                <p className="mt-1 font-mono text-xs text-admin-green" data-testid="admin-dashboard-league-slug">
+                  /id/{slug} ↗
                 </p>
               </div>
 
