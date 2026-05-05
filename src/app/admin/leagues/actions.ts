@@ -771,6 +771,53 @@ export async function adminCreatePlayer(input: {
 }
 
 /**
+ * v1.57.0 (PR 4 of route-shortening chain) — admin unbinds a User from
+ * its linked Player. Clears `User.playerId` AND mirrors the clear on
+ * `Player.userId` (the v1.27.0 dual-write invariant). Idempotent —
+ * safe to call on an already-unlinked User.
+ *
+ * Use case: surface on the new `/admin/users` list. Lets ops detach
+ * a duplicate User row (e.g. someone signed in with both LINE and
+ * Google and wants to consolidate to one auth path) without the
+ * destructive delete-User-row flow.
+ *
+ * Does NOT delete the User or the Player — both remain. The Player
+ * stays available for re-linking via the existing PlayersTab Remap /
+ * AssignLine flows. The User survives so its Account rows + audit
+ * trail (e.g. createdById on MatchEvent) stay intact.
+ *
+ * The legacy `Player.lineId` mirror is left as-is — that's the
+ * pre-v1.27.0 store and stage 4 (Δ) drops it. Touching it from this
+ * action would couple PR 4 to identity-rework stage 4 timing.
+ */
+export async function adminUnlinkUserFromPlayer(input: {
+  userId: string
+}): Promise<void> {
+  await assertAdmin()
+  const { userId } = input
+  if (!userId) throw new Error('userId is required')
+
+  await prisma.$transaction(async (tx) => {
+    const user = await tx.user.findUnique({
+      where: { id: userId },
+      select: { id: true, playerId: true },
+    })
+    if (!user) throw new Error('User not found')
+    if (user.playerId === null) {
+      // Already unlinked — no-op. Idempotent contract.
+      return
+    }
+    await tx.user.update({ where: { id: userId }, data: { playerId: null } })
+    await tx.player.updateMany({
+      where: { userId },
+      data: { userId: null },
+    })
+  })
+
+  revalidate({ domain: 'admin', paths: ['/admin/users'] })
+}
+
+/**
  * v1.56.0 (PR 3 of route-shortening chain) — admin attaches an existing
  * global Player to this league's roster.
  *
