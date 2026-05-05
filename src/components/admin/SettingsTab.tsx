@@ -10,6 +10,7 @@ import {
   deleteLeague,
   setDataSource,
   setWriteMode,
+  setLeagueAllowSelfLink,
 } from '@/app/admin/leagues/actions'
 import type { DataSource, WriteMode } from '@/lib/settings'
 import { formatJstDate } from '@/lib/jst'
@@ -22,6 +23,10 @@ interface League {
   location: string
   startDate: Date
   endDate: Date | null
+  // v1.60.0 — per-league self-link toggle. Threaded from `getLeagueSettings`
+  // (which returns the full League row); default true preserves backward
+  // compat for any league that hasn't been touched since v1.59.x.
+  allowSelfLink: boolean
 }
 
 // JST calendar date as YYYY-MM-DD for `<input type="date">`. See lib/jst.ts.
@@ -50,7 +55,8 @@ export default function SettingsTab({
   const [pending, startTransition] = useTransition()
   const [dataSource, setDataSourceState] = useState<DataSource>(initialDataSource)
   const [writeMode, setWriteModeState] = useState<WriteMode>(initialWriteMode)
-  const [savingToggle, setSavingToggle] = useState<'dataSource' | 'writeMode' | null>(null)
+  const [allowSelfLink, setAllowSelfLinkState] = useState<boolean>(league.allowSelfLink)
+  const [savingToggle, setSavingToggle] = useState<'dataSource' | 'writeMode' | 'allowSelfLink' | null>(null)
 
   const [name, setName]             = useState(league.name)
   const [description, setDesc]      = useState(league.description ?? '')
@@ -152,6 +158,25 @@ export default function SettingsTab({
     } catch (err) {
       setWriteModeState(prev)
       toast(err instanceof Error ? err.message : 'Failed to set write mode')
+    } finally {
+      setSavingToggle(null)
+    }
+  }
+
+  // v1.60.0 — per-league self-link toggle handler. Optimistic flip with
+  // rollback on rejection; same pattern as the data-source / write-mode
+  // toggles above.
+  async function handleAllowSelfLinkChange(value: boolean) {
+    if (value === allowSelfLink) return
+    setSavingToggle('allowSelfLink')
+    const prev = allowSelfLink
+    setAllowSelfLinkState(value)
+    try {
+      await setLeagueAllowSelfLink(league.id, value)
+      toast(value ? 'Open self-linking enabled' : 'Open self-linking disabled')
+    } catch (err) {
+      setAllowSelfLinkState(prev)
+      toast(err instanceof Error ? err.message : 'Failed to set self-link toggle')
     } finally {
       setSavingToggle(null)
     }
@@ -348,10 +373,75 @@ export default function SettingsTab({
           </div>
         </div>
 
-        {savingToggle && (
+        {(savingToggle === 'dataSource' || savingToggle === 'writeMode') && (
           <div className="text-xs text-admin-text3 flex items-center gap-2">
             <Loader2 className="w-3 h-3 animate-spin" />
             Saving {savingToggle === 'dataSource' ? 'data source' : 'write mode'}…
+          </div>
+        )}
+      </section>
+
+      {/* v1.60.0 — Player self-linking toggle. Per-league control over the
+          legacy /assign-player open picker. Default ON preserves the
+          existing flow for every league. Flip OFF to require invite-link
+          redemption (`/join/[code]`) for new players in this league. */}
+      <section
+        data-testid="settings-tab-self-link-section"
+        className="bg-admin-surface rounded-xl border border-admin-border p-5 space-y-5"
+      >
+        <div>
+          <h2 className="font-condensed font-bold text-admin-text text-lg">Player self-linking</h2>
+          <p className="text-xs text-admin-text3 mt-1 leading-relaxed">
+            When enabled, anyone signed in via LINE can claim an unlinked player slot from this league&apos;s roster. When disabled, only invite-link holders can claim a slot — admins generate invites from the Players tab.
+          </p>
+        </div>
+
+        <div className="space-y-3">
+          <label className="text-xs font-medium text-admin-text2 uppercase tracking-wide block">
+            Allow open self-linking
+          </label>
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              type="button"
+              data-testid="settings-tab-self-link-on"
+              disabled={savingToggle !== null}
+              onClick={() => handleAllowSelfLinkChange(true)}
+              className={cn(
+                'rounded-lg border px-4 py-3 text-left transition-colors disabled:opacity-50',
+                allowSelfLink
+                  ? 'border-admin-green bg-admin-green/10 text-admin-text'
+                  : 'border-admin-border bg-admin-surface2 text-admin-text2 hover:border-admin-border2 hover:text-admin-text',
+              )}
+            >
+              <div className="text-sm font-medium">On</div>
+              <div className="text-xs text-admin-text3 mt-0.5 leading-tight">
+                LINE users can self-claim unlinked slots.
+              </div>
+            </button>
+            <button
+              type="button"
+              data-testid="settings-tab-self-link-off"
+              disabled={savingToggle !== null}
+              onClick={() => handleAllowSelfLinkChange(false)}
+              className={cn(
+                'rounded-lg border px-4 py-3 text-left transition-colors disabled:opacity-50',
+                !allowSelfLink
+                  ? 'border-admin-green bg-admin-green/10 text-admin-text'
+                  : 'border-admin-border bg-admin-surface2 text-admin-text2 hover:border-admin-border2 hover:text-admin-text',
+              )}
+            >
+              <div className="text-sm font-medium">Off</div>
+              <div className="text-xs text-admin-text3 mt-0.5 leading-tight">
+                Invite-only. Admin sends personal invite links.
+              </div>
+            </button>
+          </div>
+        </div>
+
+        {savingToggle === 'allowSelfLink' && (
+          <div className="text-xs text-admin-text3 flex items-center gap-2">
+            <Loader2 className="w-3 h-3 animate-spin" />
+            Saving self-linking toggle…
           </div>
         )}
       </section>

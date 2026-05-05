@@ -128,6 +128,16 @@ model League {
   isDefault    Boolean   @default(false)
   primaryColor String?
   accentColor  String?
+
+  // v1.60.0 — per-league toggle controlling whether the legacy open
+  // `/assign-player` self-link picker is available for THIS league.
+  // When true (default — backward compatible), any LINE-authenticated
+  // user can claim an unlinked player slot in this league. When false,
+  // the route surfaces a "self-linking disabled" message and the API
+  // POST 403s; users must redeem an invite via `/join/[code]` instead.
+  // DELETE is unaffected so already-linked players can still unlink.
+  allowSelfLink Boolean   @default(true)
+
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 

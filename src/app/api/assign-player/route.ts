@@ -9,6 +9,7 @@ import { revalidate } from "@/lib/revalidate";
 import { setMappingOrThrow } from "@/lib/playerMappingStore";
 import { playerIdToSlug, slugToPlayerId } from "@/lib/ids";
 import { getDefaultLeagueId } from "@/lib/leagueSlug";
+import { getLeagueAllowSelfLink } from "@/lib/leagueSelfLink";
 import { linkPlayerToUser, unlinkPlayerFromUser } from "@/lib/identityLink";
 
 function slugify(name: string): string {
@@ -228,6 +229,20 @@ export async function POST(req: Request) {
     return NextResponse.json(
       { error: "No default league configured" },
       { status: 404 },
+    );
+  }
+
+  // v1.60.0 — per-league self-link gate. Defense in depth alongside the
+  // page-level surface in `/assign-player`: even a directly-crafted POST
+  // from a CLI / script must reject when the admin has disabled open
+  // self-linking for this league. The DELETE handler is intentionally
+  // NOT gated — already-linked players must be able to unbind themselves
+  // regardless of the toggle (the toggle only controls NEW links).
+  const allowSelfLink = await getLeagueAllowSelfLink(leagueId);
+  if (!allowSelfLink) {
+    return NextResponse.json(
+      { error: "Self-linking is disabled for this league" },
+      { status: 403 },
     );
   }
 
