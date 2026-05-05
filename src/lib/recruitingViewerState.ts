@@ -69,6 +69,12 @@ export async function getRecruitingViewerState(
       return { kind: 'no_player' }
     }
 
+    // v1.65.1 — read path UNION: per-league truth lives on PlayerLeagueMembership
+    // (canonical from v1.65.4), but legacy Player.applicationStatus +
+    // Player.applicationLeagueId are still populated for v1.64.0 PENDING
+    // applicants and dual-written for State C in v1.65.1. EITHER signal
+    // qualifies for pending_this or approved_this; the resolver checks
+    // both and reports the resolved-per-league state.
     const player = await prisma.player.findUnique({
       where: { userId: user.id },
       select: {
@@ -76,11 +82,20 @@ export async function getRecruitingViewerState(
         applicationStatus: true,
         applicationLeagueId: true,
         leagueAssignments: {
+          // Pull every membership for this league so we can check both
+          // PENDING (no team) and APPROVED (with team). The where-filter
+          // covers the new direct `leagueId` column AND the legacy
+          // `leagueTeam.leagueId` so v1.65.0 backfilled rows + v1.65.1
+          // dual-written rows + v1.65.1 PENDING-no-team rows all match.
           where: {
-            leagueTeam: { leagueId },
-            toGameWeek: null,
+            OR: [
+              { leagueId },
+              { leagueTeam: { leagueId } },
+            ],
           },
           select: {
+            applicationStatus: true,
+            toGameWeek: true,
             leagueTeam: {
               select: {
                 team: { select: { id: true, name: true, logoUrl: true } },
@@ -97,36 +112,50 @@ export async function getRecruitingViewerState(
       return { kind: 'no_player' }
     }
 
-    if (
-      player.applicationStatus === 'PENDING' &&
-      player.applicationLeagueId === leagueId
-    ) {
-      return { kind: 'pending_this' }
-    }
-
-    // v1.65.0 — `leagueTeam` is nullable on PlayerLeagueMembership post-rework.
-    // The Prisma `where: { leagueTeam: { leagueId } }` filter implicitly
-    // excludes null-leagueTeam rows, but TS can't narrow that. Filter
-    // defensively so State A only fires for memberships with real teams.
-    const activeAssignment =
-      player.leagueAssignments.find((a) => a.leagueTeam !== null) ?? null
-    if (
+    // ── State A check ─ APPROVED PLM with a real team in this league ─
+    // (highest priority — admin already approved this player here)
+    const approvedPlm = player.leagueAssignments.find(
+      (a) =>
+        a.applicationStatus === 'APPROVED' &&
+        a.toGameWeek === null &&
+        a.leagueTeam !== null,
+    )
+    // Legacy v1.64.0 fallback: APPROVED on Player AND any active PLM
+    // with team in this league (covers pre-v1.65.1 backfilled rows
+    // where PLM.applicationStatus may still be its DEFAULT 'APPROVED'
+    // even if Player.applicationStatus says otherwise).
+    const legacyApprovedActive =
       player.applicationStatus === 'APPROVED' &&
-      activeAssignment &&
-      activeAssignment.leagueTeam
-    ) {
+      player.leagueAssignments.find(
+        (a) => a.toGameWeek === null && a.leagueTeam !== null,
+      )
+    const stateAAssignment = approvedPlm ?? legacyApprovedActive ?? null
+    if (stateAAssignment && stateAAssignment.leagueTeam) {
       return {
         kind: 'approved_this',
         team: {
-          id: activeAssignment.leagueTeam.team.id,
-          name: activeAssignment.leagueTeam.team.name,
-          logoUrl: activeAssignment.leagueTeam.team.logoUrl,
+          id: stateAAssignment.leagueTeam.team.id,
+          name: stateAAssignment.leagueTeam.team.name,
+          logoUrl: stateAAssignment.leagueTeam.team.logoUrl,
         },
       }
     }
 
-    // Has Player but no PLA in this league (or pending application
-    // targeting a DIFFERENT league). State D.
+    // ── State B check ─ PENDING PLM in this league OR legacy Player.* memo ─
+    const pendingPlm = player.leagueAssignments.find(
+      (a) => a.applicationStatus === 'PENDING',
+    )
+    const legacyPending =
+      player.applicationStatus === 'PENDING' &&
+      player.applicationLeagueId === leagueId
+    if (pendingPlm || legacyPending) {
+      return { kind: 'pending_this' }
+    }
+
+    // Has Player but no PLM in this league (or PENDING for a different
+    // league via the legacy Player.* memo, which doesn't apply here).
+    // State D — the user can submit a State-D simplified application
+    // via the v1.65.1 banner.
     return { kind: 'in_other_league' }
   } catch (err) {
     console.warn('[recruitingViewerState] read failed; defaulting unauth:', err)

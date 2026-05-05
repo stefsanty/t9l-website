@@ -58,6 +58,15 @@ beforeEach(() => {
   // test cases don't need to set it explicitly. Tests that exercise the
   // "Invited" badge override this in their own `mockResolvedValueOnce`.
   findManyInvitesMock.mockResolvedValue([])
+  // v1.65.1 — `getLeaguePlayers` now makes TWO `playerLeagueMembership.findMany`
+  // calls (the assignments fetch + the new pending-memberships fetch).
+  // Default the mock to `[]` so unset calls don't return undefined and
+  // crash the merge step. Tests that exercise the assignments path use
+  // `mockResolvedValueOnce` and rely on this default for the second call.
+  findManyAssignmentsMock.mockResolvedValue([])
+  // v1.64.0 — `getLeaguePlayers` calls `prisma.player.findMany` for legacy
+  // pending applications. Default to empty so unset cases don't crash.
+  findManyPlayersMock.mockResolvedValue([])
 })
 
 describe('getLeaguePlayers v1.10.0 4-tuple shape', () => {

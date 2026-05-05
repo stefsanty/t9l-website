@@ -8,24 +8,29 @@ import ApplyToLeagueModal from './ApplyToLeagueModal'
 import type { RecruitingViewerState } from '@/lib/recruitingViewerState'
 
 /**
- * v1.64.0 — Context-aware recruiting banner.
+ * v1.64.0 / v1.65.1 — Context-aware recruiting banner.
  *
- * Replaces the v1.63.0 placeholder TODO banner. Renders one of five
- * surfaces based on the viewer's relationship to the recruiting league:
+ * Renders one of five surfaces based on the viewer's relationship to
+ * the recruiting league:
  *
  * State A ('approved_this'):  status banner — "you are in <league>!
  *                              your team [logo] <name>" — no click action.
  * State B ('pending_this'):   "your application is being reviewed" —
  *                              no click action.
  * State C ('no_player'):      "RECRUITING NOW" CTA — click opens
- *                              `<ApplyToLeagueModal>`.
- * State D ('in_other_league'):"RECRUITING NOW" CTA — click surfaces a
- *                              "contact admin" toast (v1.64.0 punts the
- *                              multi-league apply flow per the brief:
- *                              "expand to per-league later").
- * State E ('unauthenticated'):"RECRUITING NOW" CTA — click routes to
- *                              `/auth/signin` with a callback to retry
- *                              the click after auth.
+ *                              `<ApplyToLeagueModal mode="fresh">` with
+ *                              the full intake form (name + position).
+ * State D ('in_other_league'):"RECRUITING NOW" CTA — click opens
+ *                              `<ApplyToLeagueModal mode="existing">`
+ *                              with the simplified form (position
+ *                              only — the existing Player's name
+ *                              carries through). v1.65.1 closes the
+ *                              State D bug where this previously
+ *                              just toasted "contact admin".
+ * State E ('unauthenticated'):"RECRUITING NOW" CTA — click toasts
+ *                              "Sign in to apply" with a sign-in
+ *                              action button (v1.65.1 — previously
+ *                              hard-redirected to /auth/signin).
  *
  * The viewer state is computed server-side via
  * `getRecruitingViewerState(leagueId)` and threaded through Dashboard
@@ -107,24 +112,27 @@ export default function RecruitingBanner({ league, viewer }: Props) {
   function handleClick() {
     switch (viewer.kind) {
       case 'unauthenticated':
-        // State E — sign in then retry. NextAuth's signIn will route
-        // back to the current page after auth; the user can re-click
-        // the banner from the authenticated state (state C).
-        signIn(undefined, { callbackUrl: window.location.href })
+        // State E (v1.65.1) — toast nudge with a sign-in action button.
+        // v1.64.0 hard-redirected to /auth/signin; the v1.65.1 brief
+        // says "stay on page", so we toast with an action that the
+        // user explicitly opts into.
+        toast.message('Sign in to apply', {
+          description: `Sign in first, then submit your application to ${league.name}.`,
+          action: {
+            label: 'Sign in',
+            onClick: () => signIn(undefined, { callbackUrl: window.location.href }),
+          },
+        })
         return
       case 'no_player':
-        // State C — open application modal.
+        // State C — open application modal in 'fresh' mode (full intake).
         setApplyOpen(true)
         return
       case 'in_other_league':
-        // State D — punted in v1.64.0. Show a friendly admin-contact
-        // message rather than wiring a half-baked multi-league flow.
-        toast.message('Contact the league admin', {
-          description:
-            'You already have a player profile. Reach out to the league admin to be added to ' +
-            league.name +
-            '.',
-        })
+        // State D (v1.65.1) — open application modal in 'existing'
+        // mode (simplified — just position). The action creates a
+        // new PLM(PENDING) for the existing Player in this league.
+        setApplyOpen(true)
         return
     }
   }
@@ -160,12 +168,13 @@ export default function RecruitingBanner({ league, viewer }: Props) {
         </div>
       </button>
 
-      {viewer.kind === 'no_player' && (
+      {(viewer.kind === 'no_player' || viewer.kind === 'in_other_league') && (
         <ApplyToLeagueModal
           open={applyOpen}
           onClose={() => setApplyOpen(false)}
           leagueId={league.id}
           leagueName={league.name}
+          mode={viewer.kind === 'in_other_league' ? 'existing' : 'fresh'}
         />
       )}
     </>

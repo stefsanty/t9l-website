@@ -156,8 +156,20 @@ describe("v1.64.0 — applyToLeague action", () => {
     expect(APPLY_ACTION_SRC).toMatch(/not currently recruiting/)
   })
 
-  it('State D — already-has-Player → friendly admin-contact message', () => {
-    expect(APPLY_ACTION_SRC).toMatch(/already have a player profile/)
+  it('State D (v1.65.1) — already-has-Player → creates new PLM(PENDING) for the new league', () => {
+    // v1.64.0 returned an "already have a player profile, contact admin"
+    // error here. v1.65.1 closes the State D bug by creating a fresh
+    // PlayerLeagueMembership row with applicationStatus=PENDING tied to
+    // the existing Player + the new league's id. The Player record
+    // STAYS one global record (Player.applicationStatus is NOT touched
+    // — that's a global field; flipping it would corrupt the existing-
+    // league admin's view).
+    expect(APPLY_ACTION_SRC).toMatch(/State D/i)
+    expect(APPLY_ACTION_SRC).toMatch(/playerLeagueMembership\.create/)
+    // Per-league truth on the new PLM, not on the global Player row.
+    expect(APPLY_ACTION_SRC).toMatch(
+      /State D[\s\S]*playerLeagueMembership\.create[\s\S]*applicationStatus:\s*['"]PENDING['"]/,
+    )
   })
 
   it('State C — creates Player with applicationStatus PENDING + applicationLeagueId set', () => {
@@ -188,14 +200,21 @@ describe('v1.64.0 — admin approve/reject actions', () => {
     expect(ADMIN_ACTIONS_SRC).toMatch(/export async function adminRejectApplication\b/)
   })
 
-  it('approve gates on assertAdmin and verifies PENDING status', () => {
-    // Locate the approve function block and assert assertAdmin appears
-    // in it and the status check fires before the mutation.
+  it('approve gates on assertAdmin and verifies PENDING status (v1.65.1 — PLM OR legacy Player check)', () => {
+    // v1.65.1 — the approve action accepts BOTH a v1.64.0 legacy
+    // pending Player (Player.applicationStatus=PENDING + applicationLeagueId
+    // = this league) AND a v1.65.1 PENDING PLM in this league. Either
+    // satisfies; the action throws "Player is not a pending application"
+    // when neither matches.
     const idx = ADMIN_ACTIONS_SRC.indexOf('export async function adminApproveApplication')
     expect(idx).toBeGreaterThan(0)
-    const block = ADMIN_ACTIONS_SRC.slice(idx, idx + 2500)
+    const block = ADMIN_ACTIONS_SRC.slice(idx, idx + 3500)
     expect(block).toMatch(/assertAdmin\(\)/)
-    expect(block).toMatch(/applicationStatus !== ['"]PENDING['"]/)
+    // The acceptance gate now checks for either a PENDING PLM OR a
+    // legacy Player.* PENDING match for this league.
+    expect(block).toMatch(/Player is not a pending application/)
+    expect(block).toMatch(/playerLeagueMembership\.findFirst/)
+    expect(block).toMatch(/applicationStatus:\s*['"]PENDING['"]/)
   })
 
   it('approve verifies cross-league isolation (leagueTeam.leagueId === leagueId)', () => {
@@ -204,27 +223,49 @@ describe('v1.64.0 — admin approve/reject actions', () => {
     expect(block).toMatch(/leagueTeam\.leagueId !== input\.leagueId/)
   })
 
-  it('approve atomically flips status + creates PLA in $transaction', () => {
+  it('approve atomically flips status + creates/updates PLM in $transaction (v1.65.1 — both branches)', () => {
     const idx = ADMIN_ACTIONS_SRC.indexOf('export async function adminApproveApplication')
-    const block = ADMIN_ACTIONS_SRC.slice(idx, idx + 2500)
+    const block = ADMIN_ACTIONS_SRC.slice(idx, idx + 3500)
     expect(block).toMatch(/prisma\.\$transaction\b/)
     expect(block).toMatch(/applicationStatus:\s*['"]APPROVED['"]/)
-    expect(block).toMatch(/applicationLeagueId:\s*null/)
+    // Two branches: v1.65.1 PLM-update path AND legacy v1.64.0 PLM-create path.
+    expect(block).toMatch(/tx\.playerLeagueMembership\.update/)
     expect(block).toMatch(/tx\.playerLeagueMembership\.create/)
+    // Legacy Player.* clear only fires when the legacy field matched.
+    expect(block).toMatch(/legacyMatchForThisLeague/)
+    expect(block).toMatch(/applicationLeagueId:\s*null/)
   })
 
-  it('reject gates on assertAdmin and verifies PENDING status (cannot delete APPROVED player by mistake)', () => {
+  it('reject gates on assertAdmin and verifies pending status for THIS league (v1.65.1)', () => {
+    // v1.65.1 — accepts both v1.64.0 legacy pending Players and v1.65.1
+    // PLM(PENDING) rows. The error message specifies "for this league"
+    // since multi-league applicants exist now.
     const idx = ADMIN_ACTIONS_SRC.indexOf('export async function adminRejectApplication')
-    const block = ADMIN_ACTIONS_SRC.slice(idx, idx + 1500)
+    const block = ADMIN_ACTIONS_SRC.slice(idx, idx + 3500)
     expect(block).toMatch(/assertAdmin\(\)/)
-    expect(block).toMatch(/applicationStatus !== ['"]PENDING['"]/)
+    expect(block).toMatch(/Player is not a pending application for this league/)
   })
 
-  it('reject clears User.playerId before deleting Player (avoids dangling FK)', () => {
+  it('reject deletes only PLM (not Player) for State D applicants (v1.65.1)', () => {
+    // v1.65.1 — when a PENDING PLM is being rejected and the Player has
+    // ANY APPROVED PLM elsewhere, only delete the PLM. The Player + their
+    // other-league memberships survive.
     const idx = ADMIN_ACTIONS_SRC.indexOf('export async function adminRejectApplication')
-    const block = ADMIN_ACTIONS_SRC.slice(idx, idx + 1500)
-    // The User update with `playerId: null` must come BEFORE the
-    // player.delete call.
+    const block = ADMIN_ACTIONS_SRC.slice(idx, idx + 3500)
+    expect(block).toMatch(/approvedElsewhere/)
+    expect(block).toMatch(/playerLeagueMembership\.delete/)
+    // The State D branch does NOT call player.delete.
+    expect(block).toMatch(/State D[\s\S]*Player survives/)
+  })
+
+  it('reject deletes the Player (legacy v1.64.0 path) when no other-league PLM exists', () => {
+    // v1.64.0 path preserved: fresh applicant with no other-league
+    // membership → delete the Player. v1.27.0 dual-write invariant still
+    // requires User.playerId to be cleared first.
+    const idx = ADMIN_ACTIONS_SRC.indexOf('export async function adminRejectApplication')
+    const block = ADMIN_ACTIONS_SRC.slice(idx, idx + 3500)
+    expect(block).toMatch(/tx\.player\.delete/)
+    // User.playerId clear must come BEFORE player.delete in source order.
     const userUpdateIdx = block.search(/tx\.user\.update[\s\S]*?playerId:\s*null/)
     const playerDeleteIdx = block.indexOf('tx.player.delete')
     expect(userUpdateIdx).toBeGreaterThan(0)
@@ -279,22 +320,33 @@ describe('v1.64.0 — RecruitingBanner state rendering', () => {
     expect(BANNER_SRC).toMatch(/data-testid="recruiting-banner-pending"/)
   })
 
-  it('unauthenticated CTA testid + signIn dispatch', () => {
-    // Banner builds the testid via a `ctaTestid` variable mapped from
-    // viewer.kind, then renders `data-testid={ctaTestid}`. Pin both the
-    // string literal and the dispatch.
+  it('unauthenticated CTA testid + State E v1.65.1 toast nudge with sign-in action', () => {
+    // v1.64.0 hard-redirected to /auth/signin. v1.65.1 toasts "Sign in
+    // to apply" with a sign-in action button (per the brief — stay on
+    // page, signIn fires only when the user explicitly clicks the
+    // toast action).
     expect(BANNER_SRC).toMatch(/['"]recruiting-banner-cta-unauth['"]/)
-    expect(BANNER_SRC).toMatch(/signIn\(undefined,\s*\{\s*callbackUrl:/)
+    expect(BANNER_SRC).toMatch(/Sign in to apply/)
+    expect(BANNER_SRC).toMatch(/toast\.message/)
+    // signIn STILL exists, but only inside the toast action callback.
+    expect(BANNER_SRC).toMatch(/onClick:\s*\(\)\s*=>\s*signIn\(/)
   })
 
-  it('no_player CTA testid + opens ApplyToLeagueModal', () => {
+  it('no_player CTA testid + opens ApplyToLeagueModal in fresh mode', () => {
     expect(BANNER_SRC).toMatch(/['"]recruiting-banner-cta-noplayer['"]/)
     expect(BANNER_SRC).toMatch(/<ApplyToLeagueModal\b/)
+    // v1.65.1 — modal is rendered for both no_player and in_other_league
+    // states. The mode prop differentiates the form shape.
+    expect(BANNER_SRC).toMatch(/mode=\{viewer\.kind === ['"]in_other_league['"]/)
   })
 
-  it('in_other_league CTA testid + admin-contact toast (v1.64.0 punt)', () => {
+  it('in_other_league CTA testid + opens ApplyToLeagueModal in existing mode (v1.65.1 State D fix)', () => {
     expect(BANNER_SRC).toMatch(/['"]recruiting-banner-cta-otherleague['"]/)
-    expect(BANNER_SRC).toMatch(/Contact the league admin/)
+    // Mode dispatch — when viewer is in_other_league, mode='existing'.
+    expect(BANNER_SRC).toMatch(/['"]existing['"][\s\S]*?['"]fresh['"]/)
+    // Regression target: the v1.64.0 "Contact the league admin" toast is
+    // gone (replaced by the modal-open path).
+    expect(BANNER_SRC).not.toMatch(/Contact the league admin/)
   })
 })
 
@@ -409,8 +461,12 @@ describe('v1.64.0 — getLeaguePlayers fetches pending applications', () => {
     )
   })
 
-  it('returns 6-element tuple including pendingApplications', () => {
-    expect(ADMIN_DATA_SRC).toMatch(/pendingApplications,?\s*\] as const/)
+  it('returns 6-element tuple including merged pending applications (v1.65.1)', () => {
+    // v1.65.1 — last tuple element is `mergedPendingApplications` which
+    // unions the v1.64.0 `pendingApplications` source (Player rows) with
+    // the new v1.65.1 `pendingMemberships` source (PLM rows). Both
+    // surfaces' `Player` shape is what consumers receive.
+    expect(ADMIN_DATA_SRC).toMatch(/mergedPendingApplications,?\s*\] as const/)
   })
 
   it('players page destructures the new tuple element', () => {
