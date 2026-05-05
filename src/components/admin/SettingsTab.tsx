@@ -11,6 +11,8 @@ import {
   setDataSource,
   setWriteMode,
   setLeagueAllowSelfLink,
+  setLeaguePreseasonMode,
+  setLeagueRecruiting,
 } from '@/app/admin/leagues/actions'
 import type { DataSource, WriteMode } from '@/lib/settings'
 import { formatJstDate } from '@/lib/jst'
@@ -27,6 +29,10 @@ interface League {
   // (which returns the full League row); default true preserves backward
   // compat for any league that hasn't been touched since v1.59.x.
   allowSelfLink: boolean
+  // v1.63.0 — per-league pre-season + recruiting toggles. Both default
+  // false; threaded from `getLeagueSettings` alongside `allowSelfLink`.
+  preseasonMode: boolean
+  recruiting: boolean
 }
 
 // JST calendar date as YYYY-MM-DD for `<input type="date">`. See lib/jst.ts.
@@ -56,7 +62,11 @@ export default function SettingsTab({
   const [dataSource, setDataSourceState] = useState<DataSource>(initialDataSource)
   const [writeMode, setWriteModeState] = useState<WriteMode>(initialWriteMode)
   const [allowSelfLink, setAllowSelfLinkState] = useState<boolean>(league.allowSelfLink)
-  const [savingToggle, setSavingToggle] = useState<'dataSource' | 'writeMode' | 'allowSelfLink' | null>(null)
+  const [preseasonMode, setPreseasonModeState] = useState<boolean>(league.preseasonMode)
+  const [recruiting, setRecruitingState] = useState<boolean>(league.recruiting)
+  const [savingToggle, setSavingToggle] = useState<
+    'dataSource' | 'writeMode' | 'allowSelfLink' | 'preseasonMode' | 'recruiting' | null
+  >(null)
 
   const [name, setName]             = useState(league.name)
   const [description, setDesc]      = useState(league.description ?? '')
@@ -177,6 +187,43 @@ export default function SettingsTab({
     } catch (err) {
       setAllowSelfLinkState(prev)
       toast(err instanceof Error ? err.message : 'Failed to set self-link toggle')
+    } finally {
+      setSavingToggle(null)
+    }
+  }
+
+  // v1.63.0 — pre-season toggle handler. Same optimistic-flip-with-rollback
+  // shape as the other toggles. Flipping ON swaps the homepage to the
+  // compressed-schedule view and hides /stats.
+  async function handlePreseasonModeChange(value: boolean) {
+    if (value === preseasonMode) return
+    setSavingToggle('preseasonMode')
+    const prev = preseasonMode
+    setPreseasonModeState(value)
+    try {
+      await setLeaguePreseasonMode(league.id, value)
+      toast(value ? 'Pre-season mode enabled' : 'Pre-season mode disabled')
+    } catch (err) {
+      setPreseasonModeState(prev)
+      toast(err instanceof Error ? err.message : 'Failed to set pre-season mode')
+    } finally {
+      setSavingToggle(null)
+    }
+  }
+
+  // v1.63.0 — recruiting toggle handler. Surfaces the "RECRUITING NOW"
+  // banner at the top of the homepage when enabled.
+  async function handleRecruitingChange(value: boolean) {
+    if (value === recruiting) return
+    setSavingToggle('recruiting')
+    const prev = recruiting
+    setRecruitingState(value)
+    try {
+      await setLeagueRecruiting(league.id, value)
+      toast(value ? 'Recruiting banner enabled' : 'Recruiting banner disabled')
+    } catch (err) {
+      setRecruitingState(prev)
+      toast(err instanceof Error ? err.message : 'Failed to set recruiting toggle')
     } finally {
       setSavingToggle(null)
     }
@@ -442,6 +489,136 @@ export default function SettingsTab({
           <div className="text-xs text-admin-text3 flex items-center gap-2">
             <Loader2 className="w-3 h-3 animate-spin" />
             Saving self-linking toggle…
+          </div>
+        )}
+      </section>
+
+      {/* v1.63.0 — Pre-season mode. When ON, the public homepage swaps the
+          NextMatchdayBanner + MatchdayAvailability + RsvpBar (the "Classic
+          League Homepage") for a compact CompressedMatchdaySchedule view,
+          and the /stats page is hidden (header link removed; route
+          redirects to home). Default OFF preserves existing behavior. */}
+      <section
+        data-testid="settings-tab-preseason-section"
+        className="bg-admin-surface rounded-xl border border-admin-border p-5 space-y-5"
+      >
+        <div>
+          <h2 className="font-condensed font-bold text-admin-text text-lg">Pre-season mode</h2>
+          <p className="text-xs text-admin-text3 mt-1 leading-relaxed">
+            Replaces the homepage matchday banner, player availability, and RSVP bar with a compressed schedule view (all matchdays at a glance). Hides the Stats page.
+          </p>
+        </div>
+
+        <div className="space-y-3">
+          <label className="text-xs font-medium text-admin-text2 uppercase tracking-wide block">
+            Pre-season mode
+          </label>
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              type="button"
+              data-testid="settings-tab-preseason-on"
+              disabled={savingToggle !== null}
+              onClick={() => handlePreseasonModeChange(true)}
+              className={cn(
+                'rounded-lg border px-4 py-3 text-left transition-colors disabled:opacity-50',
+                preseasonMode
+                  ? 'border-admin-green bg-admin-green/10 text-admin-text'
+                  : 'border-admin-border bg-admin-surface2 text-admin-text2 hover:border-admin-border2 hover:text-admin-text',
+              )}
+            >
+              <div className="text-sm font-medium">On</div>
+              <div className="text-xs text-admin-text3 mt-0.5 leading-tight">
+                Compressed schedule. Stats hidden.
+              </div>
+            </button>
+            <button
+              type="button"
+              data-testid="settings-tab-preseason-off"
+              disabled={savingToggle !== null}
+              onClick={() => handlePreseasonModeChange(false)}
+              className={cn(
+                'rounded-lg border px-4 py-3 text-left transition-colors disabled:opacity-50',
+                !preseasonMode
+                  ? 'border-admin-green bg-admin-green/10 text-admin-text'
+                  : 'border-admin-border bg-admin-surface2 text-admin-text2 hover:border-admin-border2 hover:text-admin-text',
+              )}
+            >
+              <div className="text-sm font-medium">Off</div>
+              <div className="text-xs text-admin-text3 mt-0.5 leading-tight">
+                Classic homepage. Stats visible.
+              </div>
+            </button>
+          </div>
+        </div>
+
+        {savingToggle === 'preseasonMode' && (
+          <div className="text-xs text-admin-text3 flex items-center gap-2">
+            <Loader2 className="w-3 h-3 animate-spin" />
+            Saving pre-season toggle…
+          </div>
+        )}
+      </section>
+
+      {/* v1.63.0 — Recruiting toggle. When ON, surfaces a prominent
+          "RECRUITING NOW" banner at the top of the public homepage.
+          Independent of pre-season mode (both can be on simultaneously). */}
+      <section
+        data-testid="settings-tab-recruiting-section"
+        className="bg-admin-surface rounded-xl border border-admin-border p-5 space-y-5"
+      >
+        <div>
+          <h2 className="font-condensed font-bold text-admin-text text-lg">Recruiting</h2>
+          <p className="text-xs text-admin-text3 mt-1 leading-relaxed">
+            Shows a &ldquo;RECRUITING NOW&rdquo; banner at the top of the homepage. Use during sign-up windows to invite new players.
+          </p>
+        </div>
+
+        <div className="space-y-3">
+          <label className="text-xs font-medium text-admin-text2 uppercase tracking-wide block">
+            Recruiting banner
+          </label>
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              type="button"
+              data-testid="settings-tab-recruiting-on"
+              disabled={savingToggle !== null}
+              onClick={() => handleRecruitingChange(true)}
+              className={cn(
+                'rounded-lg border px-4 py-3 text-left transition-colors disabled:opacity-50',
+                recruiting
+                  ? 'border-admin-green bg-admin-green/10 text-admin-text'
+                  : 'border-admin-border bg-admin-surface2 text-admin-text2 hover:border-admin-border2 hover:text-admin-text',
+              )}
+            >
+              <div className="text-sm font-medium">On</div>
+              <div className="text-xs text-admin-text3 mt-0.5 leading-tight">
+                Banner visible at top of homepage.
+              </div>
+            </button>
+            <button
+              type="button"
+              data-testid="settings-tab-recruiting-off"
+              disabled={savingToggle !== null}
+              onClick={() => handleRecruitingChange(false)}
+              className={cn(
+                'rounded-lg border px-4 py-3 text-left transition-colors disabled:opacity-50',
+                !recruiting
+                  ? 'border-admin-green bg-admin-green/10 text-admin-text'
+                  : 'border-admin-border bg-admin-surface2 text-admin-text2 hover:border-admin-border2 hover:text-admin-text',
+              )}
+            >
+              <div className="text-sm font-medium">Off</div>
+              <div className="text-xs text-admin-text3 mt-0.5 leading-tight">
+                No recruiting banner.
+              </div>
+            </button>
+          </div>
+        </div>
+
+        {savingToggle === 'recruiting' && (
+          <div className="text-xs text-admin-text3 flex items-center gap-2">
+            <Loader2 className="w-3 h-3 animate-spin" />
+            Saving recruiting toggle…
           </div>
         )}
       </section>

@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation";
 import {
   computeLeagueTable,
   computePlayerStats,
@@ -6,6 +7,7 @@ import {
 import StatsDashboard from "@/components/StatsDashboard";
 import { getPublicLeagueData } from "@/lib/publicData";
 import { getDefaultLeagueId } from "@/lib/leagueSlug";
+import { getLeagueFlags } from "@/lib/leagueFlags";
 
 async function fetchPlayerPictures(
   playerIds: string[],
@@ -40,6 +42,17 @@ export default async function StatsPage() {
   // league. Per-league stats can be added under /league/<slug>/stats
   // in a future PR.
   const leagueId = await getDefaultLeagueId();
+
+  // v1.63.0 — pre-season mode hides /stats. The homepage Header link is
+  // also suppressed; this server-side gate covers direct visits / shared
+  // links / browser history. Redirect to home so the user lands on the
+  // valid pre-season experience instead of a dead-end.
+  if (leagueId) {
+    const flags = await getLeagueFlags(leagueId);
+    if (flags.preseasonMode) {
+      redirect('/');
+    }
+  }
 
   let data;
   try {

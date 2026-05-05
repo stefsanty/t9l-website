@@ -114,21 +114,33 @@ describe('v1.25.0 — LeaguePublicView deletion', () => {
 describe('v1.25.0 — feature-parity surfaces present in unified Dashboard', () => {
   // Subdomain users now get the same set of components apex users have. Pin
   // the surfaces so a future refactor that drops one of them surfaces here.
+  //
+  // v1.63.0 — NextMatchdayBanner / MatchdayAvailability / RsvpBar were
+  // extracted into `<ClassicLeagueHomepage />` (the "Classic" wrapper).
+  // Dashboard mounts ClassicLeagueHomepage when League.preseasonMode is
+  // OFF; in pre-season mode `<CompressedMatchdaySchedule />` replaces
+  // the trio. Read both files so the surface checks survive the
+  // extraction without losing their regression-prevention value.
   const dashboardSrc = readFileSync(
     join(repoRoot, 'src/components/Dashboard.tsx'),
     'utf8',
   )
+  const classicSrc = readFileSync(
+    join(repoRoot, 'src/components/ClassicLeagueHomepage.tsx'),
+    'utf8',
+  )
 
-  it('renders NextMatchdayBanner', () => {
-    expect(dashboardSrc).toMatch(/<NextMatchdayBanner\b/)
+  it('renders NextMatchdayBanner (inside ClassicLeagueHomepage)', () => {
+    expect(classicSrc).toMatch(/<NextMatchdayBanner\b/)
+    expect(dashboardSrc).toMatch(/<ClassicLeagueHomepage\b/)
   })
 
-  it('renders MatchdayAvailability', () => {
-    expect(dashboardSrc).toMatch(/<MatchdayAvailability\b/)
+  it('renders MatchdayAvailability (inside ClassicLeagueHomepage)', () => {
+    expect(classicSrc).toMatch(/<MatchdayAvailability\b/)
   })
 
-  it('renders RsvpBar', () => {
-    expect(dashboardSrc).toMatch(/<RsvpBar\b/)
+  it('renders RsvpBar (inside ClassicLeagueHomepage)', () => {
+    expect(classicSrc).toMatch(/<RsvpBar\b/)
   })
 
   it('renders UserTeamBadge', () => {
