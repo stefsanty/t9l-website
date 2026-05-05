@@ -42,9 +42,20 @@ interface Props {
   onClose: () => void
   leagueId: string
   leagueName: string
+  // v1.65.1 — `'fresh'` is the State C path (no Player yet; full intake
+  // form with name + position). `'existing'` is the State D path (user
+  // already has a Player; only collect position for the new league —
+  // the existing Player's name carries through).
+  mode?: 'fresh' | 'existing'
 }
 
-export default function ApplyToLeagueModal({ open, onClose, leagueId, leagueName }: Props) {
+export default function ApplyToLeagueModal({
+  open,
+  onClose,
+  leagueId,
+  leagueName,
+  mode = 'fresh',
+}: Props) {
   const [name, setName] = useState('')
   const [position, setPosition] = useState<'' | 'GK' | 'DF' | 'MF' | 'FW'>('')
   const [error, setError] = useState<string | null>(null)
@@ -76,7 +87,9 @@ export default function ApplyToLeagueModal({ open, onClose, leagueId, leagueName
     startTransition(async () => {
       const result = await applyToLeague({
         leagueId,
-        name: name.trim(),
+        // For State D ('existing'), the existing Player's name is
+        // unchanged; we send empty string and the action ignores it.
+        name: mode === 'existing' ? '' : name.trim(),
         position: position === '' ? null : position,
       })
       if (!result.ok) {
@@ -133,25 +146,29 @@ export default function ApplyToLeagueModal({ open, onClose, leagueId, leagueName
           </div>
 
           <p className="text-sm text-fg-mid mb-4 leading-relaxed">
-            Tell us a bit about yourself. The league admin will review your application.
+            {mode === 'existing'
+              ? `You already have a player profile. Just tell us your position for ${leagueName} — the admin will review and add you to a team.`
+              : 'Tell us a bit about yourself. The league admin will review your application.'}
           </p>
 
           <form onSubmit={handleSubmit} className="space-y-4" data-testid="apply-form">
-            <label className="block">
-              <span className="block text-fg-mid text-xs uppercase tracking-widest font-bold mb-1.5">
-                Name <span className="text-vibrant-pink">*</span>
-              </span>
-              <input
-                type="text"
-                required
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                maxLength={100}
-                placeholder="e.g. Stefan S"
-                className="w-full bg-background border border-border-default rounded-lg px-3 py-2 text-sm text-fg-high"
-                data-testid="apply-name"
-              />
-            </label>
+            {mode === 'fresh' && (
+              <label className="block">
+                <span className="block text-fg-mid text-xs uppercase tracking-widest font-bold mb-1.5">
+                  Name <span className="text-vibrant-pink">*</span>
+                </span>
+                <input
+                  type="text"
+                  required
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  maxLength={100}
+                  placeholder="e.g. Stefan S"
+                  className="w-full bg-background border border-border-default rounded-lg px-3 py-2 text-sm text-fg-high"
+                  data-testid="apply-name"
+                />
+              </label>
+            )}
 
             <label className="block">
               <span className="block text-fg-mid text-xs uppercase tracking-widest font-bold mb-1.5">
@@ -188,7 +205,7 @@ export default function ApplyToLeagueModal({ open, onClose, leagueId, leagueName
               </button>
               <button
                 type="submit"
-                disabled={pending || !name.trim()}
+                disabled={pending || (mode === 'fresh' && !name.trim())}
                 className="flex-1 rounded-lg bg-primary text-on-primary px-4 py-2.5 text-sm font-bold hover:opacity-90 disabled:opacity-50 transition-opacity"
                 data-testid="apply-submit"
               >

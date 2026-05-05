@@ -6,46 +6,55 @@ import { prisma } from '@/lib/prisma'
 import { revalidate } from '@/lib/revalidate'
 
 /**
- * v1.64.0 — Application/recruiting workflow.
+ * v1.64.0 / v1.65.1 — Application/recruiting workflow.
  *
  * `applyToLeague` is the public-facing apply action invoked by the
  * `RecruitingBanner` modal in two states:
- *   - State C — authenticated user has no Player yet. We create a fresh
- *     Player with `applicationStatus = PENDING` and bind it to the
- *     User (sets both `Player.userId` and `User.playerId` per the v1.27.0
- *     dual-write invariant).
- *   - State D — authenticated user already has a Player (in a different
- *     league) and is applying to THIS league. v1.64.0 is intentionally
- *     simple: we just throw a friendly error directing them to contact
- *     the admin. The PR description punts the multi-league per-Player
- *     application flow to "expand to per-league later" — wiring it now
- *     would require a `PlayerLeagueMembership.applicationStatus` mirror
- *     plus an admin UI to surface PLA-level pending state.
  *
- * The application is identified per-league via `Player.applicationLeagueId`
- * so the admin Players tab for that league can surface pending applications
- * without scanning every Player row.
+ *   - State C ('no_player') — authenticated user has no Player yet. We
+ *     create a fresh Player + a new PlayerLeagueMembership(PENDING) for
+ *     the target league. Player.userId is set per the v1.27.0 dual-
+ *     write invariant. Legacy `Player.applicationStatus = PENDING` +
+ *     `Player.applicationLeagueId = leagueId` are also set for
+ *     stage-2 dual-write compat (read flip happens in v1.65.2).
+ *
+ *   - State D ('in_other_league') — authenticated user ALREADY has a
+ *     Player (e.g. APPROVED in T9L) applying to a NEW league.
+ *     **THE STATE D BUG FIX (v1.65.1):** create a NEW PLM(PENDING) for
+ *     the existing Player in the new league. **Do NOT touch
+ *     `Player.applicationStatus`** — that's a global field; flipping
+ *     it would corrupt the existing-league admin's view of "this
+ *     player is APPROVED". Instead we rely on the new
+ *     `PlayerLeagueMembership.applicationStatus = PENDING` in the new
+ *     league as the per-league source of truth. The admin of the new
+ *     league sees the pending application via the v1.65.1 read path
+ *     (which now unions the legacy Player.* check + the new PLM
+ *     check); the admin of the existing league sees no change to the
+ *     player's APPROVED state.
  *
  * Validation gates:
- *   - Sign in required (no anonymous applications — the `RecruitingBanner`
- *     unauthenticated state E routes to `/auth/signin` first).
- *   - Admin-credentials sessions (no `userId`) cannot apply (admins manage
- *     players via the admin UI).
- *   - Trimmed name required (≤ 100 chars; mirrors `submitOnboarding`).
+ *   - Sign in required (no anonymous applications). State E in the
+ *     banner now toasts "Sign in to apply" rather than redirecting.
+ *   - Admin-credentials sessions (no `userId`) cannot apply.
+ *   - For State C: trimmed name required (≤ 100 chars). For State D:
+ *     name is unused — the existing Player's name carries through.
  *   - Position is the v1.33.0 `PlayerPosition` enum or null.
- *   - LeagueId must resolve to a real League row (defense in depth — the
- *     banner only renders when `recruiting === true` for that league, but
- *     the action shouldn't trust the client).
+ *   - LeagueId must resolve to a real League row.
+ *   - For State D: the new PLM must not duplicate an existing PENDING
+ *     PLM in the same league (idempotency on double-click).
  */
 
 export interface ApplyToLeagueInput {
   leagueId: string
+  // For State C: name is required. For State D: ignored (the existing
+  // Player's name persists). The component sends an empty string when
+  // it knows the user is in State D.
   name: string
   position?: 'GK' | 'DF' | 'MF' | 'FW' | null
 }
 
 export type ApplyToLeagueResult =
-  | { ok: true; playerId: string }
+  | { ok: true; playerId: string; mode: 'fresh' | 'existing' }
   | { ok: false; error: string }
 
 export async function applyToLeague(
@@ -57,16 +66,7 @@ export async function applyToLeague(
   }
   const userId = (session as { userId?: string | null }).userId ?? null
   if (!userId) {
-    // Admin-credentials session — no Player binding makes sense.
     return { ok: false, error: 'Admin sessions cannot submit applications' }
-  }
-
-  const trimmedName = input.name.trim()
-  if (!trimmedName) {
-    return { ok: false, error: 'Your name is required' }
-  }
-  if (trimmedName.length > 100) {
-    return { ok: false, error: 'Name must be 100 characters or fewer' }
   }
 
   // Verify the league exists and accepts applications.
@@ -90,17 +90,60 @@ export async function applyToLeague(
     return { ok: false, error: 'User not found' }
   }
 
+  // ── State D — multi-league application path ──────────────────────────
   if (user.playerId) {
-    // State D — multi-league application. Punted in v1.64.0.
-    return {
-      ok: false,
-      error:
-        'You already have a player profile. Contact the league admin to add you to this league.',
+    const existingPlayerId = user.playerId
+
+    // Idempotency guard — if the user already has a PLM in this league
+    // (PENDING or APPROVED), don't create a duplicate. PENDING returns
+    // ok with the existing playerId (banner re-renders to State B).
+    const existingPlm = await prisma.playerLeagueMembership.findFirst({
+      where: { playerId: existingPlayerId, leagueId: league.id },
+      select: { id: true, applicationStatus: true },
+    })
+    if (existingPlm) {
+      // Either APPROVED (already a member; admin should reject silently
+      // since the user is in State A from the banner's perspective) or
+      // PENDING (no-op double-submit). Both treat as success.
+      return { ok: true, playerId: existingPlayerId, mode: 'existing' }
     }
+
+    // Create a new PLM(PENDING) for the existing Player in the new
+    // league. leagueTeamId stays null until admin assigns a team on
+    // approval. **Do not touch Player.applicationStatus** — it's a
+    // global field; v1.65.4 drops it. Per-league truth lives on the
+    // new PLM.
+    await prisma.playerLeagueMembership.create({
+      data: {
+        playerId: existingPlayerId,
+        leagueTeamId: null,
+        leagueId: league.id,
+        fromGameWeek: 1,
+        applicationStatus: 'PENDING',
+        position: input.position ?? null,
+        joinSource: 'SELF_SERVE',
+        onboardingStatus: 'NOT_YET',
+      },
+    })
+
+    revalidate({
+      domain: 'admin',
+      paths: [`/admin/leagues/${league.id}/players`],
+    })
+    revalidate({ domain: 'public' })
+
+    return { ok: true, playerId: existingPlayerId, mode: 'existing' }
   }
 
-  // State C — fresh Player + dual-write the User binding. Mirror of
-  // `linkUserToPlayer` but creating the Player in the same transaction.
+  // ── State C — fresh Player + dual-write the User binding ─────────────
+  const trimmedName = input.name.trim()
+  if (!trimmedName) {
+    return { ok: false, error: 'Your name is required' }
+  }
+  if (trimmedName.length > 100) {
+    return { ok: false, error: 'Name must be 100 characters or fewer' }
+  }
+
   const player = await prisma.$transaction(async (tx) => {
     const created = await tx.player.create({
       data: {
@@ -110,6 +153,8 @@ export async function applyToLeague(
         // Set Player.lineId for LINE users so the legacy resolver path
         // works through stage 3 (γ). Google/email users have lineId null.
         lineId: user.lineId ?? null,
+        // Legacy fields kept dual-written through stage 3 (v1.65.2 read
+        // flip). v1.65.4 drops them entirely.
         applicationStatus: 'PENDING',
         applicationLeagueId: league.id,
       },
@@ -118,17 +163,28 @@ export async function applyToLeague(
       where: { id: user.id },
       data: { playerId: created.id },
     })
+    // v1.65.1 — also create the PLM(PENDING) for this league. The PLM
+    // is the canonical source of truth from v1.65.2 onward.
+    await tx.playerLeagueMembership.create({
+      data: {
+        playerId: created.id,
+        leagueTeamId: null,
+        leagueId: league.id,
+        fromGameWeek: 1,
+        applicationStatus: 'PENDING',
+        position: input.position ?? null,
+        joinSource: 'SELF_SERVE',
+        onboardingStatus: 'NOT_YET',
+      },
+    })
     return created
   })
 
-  // Bust caches so the admin Players tab shows the new pending application
-  // immediately and the public homepage refreshes the user's RecruitingBanner
-  // state from "no_player" to "pending_this".
   revalidate({
     domain: 'admin',
     paths: [`/admin/leagues/${league.id}/players`],
   })
   revalidate({ domain: 'public' })
 
-  return { ok: true, playerId: player.id }
+  return { ok: true, playerId: player.id, mode: 'fresh' }
 }

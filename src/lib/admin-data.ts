@@ -109,7 +109,15 @@ export const getLeagueTeams = unstable_cache(
  */
 export const getLeaguePlayers = unstable_cache(
   async (leagueId: string) => {
-    const [assignments, leagueTeams, gameWeeks, allLineLogins, activeInvites, pendingApplications] = await Promise.all([
+    const [
+      assignments,
+      leagueTeams,
+      gameWeeks,
+      allLineLogins,
+      activeInvites,
+      pendingApplications,
+      pendingMemberships,
+    ] = await Promise.all([
       prisma.playerLeagueMembership.findMany({
         where: { leagueTeam: { leagueId } },
         include: {
@@ -156,17 +164,33 @@ export const getLeaguePlayers = unstable_cache(
           usedCount: true,
         },
       }),
-      // v1.64.0 — pending applications targeting THIS league. These
-      // Player rows have NO PlayerLeagueMembership yet (admin creates
-      // one on approval) so the existing `assignments` query above
-      // wouldn't surface them. The page-level merger appends these as
-      // synthetic rows with empty `assignments`, and PlayersTab renders
-      // an "Application" status badge + Approve/Reject kebab items.
+      // v1.64.0 / v1.65.1 — pending applications targeting THIS league.
+      //
+      // v1.64.0 source: Player rows with applicationStatus=PENDING and
+      // applicationLeagueId=leagueId. These have NO PlayerLeagueMembership
+      // yet; admin creates one on approval.
+      //
+      // v1.65.1 source (NEW): PLM rows with applicationStatus=PENDING and
+      // leagueId=leagueId. These exist for State C (where Player.* is also
+      // dual-written PENDING) and State D (where Player.* may be APPROVED
+      // for a different league entirely). Both are merged into one
+      // pending-applications surface for the admin Players tab.
+      //
+      // Both sources are queried; the page-level merger dedupes by playerId
+      // (keep the v1.65.1 PLM source as canonical when both fire).
       prisma.player.findMany({
         where: {
           applicationLeagueId: leagueId,
           applicationStatus: 'PENDING',
         },
+        orderBy: { createdAt: 'desc' },
+      }),
+      prisma.playerLeagueMembership.findMany({
+        where: {
+          leagueId,
+          applicationStatus: 'PENDING',
+        },
+        include: { player: true },
         orderBy: { createdAt: 'desc' },
       }),
     ])
@@ -197,13 +221,27 @@ export const getLeaguePlayers = unstable_cache(
       activeInviteCountByPlayerId[inv.targetPlayerId] =
         (activeInviteCountByPlayerId[inv.targetPlayerId] ?? 0) + 1
     }
+    // v1.65.1 — merge legacy v1.64.0 pending Player rows with new v1.65.1
+    // PLM(PENDING) rows. Dedupe by playerId — when a Player surfaces from
+    // both sources (State C dual-write), keep one entry. The PLM source is
+    // canonical going forward; the Player source covers v1.64.0 PENDING
+    // applicants who haven't been migrated.
+    const seenPendingPlayerIds = new Set(pendingApplications.map((p) => p.id))
+    const mergedPendingApplications = [...pendingApplications]
+    for (const plm of pendingMemberships) {
+      if (seenPendingPlayerIds.has(plm.player.id)) continue
+      seenPendingPlayerIds.add(plm.player.id)
+      // Synthesize the same Player shape the legacy query returns so the
+      // page-level merger doesn't need to know about both sources.
+      mergedPendingApplications.push(plm.player)
+    }
     return [
       assignments,
       leagueTeams,
       gameWeeks,
       lineLoginsByLineId,
       activeInviteCountByPlayerId,
-      pendingApplications,
+      mergedPendingApplications,
     ] as const
   },
   ['league-players'],

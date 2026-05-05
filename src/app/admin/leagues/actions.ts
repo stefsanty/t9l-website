@@ -782,12 +782,30 @@ export async function adminApproveApplication(input: {
   if (!input.leagueId) throw new Error('leagueId is required')
   if (!input.leagueTeamId) throw new Error('leagueTeamId is required')
 
+  // v1.65.1 — accept BOTH legacy v1.64.0 PENDING applicants (Player.applicationStatus=PENDING,
+  // no PLM yet) AND v1.65.1 PENDING applicants (PLM(PENDING) in this league, Player.* may be
+  // either APPROVED-elsewhere [State D] or PENDING [State C dual-write]).
   const player = await prisma.player.findUnique({
     where: { id: input.playerId },
     select: { id: true, applicationStatus: true, applicationLeagueId: true },
   })
   if (!player) throw new Error('Player not found')
-  if (player.applicationStatus !== 'PENDING') {
+
+  // Look for a PENDING PLM in this league (v1.65.1 path).
+  const pendingPlm = await prisma.playerLeagueMembership.findFirst({
+    where: {
+      playerId: input.playerId,
+      leagueId: input.leagueId,
+      applicationStatus: 'PENDING',
+    },
+    select: { id: true },
+  })
+
+  // Acceptance gate: either a v1.65.1 PENDING PLM exists for this league, OR the v1.64.0
+  // legacy Player.applicationStatus=PENDING + applicationLeagueId match this league.
+  const legacyMatchForThisLeague =
+    player.applicationStatus === 'PENDING' && player.applicationLeagueId === input.leagueId
+  if (!pendingPlm && !legacyMatchForThisLeague) {
     throw new Error('Player is not a pending application')
   }
 
@@ -803,22 +821,45 @@ export async function adminApproveApplication(input: {
   const fromGameWeek = input.fromGameWeek && input.fromGameWeek > 0 ? input.fromGameWeek : 1
 
   await prisma.$transaction(async (tx) => {
-    await tx.player.update({
-      where: { id: input.playerId },
-      data: {
-        applicationStatus: 'APPROVED',
-        applicationLeagueId: null,
-      },
-    })
-    await tx.playerLeagueMembership.create({
-      data: {
-        playerId: input.playerId,
-        leagueTeamId: input.leagueTeamId,
-        fromGameWeek,
-        joinSource: 'SELF_SERVE',
-        onboardingStatus: 'COMPLETED',
-      },
-    })
+    if (pendingPlm) {
+      // v1.65.1 path — flip the existing PENDING PLM to APPROVED + assign team.
+      await tx.playerLeagueMembership.update({
+        where: { id: pendingPlm.id },
+        data: {
+          leagueTeamId: input.leagueTeamId,
+          applicationStatus: 'APPROVED',
+          fromGameWeek,
+          onboardingStatus: 'COMPLETED',
+        },
+      })
+    } else {
+      // v1.64.0 legacy path — create a fresh APPROVED PLM for this league.
+      await tx.playerLeagueMembership.create({
+        data: {
+          playerId: input.playerId,
+          leagueTeamId: input.leagueTeamId,
+          leagueId: input.leagueId,
+          fromGameWeek,
+          applicationStatus: 'APPROVED',
+          joinSource: 'SELF_SERVE',
+          onboardingStatus: 'COMPLETED',
+        },
+      })
+    }
+
+    // v1.65.1 — only clear the legacy Player.applicationStatus if it matches THIS league.
+    // For State D applicants (Player.applicationStatus=APPROVED elsewhere), DO NOT touch
+    // Player.applicationStatus — the user is APPROVED in their original league, and the
+    // v1.65.4 cleanup PR drops these legacy fields entirely.
+    if (legacyMatchForThisLeague) {
+      await tx.player.update({
+        where: { id: input.playerId },
+        data: {
+          applicationStatus: 'APPROVED',
+          applicationLeagueId: null,
+        },
+      })
+    }
   })
 
   revalidate({ domain: 'admin', paths: [`/admin/leagues/${input.leagueId}/players`] })
@@ -826,25 +867,26 @@ export async function adminApproveApplication(input: {
 }
 
 /**
- * v1.64.0 — Reject a pending application Player.
+ * v1.64.0 / v1.65.1 — Reject a pending application.
  *
- * The brief: "delete the Player record OR set a separate REJECTED status —
- * simpler: just delete/cancel the application since the data was provided
- * by an unverified user."
+ * v1.64.0 behavior: delete the Player entirely (since the data was supplied
+ * by an unverified user with no other footprint).
  *
- * Atomically:
- *   1. Verifies the Player exists with `applicationStatus = PENDING`.
- *      (Refuses to delete an APPROVED Player — that's a different
- *      operation: admin should use the existing "Remove from league" /
- *      Unlink flows.)
- *   2. Clears `User.playerId` (the v1.27.0 dual-write invariant — if we
- *      delete the Player without clearing the User pointer, the User
- *      ends up with a dangling FK).
- *   3. Deletes the Player. Cascading FK constraints delete the
- *      (typically empty) PlayerLeagueMembership + Availability rows.
- *      Goal/Assist/MatchEvent FKs are RESTRICT/SET NULL — but a fresh
- *      pending application Player has none of those.
- *   4. Busts admin + public caches.
+ * v1.65.1 update — multi-league applicants exist now (State D). The reject
+ * action MUST NOT delete the Player if they have ANY APPROVED PLM in another
+ * league (otherwise rejecting Stefan's Shinjuku application would also kill
+ * his T9L membership). Three branches:
+ *
+ *   1. v1.65.1 State D (PLM(PENDING) for this league + APPROVED PLM elsewhere):
+ *      delete only the PLM(PENDING). Player + other-league PLMs survive.
+ *   2. v1.65.1 State C (PLM(PENDING) for this league + Player.applicationStatus=PENDING
+ *      AND no APPROVED PLM anywhere): delete the PLM AND the Player (legacy
+ *      v1.64.0 behavior — fresh applicant with no other footprint).
+ *   3. v1.64.0 legacy PENDING applicant (no PLM yet, just Player.applicationStatus=PENDING
+ *      and applicationLeagueId=this leagueId): delete the Player (matches v1.64.0).
+ *
+ * In all three branches, `User.playerId` is cleared if the Player is being
+ * deleted (v1.27.0 dual-write invariant).
  */
 export async function adminRejectApplication(input: {
   playerId: string
@@ -852,17 +894,63 @@ export async function adminRejectApplication(input: {
 }): Promise<void> {
   await assertAdmin()
   if (!input.playerId) throw new Error('playerId is required')
+  if (!input.leagueId) throw new Error('leagueId is required')
 
   const player = await prisma.player.findUnique({
     where: { id: input.playerId },
-    select: { id: true, applicationStatus: true, userId: true },
+    select: { id: true, applicationStatus: true, applicationLeagueId: true, userId: true },
   })
   if (!player) throw new Error('Player not found')
-  if (player.applicationStatus !== 'PENDING') {
-    throw new Error('Player is not a pending application')
+
+  // Check if there's a PLM(PENDING) for this league.
+  const pendingPlm = await prisma.playerLeagueMembership.findFirst({
+    where: {
+      playerId: input.playerId,
+      leagueId: input.leagueId,
+      applicationStatus: 'PENDING',
+    },
+    select: { id: true },
+  })
+
+  const legacyMatchForThisLeague =
+    player.applicationStatus === 'PENDING' && player.applicationLeagueId === input.leagueId
+  if (!pendingPlm && !legacyMatchForThisLeague) {
+    throw new Error('Player is not a pending application for this league')
   }
 
+  // Check for ANY APPROVED PLM (other-league memberships that should survive
+  // this rejection). If present, the Player is a State D applicant — only
+  // delete the PLM, leave the Player + other-league PLMs intact.
+  const approvedElsewhere = await prisma.playerLeagueMembership.findFirst({
+    where: {
+      playerId: input.playerId,
+      applicationStatus: 'APPROVED',
+    },
+    select: { id: true },
+  })
+
   await prisma.$transaction(async (tx) => {
+    if (pendingPlm) {
+      await tx.playerLeagueMembership.delete({ where: { id: pendingPlm.id } })
+    }
+
+    if (approvedElsewhere) {
+      // State D — Player survives. Don't touch User.playerId or Player itself.
+      // Just clear the legacy Player.applicationStatus memo if it pointed at THIS league.
+      if (legacyMatchForThisLeague) {
+        await tx.player.update({
+          where: { id: input.playerId },
+          data: {
+            applicationStatus: 'APPROVED',
+            applicationLeagueId: null,
+          },
+        })
+      }
+      return
+    }
+
+    // No other-league APPROVED PLM — Player is a fresh applicant. Delete
+    // them entirely (matches v1.64.0 behavior).
     if (player.userId) {
       await tx.user.update({
         where: { id: player.userId },
