@@ -105,10 +105,13 @@ describe('PR 5 — CreateLeagueModal slug field UX', () => {
     expect(src).toMatch(/import.*validateLeagueSlug.*from\s+['"]@\/lib\/leagueSlug['"]/)
   })
 
-  it('URL preview shows /league/<slug>, NOT <slug>.t9l.me (regression target — subdomain UX is gone)', () => {
+  it('URL preview shows /id/<slug> (v1.54.0 — security-namespaced canonical form), NOT <slug>.t9l.me or /league/<slug>', () => {
     const src = stripComments(read(modalPath))
-    expect(src).toMatch(/\/league\//)
+    // v1.54.0 — the canonical URL form is now /id/<slug>. Pre-v1.54.0
+    // the modal showed /league/<slug>; this test pins the v1.54.0 update.
+    expect(src).toMatch(/\/id\//)
     expect(src).not.toMatch(/\.t9l\.me/)
+    expect(src).not.toMatch(/\/league\//)
   })
 
   it('warning copy "Cannot be changed after creation" is present', () => {

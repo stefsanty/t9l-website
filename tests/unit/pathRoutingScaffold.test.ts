@@ -3,10 +3,14 @@ import { readFileSync, existsSync } from 'fs'
 import path from 'path'
 
 /**
- * v1.50.0 (PR 1 of the path-routing chain) — structural assertions on the
- * new path-based route files. These are regression-prevention tests: they
- * fail if a future PR removes either route, drops the slug-validation
- * step, or stops rendering through `Dashboard`.
+ * v1.50.0 (PR 1 of the original path-routing chain) — structural
+ * assertions on the path-based route files. Updated for v1.54.0 to
+ * reflect the route shortening:
+ *
+ *   - canonical render moved from `/league/[slug]/page.tsx`
+ *     to `/id/[slug]/page.tsx`
+ *   - both legacy entry points (`/league/[slug]` and `/[slug]`) are
+ *     now 308-redirects to the new `/id/<slug>` form
  *
  * Companion behavior tests live in `leagueSlug.test.ts` (validation rules)
  * and the eventual e2e suite (full path-resolves-to-rendered-Dashboard).
@@ -17,15 +21,13 @@ function read(relPath: string): string {
 }
 
 function stripComments(src: string): string {
-  // Strip block comments + single-line comments so docstrings that
-  // legitimately reference symbols don't trip the "is X imported?" checks.
   return src
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/(^|[^:])\/\/.*$/gm, '$1')
 }
 
-describe('PR 1 — /league/[slug] route', () => {
-  const routePath = 'src/app/league/[slug]/page.tsx'
+describe('v1.54.0 — /id/[slug] canonical render', () => {
+  const routePath = 'src/app/id/[slug]/page.tsx'
 
   it('exists', () => {
     expect(existsSync(path.join(process.cwd(), routePath))).toBe(true)
@@ -66,36 +68,88 @@ describe('PR 1 — /league/[slug] route', () => {
   })
 })
 
-describe('PR 1 — /[slug] catch-all route', () => {
+describe('v1.54.0 — /id/[slug]/md/[id] canonical matchday render', () => {
+  const routePath = 'src/app/id/[slug]/md/[id]/page.tsx'
+
+  it('exists', () => {
+    expect(existsSync(path.join(process.cwd(), routePath))).toBe(true)
+  })
+
+  it('renders Dashboard with initialMatchdayId', () => {
+    const src = stripComments(read(routePath))
+    expect(src).toMatch(/<Dashboard/)
+    expect(src).toMatch(/initialMatchdayId=\{md\.id\}/)
+  })
+
+  it('does case-insensitive matchday-id match (v1.49.1 contract)', () => {
+    const src = stripComments(read(routePath))
+    expect(src).toMatch(/id\.toLowerCase\(\)/)
+    expect(src).toMatch(/m\.id\.toLowerCase\(\)/)
+  })
+})
+
+describe('v1.54.0 — legacy /league/[slug] route is a 308-redirect to /id/<slug>', () => {
+  const routePath = 'src/app/league/[slug]/page.tsx'
+
+  it('exists', () => {
+    expect(existsSync(path.join(process.cwd(), routePath))).toBe(true)
+  })
+
+  it('does NOT render Dashboard (regression target — pre-v1.54.0 it was canonical render)', () => {
+    const src = stripComments(read(routePath))
+    expect(src).not.toMatch(/<Dashboard/)
+  })
+
+  it('imports redirect from next/navigation', () => {
+    const src = stripComments(read(routePath))
+    expect(src).toMatch(/import.*redirect.*from\s+['"]next\/navigation['"]/)
+  })
+
+  it('redirects to /id/<slug>', () => {
+    const src = stripComments(read(routePath))
+    expect(src).toMatch(/redirect\(\s*`\/id\/\$\{[^}]+\}`\s*\)/)
+  })
+
+  it('lowercases the slug in the redirect target', () => {
+    const src = stripComments(read(routePath))
+    expect(src).toMatch(/normalizeLeagueSlug/)
+  })
+})
+
+describe('v1.54.0 — legacy /[slug] route is a 308-redirect to /id/<slug>', () => {
   const routePath = 'src/app/[slug]/page.tsx'
 
   it('exists', () => {
     expect(existsSync(path.join(process.cwd(), routePath))).toBe(true)
   })
 
-  it('resolves the slug via getLeagueIdBySlug (the same helper as /league/[slug])', () => {
+  it('does NOT render Dashboard (regression target — pre-v1.54.0 it was the short alias canonical render)', () => {
     const src = stripComments(read(routePath))
-    expect(src).toMatch(/import.*getLeagueIdBySlug.*from\s+['"]@\/lib\/leagueSlug['"]/)
-    expect(src).toMatch(/getLeagueIdBySlug\(\s*slug\s*\)/)
+    expect(src).not.toMatch(/<Dashboard/)
   })
 
-  it('calls notFound() when leagueId is null', () => {
+  it('imports redirect from next/navigation', () => {
     const src = stripComments(read(routePath))
-    expect(src).toMatch(/notFound\(\)/)
+    expect(src).toMatch(/import.*redirect.*from\s+['"]next\/navigation['"]/)
   })
 
-  it('renders Dashboard', () => {
+  it('redirects to /id/<slug>', () => {
     const src = stripComments(read(routePath))
-    expect(src).toMatch(/<Dashboard/)
+    expect(src).toMatch(/redirect\(\s*`\/id\/\$\{[^}]+\}`\s*\)/)
+  })
+
+  it('lowercases the slug in the redirect target', () => {
+    const src = stripComments(read(routePath))
+    expect(src).toMatch(/normalizeLeagueSlug/)
   })
 })
 
-describe('PR 1 — apex `/` is unchanged in shape (alias for default league)', () => {
-  // The user's design: `/`, `/t9l`, `/league/t9l` all render the t9l league.
-  // No redirect from `/` to `/league/t9l` — apex stays as the default render.
-  // This test pins that contract: the apex page does NOT redirect anywhere.
+describe('v1.54.0 — apex `/` is unchanged in shape (alias for default league)', () => {
+  // The user's design: `/` and `/id/t9l` both render the t9l league.
+  // No redirect from `/` to `/id/t9l` — apex stays as the default render.
   it('does not redirect (no `redirect()` call from next/navigation)', () => {
     const src = stripComments(read('src/app/page.tsx'))
+    expect(src).not.toMatch(/redirect\(\s*['"]\/id\//)
     expect(src).not.toMatch(/redirect\(\s*['"]\/league\//)
     expect(src).not.toMatch(/redirect\(\s*['"]\/t9l['"]/)
   })
@@ -106,7 +160,7 @@ describe('PR 1 — apex `/` is unchanged in shape (alias for default league)', (
   })
 })
 
-describe('PR 1 — migration backfills default league slug to t9l', () => {
+describe('v1.50.0 — migration backfills default league slug to t9l', () => {
   it('migration file exists', () => {
     const migPath = 'prisma/migrations/20260505000000_default_league_slug/migration.sql'
     expect(existsSync(path.join(process.cwd(), migPath))).toBe(true)
@@ -122,8 +176,6 @@ describe('PR 1 — migration backfills default league slug to t9l', () => {
 
   it('migration is purely additive (no DROP / ALTER COLUMN / TRUNCATE)', () => {
     const sql = read('prisma/migrations/20260505000000_default_league_slug/migration.sql')
-    // Strip comments first so the rollback recipe in the header doesn't
-    // trip these assertions.
     const code = sql.replace(/--.*$/gm, '')
     expect(code).not.toMatch(/\bDROP\s+(TABLE|COLUMN|TYPE|INDEX)/i)
     expect(code).not.toMatch(/\bALTER\s+TABLE.*ALTER\s+COLUMN/i)

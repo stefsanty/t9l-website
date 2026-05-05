@@ -11,13 +11,16 @@
  * ("MATCHDAY RESULTS" etc.) are now click-to-copy via `<CopyMatchdayLink>`.
  *
  * v1.51.0 (PR 2 of the path-routing chain) — the canonical matchday
- * route is now `/league/<slug>/md/<id>` (under `src/app/league/[slug]/md/[id]/page.tsx`).
- * The legacy `/matchday/[id]` route is converted to a 308-redirect that
- * resolves the matchday's league via Prisma `gameWeek.findMany({ weekNumber })`
- * and forwards to the canonical URL. Dashboard rendering with
- * `initialMatchdayId` now lives on the new route. CopyMatchdayLink
- * builds the canonical URL form `/league/<slug>/md/<id>` and falls back
- * to the `DEFAULT_LEAGUE_SLUG` constant when its parent does not pass a
+ * route was `/league/<slug>/md/<id>`. The legacy `/matchday/[id]` route
+ * became a 308-redirect.
+ *
+ * v1.54.0 — canonical path shortened: every tenant URL is now namespaced
+ * under `/id/`, so the canonical matchday route is
+ * `/id/<slug>/md/<id>` (under `src/app/id/[slug]/md/[id]/page.tsx`).
+ * The legacy `/league/<slug>/md/<id>` and `/matchday/<id>` routes are
+ * both 308-redirects to the new form. CopyMatchdayLink builds the
+ * canonical URL form `/id/<slug>/md/<id>` and falls back to the
+ * `DEFAULT_LEAGUE_SLUG` constant when its parent does not pass a
  * `leagueSlug` prop.
  */
 import { describe, expect, it } from 'vitest'
@@ -27,7 +30,8 @@ import { goalTypeLabel } from '@/lib/goalTypeLabel'
 
 const ROOT = join(__dirname, '..', '..')
 const LEGACY_PAGE_PATH = join(ROOT, 'src/app/matchday/[id]/page.tsx')
-const NEW_PAGE_PATH = join(ROOT, 'src/app/league/[slug]/md/[id]/page.tsx')
+const NEW_PAGE_PATH = join(ROOT, 'src/app/id/[slug]/md/[id]/page.tsx')
+const LEAGUE_REDIRECT_PATH = join(ROOT, 'src/app/league/[slug]/md/[id]/page.tsx')
 const VIEW_PATH = join(ROOT, 'src/app/matchday/[id]/MatchdayPageView.tsx')
 const DASHBOARD_PATH = join(ROOT, 'src/components/Dashboard.tsx')
 const CARD_PATH = join(ROOT, 'src/components/MatchdayCard.tsx')
@@ -44,7 +48,7 @@ function stripComments(src: string): string {
     .replace(/\{\/\*[\s\S]*?\*\/\}/g, '')
 }
 
-describe('v1.51.0 — new canonical /league/[slug]/md/[id] route', () => {
+describe('v1.54.0 — new canonical /id/[slug]/md/[id] route', () => {
   it('the new route file exists', () => {
     expect(existsSync(NEW_PAGE_PATH)).toBe(true)
   })
@@ -88,7 +92,7 @@ describe('v1.51.0 — new canonical /league/[slug]/md/[id] route', () => {
   })
 })
 
-describe('v1.51.0 — legacy /matchday/[id] route is now a 308-redirect', () => {
+describe('v1.51.0 + v1.54.0 — legacy /matchday/[id] route is a 308-redirect to /id/<slug>/md/<id>', () => {
   it('legacy route file still exists (we redirect, we don\'t 404)', () => {
     expect(existsSync(LEGACY_PAGE_PATH)).toBe(true)
   })
@@ -99,8 +103,12 @@ describe('v1.51.0 — legacy /matchday/[id] route is now a 308-redirect', () => 
     expect(LEGACY_PAGE).toMatch(/import\s*\{[^}]*redirect[^}]*\}\s*from\s*['"]next\/navigation['"]/)
   })
 
-  it('legacy route calls `redirect(\\`/league/<slug>/md/<id>\\`)` — canonical URL form', () => {
-    expect(LEGACY_PAGE).toMatch(/redirect\(\s*`\/league\/\$\{[^}]+\}\/md\/\$\{[^}]+\}`\s*\)/)
+  it('legacy route calls `redirect(\\`/id/<slug>/md/<id>\\`)` — v1.54.0 canonical URL form', () => {
+    expect(LEGACY_PAGE).toMatch(/redirect\(\s*`\/id\/\$\{[^}]+\}\/md\/\$\{[^}]+\}`\s*\)/)
+  })
+
+  it('legacy route does NOT redirect to the v1.51.0 /league/<slug>/md/<id> form (regression target — v1.54.0 dropped /league/ prefix)', () => {
+    expect(stripComments(LEGACY_PAGE)).not.toMatch(/redirect\(\s*`\/league\//)
   })
 
   it('legacy route resolves the matchday\'s league via prisma gameWeek lookup', () => {
@@ -126,6 +134,36 @@ describe('v1.51.0 — legacy /matchday/[id] route is now a 308-redirect', () => 
 
   it('legacy route does NOT use getLeagueIdFromRequest (subdomain logic is irrelevant for redirect)', () => {
     expect(stripComments(LEGACY_PAGE)).not.toMatch(/getLeagueIdFromRequest/)
+  })
+})
+
+describe('v1.54.0 — legacy /league/<slug>/md/<id> route is a 308-redirect to /id/<slug>/md/<id>', () => {
+  it('redirect route file still exists', () => {
+    expect(existsSync(LEAGUE_REDIRECT_PATH)).toBe(true)
+  })
+
+  const LEAGUE_REDIRECT = readFileSync(LEAGUE_REDIRECT_PATH, 'utf-8')
+
+  it('imports `redirect` from next/navigation', () => {
+    expect(LEAGUE_REDIRECT).toMatch(/import\s*\{[^}]*redirect[^}]*\}\s*from\s*['"]next\/navigation['"]/)
+  })
+
+  it('redirects to /id/<slug>/md/<id> (v1.54.0 canonical form)', () => {
+    expect(LEAGUE_REDIRECT).toMatch(/redirect\(\s*`\/id\/\$\{[^}]+\}\/md\/\$\{[^}]+\}`\s*\)/)
+  })
+
+  it('does NOT render Dashboard (regression target — pre-v1.54.0 this was the canonical render)', () => {
+    expect(stripComments(LEAGUE_REDIRECT)).not.toMatch(/<Dashboard/)
+  })
+
+  it('does NOT do a DB lookup (the new /id/<slug>/md/<id> route handles 404 logic)', () => {
+    expect(stripComments(LEAGUE_REDIRECT)).not.toMatch(/prisma\./)
+    expect(stripComments(LEAGUE_REDIRECT)).not.toMatch(/getLeagueIdBySlug/)
+  })
+
+  it('lowercases both slug and id segments in the redirect target', () => {
+    expect(LEAGUE_REDIRECT).toMatch(/normalizeLeagueSlug/)
+    expect(LEAGUE_REDIRECT).toMatch(/\.toLowerCase\(\)/)
   })
 })
 
@@ -188,21 +226,30 @@ describe('v1.51.0 — leagueSlug threading through banner + card', () => {
   })
 })
 
-describe('v1.51.0 — apex / `/league/[slug]` / `/[slug]` pages thread leagueSlug', () => {
+describe('v1.54.0 — apex / `/id/[slug]` thread leagueSlug; legacy `/league/[slug]` and `/[slug]` redirect', () => {
   it('apex `app/page.tsx` passes leagueSlug={DEFAULT_LEAGUE_SLUG}', () => {
     const APEX = readFileSync(join(ROOT, 'src/app/page.tsx'), 'utf-8')
     expect(APEX).toMatch(/import\s*\{[^}]*DEFAULT_LEAGUE_SLUG[^}]*\}\s*from\s*['"]@\/lib\/leagueSlug['"]/)
     expect(APEX).toMatch(/<Dashboard[\s\S]{0,800}leagueSlug=\{DEFAULT_LEAGUE_SLUG\}/)
   })
 
-  it('/league/[slug]/page.tsx passes leagueSlug={normalizeLeagueSlug(slug)}', () => {
-    const PG = readFileSync(join(ROOT, 'src/app/league/[slug]/page.tsx'), 'utf-8')
+  it('/id/[slug]/page.tsx renders Dashboard with leagueSlug={normalizeLeagueSlug(slug)}', () => {
+    const PG = readFileSync(join(ROOT, 'src/app/id/[slug]/page.tsx'), 'utf-8')
     expect(PG).toMatch(/<Dashboard[\s\S]{0,800}leagueSlug=\{normalizeLeagueSlug\(slug\)\}/)
   })
 
-  it('/[slug]/page.tsx passes leagueSlug={normalizeLeagueSlug(slug)}', () => {
+  it('/league/[slug]/page.tsx is now a 308-redirect to /id/<slug> (regression target — pre-v1.54.0 it rendered Dashboard)', () => {
+    const PG = readFileSync(join(ROOT, 'src/app/league/[slug]/page.tsx'), 'utf-8')
+    expect(stripComments(PG)).not.toMatch(/<Dashboard/)
+    expect(PG).toMatch(/redirect\(\s*`\/id\/\$\{[^}]+\}`\s*\)/)
+    expect(PG).toMatch(/normalizeLeagueSlug/)
+  })
+
+  it('/[slug]/page.tsx is now a 308-redirect to /id/<slug> (regression target — pre-v1.54.0 it rendered Dashboard)', () => {
     const PG = readFileSync(join(ROOT, 'src/app/[slug]/page.tsx'), 'utf-8')
-    expect(PG).toMatch(/<Dashboard[\s\S]{0,800}leagueSlug=\{normalizeLeagueSlug\(slug\)\}/)
+    expect(stripComments(PG)).not.toMatch(/<Dashboard/)
+    expect(PG).toMatch(/redirect\(\s*`\/id\/\$\{[^}]+\}`\s*\)/)
+    expect(PG).toMatch(/normalizeLeagueSlug/)
   })
 })
 
@@ -287,12 +334,15 @@ describe('v1.48.0 CopyMatchdayLink — section header click-to-copy', () => {
     expect(COPY).toMatch(/navigator\.clipboard\.writeText/)
   })
 
-  it('builds the canonical URL from window.location.origin + /league/<slug>/md/<id> (v1.51.0)', () => {
-    // v1.51.0 — URL form upgraded from `/matchday/<id>` to the canonical
-    // path-based shape `/league/<slug>/md/<id>`. The legacy `/matchday/<id>`
-    // route still exists as a 308-redirect for old shared links.
+  it('builds the canonical URL from window.location.origin + /id/<slug>/md/<id> (v1.54.0)', () => {
+    // v1.54.0 — URL form shortened from `/league/<slug>/md/<id>` to the
+    // security-namespaced canonical shape `/id/<slug>/md/<id>`. Legacy
+    // `/league/<slug>/md/<id>` and `/matchday/<id>` URLs continue to
+    // work via 308 redirects.
     expect(COPY).toMatch(/window\.location\.origin/)
-    expect(COPY).toMatch(/\/league\/\$\{slug\}\/md\/\$\{matchdayId\}/)
+    expect(COPY).toMatch(/\/id\/\$\{slug\}\/md\/\$\{matchdayId\}/)
+    // Regression target: must NOT use the v1.51.0 /league/ form anymore.
+    expect(stripComments(COPY)).not.toMatch(/window\.location\.origin[^`]*`\/league\//)
   })
 
   it('falls back to DEFAULT_LEAGUE_SLUG when no leagueSlug prop is provided', () => {

@@ -79,9 +79,12 @@ export async function createLeague(formData: FormData) {
 
   // v1.53.1 (PR 5 of the path-routing chain) — server-side reserved-word
   // + format validation. The slug becomes the URL path component
-  // (`/league/<slug>` and `/<slug>`) so it must:
+  // (canonical `/id/<slug>` post-v1.54.0; legacy `/league/<slug>` and
+  // `/<slug>` redirect there). It must:
   //   - match [a-z0-9](-[a-z0-9]+)* between 3–30 chars
-  //   - not collide with a reserved top-level segment (admin, auth, ...)
+  //   - not collide with the recursive `id` reserved slug (post-v1.54.0
+  //     the reserved set collapsed to just `id` — every other top-level
+  //     platform route is now a sibling of `/id/`, not a parent)
   // The client-side check in CreateLeagueModal mirrors this logic for
   // immediate UX feedback; the server is the contract. Reject early
   // before hitting Prisma so the admin sees the specific failure reason.

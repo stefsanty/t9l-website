@@ -56,7 +56,7 @@ export default function AccountMenuLeagueSwitch({
         {memberships.map((m) => (
           <li key={m.leagueId}>
             <Link
-              href={`/league/${m.slug}`}
+              href={`/id/${m.slug}`}
               onClick={() => onNavigate?.()}
               className={`flex items-center gap-2 px-4 py-2 text-[12px] font-bold transition-colors hover:bg-surface ${
                 m.isCurrent ? 'text-vibrant-pink' : 'text-fg-high hover:text-fg-mid'

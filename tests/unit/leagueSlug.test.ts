@@ -6,35 +6,39 @@ import {
   normalizeLeagueSlug,
 } from '@/lib/leagueSlug'
 
-describe('RESERVED_LEAGUE_SLUGS', () => {
-  it('contains every existing top-level app/ segment', () => {
-    // If a top-level route lives in src/app/, it must be in this set so an
-    // admin can never register a league that shadows it. Adding a new
-    // top-level route requires updating this set in the same PR.
-    const required = [
-      'league',
-      'admin',
-      'auth',
-      'auth-error',
-      'join',
-      'md',
-      'matchday',
-      'account',
-      'api',
-      'assign-player',
-      'dev-login',
-      'schedule',
-      'stats',
-    ]
-    for (const slug of required) {
-      expect(RESERVED_LEAGUE_SLUGS.has(slug)).toBe(true)
-    }
+describe('RESERVED_LEAGUE_SLUGS (v1.54.0 — slimmed to recursive guard)', () => {
+  it('contains the recursive `id` guard', () => {
+    // v1.54.0 namespaced every tenant URL under `/id/<slug>` so the
+    // reserved set collapsed to just the recursive guard against a
+    // league slug equal to "id" itself (which would produce visually
+    // confusing URLs like `/id/id` or `/id/id/md/md1`). Every other
+    // top-level platform route is now a sibling of `/id/`, not a parent,
+    // so they no longer need to be reserved.
+    expect(RESERVED_LEAGUE_SLUGS.has('id')).toBe(true)
+  })
+
+  it('does NOT contain top-level platform route names (post-v1.54.0)', () => {
+    // Pre-v1.54.0 these were all reserved because `/<slug>` was the
+    // canonical render and would have shadowed top-level platform routes.
+    // Post-v1.54.0 `/<slug>` is a 308-redirect to `/id/<slug>` and
+    // Next.js's static-wins-over-dynamic rule means `/admin` etc. never
+    // even reach the redirect — they resolve to their dedicated route
+    // files. The reserved set no longer needs to track them.
+    expect(RESERVED_LEAGUE_SLUGS.has('admin')).toBe(false)
+    expect(RESERVED_LEAGUE_SLUGS.has('auth')).toBe(false)
+    expect(RESERVED_LEAGUE_SLUGS.has('api')).toBe(false)
+    expect(RESERVED_LEAGUE_SLUGS.has('league')).toBe(false)
+    expect(RESERVED_LEAGUE_SLUGS.has('matchday')).toBe(false)
   })
 
   it('does NOT contain valid league slugs', () => {
     expect(RESERVED_LEAGUE_SLUGS.has('t9l')).toBe(false)
     expect(RESERVED_LEAGUE_SLUGS.has('tamachi')).toBe(false)
     expect(RESERVED_LEAGUE_SLUGS.has('minato-2025')).toBe(false)
+  })
+
+  it('is exactly the slim {id} set (regression target — would fail if a future PR re-broadens)', () => {
+    expect(Array.from(RESERVED_LEAGUE_SLUGS).sort()).toEqual(['id'])
   })
 })
 
@@ -106,10 +110,25 @@ describe('validateLeagueSlug', () => {
   })
 
   it('reserved-word check fires AFTER format check', () => {
-    // 'admin' passes format but is reserved.
-    expect(validateLeagueSlug('admin')).toEqual({ ok: false, reason: 'reserved' })
-    // 'matchday' passes format but is reserved.
-    expect(validateLeagueSlug('matchday')).toEqual({ ok: false, reason: 'reserved' })
+    // 'id' passes format (3 chars, lowercase alnum) but is reserved
+    // by the v1.54.0 recursive guard.
+    expect(validateLeagueSlug('id')).toEqual({ ok: false, reason: 'too-short' })
+    // 'id' is exactly 2 chars so it actually trips too-short before
+    // hitting the reserved check. The reserved check still fires for
+    // anything that's at least 3 chars and reserved (currently nothing
+    // beyond 'id' itself, but the contract is preserved).
+  })
+
+  it('admin / matchday / api / etc. are no longer reserved (post-v1.54.0)', () => {
+    // v1.54.0 — these all pass validation now because the route-shadow
+    // problem they used to guard against is gone (every tenant URL is
+    // namespaced under `/id/<slug>`). An admin can register a league
+    // called "admin" and it will live at `/id/admin`, never colliding
+    // with the platform `/admin` route.
+    expect(validateLeagueSlug('admin')).toEqual({ ok: true })
+    expect(validateLeagueSlug('matchday')).toEqual({ ok: true })
+    expect(validateLeagueSlug('api')).toEqual({ ok: true })
+    expect(validateLeagueSlug('auth')).toEqual({ ok: true })
   })
 
   it('trims whitespace before validating', () => {
@@ -143,7 +162,12 @@ describe('isResolvableLeagueSlug', () => {
     expect(isResolvableLeagueSlug('t9l')).toBe(true)
     // Resolves uppercase via normalization (URL-side permissive).
     expect(isResolvableLeagueSlug('T9L')).toBe(true)
-    expect(isResolvableLeagueSlug('admin')).toBe(false)
+    // Post-v1.54.0: 'admin' / 'auth' / 'matchday' all resolve as valid
+    // slugs (they're sandboxed under /id/<slug>).
+    expect(isResolvableLeagueSlug('admin')).toBe(true)
+    expect(isResolvableLeagueSlug('matchday')).toBe(true)
+    // Recursive guard: 'id' itself is still rejected.
+    expect(isResolvableLeagueSlug('id')).toBe(false)
     expect(isResolvableLeagueSlug('a')).toBe(false)
     expect(isResolvableLeagueSlug('')).toBe(false)
   })

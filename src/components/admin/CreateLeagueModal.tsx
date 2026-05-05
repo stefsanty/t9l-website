@@ -37,14 +37,17 @@ const REASON_COPY: Record<string, string> = {
 
 /**
  * v1.53.1 (PR 5 of the path-routing chain) — Admin "Create League"
- * modal. Slug field gets:
+ * modal. v1.54.0 — URL preview updated to the security-namespaced
+ * canonical form `/id/<slug>` (was `/league/<slug>`); reserved-word
+ * warning copy updated to reflect the slim post-v1.54.0 reserved set
+ * (just `id`).
+ *
+ * Slug field gets:
  *   - Warning copy: "Cannot be changed after creation"
  *   - Client-side reserved-word + format validation via the canonical
  *     `validateLeagueSlug` helper (mirrors server-side enforcement in
  *     `createLeague`).
- *   - URL preview shows the canonical path-based form
- *     `/league/<slug>` (replaces the legacy `<slug>.t9l.me` subdomain
- *     preview removed in PR 4).
+ *   - URL preview shows the canonical path-based form `/id/<slug>`.
  *   - Per-failure-reason error copy so the admin sees "too short" vs
  *     "reserved" vs "already in use".
  */
@@ -162,7 +165,7 @@ export default function CreateLeagueModal({ open, onClose }: Props) {
             URL slug
           </label>
           <div className="flex items-center gap-2">
-            <span className="text-sm text-admin-text3 font-mono">/league/</span>
+            <span className="text-sm text-admin-text3 font-mono">/id/</span>
             <input
               name="subdomain"
               value={subdomain}
@@ -178,8 +181,8 @@ export default function CreateLeagueModal({ open, onClose }: Props) {
           >
             <span className="font-bold text-admin-text2">Cannot be changed after creation.</span>
             {' '}
-            Lowercase letters, numbers, and hyphens. 3–30 characters. Reserved
-            words (admin, auth, api, ...) are not allowed.
+            Lowercase letters, numbers, and hyphens. 3–30 characters. The
+            slug "id" is reserved.
           </p>
           {subdomain.length > 0 && subStatus.kind !== 'idle' && (
             <div
@@ -190,7 +193,7 @@ export default function CreateLeagueModal({ open, onClose }: Props) {
               {subStatus.kind === 'available' && <Check className="w-3 h-3 text-admin-green" />}
               {subStatus.kind === 'taken' && <X className="w-3 h-3 text-admin-red" />}
               {subStatus.kind === 'invalid' && <AlertCircle className="w-3 h-3 text-admin-red" />}
-              <span className="text-admin-text2">/league/{subdomain}</span>
+              <span className="text-admin-text2">/id/{subdomain}</span>
               <span className={
                 subStatus.kind === 'available' ? 'font-bold text-admin-green'
                 : subStatus.kind === 'taken'   ? 'font-bold text-admin-red'

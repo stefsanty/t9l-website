@@ -11,10 +11,10 @@ import { DEFAULT_LEAGUE_SLUG, getDefaultLeagueId } from "@/lib/leagueSlug";
  * (`getLeagueIdFromRequest()`); subdomain support was wired in
  * v1.22.0–v1.26.0 but never actually used in production (only the apex
  * `t9l.me` was deployed). v1.53.0 strips the host-header path and
- * always serves the default league here. Multi-league access lives
- * exclusively under `/league/<slug>` and the `/<slug>` short alias
- * (PR 1 of this chain). The "League not found" branch goes away
- * because the only fail mode now is "no default league flagged in
+ * always serves the default league here. v1.54.0 — multi-league access
+ * lives exclusively under `/id/<slug>` (legacy `/league/<slug>` and
+ * `/<slug>` 308-redirect there). The "League not found" branch goes
+ * away because the only fail mode now is "no default league flagged in
  * config" — a catastrophic-config scenario, not a routing one — and
  * we surface that as the same Data unavailable state the catch block
  * uses below.

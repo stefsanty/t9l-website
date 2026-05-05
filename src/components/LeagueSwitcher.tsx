@@ -148,7 +148,7 @@ export default function LeagueSwitcher() {
                     type="button"
                     onClick={() => {
                       setOpen(false)
-                      router.push(`/league/${m.slug}`)
+                      router.push(`/id/${m.slug}`)
                     }}
                     className={`w-full text-left px-3 py-2 text-sm transition-colors hover:bg-card-hover ${
                       m.isCurrent ? 'text-vibrant-pink font-bold' : 'text-fg-high'

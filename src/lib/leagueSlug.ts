@@ -8,14 +8,21 @@ import { prisma } from './prisma'
  * Pre-v1.50.0 the league context for a request came from the host header
  * (subdomain → leagueId). PR 4 (v1.53.0) of the path-routing chain
  * stripped that helper entirely. League context now flows from path
- * params (`/league/[slug]`, `/[slug]`) and resolves here. The DB column
- * powering this is `League.subdomain` (column rename to `slug` is
+ * params (`/id/[slug]`, plus legacy `/league/[slug]` and `/[slug]` which
+ * 308-redirect to `/id/<slug>` post-v1.54.0) and resolves here. The DB
+ * column powering this is `League.subdomain` (column rename to `slug` is
  * deferred — keeping the name doesn't change semantics).
  *
- * Reserved-word policy is enforced both at admin-create time (PR 5) and
- * at route-resolve time (here) as defense in depth: even if a malformed
- * row sneaks past the create-time validator, requests for the reserved
- * slug never load it.
+ * v1.54.0 namespaced every tenant URL under `/id/` so league slugs can
+ * never shadow top-level platform routes. The reserved-word policy
+ * collapsed from a comprehensive route-name list to a single recursive
+ * guard ('id' itself) — every other top-level platform route is now a
+ * sibling of `/id/`, not a parent.
+ *
+ * Reserved-word policy is still enforced both at admin-create time
+ * (PR 5) and at route-resolve time (here) as defense in depth: even if
+ * a malformed row sneaks past the create-time validator, requests for
+ * the reserved slug never load it.
  */
 
 /**
@@ -30,33 +37,25 @@ import { prisma } from './prisma'
 export const DEFAULT_LEAGUE_SLUG = 't9l'
 
 /**
- * Slugs that must NEVER resolve to a league. Each entry corresponds to
- * either an existing top-level route segment or a future-reserved name.
+ * Slugs that must NEVER resolve to a league.
  *
- * Why both: Next.js prefers static segments over dynamic ones, so requests
- * for `/admin` always hit `app/admin/page.tsx` regardless of any league
- * with slug `admin`. But this list is the source of truth for the
- * admin-side validator (PR 5) — if a future PR adds a new top-level route
- * (e.g. `/dashboard`), we want admins to be unable to register a league
- * with that slug *before* the route lands, so older admin sessions don't
- * race the route addition.
+ * v1.54.0 — collapsed from a comprehensive route-name list to a single
+ * recursive guard. Every tenant URL is now namespaced under `/id/<slug>`
+ * (and `/id/<slug>/md/<id>`), so a league slug can never shadow any
+ * top-level platform route. The only routing-style ambiguity left is
+ * a slug equal to "id" itself, which would produce visually confusing
+ * URLs like `/id/id` (alias) or `/id/id/md/md1`. We block it.
  *
- * Keep this list in sync with the top-level segments in `src/app/`.
+ * Pre-v1.54.0 this set tracked every top-level route segment in
+ * `src/app/` because `/<slug>` was a sibling catch-all that would have
+ * shadowed any matching static route. Post-v1.54.0 the legacy `/<slug>`
+ * route is a 308-redirect to `/id/<slug>`, but Next.js's static-wins
+ * rule means `/admin` etc. never even hit the redirect — they resolve
+ * to their dedicated route files. The set's job is now just the
+ * recursive `/id/id` guard.
  */
 export const RESERVED_LEAGUE_SLUGS = new Set<string>([
-  'league',
-  'admin',
-  'auth',
-  'auth-error',
-  'join',
-  'md',
-  'matchday',
-  'account',
-  'api',
-  'assign-player',
-  'dev-login',
-  'schedule',
-  'stats',
+  'id',
 ])
 
 const SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9-]{1,28}[a-z0-9])$/

@@ -1,8 +1,5 @@
-import { notFound } from 'next/navigation'
-import Dashboard from '@/components/Dashboard'
-import { findNextMatchday } from '@/lib/stats'
-import { getLeagueIdBySlug, normalizeLeagueSlug } from '@/lib/leagueSlug'
-import { getPublicLeagueData } from '@/lib/publicData'
+import { redirect } from 'next/navigation'
+import { normalizeLeagueSlug } from '@/lib/leagueSlug'
 
 export const metadata = {
   title: 'Matchday | T9L',
@@ -11,72 +8,26 @@ export const metadata = {
 type Props = { params: Promise<{ slug: string; id: string }> }
 
 /**
- * v1.51.0 (PR 2 of the path-routing chain) — canonical per-matchday
- * route under the path-based scheme: `/league/<slug>/md/<id>` resolves
- * the league + the matchday in one go and renders the unified
- * `Dashboard` with `initialMatchdayId` pre-selecting the URL matchday
- * (mirrors v1.48.0's homepage convergence: the matchday page IS the
- * Dashboard, not a separate layout). Subsequent navigation (banner
- * swipe / arrow / dot) is local state — the URL is the entry point,
- * not a continuous source of truth.
+ * v1.54.0 — legacy `/league/<slug>/md/<id>` route is now a 308-redirect
+ * to the security-namespaced canonical form `/id/<slug>/md/<id>`.
  *
- * Pre-v1.51.0 the only matchday route was `/matchday/<id>`, which
- * resolved the league via the host header (subdomain logic). v1.51.0
- * makes the legacy route a 308-redirect to this canonical path so old
- * shared links (Slack, LINE chat, bookmarks) keep working.
+ * Pre-v1.54.0 (v1.51.0–v1.53.x) this was the canonical per-matchday
+ * entry point. v1.54.0 namespaces every tenant URL under `/id/`; old
+ * shared links (Slack/LINE chat/bookmarks created during v1.51.0–v1.53.x)
+ * keep working via this redirect.
  *
- * 404s when:
- *   - slug fails format/reserved validation (delegated to `getLeagueIdBySlug`)
- *   - no League row matches the slug
- *   - the matchday id (case-insensitive) doesn't match any matchday in
- *     the resolved league
+ * Both segments are normalized in the redirect target:
+ *   - slug → lowercase via `normalizeLeagueSlug`
+ *   - matchday id → lowercase (matches the canonical id format from
+ *     `dbToPublicLeagueData` and v1.49.1's case-insensitive routing
+ *     contract)
+ *
+ * No DB lookup here — the new `/id/<slug>/md/<id>` route handles the
+ * format/reserved/missing-league + missing-matchday 404 logic.
  */
-export default async function LeagueMatchdayPage({ params }: Props) {
+export default async function LegacyLeagueMatchdayRedirect({ params }: Props) {
   const { slug, id } = await params
-
-  const leagueId = await getLeagueIdBySlug(slug)
-  if (!leagueId) notFound()
-
-  let data
-  try {
-    data = await getPublicLeagueData(leagueId)
-  } catch {
-    return (
-      <div className="flex items-center justify-center min-h-dvh bg-midnight text-white px-6 text-center">
-        <div>
-          <p className="font-display text-3xl font-black uppercase text-white/80 mb-2">
-            Data unavailable
-          </p>
-          <p className="text-sm text-white/80 font-bold uppercase tracking-widest">
-            Try again in a moment
-          </p>
-        </div>
-      </div>
-    )
-  }
-
-  // v1.49.1 — case-insensitive matchday-id match. Matchday ids are canonical
-  // lowercase (`md1`, `md2`, ...) per `dbToPublicLeagueData`. Users sharing
-  // links may type or paste with capital letters (`/league/t9l/md/MD2`,
-  // `/league/t9l/md/Md2`); normalize both sides.
+  const slugLower = normalizeLeagueSlug(slug)
   const idLower = id.toLowerCase()
-  const md = data.matchdays.find((m) => m.id.toLowerCase() === idLower)
-  if (!md) notFound()
-
-  const nextMd = findNextMatchday(data.matchdays)
-
-  return (
-    <Dashboard
-      teams={data.teams}
-      players={data.players}
-      matchdays={data.matchdays}
-      goals={data.goals}
-      availability={data.availability}
-      availabilityStatuses={data.availabilityStatuses}
-      played={data.played}
-      nextMd={nextMd}
-      initialMatchdayId={md.id}
-      leagueSlug={normalizeLeagueSlug(slug)}
-    />
-  )
+  redirect(`/id/${slugLower}/md/${idLower}`)
 }
