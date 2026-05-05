@@ -53,9 +53,13 @@ import {
   updatePlayerSelf,
   uploadPlayerProfilePicture,
   removePlayerProfilePicture,
+} from '@/app/account/player/actions'
+// v1.59.2 — constants moved to a non-`'use server'` module so client
+// imports get the real values; see validation.ts.
+import {
   PROFILE_PIC_ALLOWED_TYPES,
   PROFILE_PIC_MAX_BYTES,
-} from '@/app/account/player/actions'
+} from '@/app/account/player/validation'
 
 const ORIG_BLOB_TOKEN = process.env.BLOB_READ_WRITE_TOKEN
 

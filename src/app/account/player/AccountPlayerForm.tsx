@@ -3,12 +3,14 @@
 import { useRef, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import {
-  PROFILE_PIC_ALLOWED_TYPES,
-  PROFILE_PIC_MAX_BYTES,
   removePlayerProfilePicture,
   updatePlayerSelf,
   uploadPlayerProfilePicture,
 } from './actions'
+import {
+  PROFILE_PIC_ALLOWED_TYPES,
+  PROFILE_PIC_MAX_BYTES,
+} from './validation'
 
 /**
  * v1.37.0 (PR ι) — client form for "Change player details".

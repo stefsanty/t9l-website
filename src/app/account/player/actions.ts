@@ -5,6 +5,7 @@ import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { revalidate } from '@/lib/revalidate'
 import type { Prisma } from '@prisma/client'
+import { PROFILE_PIC_ALLOWED_TYPES, PROFILE_PIC_MAX_BYTES } from './validation'
 
 /**
  * v1.37.0 (PR ι) — user self-service "Change player details".
@@ -35,12 +36,11 @@ import type { Prisma } from '@prisma/client'
  * message instead of a form.
  */
 
-export const PROFILE_PIC_MAX_BYTES = 5 * 1024 * 1024
-export const PROFILE_PIC_ALLOWED_TYPES = [
-  'image/jpeg',
-  'image/png',
-  'image/webp',
-] as const
+// v1.59.2 — `PROFILE_PIC_MAX_BYTES` and `PROFILE_PIC_ALLOWED_TYPES` moved
+// to `./validation` because exporting non-async values from a `'use server'`
+// file turns them into server-action proxies on the client (the values
+// never reach the browser). See `validation.ts` for the full backstory.
+// Re-exporting here would re-introduce the bug — DON'T.
 
 interface AuthedSession {
   userId: string | null
