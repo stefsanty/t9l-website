@@ -16,10 +16,9 @@ export default async function SchedulePage() {
   const userTeamId = session?.teamId;
 
   // v1.53.0 — subdomain teardown. Always renders the default league.
-  // Multi-league access lives under `/league/<slug>` (PRs 1-3 of the
-  // path-routing chain). A future PR can add `/league/<slug>/schedule`
-  // if per-league schedule pages are desired; today /schedule is
-  // default-only by design.
+  // v1.54.0 — multi-league access lives under `/id/<slug>`. A future PR
+  // can add `/id/<slug>/schedule` if per-league schedule pages are
+  // desired; today /schedule is default-only by design.
   const leagueId = await getDefaultLeagueId();
 
   let data;

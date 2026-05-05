@@ -10,12 +10,16 @@ type Props = { params: Promise<{ id: string }> }
 
 /**
  * v1.51.0 (PR 2 of the path-routing chain) — legacy matchday route.
+ * v1.54.0 — redirect target updated from `/league/<slug>/md/<id>` to
+ * `/id/<slug>/md/<id>` (security-namespaced canonical form).
  *
  * Pre-v1.51.0 this route rendered the per-matchday Dashboard directly,
  * resolving the league from the host header (subdomain logic).
- * v1.51.0 introduces the canonical path-based form
- * `/league/<slug>/md/<id>`; this legacy route now 308-redirects to it
- * so shared links (Slack, LINE chat, bookmarks) keep working.
+ * v1.51.0 introduced the canonical path-based form
+ * `/league/<slug>/md/<id>`; v1.54.0 namespaces every tenant URL under
+ * `/id/` so the canonical form is now `/id/<slug>/md/<id>`. This legacy
+ * route still 308-redirects so old `/matchday/<id>` shared links keep
+ * working.
  *
  * Resolution strategy:
  *   1. Take the URL matchday id (e.g. `md2`, `MD2`).
@@ -26,7 +30,7 @@ type Props = { params: Promise<{ id: string }> }
  *      number and pick the league whose subdomain (slug) is non-null —
  *      preferring the default league if multiple match (today there is
  *      only one league with public matchdays, so this is unambiguous).
- *   4. Compute the canonical URL `/league/<slug>/md/<id>`.
+ *   4. Compute the canonical URL `/id/<slug>/md/<id>`.
  *   5. `redirect()` (Next.js issues a 308 by default for server-side
  *      redirects in route handlers and pages).
  *
@@ -70,5 +74,5 @@ export default async function LegacyMatchdayRedirect({ params }: Props) {
   const preferred = gameWeeks.find((gw) => gw.league.isDefault) ?? gameWeeks[0]
   const slug = preferred.league.subdomain ?? DEFAULT_LEAGUE_SLUG
 
-  redirect(`/league/${slug}/md/${idLower}`)
+  redirect(`/id/${slug}/md/${idLower}`)
 }

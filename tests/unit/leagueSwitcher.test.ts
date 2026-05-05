@@ -126,10 +126,11 @@ describe('PR 3 — LeagueSwitcher header component', () => {
     expect(src).toMatch(/memberships\.length\s*<\s*2/)
   })
 
-  it('uses next/navigation router for switching', () => {
+  it('uses next/navigation router for switching to /id/<slug> (v1.54.0 — was /league/<slug> pre-v1.54.0)', () => {
     const src = stripComments(read(componentPath))
     expect(src).toMatch(/from\s+['"]next\/navigation['"]/)
-    expect(src).toMatch(/router\.push\(`\/league\/\$\{m\.slug\}`\)/)
+    expect(src).toMatch(/router\.push\(`\/id\/\$\{m\.slug\}`\)/)
+    expect(src).not.toMatch(/router\.push\(`\/league\//)
   })
 
   it('outside-click + Escape close the dropdown', () => {
@@ -169,9 +170,10 @@ describe('PR 3 — AccountMenuLeagueSwitch (inline account-menu list)', () => {
     expect(src).toMatch(/memberships\.length\s*<\s*2/)
   })
 
-  it('renders Link to /league/<slug> per membership', () => {
+  it('renders Link to /id/<slug> per membership (v1.54.0 — was /league/<slug> pre-v1.54.0)', () => {
     const src = stripComments(read(componentPath))
-    expect(src).toMatch(/href=\{`\/league\/\$\{m\.slug\}`\}/)
+    expect(src).toMatch(/href=\{`\/id\/\$\{m\.slug\}`\}/)
+    expect(src).not.toMatch(/href=\{`\/league\//)
   })
 
   it('exposes account-menu-switch-league testids', () => {

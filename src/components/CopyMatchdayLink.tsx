@@ -12,16 +12,22 @@ import { DEFAULT_LEAGUE_SLUG } from '@/lib/leagueSlug'
  * canonical path-based shape `/league/<slug>/md/<id>` so users sharing
  * the link see the canonical URL rather than the legacy
  * `/matchday/<id>` form (which still works via 308 redirect for old
- * shared links). When the parent component knows which league this
- * matchday belongs to, it threads the slug via the `leagueSlug` prop;
- * otherwise the `DEFAULT_LEAGUE_SLUG` constant ('t9l') is used as a
- * sensible fallback (today there's only one league with public
- * matchdays, so this preserves working URLs across every legacy
- * call site).
+ * shared links).
+ *
+ * v1.54.0 — URL form shortened to `/id/<slug>/md/<id>` (security-namespaced
+ * canonical form). The legacy `/league/<slug>/md/<id>` and `/matchday/<id>`
+ * URLs continue to work via 308 redirects, so links shared during the
+ * v1.51.0–v1.53.x window are unaffected.
+ *
+ * When the parent component knows which league this matchday belongs to,
+ * it threads the slug via the `leagueSlug` prop; otherwise the
+ * `DEFAULT_LEAGUE_SLUG` constant ('t9l') is used as a sensible fallback
+ * (today there's only one league with public matchdays, so this preserves
+ * working URLs across every legacy call site).
  *
  * Wraps the matchday-card eyebrow text ("MATCHDAY RESULTS" / "YOUR NEXT
  * MATCHDAY" / "MATCHDAY DETAILS"). On click:
- *   1. Compute `https://<host>/league/<slug>/md/<id>` from
+ *   1. Compute `https://<host>/id/<slug>/md/<id>` from
  *      `window.location.origin` so the URL works on apex AND any
  *      subdomain without per-tenant config.
  *   2. Write to clipboard via `navigator.clipboard.writeText`.
@@ -42,7 +48,7 @@ export default function CopyMatchdayLink({
   function copy() {
     if (typeof window === 'undefined') return
     const slug = leagueSlug ?? DEFAULT_LEAGUE_SLUG
-    const url = `${window.location.origin}/league/${slug}/md/${matchdayId}`
+    const url = `${window.location.origin}/id/${slug}/md/${matchdayId}`
 
     const onSuccess = () => {
       setCopied(true)
