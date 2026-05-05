@@ -1,12 +1,42 @@
 import { unstable_cache } from 'next/cache'
 import { prisma } from './prisma'
 
+/**
+ * v1.58.0 (PR 5 of route-shortening chain) — `getAllLeagues` is the
+ * single query behind the `/admin` dashboard tile grid. Pre-v1.58.0 it
+ * used a flat `include: { matches: true, venue: true }` on every
+ * gameWeek, fetching all ~15 fields of every Match row just to read
+ * `match.status` (for the COMPLETED-everywhere check) and
+ * `matches.length` (for the "X matches scheduled" copy).
+ *
+ * v1.58.0 trims to a minimal `select` projection — only the fields the
+ * dashboard renders (League: id/name/subdomain/endDate; GameWeek:
+ * weekNumber/startDate/venue.name; Match: status). Everything else
+ * (homeScore/awayScore/playedAt/endedAt/scoreOverride/etc.) drops out.
+ * Wire-payload + Prisma serialization both shrink proportionally.
+ *
+ * Cardinality: typical T9L instance has 1–2 leagues × 8 GWs × 3
+ * matches = 24–48 Match rows pre-trim. The trim removes ~14
+ * fields-per-row from the serialized payload. Magnitude small but
+ * meaningful on cold-Neon-Vercel cold-lambda paths where every JSON
+ * byte counts. The 30s `unstable_cache` TTL already absorbs warm-path
+ * cost; this fix targets the cold cache miss.
+ */
 export const getAllLeagues = unstable_cache(
   async () =>
     prisma.league.findMany({
-      include: {
+      select: {
+        id: true,
+        name: true,
+        subdomain: true,
+        endDate: true,
         gameWeeks: {
-          include: { matches: true, venue: true },
+          select: {
+            weekNumber: true,
+            startDate: true,
+            venue: { select: { name: true } },
+            matches: { select: { status: true } },
+          },
           orderBy: { weekNumber: 'asc' },
         },
       },
