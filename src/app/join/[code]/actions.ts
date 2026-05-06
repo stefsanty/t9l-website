@@ -424,6 +424,163 @@ function extOf(filename: string): string {
 }
 
 /**
+ * v1.68.0 — single-page onboarding with name + position + ID + optional
+ * profile picture in one submit.
+ *
+ * Replaces the v1.35.0 split flow (`submitOnboarding` form → `/id-upload`
+ * page → `submitIdUpload`) with one consolidated server action. The
+ * old actions remain in the module for backward compatibility (no
+ * caller deletion in this PR), but the new `/join/[code]/onboarding`
+ * form points here.
+ *
+ * FormData fields:
+ *   code, playerId, name, position, idFront (File), idBack (File),
+ *   profilePicture (optional File)
+ *
+ * Validation gates:
+ *   - Sign in required + bound user (admin sessions rejected)
+ *   - Caller User must be linked to the supplied playerId (defense
+ *     in depth — the route only renders the form for the bound user)
+ *   - Trimmed name required (≤100 chars)
+ *   - idFront + idBack files required (server-side authoritative
+ *     mirror of the client gate)
+ *   - BLOB_READ_WRITE_TOKEN present
+ *
+ * Side effects in one transaction:
+ *   - Player.name + Player.idFrontUrl + idBackUrl + idUploadedAt
+ *     + profilePictureUrl (if picture supplied)
+ *   - PLM.position (active assignments only) + PLM.onboardingStatus
+ *     = COMPLETED
+ *
+ * Redirects to `/join/[code]/welcome` on success.
+ */
+export async function completeOnboardingWithId(formData: FormData): Promise<void> {
+  const session = await getServerSession(authOptions)
+  if (!session) throw new Error('Sign in required')
+  const userId = (session as { userId?: string | null }).userId ?? null
+  if (!userId) throw new Error('Admin sessions cannot submit onboarding')
+  const lineId = session.lineId ?? null
+
+  const code = formData.get('code')
+  const playerId = formData.get('playerId')
+  if (typeof code !== 'string' || !code) throw new Error('Missing invite code')
+  if (typeof playerId !== 'string' || !playerId) throw new Error('Missing playerId')
+
+  const rawName = formData.get('name')
+  if (typeof rawName !== 'string') throw new Error('Your name is required')
+  const trimmedName = rawName.trim()
+  if (!trimmedName) throw new Error('Your name is required')
+  if (trimmedName.length > 100) throw new Error('Name must be 100 characters or fewer')
+
+  const rawPosition = formData.get('position')
+  const position = normalizeOnboardingPosition(typeof rawPosition === 'string' ? rawPosition : null)
+
+  const idFront = formData.get('idFront')
+  const idBack = formData.get('idBack')
+  if (!(idFront instanceof File) || idFront.size === 0) {
+    throw new Error('Front of ID is required')
+  }
+  if (!(idBack instanceof File) || idBack.size === 0) {
+    throw new Error('Back of ID is required')
+  }
+  const profilePicture = formData.get('profilePicture')
+  const hasProfilePicture =
+    profilePicture instanceof File && profilePicture.size > 0
+      ? (profilePicture as File)
+      : null
+
+  if (!process.env.BLOB_READ_WRITE_TOKEN) {
+    throw new Error('ID upload is currently unavailable. Use the Skip option to continue.')
+  }
+
+  const player = await prisma.player.findUnique({
+    where: { id: playerId },
+    select: { id: true, userId: true },
+  })
+  if (!player) throw new Error('Player not found')
+  if (player.userId !== userId) {
+    throw new Error('You are not linked to this player slot')
+  }
+
+  const invite = await prisma.leagueInvite.findUnique({
+    where: { code },
+    select: { leagueId: true },
+  })
+  if (!invite) throw new Error('Invite not found')
+
+  const { put } = await import('@vercel/blob')
+  const ts = Date.now()
+  const uploads: Promise<{ url: string }>[] = [
+    put(`player-id/${playerId}/front-${ts}.${extOf(idFront.name)}`, idFront, {
+      access: 'public',
+      addRandomSuffix: false,
+      contentType: idFront.type || 'application/octet-stream',
+    }),
+    put(`player-id/${playerId}/back-${ts}.${extOf(idBack.name)}`, idBack, {
+      access: 'public',
+      addRandomSuffix: false,
+      contentType: idBack.type || 'application/octet-stream',
+    }),
+  ]
+  if (hasProfilePicture) {
+    uploads.push(
+      put(`player-profile/${playerId}/${ts}.${extOf(hasProfilePicture.name)}`, hasProfilePicture, {
+        access: 'public',
+        addRandomSuffix: false,
+        contentType: hasProfilePicture.type || 'application/octet-stream',
+      }),
+    )
+  }
+  const results = await Promise.all(uploads)
+  const frontResult = results[0]
+  const backResult = results[1]
+  const picResult = hasProfilePicture ? results[2] : null
+
+  await prisma.$transaction(async (tx) => {
+    await tx.player.update({
+      where: { id: playerId },
+      data: {
+        name: trimmedName,
+        idFrontUrl: frontResult.url,
+        idBackUrl: backResult.url,
+        idUploadedAt: new Date(),
+        ...(picResult ? { profilePictureUrl: picResult.url } : {}),
+      },
+    })
+    await tx.playerLeagueMembership.updateMany({
+      where: { playerId, toGameWeek: null },
+      data: { position },
+    })
+    await tx.playerLeagueMembership.updateMany({
+      where: {
+        playerId,
+        leagueTeam: { leagueId: invite.leagueId },
+      },
+      data: { onboardingStatus: 'COMPLETED' },
+    })
+  })
+
+  if (lineId) {
+    await deleteMapping(lineId).catch((err) => {
+      console.warn(
+        '[join] deleteMapping failed for lineId=%s: %o',
+        lineId,
+        err,
+      )
+    })
+  }
+
+  revalidate({ domain: 'admin', paths: [`/admin/leagues/${invite.leagueId}/players`] })
+  revalidate({ domain: 'public' })
+  redirect(`/join/${code}/welcome`)
+}
+
+function normalizeOnboardingPosition(raw: string | null): 'GK' | 'DF' | 'MF' | 'FW' | null {
+  if (raw === 'GK' || raw === 'DF' || raw === 'MF' || raw === 'FW') return raw
+  return null
+}
+
+/**
  * v1.35.0 (PR η) — operator-gate fallback when `BLOB_READ_WRITE_TOKEN`
  * is missing. Skips the actual ID upload but still flips
  * `onboardingStatus` to COMPLETED so the user isn't permanently stuck.

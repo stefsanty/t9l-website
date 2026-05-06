@@ -211,3 +211,208 @@ export async function applyToLeague(
  * Operator follow-up: orphan rows from the v1.67.0 → v1.67.2 window
  * need a one-time cleanup pass. Surface in the PR description.
  */
+
+/**
+ * v1.68.0 — single-page registration with ID + optional profile picture.
+ *
+ * `registerToLeague(formData)` is the FormData equivalent of
+ * `applyToLeague` for the State C path on `/recruit/[slug]`. It
+ * collects name + position + idFront + idBack + (optional) profile
+ * picture in one shot, uploads ID images (and the picture if present)
+ * to Vercel Blob, and creates Player + PLM(PENDING) atomically with
+ * every URL already populated. No multi-step wizard, no orphan rows
+ * on click-and-bounce.
+ *
+ * Validation gates (reject before any Blob write):
+ *   - Sign in required (rejects no-session)
+ *   - Admin-credentials sessions rejected (no userId on session)
+ *   - User must NOT already have a Player binding (recruit is the
+ *     fresh-Player path; State D users redirect at the route layer)
+ *   - League must exist + recruiting
+ *   - Trimmed name required (≤100 chars)
+ *   - idFront + idBack files required (server-side authoritative
+ *     mirror of the client gate)
+ *   - BLOB_READ_WRITE_TOKEN present — without it ID upload cannot
+ *     proceed (no skip path; user-initiated registration treats ID
+ *     as load-bearing per v1.68.0's brief)
+ *
+ * On any Blob upload failure mid-way: the upload promise rejects and
+ * the action returns ok=false. Any prior successful uploads orphan
+ * in Blob (no Player exists to track them); operator can sweep
+ * unreferenced `register-pending/<userId>/...` paths periodically.
+ * In practice retries will either succeed (re-uploading at a fresh
+ * timestamped path) or land at the same orphan-Blob outcome — neither
+ * corrupts the database state.
+ */
+export async function registerToLeague(formData: FormData): Promise<ApplyToLeagueResult> {
+  const session = await getServerSession(authOptions)
+  if (!session) {
+    return { ok: false, error: 'Sign in required' }
+  }
+  const userId = (session as { userId?: string | null }).userId ?? null
+  if (!userId) {
+    return { ok: false, error: 'Admin sessions cannot submit applications' }
+  }
+
+  const leagueId = formData.get('leagueId')
+  if (typeof leagueId !== 'string' || !leagueId) {
+    return { ok: false, error: 'Missing leagueId' }
+  }
+  const rawName = formData.get('name')
+  if (typeof rawName !== 'string') {
+    return { ok: false, error: 'Your name is required' }
+  }
+  const trimmedName = rawName.trim()
+  if (!trimmedName) {
+    return { ok: false, error: 'Your name is required' }
+  }
+  if (trimmedName.length > 100) {
+    return { ok: false, error: 'Name must be 100 characters or fewer' }
+  }
+  const rawPosition = formData.get('position')
+  const position = normalizePosition(typeof rawPosition === 'string' ? rawPosition : null)
+
+  const idFront = formData.get('idFront')
+  const idBack = formData.get('idBack')
+  if (!(idFront instanceof File) || idFront.size === 0) {
+    return { ok: false, error: 'Front of ID is required' }
+  }
+  if (!(idBack instanceof File) || idBack.size === 0) {
+    return { ok: false, error: 'Back of ID is required' }
+  }
+  const profilePicture = formData.get('profilePicture')
+  const hasProfilePicture =
+    profilePicture instanceof File && profilePicture.size > 0
+      ? (profilePicture as File)
+      : null
+
+  if (!process.env.BLOB_READ_WRITE_TOKEN) {
+    return {
+      ok: false,
+      error: 'ID upload is currently unavailable. Contact the league admin.',
+    }
+  }
+
+  const league = await prisma.league.findUnique({
+    where: { id: leagueId },
+    select: { id: true, recruiting: true, name: true },
+  })
+  if (!league) return { ok: false, error: 'League not found' }
+  if (!league.recruiting) {
+    return { ok: false, error: 'This league is not currently recruiting' }
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true, playerId: true, lineId: true },
+  })
+  if (!user) return { ok: false, error: 'User not found' }
+  if (user.playerId) {
+    // State D — recruit page redirects these users away. If they POST
+    // here directly, route them to the no-files `applyToLeague` path
+    // by responding with a clear error. (Don't silently re-key the
+    // request; State D never needs to upload ID via this surface.)
+    return {
+      ok: false,
+      error: 'You already have a player. Use the apply button on the league page.',
+    }
+  }
+
+  // Upload ID + (optional) profile picture in parallel BEFORE the
+  // transaction. Any Blob failure short-circuits before DB writes —
+  // partial uploads orphan but no Player rows leak.
+  const { put } = await import('@vercel/blob')
+  const ts = Date.now()
+  const uploads: Promise<{ url: string }>[] = [
+    put(`register-pending/${user.id}/id-front-${ts}.${extOf(idFront.name)}`, idFront, {
+      access: 'public',
+      addRandomSuffix: false,
+      contentType: idFront.type || 'application/octet-stream',
+    }),
+    put(`register-pending/${user.id}/id-back-${ts}.${extOf(idBack.name)}`, idBack, {
+      access: 'public',
+      addRandomSuffix: false,
+      contentType: idBack.type || 'application/octet-stream',
+    }),
+  ]
+  if (hasProfilePicture) {
+    uploads.push(
+      put(`register-pending/${user.id}/profile-${ts}.${extOf(hasProfilePicture.name)}`, hasProfilePicture, {
+        access: 'public',
+        addRandomSuffix: false,
+        contentType: hasProfilePicture.type || 'application/octet-stream',
+      }),
+    )
+  }
+  let frontResult: { url: string }
+  let backResult: { url: string }
+  let picResult: { url: string } | null = null
+  try {
+    const results = await Promise.all(uploads)
+    frontResult = results[0]
+    backResult = results[1]
+    picResult = hasProfilePicture ? results[2] : null
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : 'Upload failed',
+    }
+  }
+
+  // Atomic transaction: Player + User.playerId mirror + PLM(PENDING)
+  // with every URL populated up-front. Onboarding is COMPLETE — the
+  // user filled everything in one shot, no follow-up step.
+  const player = await prisma.$transaction(async (tx) => {
+    const created = await tx.player.create({
+      data: {
+        name: trimmedName,
+        userId: user.id,
+        lineId: user.lineId ?? null,
+        idFrontUrl: frontResult.url,
+        idBackUrl: backResult.url,
+        idUploadedAt: new Date(),
+        profilePictureUrl: picResult?.url ?? null,
+      },
+    })
+    await tx.user.update({
+      where: { id: user.id },
+      data: { playerId: created.id },
+    })
+    await tx.playerLeagueMembership.create({
+      data: {
+        playerId: created.id,
+        leagueTeamId: null,
+        leagueId: league.id,
+        fromGameWeek: 1,
+        applicationStatus: 'PENDING',
+        position,
+        joinSource: 'SELF_SERVE',
+        // v1.68.0 — onboarding is COMPLETED at registration time
+        // because every required field (name + ID front + back) is
+        // captured in the same submit. No follow-up /onboarding or
+        // /id-upload step needed.
+        onboardingStatus: 'COMPLETED',
+      },
+    })
+    return created
+  })
+
+  revalidate({
+    domain: 'admin',
+    paths: [`/admin/leagues/${league.id}/players`],
+  })
+  revalidate({ domain: 'public' })
+
+  return { ok: true, playerId: player.id, mode: 'fresh' }
+}
+
+function normalizePosition(raw: string | null): 'GK' | 'DF' | 'MF' | 'FW' | null {
+  if (raw === 'GK' || raw === 'DF' || raw === 'MF' || raw === 'FW') return raw
+  return null
+}
+
+function extOf(filename: string): string {
+  const i = filename.lastIndexOf('.')
+  if (i < 0) return 'bin'
+  return filename.slice(i + 1).toLowerCase().replace(/[^a-z0-9]/g, '') || 'bin'
+}
