@@ -65,7 +65,7 @@ export default function RecruitingBanner({
     return (
       <div
         data-testid="recruiting-banner-approved"
-        className="w-full mt-2 mb-3 rounded-2xl border border-electric-green/40 bg-gradient-to-r from-electric-green/15 to-electric-green/5 px-4 py-3 relative overflow-hidden"
+        className="w-full mt-2 mb-3 rounded-2xl border border-success/40 bg-success/10 px-4 py-3 relative overflow-hidden"
       >
         <div className="flex items-center gap-3">
           {viewer.team.logoUrl ? (
@@ -80,12 +80,12 @@ export default function RecruitingBanner({
               />
             </div>
           ) : (
-            <div className="w-10 h-10 rounded-full bg-electric-green/20 border border-electric-green/40 flex items-center justify-center text-electric-green font-black text-sm shrink-0">
+            <div className="w-10 h-10 rounded-full bg-success/15 border border-success/40 flex items-center justify-center text-success font-black text-sm shrink-0">
               {viewer.team.name[0]?.toUpperCase() ?? '?'}
             </div>
           )}
           <div className="min-w-0">
-            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-electric-green">
+            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-success">
               You are in {league.name}!
             </p>
             <p className="font-display text-base font-black uppercase tracking-tight text-fg-high leading-tight truncate">
@@ -102,16 +102,16 @@ export default function RecruitingBanner({
     return (
       <div
         data-testid="recruiting-banner-pending"
-        className="w-full mt-2 mb-3 rounded-2xl border border-amber-400/50 bg-gradient-to-r from-amber-500/15 to-amber-500/5 px-4 py-3 relative overflow-hidden"
+        className="w-full mt-2 mb-3 rounded-2xl border border-warning/40 bg-warning/10 px-4 py-3 relative overflow-hidden"
       >
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-amber-500/20 border border-amber-500/40 flex items-center justify-center shrink-0">
-            <svg className="w-5 h-5 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <div className="w-10 h-10 rounded-full bg-warning/15 border border-warning/40 flex items-center justify-center shrink-0">
+            <svg className="w-5 h-5 text-warning" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
           </div>
           <div>
-            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-amber-400">
+            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-warning">
               Application submitted
             </p>
             <p className="font-display text-base font-black uppercase tracking-tight text-fg-high leading-tight">

@@ -106,8 +106,8 @@ export default function MatchdayCountdown({ matchday }: { matchday: Matchday }) 
 
   if (now >= startDT) {
     return (
-      <span className="inline-flex items-center gap-1.5 text-[11px] font-black uppercase tracking-widest text-emerald-400" translate="no">
-        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+      <span className="inline-flex items-center gap-1.5 text-[11px] font-black uppercase tracking-widest text-success" translate="no">
+        <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
         Live
       </span>
     );
