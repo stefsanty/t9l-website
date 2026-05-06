@@ -223,7 +223,11 @@ export default function Dashboard({
               for prospective members. */}
           <UnpaidFeeBanner data={unpaidFee ?? null} />
           {recruiting && league && recruitingState && (
-            <RecruitingBanner league={league} viewer={recruitingState} />
+            <RecruitingBanner
+              league={league}
+              viewer={recruitingState}
+              leagueSlug={leagueSlug}
+            />
           )}
           {/* v1.67.0 — planned-roster stats. Server gates this with auth +
               preseasonMode + recruiting; we render whenever the prop is

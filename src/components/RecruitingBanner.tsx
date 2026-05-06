@@ -1,13 +1,13 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useState } from 'react'
 import { signIn } from 'next-auth/react'
 import { toast } from 'sonner'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import ApplyToLeagueModal from './ApplyToLeagueModal'
 import type { RecruitingViewerState } from '@/lib/recruitingViewerState'
-import { recruitToLeagueWithOnboarding } from '@/app/api/recruiting/actions'
+import { DEFAULT_LEAGUE_SLUG } from '@/lib/leagueSlug'
 
 /**
  * v1.64.0 / v1.65.1 — Context-aware recruiting banner.
@@ -42,11 +42,22 @@ import { recruitToLeagueWithOnboarding } from '@/app/api/recruiting/actions'
 interface Props {
   league: { id: string; name: string }
   viewer: RecruitingViewerState
+  /**
+   * v1.67.2 — league slug threaded so the State C CTA can navigate
+   * to `/recruit/<slug>`. Optional with a default (`DEFAULT_LEAGUE_SLUG`)
+   * for callers that haven't been updated; the default points at the
+   * apex league so the homepage continues to work without page-level
+   * changes.
+   */
+  leagueSlug?: string
 }
 
-export default function RecruitingBanner({ league, viewer }: Props) {
+export default function RecruitingBanner({
+  league,
+  viewer,
+  leagueSlug = DEFAULT_LEAGUE_SLUG,
+}: Props) {
   const [applyOpen, setApplyOpen] = useState(false)
-  const [pending, startTransition] = useTransition()
   const router = useRouter()
 
   // ── State A — approved member of this league ─────────────────────────
@@ -129,19 +140,17 @@ export default function RecruitingBanner({ league, viewer }: Props) {
         })
         return
       case 'no_player':
-        // v1.67.0 — State C now routes through the full /join/[code]
-        // onboarding flow (parity with admin invites). Server creates a
-        // synthetic PERSONAL invite + Player + PLM, returns the code,
-        // and we navigate to /join/<code>/onboarding which renders the
-        // canonical multi-step flow (name → ID upload → welcome).
-        startTransition(async () => {
-          const result = await recruitToLeagueWithOnboarding({ leagueId: league.id })
-          if (!result.ok) {
-            toast.error(result.error)
-            return
-          }
-          router.push(`/join/${result.code}`)
-        })
+        // v1.67.2 — State C navigates to the new `/recruit/<slug>` route
+        // which renders an empty registration form. On submit, the
+        // existing `applyToLeague` action creates Player + PLM(PENDING)
+        // atomically with the user-supplied data — no synthetic invite,
+        // no orphan rows.
+        //
+        // Replaces the v1.67.0 `recruitToLeagueWithOnboarding` flow that
+        // pre-created an empty Player + a `usedCount=maxUses=1` invite,
+        // which `validateInvite` rejected as 'used-up' BEFORE the
+        // existingBinding-detection branch could route to /onboarding.
+        router.push(`/recruit/${leagueSlug}`)
         return
       case 'in_other_league':
         // State D (v1.65.1) — open application modal in 'existing'
@@ -165,17 +174,16 @@ export default function RecruitingBanner({ league, viewer }: Props) {
         type="button"
         data-testid={ctaTestid}
         onClick={handleClick}
-        disabled={pending}
-        className="w-full mt-2 mb-3 rounded-2xl border border-vibrant-pink/60 bg-gradient-to-r from-vibrant-pink to-orange-500 px-4 py-3 text-left relative overflow-hidden hover:opacity-95 transition-opacity active:scale-[0.99] disabled:opacity-70 disabled:cursor-wait"
+        className="w-full mt-2 mb-3 rounded-2xl border border-vibrant-pink/60 bg-gradient-to-r from-vibrant-pink to-orange-500 px-4 py-3 text-left relative overflow-hidden hover:opacity-95 transition-opacity active:scale-[0.99]"
       >
         <div className="absolute inset-0 bg-diagonal-pattern opacity-10 pointer-events-none" />
         <div className="relative flex items-center justify-between gap-3">
           <div>
             <p className="font-display text-2xl font-black uppercase tracking-tight text-white leading-none">
-              {pending ? 'Starting your application…' : 'Recruiting Now'}
+              Recruiting Now
             </p>
             <p className="text-[11px] font-bold uppercase tracking-widest text-white/90 mt-1">
-              {pending ? 'Hold on a moment' : 'Looking for new players — tap to apply'}
+              Looking for new players — tap to apply
             </p>
           </div>
           <span aria-hidden className="text-2xl text-white/90 shrink-0">
@@ -184,12 +192,10 @@ export default function RecruitingBanner({ league, viewer }: Props) {
         </div>
       </button>
 
-      {/* v1.67.0 — Only State D ('in_other_league') still uses the inline
-          modal (simplified intake — existing Player just needs a position
-          for the new league). State C ('no_player') now routes through the
-          full /join/<code>/onboarding flow via
-          `recruitToLeagueWithOnboarding`, with parity to admin-issued
-          invites. */}
+      {/* v1.67.2 — State D ('in_other_league') uses the inline modal for
+          simplified intake (existing Player just needs a position for the
+          new league). State C ('no_player') now navigates to /recruit/<slug>
+          where the user fills the form before any DB writes happen. */}
       {viewer.kind === 'in_other_league' && (
         <ApplyToLeagueModal
           open={applyOpen}
