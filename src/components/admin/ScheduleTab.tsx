@@ -9,7 +9,7 @@ import MatchOverflowMenu from './MatchOverflowMenu'
 import PillEditor from './PillEditor'
 import { useToast } from './ToastProvider'
 import {
-  createGameWeek,
+  adminAddMatchday,
   updateGameWeek,
   deleteGameWeek,
   createMatch,
@@ -96,7 +96,6 @@ export function gwStatus(gw: GameWeekRow): GwBadgeStatus {
 
 export default function ScheduleTab({ leagueId, gameWeeks, leagueTeams, venues }: ScheduleTabProps) {
   const { toast } = useToast()
-  const [showAddMatchday, setShowAddMatchday] = useState(false)
   const [addMatchForm, setAddMatchForm] = useState<{
     gwId: string
     homeTeamId: string
@@ -105,18 +104,15 @@ export default function ScheduleTab({ leagueId, gameWeeks, leagueTeams, venues }
   } | null>(null)
   const [pending, startTransition] = useTransition()
 
-  async function handleAddMatchday(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault()
-    const fd = new FormData(e.currentTarget)
-    const startDate = fd.get('startDate') as string
-    const venueId   = (fd.get('venueId') as string) || null
-    const nextNum   = (gameWeeks[gameWeeks.length - 1]?.weekNumber ?? 0) + 1
-
+  // v1.67.3 — one-click add. The pre-v1.67.3 modal/form is gone; date and
+  // venue are filled inline via the existing per-row pill editors after
+  // the GameWeek lands.
+  function handleAddMatchdayClick() {
+    const nextNum = (gameWeeks[gameWeeks.length - 1]?.weekNumber ?? 0) + 1
     startTransition(async () => {
       try {
-        await createGameWeek(leagueId, { weekNumber: nextNum, startDate, endDate: startDate, venueId })
+        await adminAddMatchday(leagueId)
         toast(`MD${nextNum} created`)
-        setShowAddMatchday(false)
       } catch {
         toast('Failed to create matchday', 'error')
       }
@@ -169,49 +165,6 @@ export default function ScheduleTab({ leagueId, gameWeeks, leagueTeams, venues }
     }
   }
 
-  const nextMDNum = (gameWeeks[gameWeeks.length - 1]?.weekNumber ?? 0) + 1
-
-  // Add-matchday form (rendered at the top of the list, per the v1.20 audit
-  // — pre-fix the form was rendered at the BOTTOM on mobile so tapping
-  // "+ Add" appeared to do nothing without a scroll).
-  const addMatchdayForm = showAddMatchday ? (
-    <form
-      onSubmit={handleAddMatchday}
-      className="bg-admin-surface rounded-xl border border-admin-border p-4 space-y-3"
-    >
-      <p className="font-condensed font-bold text-admin-text text-base">MD{nextMDNum}</p>
-      <input
-        name="startDate"
-        type="date"
-        required
-        className="w-full bg-admin-surface2 border border-admin-border2 text-admin-text text-sm rounded-md px-3 py-[9px] font-mono"
-      />
-      <select
-        name="venueId"
-        className="w-full bg-admin-surface2 border border-admin-border2 text-admin-text text-sm rounded-md px-3 py-[9px]"
-      >
-        <option value="">Venue (optional)</option>
-        {venues.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
-      </select>
-      <div className="flex gap-2">
-        <button
-          type="submit"
-          disabled={pending}
-          className="flex-1 px-3 min-h-[40px] bg-admin-green text-admin-ink text-sm font-medium rounded hover:opacity-90 disabled:opacity-50"
-        >
-          Create
-        </button>
-        <button
-          type="button"
-          onClick={() => setShowAddMatchday(false)}
-          className="px-3 min-h-[40px] border border-admin-border text-admin-text2 text-sm rounded hover:border-admin-border2"
-        >
-          Cancel
-        </button>
-      </div>
-    </form>
-  ) : null
-
   return (
     <div>
       {/* Toolbar — mirrors the mockup top row */}
@@ -227,15 +180,16 @@ export default function ScheduleTab({ leagueId, gameWeeks, leagueTeams, venues }
       </div>
 
       <div className="flex items-center gap-2 mb-4">
-        {!showAddMatchday && (
-          <button
-            onClick={() => setShowAddMatchday(true)}
-            className="flex items-center gap-1.5 rounded-lg bg-admin-green px-3 min-h-[40px] text-sm font-semibold text-admin-ink hover:opacity-90 transition-opacity"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            Add matchday
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={handleAddMatchdayClick}
+          disabled={pending}
+          data-testid="schedule-tab-add-matchday"
+          className="flex items-center gap-1.5 rounded-lg bg-admin-green px-3 min-h-[40px] text-sm font-semibold text-admin-ink hover:opacity-90 disabled:opacity-50 transition-opacity"
+        >
+          <Plus className="w-3.5 h-3.5" />
+          Add matchday
+        </button>
         <button
           type="button"
           disabled
@@ -248,10 +202,8 @@ export default function ScheduleTab({ leagueId, gameWeeks, leagueTeams, venues }
         </button>
       </div>
 
-      {addMatchdayForm}
-
       <div className="space-y-3 mt-3">
-        {gameWeeks.length === 0 && !showAddMatchday && (
+        {gameWeeks.length === 0 && (
           <div className="flex items-center justify-center py-12 text-admin-text3 text-sm bg-admin-surface rounded-xl border border-admin-border">
             No matchdays yet. Tap &quot;Add matchday&quot; to create one.
           </div>
