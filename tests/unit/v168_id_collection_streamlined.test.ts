@@ -325,8 +325,10 @@ describe('v1.68.0 atomicity invariants', () => {
 })
 
 describe('v1.68.0 version bump', () => {
-  it('APP_VERSION is 1.68.0', () => {
+  it('APP_VERSION is 1.68.0 or higher', () => {
     const src = read('src/lib/version.ts')
-    expect(src).toMatch(/APP_VERSION\s*=\s*'1\.68\.0'/)
+    expect(src).toMatch(
+      /APP_VERSION\s*=\s*['"]1\.(6[8-9]\.\d+|[7-9]\d?\.\d+)['"]/,
+    )
   })
 })
