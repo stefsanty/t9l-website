@@ -1,7 +1,117 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { Matchday, Team, Player, Availability, AvailabilityStatuses, PlayedStatus } from '@/types';
+
+// -- View mode --
+
+export type AvailabilityViewMode = 'formation' | 'list';
+
+const VIEW_MODE_STORAGE_KEY = 't9l-availability-view';
+
+// -- Position colors (mirrors SquadList.getPositionColor) --
+
+export function getPositionPillColor(pos: string | null | undefined): string {
+  switch (pos?.toUpperCase()) {
+    case 'GK': return 'bg-zinc-950 text-white border-white/20';
+    case 'DF': return 'bg-blue-600 text-white border-blue-400/30';
+    case 'DF/MF': return 'bg-teal-600 text-white border-teal-400/30';
+    case 'MF': return 'bg-emerald-600 text-white border-emerald-400/30';
+    case 'MF/FWD': return 'bg-orange-600 text-white border-orange-400/30';
+    case 'FWD': return 'bg-red-600 text-white border-red-400/30';
+    default: return 'bg-surface-md text-fg-mid border-border-subtle';
+  }
+}
+
+// -- TeamPillList sub-component --
+
+function TeamPillList({
+  confirmedIds,
+  players,
+}: {
+  confirmedIds: string[];
+  players: Player[];
+}) {
+  if (confirmedIds.length === 0) {
+    return (
+      <span className="text-[11px] text-fg-mid italic py-2 px-1 block">
+        {"No confirmations yet"}
+      </span>
+    );
+  }
+
+  const positionOrder: Record<string, number> = {
+    'GK': 1, 'DF': 2, 'DF/MF': 3, 'MF': 4, 'MF/FWD': 5, 'FWD': 6,
+  };
+
+  const confirmedPlayers = confirmedIds
+    .map((id) => players.find((p) => p.id === id))
+    .filter((p): p is Player => !!p)
+    .sort((a, b) => {
+      const posA = positionOrder[a.position || ''] || 99;
+      const posB = positionOrder[b.position || ''] || 99;
+      if (posA !== posB) return posA - posB;
+      return a.name.localeCompare(b.name);
+    });
+
+  return (
+    <div className="mt-2 flex flex-wrap gap-1.5" data-testid="availability-pill-list">
+      {confirmedPlayers.map((p) => (
+        <span
+          key={p.id}
+          className={`text-[11px] font-bold px-2 py-1 rounded-full border ${getPositionPillColor(p.position)}`}
+          translate="no"
+          data-testid={`availability-pill-${p.id}`}
+        >
+          <span className="text-[9px] font-black uppercase tracking-wider opacity-80 mr-1">
+            {p.position || '—'}
+          </span>
+          {p.name}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+// -- View toggle --
+
+function ViewModeToggle({
+  mode,
+  onChange,
+}: {
+  mode: AvailabilityViewMode;
+  onChange: (mode: AvailabilityViewMode) => void;
+}) {
+  return (
+    <div
+      className="flex items-center gap-0.5 bg-surface rounded-md border border-border-subtle p-0.5"
+      data-testid="availability-view-toggle"
+    >
+      <button
+        type="button"
+        onClick={() => onChange('formation')}
+        className={`text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded transition-all ${
+          mode === 'formation' ? 'bg-surface-md text-foreground' : 'text-fg-low hover:text-fg-mid'
+        }`}
+        aria-pressed={mode === 'formation'}
+        data-testid="availability-view-formation"
+      >
+        {"Pitch"}
+      </button>
+      <button
+        type="button"
+        onClick={() => onChange('list')}
+        className={`text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded transition-all ${
+          mode === 'list' ? 'bg-surface-md text-foreground' : 'text-fg-low hover:text-fg-mid'
+        }`}
+        aria-pressed={mode === 'list'}
+        data-testid="availability-view-list"
+      >
+        {"List"}
+      </button>
+    </div>
+  );
+}
 
 // -- Formation helpers --
 
@@ -223,6 +333,30 @@ export default function MatchdayAvailability({
     () => new Set()
   );
 
+  // View mode (formation vs pill list); persists per-user via localStorage.
+  // Default to formation. Hydrate from localStorage on mount.
+  const [viewMode, setViewMode] = useState<AvailabilityViewMode>('formation');
+
+  useEffect(() => {
+    try {
+      const stored = window.localStorage.getItem(VIEW_MODE_STORAGE_KEY);
+      if (stored === 'formation' || stored === 'list') {
+        setViewMode(stored);
+      }
+    } catch {
+      // localStorage unavailable (private mode etc.) — keep default
+    }
+  }, []);
+
+  function handleViewModeChange(next: AvailabilityViewMode) {
+    setViewMode(next);
+    try {
+      window.localStorage.setItem(VIEW_MODE_STORAGE_KEY, next);
+    } catch {
+      // localStorage unavailable — keep in-memory only
+    }
+  }
+
   function toggleTeam(teamId: string) {
     setExpandedTeams((prev) => {
       const next = new Set(prev);
@@ -247,6 +381,7 @@ export default function MatchdayAvailability({
             {"Who Played"}
           </h3>
           <div className="h-[1px] flex-1 bg-surface-md" />
+          <ViewModeToggle mode={viewMode} onChange={handleViewModeChange} />
         </div>
 
         <div className="grid gap-2">
@@ -285,7 +420,11 @@ export default function MatchdayAvailability({
                 </button>
                 {isExpanded && (
                   <div className="px-4 pb-4 pt-0 border-t border-border-subtle animate-in">
-                    <TeamFormation confirmedIds={playedIds} players={players} teamColor={team.color} />
+                    {viewMode === 'list' ? (
+                      <TeamPillList confirmedIds={playedIds} players={players} />
+                    ) : (
+                      <TeamFormation confirmedIds={playedIds} players={players} teamColor={team.color} />
+                    )}
                   </div>
                 )}
               </div>
@@ -305,6 +444,7 @@ export default function MatchdayAvailability({
           {"Who else is coming?"}
         </h3>
         <div className="h-[1px] flex-1 bg-border-subtle" />
+        <ViewModeToggle mode={viewMode} onChange={handleViewModeChange} />
       </div>
 
       <div className="grid gap-3">
@@ -362,11 +502,15 @@ export default function MatchdayAvailability({
 
               {isExpanded && (
                 <div className="px-4 pb-4 pt-0 border-t border-border-subtle animate-in">
-                  <TeamFormation
-                    confirmedIds={goingIds}
-                    players={players}
-                    teamColor={team.color}
-                  />
+                  {viewMode === 'list' ? (
+                    <TeamPillList confirmedIds={goingIds} players={players} />
+                  ) : (
+                    <TeamFormation
+                      confirmedIds={goingIds}
+                      players={players}
+                      teamColor={team.color}
+                    />
+                  )}
                 </div>
               )}
             </div>
