@@ -236,8 +236,8 @@ export default function MatchdayCard({
 
             return (
               <div key={match.id}>
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex-1 flex items-center gap-3">
+                <div className="flex items-center justify-between gap-1">
+                  <div className="flex-1 flex items-center gap-2 min-w-0">
                     <div className={`relative w-9 h-9 shrink-0 rounded-lg p-1.5 border transition-all ${isUserHome ? 'bg-tertiary/10 border-tertiary/50 ' : 'bg-surface border-border-subtle'}`}>
                       {home?.logo && (
                         <Image src={home.logo} alt={home.name} fill className="object-contain p-1" />
@@ -253,9 +253,9 @@ export default function MatchdayCard({
                     </div>
                   </div>
 
-                  <div className="flex items-center px-4">
+                  <div className="flex items-center shrink-0 px-1.5">
                     {!isPlayed ? (
-                      <span className={`font-display text-xl font-black tracking-tighter px-3 py-1 rounded-lg border transition-all ${isUserMatch ? 'text-tertiary bg-tertiary/10 border-tertiary/30' : 'text-fg-high bg-surface border-border-subtle'}`}>
+                      <span className={`font-display text-base font-black tracking-tighter px-2 py-0.5 rounded-lg border transition-all ${isUserMatch ? 'text-tertiary bg-tertiary/10 border-tertiary/30' : 'text-fg-high bg-surface border-border-subtle'}`}>
                         {match.kickoff}
                       </span>
                     ) : (
@@ -271,7 +271,7 @@ export default function MatchdayCard({
                     )}
                   </div>
 
-                  <div className="flex-1 flex items-center justify-end gap-3 text-right">
+                  <div className="flex-1 flex items-center justify-end gap-2 text-right min-w-0">
                     <div className="flex flex-col gap-0.5 items-end min-w-0">
                       <span className="font-display text-sm sm:text-lg font-black uppercase tracking-tighter leading-none" translate="no">
                         {away?.name}
