@@ -340,6 +340,43 @@ export async function createGameWeek(leagueId: string, data: {
   revalidate({ domain: 'admin', paths: [`/admin/leagues/${leagueId}/schedule`] })
 }
 
+/**
+ * v1.67.3 — One-click "Add matchday".
+ *
+ * Pre-v1.67.3 the admin Schedule tab "Add matchday" button opened a modal
+ * form requiring date + venue before the GameWeek would be created. The
+ * v1.31.0 schema relaxation made `GameWeek.startDate`/`endDate` nullable;
+ * date and venue are now editable inline via the existing per-row pill
+ * editors. So the up-front form was redundant friction.
+ *
+ * This action takes a single `leagueId`, computes `weekNumber = max + 1`,
+ * and creates a GameWeek with `startDate` / `endDate` / `venueId` all null.
+ * The admin then fills details inline. Same Redis pre-warm + revalidate
+ * shape as `createGameWeek`.
+ */
+export async function adminAddMatchday(leagueId: string) {
+  await assertAdmin()
+  const last = await prisma.gameWeek.findFirst({
+    where: { leagueId },
+    orderBy: { weekNumber: 'desc' },
+    select: { weekNumber: true },
+  })
+  const weekNumber = (last?.weekNumber ?? 0) + 1
+  const gw = await prisma.gameWeek.create({
+    data: {
+      leagueId,
+      weekNumber,
+      startDate: null,
+      endDate: null,
+      venueId: null,
+    },
+  })
+  // seedGameWeek handles a null startDate per v1.31.0 — falls back to
+  // `now() + 90d` for the absolute TTL when the matchday date is TBD.
+  await seedGameWeek(gw.id, gw.startDate)
+  revalidate({ domain: 'admin', paths: [`/admin/leagues/${leagueId}/schedule`] })
+}
+
 export async function updateGameWeek(id: string, leagueId: string, data: {
   startDate?: string | null
   endDate?:   string | null
