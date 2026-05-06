@@ -188,10 +188,11 @@ describe('v1.65.1 — RecruitingBanner State D + E', () => {
   })
 
   it('State D mounts ApplyToLeagueModal with mode="existing"', () => {
-    expect(BANNER_SRC).toMatch(
-      /viewer\.kind === ['"]in_other_league['"][\s\S]*?['"]existing['"][\s\S]*?['"]fresh['"]/,
-    )
-    expect(BANNER_SRC).toMatch(/mode=\{viewer\.kind === ['"]in_other_league['"]/)
+    // v1.67.0 — State C migrated off the modal to the full /join/[code]
+    // onboarding flow. Modal now mounts ONLY for in_other_league (State D),
+    // so mode is hardcoded "existing" rather than dispatched.
+    expect(BANNER_SRC).toMatch(/viewer\.kind === ['"]in_other_league['"][\s\S]*?<ApplyToLeagueModal/)
+    expect(BANNER_SRC).toMatch(/mode="existing"/)
   })
 
   it('State E click toasts instead of redirecting', () => {

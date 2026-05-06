@@ -232,6 +232,86 @@ export async function setLeagueRecruiting(leagueId: string, value: boolean) {
   })
 }
 
+/**
+ * v1.67.0 — planned-roster targets surfaced in the preseason stats panel.
+ *
+ * Sets `League.plannedPlayersPerTeam`, `plannedNumberOfTeams`, and
+ * `registrationDeadline` atomically. All three accept null/undefined to
+ * mean "leave unchanged" — the SettingsTab UI sends the full triple
+ * together so this is mostly defensive.
+ *
+ * Validation:
+ *   - both numerics must be non-negative integers (0 = "not set")
+ *   - registrationDeadline accepts null (clear), undefined (leave),
+ *     or a Date / parseable ISO string.
+ *
+ * Resolved deadline is stored as a UTC instant. Admin enters via
+ * `<input type="date">` (JST calendar date) so we route through
+ * `parseJstDateOnly` for that branch. ISO 8601 with timezone passes
+ * through `new Date()` directly.
+ */
+export async function updateLeaguePlannedRoster(input: {
+  leagueId: string
+  plannedPlayersPerTeam: number
+  plannedNumberOfTeams: number
+  // 'YYYY-MM-DD' (JST date), full ISO, null to clear, or undefined to leave.
+  registrationDeadline?: string | null
+}): Promise<void> {
+  await assertAdmin()
+  if (!input.leagueId) throw new Error('leagueId is required')
+  if (!Number.isInteger(input.plannedPlayersPerTeam) || input.plannedPlayersPerTeam < 0) {
+    throw new Error('plannedPlayersPerTeam must be a non-negative integer')
+  }
+  if (!Number.isInteger(input.plannedNumberOfTeams) || input.plannedNumberOfTeams < 0) {
+    throw new Error('plannedNumberOfTeams must be a non-negative integer')
+  }
+
+  // Resolve registrationDeadline:
+  //   null              → clear column
+  //   undefined         → leave unchanged (no field in update)
+  //   'YYYY-MM-DD'      → parseJstDateOnly (JST calendar date)
+  //   full ISO          → new Date()
+  const data: {
+    plannedPlayersPerTeam: number
+    plannedNumberOfTeams: number
+    registrationDeadline?: Date | null
+  } = {
+    plannedPlayersPerTeam: input.plannedPlayersPerTeam,
+    plannedNumberOfTeams: input.plannedNumberOfTeams,
+  }
+  if (input.registrationDeadline === null) {
+    data.registrationDeadline = null
+  } else if (typeof input.registrationDeadline === 'string') {
+    const trimmed = input.registrationDeadline.trim()
+    if (!trimmed) {
+      data.registrationDeadline = null
+    } else if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+      data.registrationDeadline = parseJstDateOnly(trimmed)
+    } else {
+      const parsed = new Date(trimmed)
+      if (Number.isNaN(parsed.getTime())) {
+        throw new Error('registrationDeadline is not a valid date')
+      }
+      data.registrationDeadline = parsed
+    }
+  }
+
+  await prisma.league.update({
+    where: { id: input.leagueId },
+    data,
+  })
+
+  revalidate({
+    domain: 'admin',
+    paths: [
+      `/admin/leagues/${input.leagueId}/settings`,
+      `/admin/leagues/${input.leagueId}`,
+      '/admin',
+    ],
+  })
+  revalidate({ domain: 'public' })
+}
+
 // ── GameWeek ────────────────────────────────────────────────────────────────
 
 export async function createGameWeek(leagueId: string, data: {

@@ -455,25 +455,27 @@ export default function LineLoginButton() {
                   {"Edit my details"}
                 </Link>
                 {/*
-                 * v1.61.0 — drop the v1.39.2 `hasLine` gate. Any linked
-                 * session (LINE / Google / email) can use /assign-player
-                 * to change or unassign their player; the API DELETE
-                 * path is ungated by `allowSelfLink` (per v1.60.0), and
-                 * the POST path accepts all providers when allowSelfLink
-                 * is on. When allowSelfLink is off, the link routes to
-                 * the SelfLinkDisabledSurface — matches v1.60.0 behavior.
+                 * v1.67.0 — gate the Change/Unassign link on
+                 * `allowSelfLink === true`. Pre-v1.67.0 the link routed
+                 * to /assign-player which then surfaced a friendly
+                 * SelfLinkDisabledSurface when the toggle was off; the
+                 * user wants the link itself HIDDEN when off, not just
+                 * the destination friendly. The route keeps its
+                 * disabled-state surface for direct visitors (defensive).
                  */}
-                <Link
-                  href="/assign-player"
-                  onClick={() => setOpen(false)}
-                  className="flex items-center gap-2 px-4 py-3 text-[12px] font-bold text-fg-high hover:text-fg-mid hover:bg-surface transition-colors"
-                  data-testid="account-menu-change-player"
-                >
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                  </svg>
-                  {"Change/Unassign player"}
-                </Link>
+                {allowSelfLink && (
+                  <Link
+                    href="/assign-player"
+                    onClick={() => setOpen(false)}
+                    className="flex items-center gap-2 px-4 py-3 text-[12px] font-bold text-fg-high hover:text-fg-mid hover:bg-surface transition-colors"
+                    data-testid="account-menu-change-player"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                    </svg>
+                    {"Change/Unassign player"}
+                  </Link>
+                )}
               </>
             )}
 

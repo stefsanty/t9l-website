@@ -4,6 +4,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { revalidate } from '@/lib/revalidate'
+import { generateInviteCode, computeInviteExpiry } from '@/lib/inviteCodes'
 
 /**
  * v1.64.0 / v1.65.1 — Application/recruiting workflow.
@@ -185,4 +186,163 @@ export async function applyToLeague(
   revalidate({ domain: 'public' })
 
   return { ok: true, playerId: player.id, mode: 'fresh' }
+}
+
+/**
+ * v1.67.0 — State C full onboarding entry point.
+ *
+ * Pre-v1.67.0 the State C recruiting CTA opened `ApplyToLeagueModal` with
+ * a simplified intake (name + position only). The user wants State C to
+ * use the SAME flow as admin-initiated invites — including ID upload,
+ * full intake form, the welcome page — without requiring an admin to
+ * actually issue an invite.
+ *
+ * Approach: create a synthetic per-user PERSONAL `LeagueInvite` whose
+ * `targetPlayerId` is a freshly-created Player bound to the calling
+ * User. Mark the invite already-redeemed (`usedCount = maxUses = 1`) so
+ * it can never be redeemed by anyone else, and set a short expiry so
+ * stale ones decay. The `/join/[code]` page's signed-in-already-bound
+ * resolver detects the binding (Player.userId === session.userId) and
+ * routes the user straight into `/join/[code]/onboarding` (since
+ * `Player.name` is null, that's where the resolver sends them).
+ *
+ * From there the user follows the canonical onboarding flow:
+ *   onboarding form (name + position) → id-upload → welcome.
+ *
+ * Identical UX to PERSONAL invite redemption, but no admin had to
+ * create it.
+ *
+ * Validation:
+ *   - Sign in required (admin-credentials sessions rejected).
+ *   - User must have NO existing Player (true State C). Pre-existing
+ *     Player → return error directing them through the existing
+ *     `applyToLeague` State D path.
+ *   - League must exist and be recruiting.
+ *
+ * Side effects, all inside one transaction:
+ *   - Create Player { name: null, userId, lineId? }
+ *   - Update User.playerId
+ *   - Create PLM { playerId, leagueId, fromGameWeek: 1,
+ *                  applicationStatus: PENDING, joinSource: SELF_SERVE,
+ *                  onboardingStatus: NOT_YET, position: null }
+ *   - Create LeagueInvite { kind: PERSONAL, targetPlayerId: player.id,
+ *                           code, leagueId, skipOnboarding: false,
+ *                           maxUses: 1, usedCount: 1 (pre-redeemed),
+ *                           expiresAt: now + 7 days }
+ *
+ * Returns the invite code so the client can `router.push('/join/<code>')`.
+ * Retries on `P2002` unique-collision (the 12-char alphabet has ~58
+ * bits of entropy; collisions are vanishingly rare but defensive).
+ */
+
+export type RecruitToLeagueWithOnboardingResult =
+  | { ok: true; code: string; playerId: string }
+  | { ok: false; error: string }
+
+export async function recruitToLeagueWithOnboarding(input: {
+  leagueId: string
+}): Promise<RecruitToLeagueWithOnboardingResult> {
+  const session = await getServerSession(authOptions)
+  if (!session) {
+    return { ok: false, error: 'Sign in required' }
+  }
+  const userId = (session as { userId?: string | null }).userId ?? null
+  if (!userId) {
+    return { ok: false, error: 'Admin sessions cannot submit applications' }
+  }
+
+  const league = await prisma.league.findUnique({
+    where: { id: input.leagueId },
+    select: { id: true, recruiting: true, name: true },
+  })
+  if (!league) return { ok: false, error: 'League not found' }
+  if (!league.recruiting) {
+    return { ok: false, error: 'This league is not currently recruiting' }
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true, playerId: true, lineId: true },
+  })
+  if (!user) return { ok: false, error: 'User not found' }
+  if (user.playerId) {
+    // True State D — the user already has a Player and should go through
+    // the existing simplified `applyToLeague` flow instead.
+    return {
+      ok: false,
+      error: 'You already have a player profile. Use the existing apply flow.',
+    }
+  }
+
+  // Generate the invite code with collision retry.
+  const MAX_RETRIES = 5
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    const code = generateInviteCode()
+    try {
+      const result = await prisma.$transaction(async (tx) => {
+        const player = await tx.player.create({
+          data: {
+            // name stays null — onboarding form will set it.
+            userId: user.id,
+            lineId: user.lineId ?? null,
+          },
+        })
+        await tx.user.update({
+          where: { id: user.id },
+          data: { playerId: player.id },
+        })
+        await tx.playerLeagueMembership.create({
+          data: {
+            playerId: player.id,
+            leagueTeamId: null,
+            leagueId: league.id,
+            fromGameWeek: 1,
+            applicationStatus: 'PENDING',
+            joinSource: 'SELF_SERVE',
+            onboardingStatus: 'NOT_YET',
+            position: null,
+          },
+        })
+        // Synthetic PERSONAL invite, pre-redeemed so it can't be reused.
+        // The /join/[code] resolver will detect the bound user and route
+        // straight into /onboarding because Player.name is null.
+        await tx.leagueInvite.create({
+          data: {
+            code,
+            kind: 'PERSONAL',
+            leagueId: league.id,
+            targetPlayerId: player.id,
+            createdById: user.id,
+            expiresAt: computeInviteExpiry(new Date(), 7),
+            maxUses: 1,
+            usedCount: 1,
+            skipOnboarding: false,
+          },
+        })
+        return { code, playerId: player.id }
+      })
+
+      revalidate({
+        domain: 'admin',
+        paths: [`/admin/leagues/${league.id}/players`],
+      })
+      revalidate({ domain: 'public' })
+
+      return { ok: true, code: result.code, playerId: result.playerId }
+    } catch (err) {
+      // Detect Prisma unique-collision on `code` and retry; otherwise
+      // propagate.
+      if (
+        err &&
+        typeof err === 'object' &&
+        'code' in err &&
+        (err as { code?: string }).code === 'P2002'
+      ) {
+        continue
+      }
+      console.error('[recruitToLeagueWithOnboarding] failed:', err)
+      return { ok: false, error: 'Failed to start application. Please try again.' }
+    }
+  }
+  return { ok: false, error: 'Could not generate a unique invite code. Please try again.' }
 }

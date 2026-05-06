@@ -1,11 +1,13 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useTransition } from 'react'
 import { signIn } from 'next-auth/react'
 import { toast } from 'sonner'
+import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import ApplyToLeagueModal from './ApplyToLeagueModal'
 import type { RecruitingViewerState } from '@/lib/recruitingViewerState'
+import { recruitToLeagueWithOnboarding } from '@/app/api/recruiting/actions'
 
 /**
  * v1.64.0 / v1.65.1 — Context-aware recruiting banner.
@@ -44,6 +46,8 @@ interface Props {
 
 export default function RecruitingBanner({ league, viewer }: Props) {
   const [applyOpen, setApplyOpen] = useState(false)
+  const [pending, startTransition] = useTransition()
+  const router = useRouter()
 
   // ── State A — approved member of this league ─────────────────────────
   if (viewer.kind === 'approved_this') {
@@ -125,8 +129,19 @@ export default function RecruitingBanner({ league, viewer }: Props) {
         })
         return
       case 'no_player':
-        // State C — open application modal in 'fresh' mode (full intake).
-        setApplyOpen(true)
+        // v1.67.0 — State C now routes through the full /join/[code]
+        // onboarding flow (parity with admin invites). Server creates a
+        // synthetic PERSONAL invite + Player + PLM, returns the code,
+        // and we navigate to /join/<code>/onboarding which renders the
+        // canonical multi-step flow (name → ID upload → welcome).
+        startTransition(async () => {
+          const result = await recruitToLeagueWithOnboarding({ leagueId: league.id })
+          if (!result.ok) {
+            toast.error(result.error)
+            return
+          }
+          router.push(`/join/${result.code}`)
+        })
         return
       case 'in_other_league':
         // State D (v1.65.1) — open application modal in 'existing'
@@ -150,16 +165,17 @@ export default function RecruitingBanner({ league, viewer }: Props) {
         type="button"
         data-testid={ctaTestid}
         onClick={handleClick}
-        className="w-full mt-2 mb-3 rounded-2xl border border-vibrant-pink/60 bg-gradient-to-r from-vibrant-pink to-orange-500 px-4 py-3 text-left relative overflow-hidden hover:opacity-95 transition-opacity active:scale-[0.99]"
+        disabled={pending}
+        className="w-full mt-2 mb-3 rounded-2xl border border-vibrant-pink/60 bg-gradient-to-r from-vibrant-pink to-orange-500 px-4 py-3 text-left relative overflow-hidden hover:opacity-95 transition-opacity active:scale-[0.99] disabled:opacity-70 disabled:cursor-wait"
       >
         <div className="absolute inset-0 bg-diagonal-pattern opacity-10 pointer-events-none" />
         <div className="relative flex items-center justify-between gap-3">
           <div>
             <p className="font-display text-2xl font-black uppercase tracking-tight text-white leading-none">
-              Recruiting Now
+              {pending ? 'Starting your application…' : 'Recruiting Now'}
             </p>
             <p className="text-[11px] font-bold uppercase tracking-widest text-white/90 mt-1">
-              Looking for new players — tap to apply
+              {pending ? 'Hold on a moment' : 'Looking for new players — tap to apply'}
             </p>
           </div>
           <span aria-hidden className="text-2xl text-white/90 shrink-0">
@@ -168,13 +184,19 @@ export default function RecruitingBanner({ league, viewer }: Props) {
         </div>
       </button>
 
-      {(viewer.kind === 'no_player' || viewer.kind === 'in_other_league') && (
+      {/* v1.67.0 — Only State D ('in_other_league') still uses the inline
+          modal (simplified intake — existing Player just needs a position
+          for the new league). State C ('no_player') now routes through the
+          full /join/<code>/onboarding flow via
+          `recruitToLeagueWithOnboarding`, with parity to admin-issued
+          invites. */}
+      {viewer.kind === 'in_other_league' && (
         <ApplyToLeagueModal
           open={applyOpen}
           onClose={() => setApplyOpen(false)}
           leagueId={league.id}
           leagueName={league.name}
-          mode={viewer.kind === 'in_other_league' ? 'existing' : 'fresh'}
+          mode="existing"
         />
       )}
     </>

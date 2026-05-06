@@ -6,6 +6,9 @@ import { getPublicLeagueData } from '@/lib/publicData'
 import { getLeagueFlags } from '@/lib/leagueFlags'
 import { getRecruitingViewerState } from '@/lib/recruitingViewerState'
 import { getUnpaidFeeBannerData } from '@/lib/unpaidFeeBanner'
+import { getPlannedRosterStats } from '@/lib/plannedRosterStats'
+import { getServerSession } from 'next-auth'
+import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 
 export const metadata = {
@@ -48,8 +51,17 @@ export default async function LeagueByIdPage({ params }: Props) {
   let recruitingState
   let leagueRow
   let unpaidFee
+  let plannedRosterStats
   try {
-    ;[data, flags, recruitingState, leagueRow, unpaidFee] = await Promise.all([
+    const [
+      _data,
+      _flags,
+      _recruitingState,
+      _leagueRow,
+      _unpaidFee,
+      _plannedRosterStats,
+      session,
+    ] = await Promise.all([
       getPublicLeagueData(leagueId),
       getLeagueFlags(leagueId),
       getRecruitingViewerState(leagueId),
@@ -59,7 +71,18 @@ export default async function LeagueByIdPage({ params }: Props) {
       }),
       // v1.66.0 — unpaid-fee banner data; null when banner stays hidden.
       getUnpaidFeeBannerData(leagueId),
+      // v1.67.0 — planned-roster panel; auth + flag gates resolved below.
+      getPlannedRosterStats(leagueId),
+      getServerSession(authOptions),
     ])
+    data = _data
+    flags = _flags
+    recruitingState = _recruitingState
+    leagueRow = _leagueRow
+    unpaidFee = _unpaidFee
+    const userId = (session as { userId?: string | null } | null)?.userId ?? null
+    plannedRosterStats =
+      userId && flags.preseasonMode && flags.recruiting ? _plannedRosterStats : null
   } catch {
     return (
       <div className="flex items-center justify-center min-h-dvh bg-midnight text-white px-6 text-center">
@@ -93,6 +116,7 @@ export default async function LeagueByIdPage({ params }: Props) {
       recruitingState={recruitingState}
       league={leagueRow ?? undefined}
       unpaidFee={unpaidFee ?? null}
+      plannedRosterStats={plannedRosterStats ?? null}
     />
   )
 }

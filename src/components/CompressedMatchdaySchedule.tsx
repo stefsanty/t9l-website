@@ -64,7 +64,7 @@ export default function CompressedMatchdaySchedule({
     >
       <div className="px-1 mb-2">
         <p className="text-[10px] font-black uppercase tracking-[0.25em] text-fg-mid">
-          Pre-season schedule
+          Planned season schedule
         </p>
       </div>
 
