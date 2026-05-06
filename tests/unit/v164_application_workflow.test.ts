@@ -347,14 +347,19 @@ describe('v1.64.0 — RecruitingBanner state rendering', () => {
     expect(BANNER_SRC).toMatch(/onClick:\s*\(\)\s*=>\s*signIn\(/)
   })
 
-  it('no_player CTA testid is present (v1.67.0 — full onboarding flow, not modal)', () => {
+  it('no_player CTA testid is present (v1.67.2 — navigates to /recruit/<slug>)', () => {
     expect(BANNER_SRC).toMatch(/['"]recruiting-banner-cta-noplayer['"]/)
-    // v1.67.0 — State C no longer opens ApplyToLeagueModal. It now
-    // routes through `recruitToLeagueWithOnboarding` which creates a
-    // synthetic invite and navigates to /join/<code>/onboarding for the
-    // canonical full intake flow (parity with admin-issued invites).
-    expect(BANNER_SRC).toMatch(/recruitToLeagueWithOnboarding/)
-    expect(BANNER_SRC).toMatch(/router\.push\(`\/join\/\$\{result\.code\}`\)/)
+    // v1.67.2 — State C navigates to a dedicated registration route.
+    // The Player + PLM are created atomically on form submit via
+    // `applyToLeague`, not pre-created via a synthetic invite (the
+    // v1.67.0 path that left orphan rows + surfaced "This invite has
+    // been used"). Regression target: re-introducing
+    // `recruitToLeagueWithOnboarding` would re-introduce the bug.
+    // Strip comments first so the historical-context note in the file
+    // doesn't false-positive.
+    const code = BANNER_SRC.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')
+    expect(code).not.toMatch(/recruitToLeagueWithOnboarding/)
+    expect(BANNER_SRC).toMatch(/router\.push\(`\/recruit\/\$\{leagueSlug\}`\)/)
   })
 
   it('in_other_league CTA testid + opens ApplyToLeagueModal in existing mode (v1.65.1 State D fix)', () => {

@@ -126,9 +126,12 @@ describe('v1.67.0 Dashboard threading', () => {
   })
 
   it('renders the panel between RecruitingBanner and the schedule', () => {
-    const banner = dashboard.indexOf('<RecruitingBanner ')
-    const panel = dashboard.indexOf('<PlannedRosterStats ')
-    const compressed = dashboard.indexOf('<CompressedMatchdaySchedule ')
+    // Use `<Tag` without trailing space so the test tolerates both
+    // inline and multi-line JSX forms. v1.67.2 made RecruitingBanner
+    // multi-line by adding the leagueSlug prop.
+    const banner = dashboard.indexOf('<RecruitingBanner')
+    const panel = dashboard.indexOf('<PlannedRosterStats data')
+    const compressed = dashboard.indexOf('<CompressedMatchdaySchedule')
     expect(banner).toBeGreaterThan(0)
     expect(panel).toBeGreaterThan(banner)
     expect(compressed).toBeGreaterThan(panel)
@@ -206,42 +209,133 @@ describe('v1.67.0 LeaguePlannedRosterEditor component', () => {
   })
 })
 
-describe('v1.67.0 State C full-onboarding flow', () => {
+describe('v1.67.2 State C user-initiated registration flow (replaces v1.67.0 synthetic invite)', () => {
   const actions = read('src/app/api/recruiting/actions.ts')
   const banner = read('src/components/RecruitingBanner.tsx')
 
-  it('exports recruitToLeagueWithOnboarding', () => {
-    expect(actions).toMatch(/export async function recruitToLeagueWithOnboarding/)
+  // Strip block comments so legitimate documentation that mentions the
+  // dropped function name doesn't cause false negatives.
+  const codeOnly = (src: string) =>
+    src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')
+
+  it('drops recruitToLeagueWithOnboarding from the recruiting actions module', () => {
+    // Regression target: re-introducing the legacy export would re-introduce
+    // the "This invite has been used" + orphan-Player bug.
+    expect(codeOnly(actions)).not.toMatch(/export async function recruitToLeagueWithOnboarding/)
   })
 
-  it('creates a synthetic PERSONAL invite + Player + PLM atomically', () => {
-    const fn = actions.split('export async function recruitToLeagueWithOnboarding')[1]
-    expect(fn).toMatch(/prisma\.\$transaction/)
-    expect(fn).toMatch(/leagueInvite\.create/)
-    expect(fn).toMatch(/kind:\s*'PERSONAL'/)
-    expect(fn).toMatch(/playerLeagueMembership\.create/)
-    expect(fn).toMatch(/applicationStatus:\s*'PENDING'/)
-    expect(fn).toMatch(/onboardingStatus:\s*'NOT_YET'/)
-    // Pre-redeemed so it can't be reused.
-    expect(fn).toMatch(/usedCount:\s*1/)
+  it('drops the synthetic-invite shape from recruiting actions', () => {
+    const code = codeOnly(actions)
+    // Pre-v1.67.2 these constants signed the synthetic-invite path.
+    expect(code).not.toMatch(/computeInviteExpiry/)
+    expect(code).not.toMatch(/generateInviteCode/)
   })
 
-  it('rejects when user already has a Player (State D path)', () => {
-    const fn = actions.split('export async function recruitToLeagueWithOnboarding')[1]
-    expect(fn).toMatch(/already have a player profile/)
+  it('RecruitingBanner State C navigates to /recruit/<slug>', () => {
+    expect(banner).toMatch(/router\.push\(`\/recruit\/\$\{leagueSlug\}`\)/)
   })
 
-  it('RecruitingBanner routes State C through the new action', () => {
-    expect(banner).toMatch(/recruitToLeagueWithOnboarding/)
-    // State C calls the new action and router.push to /join/<code>.
-    expect(banner).toMatch(/router\.push\(`\/join\/\$\{result\.code\}`\)/)
+  it('RecruitingBanner no longer imports recruitToLeagueWithOnboarding', () => {
+    // Strip comments — the historical-context comment legitimately
+    // mentions the dropped function name.
+    const code = codeOnly(banner)
+    expect(code).not.toMatch(/recruitToLeagueWithOnboarding/)
   })
 
-  it('RecruitingBanner only shows ApplyToLeagueModal for State D now', () => {
-    // Modal block should be gated on `kind === 'in_other_league'` only.
+  it('RecruitingBanner accepts an optional leagueSlug prop', () => {
+    expect(banner).toMatch(/leagueSlug\?:\s*string/)
+    expect(banner).toMatch(/leagueSlug\s*=\s*DEFAULT_LEAGUE_SLUG/)
+  })
+
+  it('RecruitingBanner only shows ApplyToLeagueModal for State D', () => {
+    // Modal block remains gated on `kind === 'in_other_league'`.
     expect(banner).toMatch(/viewer\.kind === 'in_other_league'[\s\S]*<ApplyToLeagueModal/)
-    // Pre-v1.67.0 also gated on 'no_player' — that branch is gone.
     expect(banner).not.toMatch(/viewer\.kind === 'no_player' \|\| viewer\.kind === 'in_other_league'/)
+  })
+
+  it('Dashboard threads leagueSlug into RecruitingBanner', () => {
+    const dashboard = read('src/components/Dashboard.tsx')
+    // RecruitingBanner mount point now passes leagueSlug.
+    expect(dashboard).toMatch(/<RecruitingBanner[\s\S]*leagueSlug=\{leagueSlug\}/)
+  })
+})
+
+describe('v1.67.2 /recruit/[slug] route + form', () => {
+  it('page.tsx exists, gates on session + league + recruiting + no-existing-player', () => {
+    const src = read('src/app/recruit/[slug]/page.tsx')
+    expect(src).toMatch(/getLeagueIdBySlug/)
+    expect(src).toMatch(/getServerSession\(authOptions\)/)
+    // League not found → notFound()
+    expect(src).toMatch(/notFound\(\)/)
+    // Not recruiting surface
+    expect(src).toMatch(/data-testid="recruit-not-recruiting"/)
+    // Sign-in surface
+    expect(src).toMatch(/data-testid="recruit-sign-in"/)
+    // Admin session surface
+    expect(src).toMatch(/data-testid="recruit-admin-session"/)
+    // User has playerId → redirect to /id/<slug>
+    expect(src).toMatch(/redirect\(`\/id\/\$\{slug\}`\)/)
+    // Default render — registration form
+    expect(src).toMatch(/data-testid="recruit-registration"/)
+    expect(src).toMatch(/<RegistrationForm/)
+  })
+
+  it('RegistrationForm uses applyToLeague (atomic Player + PLM creation)', () => {
+    const src = read('src/app/recruit/[slug]/RegistrationForm.tsx')
+    expect(src).toMatch(/'use client'/)
+    expect(src).toMatch(/import\s*\{\s*applyToLeague\s*\}\s*from/)
+    // Form submit must call applyToLeague — NOT a synthetic-invite action.
+    expect(src).toMatch(/applyToLeague\(\{/)
+    // No reference to the dropped legacy action.
+    expect(src).not.toMatch(/recruitToLeagueWithOnboarding/)
+    // Lands on /id/<slug> on success so the banner shows State B.
+    expect(src).toMatch(/router\.push\(`\/id\/\$\{leagueSlug\}`\)/)
+    // Standard form testids.
+    expect(src).toMatch(/data-testid="recruit-registration-form"/)
+    expect(src).toMatch(/data-testid="recruit-name"/)
+    expect(src).toMatch(/data-testid="recruit-position"/)
+    expect(src).toMatch(/data-testid="recruit-submit"/)
+  })
+
+  it('RegistrationForm mirrors OnboardingForm position-enum shape', () => {
+    const src = read('src/app/recruit/[slug]/RegistrationForm.tsx')
+    // Same five options as OnboardingForm — kept in sync per the doc comment.
+    expect(src).toMatch(/Prefer not to say/)
+    expect(src).toMatch(/GK\s*—\s*Goalkeeper/)
+    expect(src).toMatch(/DF\s*—\s*Defender/)
+    expect(src).toMatch(/MF\s*—\s*Midfielder/)
+    expect(src).toMatch(/FW\s*—\s*Forward/)
+  })
+})
+
+describe('v1.67.2 orphan-cleanup script', () => {
+  const src = read('scripts/cleanupV167SyntheticInviteOrphans.ts')
+
+  it('matches synthetic-invite signature: maxUses=1, usedCount=1, skipOnboarding=false, kind=PERSONAL', () => {
+    expect(src).toMatch(/kind:\s*'PERSONAL'/)
+    expect(src).toMatch(/maxUses:\s*1/)
+    expect(src).toMatch(/usedCount:\s*1/)
+    expect(src).toMatch(/skipOnboarding:\s*false/)
+  })
+
+  it('only deletes Players with name=null (regression target — preserves user-filled rows)', () => {
+    expect(src).toMatch(/player\.name\s*!==\s*null/)
+  })
+
+  it('clears User.playerId before deleting Player (unique-constraint ordering)', () => {
+    // Look for the deletion order inside the deleteOrphan function. The
+    // user.update with playerId: null must come before player.delete.
+    const fn = src.split('async function deleteOrphan')[1]
+    expect(fn).toBeDefined()
+    const userUpdateIdx = fn.indexOf('user.update')
+    const playerDeleteIdx = fn.indexOf('player.delete')
+    expect(userUpdateIdx).toBeGreaterThan(0)
+    expect(playerDeleteIdx).toBeGreaterThan(userUpdateIdx)
+  })
+
+  it('defaults to dry-run mode (--apply gates the writes)', () => {
+    expect(src).toMatch(/--apply/)
+    expect(src).toMatch(/process\.argv\.includes\('--apply'\)/)
   })
 })
 
