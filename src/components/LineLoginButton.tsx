@@ -7,6 +7,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { APP_VERSION } from '@/lib/version';
 import SignInLightbox from './SignInLightbox';
+import { getCurrentCallbackUrl } from '@/lib/signInCallbackUrl';
 
 const GUEST_DISMISSED_KEY = 't9l-guest-dismissed';
 const INSTALL_DISMISSED_KEY = 't9l-install-dismissed';
@@ -165,6 +166,16 @@ export default function LineLoginButton() {
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [showInstallModal, setShowInstallModal] = useState(false);
   const [showSignInLightbox, setShowSignInLightbox] = useState(false);
+  // v1.70.3 — capture the current page path at click time so the OAuth
+  // round-trip returns the user to whichever league subpage they
+  // triggered sign-in from (pre-v1.70.3 callbackUrl defaulted to '/'
+  // and dropped /id/<slug> context).
+  const [signInCallbackUrl, setSignInCallbackUrl] = useState('/');
+
+  function openSignInLightbox() {
+    setSignInCallbackUrl(getCurrentCallbackUrl());
+    setShowSignInLightbox(true);
+  }
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [isIOS, setIsIOS] = useState(false);
   const [isStandalone, setIsStandalone] = useState(false);
@@ -259,7 +270,7 @@ export default function LineLoginButton() {
                 if (isLocalDev) {
                   setOpen(!open);
                 } else {
-                  setShowSignInLightbox(true);
+                  openSignInLightbox();
                 }
               }}
               className="bg-[#06C755] hover:bg-[#05b34c] active:scale-95 text-white text-[11px] font-black uppercase tracking-wider px-3 md:px-4 py-1.5 rounded-full transition-all"
@@ -271,7 +282,7 @@ export default function LineLoginButton() {
             {open && isLocalDev && (
             <div className="absolute right-0 top-full mt-2 w-52 bg-card border border-border-default rounded-2xl overflow-hidden z-50 shadow-2xl">
               <button
-                onClick={() => { setOpen(false); setShowSignInLightbox(true); }}
+                onClick={() => { setOpen(false); openSignInLightbox(); }}
                 className="w-full flex items-center gap-2 px-4 py-3 text-[12px] font-bold text-fg-high hover:text-fg-mid hover:bg-surface transition-colors border-b border-border-subtle"
               >
                 {"Open sign-in lightbox"}
@@ -325,7 +336,7 @@ export default function LineLoginButton() {
             </Link>
           )}
         </div>
-        <SignInLightbox open={showSignInLightbox} onClose={() => setShowSignInLightbox(false)} />
+        <SignInLightbox open={showSignInLightbox} onClose={() => setShowSignInLightbox(false)} callbackUrl={signInCallbackUrl} />
       </>
     );
   }

@@ -3,12 +3,23 @@
 import { useState } from 'react';
 import { useSession } from 'next-auth/react';
 import SignInLightbox from './SignInLightbox';
+import { getCurrentCallbackUrl } from '@/lib/signInCallbackUrl';
 
 export default function GuestLoginBanner() {
   const { data: session, status } = useSession();
   const [open, setOpen] = useState(false);
+  // v1.70.3 — capture the current page path at click time so the OAuth
+  // round-trip returns the user to the league subpage they triggered
+  // sign-in from (pre-v1.70.3 callbackUrl defaulted to '/' and dropped
+  // /id/<slug> context).
+  const [callbackUrl, setCallbackUrl] = useState('/');
 
   if (status === 'loading' || session) return null;
+
+  function openLightbox() {
+    setCallbackUrl(getCurrentCallbackUrl());
+    setOpen(true);
+  }
 
   return (
     <>
@@ -24,7 +35,7 @@ export default function GuestLoginBanner() {
             </p>
           </div>
           <button
-            onClick={() => setOpen(true)}
+            onClick={openLightbox}
             className="shrink-0 bg-[#06C755] hover:bg-[#05b34c] active:scale-95 text-white text-[12px] font-black uppercase tracking-wider px-5 py-2 rounded-xl transition-all shadow-[0_4px_12px_rgba(6,199,85,0.2)]"
             data-testid="guest-banner-signin"
           >
@@ -32,7 +43,7 @@ export default function GuestLoginBanner() {
           </button>
         </div>
       </div>
-      <SignInLightbox open={open} onClose={() => setOpen(false)} />
+      <SignInLightbox open={open} onClose={() => setOpen(false)} callbackUrl={callbackUrl} />
     </>
   );
 }
