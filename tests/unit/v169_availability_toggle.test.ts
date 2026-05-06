@@ -156,8 +156,11 @@ describe('v1.69.0 MatchdayAvailability — viewMode routes both branches', () =>
 })
 
 describe('v1.69.0 — version pinned', () => {
-  it('APP_VERSION bumped to 1.69.0', () => {
+  // Floor check — v1.69.0 introduced the toggle; subsequent patches stay
+  // in the v1.69.x line. Pinning the literal value would conflict with
+  // every patch bump (cf. v1.69.1 body-limit fix).
+  it('APP_VERSION is in the v1.69.x line or later', () => {
     const src = read('src/lib/version.ts')
-    expect(src).toMatch(/APP_VERSION\s*=\s*['"]1\.69\.0['"]/)
+    expect(src).toMatch(/APP_VERSION\s*=\s*['"](?:1\.69\.\d+|1\.[7-9]\d*\.\d+|[2-9]\.\d+\.\d+)['"]/)
   })
 })
