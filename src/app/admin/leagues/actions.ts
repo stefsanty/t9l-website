@@ -1839,3 +1839,237 @@ export async function adminSetMatchScoreOverride(input: {
     ],
   })
 }
+
+// ── v1.66.0 — Player payment system ─────────────────────────────────────────
+
+/**
+ * v1.66.0 — Update league fee settings: defaultFee + positionFees rows.
+ *
+ * Admin-only. Replaces the league's positionFees set with the supplied
+ * array (delete-and-recreate inside a transaction so the operation is
+ * atomic). Empty input.positionFees clears all per-position rows;
+ * defaultFee stays.
+ *
+ * Validation:
+ *   - assertAdmin
+ *   - league exists
+ *   - defaultFee is a non-negative integer
+ *   - each positionFee.position is a non-empty trimmed string ≤ 32 chars
+ *   - each positionFee.fee is a non-negative integer
+ *   - position values are unique within input
+ */
+export async function updateLeagueFeeSettings(input: {
+  leagueId: string
+  defaultFee: number
+  positionFees: Array<{ position: string; fee: number }>
+}): Promise<void> {
+  await assertAdmin()
+  if (!input.leagueId) throw new Error('leagueId is required')
+  if (!Number.isInteger(input.defaultFee) || input.defaultFee < 0) {
+    throw new Error('defaultFee must be a non-negative integer')
+  }
+
+  // Normalize position rows: trim, drop empties, dedup by position.
+  const normalized: { position: string; fee: number }[] = []
+  const seen = new Set<string>()
+  for (const row of input.positionFees) {
+    const position = row.position.trim()
+    if (!position) continue
+    if (position.length > 32) {
+      throw new Error('position must be 32 characters or fewer')
+    }
+    if (!Number.isInteger(row.fee) || row.fee < 0) {
+      throw new Error('fee must be a non-negative integer')
+    }
+    if (seen.has(position)) {
+      throw new Error(`duplicate position: ${position}`)
+    }
+    seen.add(position)
+    normalized.push({ position, fee: row.fee })
+  }
+
+  const league = await prisma.league.findUnique({
+    where: { id: input.leagueId },
+    select: { id: true },
+  })
+  if (!league) throw new Error('League not found')
+
+  await prisma.$transaction(async (tx) => {
+    await tx.league.update({
+      where: { id: input.leagueId },
+      data: { defaultFee: input.defaultFee },
+    })
+    await tx.leaguePositionFee.deleteMany({ where: { leagueId: input.leagueId } })
+    if (normalized.length > 0) {
+      await tx.leaguePositionFee.createMany({
+        data: normalized.map((p) => ({
+          leagueId: input.leagueId,
+          position: p.position,
+          fee: p.fee,
+        })),
+      })
+    }
+  })
+
+  revalidate({
+    domain: 'admin',
+    paths: [
+      `/admin/leagues/${input.leagueId}`,
+      `/admin/leagues/${input.leagueId}/players`,
+    ],
+  })
+  revalidate({ domain: 'public' })
+}
+
+/**
+ * v1.66.0 — Toggle paid status on a single PlayerLeagueMembership.
+ *
+ * Sets paidAt to now() when flipping to PAID; nulls it when flipping
+ * to UNPAID. Admin-only. IDOR-validated: the membership must belong to
+ * the supplied league.
+ */
+export async function updateMembershipPaidStatus(input: {
+  membershipId: string
+  leagueId: string
+  status: 'PAID' | 'UNPAID'
+}): Promise<void> {
+  await assertAdmin()
+  if (!input.membershipId) throw new Error('membershipId is required')
+  if (!input.leagueId) throw new Error('leagueId is required')
+  if (input.status !== 'PAID' && input.status !== 'UNPAID') {
+    throw new Error('status must be PAID or UNPAID')
+  }
+
+  // IDOR — verify membership belongs to this league via direct leagueId
+  // (v1.65.0) OR via leagueTeam.leagueId (legacy backfilled rows).
+  const plm = await prisma.playerLeagueMembership.findUnique({
+    where: { id: input.membershipId },
+    select: {
+      leagueId: true,
+      leagueTeam: { select: { leagueId: true } },
+    },
+  })
+  if (!plm) throw new Error('Membership not found')
+  const plmLeagueId = plm.leagueId ?? plm.leagueTeam?.leagueId ?? null
+  if (plmLeagueId !== input.leagueId) {
+    throw new Error('Membership does not belong to this league')
+  }
+
+  await prisma.playerLeagueMembership.update({
+    where: { id: input.membershipId },
+    data: {
+      paidStatus: input.status,
+      paidAt: input.status === 'PAID' ? new Date() : null,
+    },
+  })
+
+  revalidate({
+    domain: 'admin',
+    paths: [`/admin/leagues/${input.leagueId}/players`],
+  })
+  revalidate({ domain: 'public' })
+}
+
+/**
+ * v1.66.0 — Bulk-update paid status across multiple memberships.
+ *
+ * Same semantics as `updateMembershipPaidStatus` — paidAt = now() on
+ * PAID, null on UNPAID. Capped at 200 memberships per call to bound
+ * the transaction. IDOR-validated per-row: every supplied
+ * membershipId must belong to the supplied league.
+ */
+export async function bulkUpdatePaidStatus(input: {
+  membershipIds: string[]
+  leagueId: string
+  status: 'PAID' | 'UNPAID'
+}): Promise<void> {
+  await assertAdmin()
+  if (!input.leagueId) throw new Error('leagueId is required')
+  if (input.status !== 'PAID' && input.status !== 'UNPAID') {
+    throw new Error('status must be PAID or UNPAID')
+  }
+  if (input.membershipIds.length === 0) return
+  if (input.membershipIds.length > 200) {
+    throw new Error('Cannot update more than 200 memberships at once')
+  }
+
+  // IDOR — all supplied memberships must belong to this league.
+  const memberships = await prisma.playerLeagueMembership.findMany({
+    where: { id: { in: input.membershipIds } },
+    select: {
+      id: true,
+      leagueId: true,
+      leagueTeam: { select: { leagueId: true } },
+    },
+  })
+  if (memberships.length !== input.membershipIds.length) {
+    throw new Error('One or more memberships not found')
+  }
+  for (const m of memberships) {
+    const plmLeagueId = m.leagueId ?? m.leagueTeam?.leagueId ?? null
+    if (plmLeagueId !== input.leagueId) {
+      throw new Error('One or more memberships do not belong to this league')
+    }
+  }
+
+  await prisma.playerLeagueMembership.updateMany({
+    where: { id: { in: input.membershipIds } },
+    data: {
+      paidStatus: input.status,
+      paidAt: input.status === 'PAID' ? new Date() : null,
+    },
+  })
+
+  revalidate({
+    domain: 'admin',
+    paths: [`/admin/leagues/${input.leagueId}/players`],
+  })
+  revalidate({ domain: 'public' })
+}
+
+/**
+ * v1.66.0 — Set or clear a per-membership fee override.
+ *
+ * `feeOverride: null` clears the override (membership falls back to
+ * resolved fee from position/default). `feeOverride: number` must be
+ * a non-negative integer.
+ */
+export async function updateMembershipFeeOverride(input: {
+  membershipId: string
+  leagueId: string
+  feeOverride: number | null
+}): Promise<void> {
+  await assertAdmin()
+  if (!input.membershipId) throw new Error('membershipId is required')
+  if (!input.leagueId) throw new Error('leagueId is required')
+  if (input.feeOverride !== null) {
+    if (!Number.isInteger(input.feeOverride) || input.feeOverride < 0) {
+      throw new Error('feeOverride must be a non-negative integer or null')
+    }
+  }
+
+  // IDOR — verify membership belongs to this league.
+  const plm = await prisma.playerLeagueMembership.findUnique({
+    where: { id: input.membershipId },
+    select: {
+      leagueId: true,
+      leagueTeam: { select: { leagueId: true } },
+    },
+  })
+  if (!plm) throw new Error('Membership not found')
+  const plmLeagueId = plm.leagueId ?? plm.leagueTeam?.leagueId ?? null
+  if (plmLeagueId !== input.leagueId) {
+    throw new Error('Membership does not belong to this league')
+  }
+
+  await prisma.playerLeagueMembership.update({
+    where: { id: input.membershipId },
+    data: { feeOverride: input.feeOverride },
+  })
+
+  revalidate({
+    domain: 'admin',
+    paths: [`/admin/leagues/${input.leagueId}/players`],
+  })
+  revalidate({ domain: 'public' })
+}

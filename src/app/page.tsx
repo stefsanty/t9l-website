@@ -4,6 +4,7 @@ import { getPublicLeagueData } from "@/lib/publicData";
 import { DEFAULT_LEAGUE_SLUG, getDefaultLeagueId } from "@/lib/leagueSlug";
 import { getLeagueFlags } from "@/lib/leagueFlags";
 import { getRecruitingViewerState } from "@/lib/recruitingViewerState";
+import { getUnpaidFeeBannerData } from "@/lib/unpaidFeeBanner";
 import { prisma } from "@/lib/prisma";
 
 /**
@@ -47,6 +48,7 @@ export default async function Home() {
   let flags;
   let recruitingState;
   let leagueRow;
+  let unpaidFee;
   try {
     // v1.63.0 — fetch LeagueData + per-league flags in parallel. Flags
     // are cached separately under the same `leagues` tag so admin writes
@@ -59,7 +61,7 @@ export default async function Home() {
     // name fetch is bounded by the cached LeagueData but we need the
     // canonical row for the banner (LeagueData carries teams + matches,
     // not the League's own fields).
-    [data, flags, recruitingState, leagueRow] = await Promise.all([
+    [data, flags, recruitingState, leagueRow, unpaidFee] = await Promise.all([
       getPublicLeagueData(leagueId),
       getLeagueFlags(leagueId),
       getRecruitingViewerState(leagueId),
@@ -67,6 +69,8 @@ export default async function Home() {
         where: { id: leagueId },
         select: { id: true, name: true },
       }),
+      // v1.66.0 — unpaid-fee banner data; null when banner stays hidden.
+      getUnpaidFeeBannerData(leagueId),
     ]);
   } catch {
     return (
@@ -96,6 +100,7 @@ export default async function Home() {
       recruiting={flags.recruiting}
       recruitingState={recruitingState}
       league={leagueRow ?? undefined}
+      unpaidFee={unpaidFee ?? null}
     />
   );
 }

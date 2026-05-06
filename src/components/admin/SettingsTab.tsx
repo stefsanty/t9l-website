@@ -16,6 +16,7 @@ import {
 } from '@/app/admin/leagues/actions'
 import type { DataSource, WriteMode } from '@/lib/settings'
 import { formatJstDate } from '@/lib/jst'
+import LeagueFeesEditor from './LeagueFeesEditor'
 
 interface League {
   id: string
@@ -33,6 +34,10 @@ interface League {
   // false; threaded from `getLeagueSettings` alongside `allowSelfLink`.
   preseasonMode: boolean
   recruiting: boolean
+  // v1.66.0 — per-league fee defaults + per-position fee rows. Both
+  // threaded from getLeagueSettings's include.
+  defaultFee: number
+  positionFees: ReadonlyArray<{ position: string; fee: number }>
 }
 
 // JST calendar date as YYYY-MM-DD for `<input type="date">`. See lib/jst.ts.
@@ -622,6 +627,15 @@ export default function SettingsTab({
           </div>
         )}
       </section>
+
+      {/* v1.66.0 — Player Fees section. Replaces the league's defaultFee
+          + positionFees set atomically; the resolver in lib/playerFee.ts
+          looks up positions case-sensitively against PLM.position. */}
+      <LeagueFeesEditor
+        leagueId={league.id}
+        initialDefaultFee={league.defaultFee}
+        initialPositionFees={league.positionFees}
+      />
 
       {/* Quick actions */}
       <section className="bg-admin-surface rounded-xl border border-admin-border p-5 space-y-4">

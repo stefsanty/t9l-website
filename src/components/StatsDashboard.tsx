@@ -8,6 +8,8 @@ import LeagueTable from './LeagueTable';
 import TopPerformers from './TopPerformers';
 import SquadList from './SquadList';
 import Header from './Header';
+import UnpaidFeeBanner from './UnpaidFeeBanner';
+import type { UnpaidFeeBannerData } from '@/lib/unpaidFeeBanner';
 
 interface StatsDashboardProps {
   teams: Team[];
@@ -19,6 +21,8 @@ interface StatsDashboardProps {
   nextMatchdayId: string;
   nextMatchdayLabel: string;
   playerPictures: Record<string, string>;
+  // v1.66.0 — unpaid-fee banner data; null when banner stays hidden.
+  unpaidFee?: UnpaidFeeBannerData | null;
 }
 
 // ── Stats Dashboard ───────────────────────────────────────────────────────────
@@ -33,12 +37,14 @@ export default function StatsDashboard({
   nextMatchdayId,
   nextMatchdayLabel,
   playerPictures,
+  unpaidFee,
 }: StatsDashboardProps) {
   return (
     <div className="flex flex-col min-h-dvh pb-0 max-w-lg mx-auto bg-background selection:bg-vibrant-pink selection:text-white">
       <Header />
 
       <main className="flex-1 px-4 relative z-10 pt-16 space-y-16 pb-12">
+        <UnpaidFeeBanner data={unpaidFee ?? null} />
         <div className="space-y-16 animate-in pt-4">
           <div className="relative">
             <div className="flex items-center gap-4 mb-8">

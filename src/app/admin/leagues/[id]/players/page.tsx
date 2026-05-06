@@ -4,8 +4,10 @@ import {
   getAllLineLoginsWithLinkedPlayer,
   getLinkablePlayersForLeague,
   getPlayerOtherLeaguesForLeague,
+  getLeagueSettings,
 } from '@/lib/admin-data'
 import PlayersTab from '@/components/admin/PlayersTab'
+import { resolvePlayerFee } from '@/lib/playerFee'
 
 type Props = { params: Promise<{ id: string }> }
 
@@ -21,19 +23,26 @@ export default async function PlayersPage({ params }: Props) {
     allLineLoginsRaw,
     linkableCandidates,
     otherLeaguesByPlayerId,
+    // v1.66.0 — League settings include defaultFee + positionFees so the
+    // admin Players tab can resolve effectiveFee per row.
+    leagueSettings,
   ] = await Promise.all([
     getLeaguePlayers(id),
     getOrphanLineLogins(),
     getAllLineLoginsWithLinkedPlayer(),
-    // v1.56.0 (PR 3 of route-shortening chain) — global Players NOT
-    // currently on this league's roster, with the names of other
-    // leagues they're in. Drives the LinkExistingPlayerDialog.
     getLinkablePlayersForLeague(id),
-    // v1.56.0 — for every player ON this league's roster, the names of
-    // OTHER active leagues they're in. Drives the per-row "Also in:
-    // <league>" differentiation cue on PlayersTab.
     getPlayerOtherLeaguesForLeague(id),
+    getLeagueSettings(id),
   ])
+
+  // v1.66.0 — fee-resolution context for resolvePlayerFee. defaults to
+  // 0/empty when getLeagueSettings returns null (catastrophic config),
+  // so resolved fee is 0 and the "Mark paid" UI doesn't surface a
+  // misleading number.
+  const feeLeague = {
+    defaultFee: leagueSettings?.defaultFee ?? 0,
+    positionFees: leagueSettings?.positionFees ?? [],
+  }
 
   const playerMap = new Map<string, {
     id: string
@@ -75,6 +84,13 @@ export default async function PlayersPage({ params }: Props) {
     // admin review. PlayersTab renders a status badge for PENDING + adds
     // Approve/Reject kebab items.
     applicationStatus: 'APPROVED' | 'PENDING'
+    // v1.66.0 — payment status surface from the active PLM. Optional
+    // here because pending-application synthetic rows don't have an
+    // active PLM with payment state (admin assigns + flips on approval).
+    paidStatus?: 'PAID' | 'UNPAID'
+    effectiveFee?: number
+    feeOverride?: number | null
+    membershipId?: string
     assignments: {
       id: string
       fromGameWeek: number
@@ -134,6 +150,16 @@ export default async function PlayersPage({ params }: Props) {
         // v1.65.4 — applicationStatus is now per-PLM. APPROVED memberships
         // (no synthetic-row applicants reach this loop) get APPROVED.
         applicationStatus: a.applicationStatus,
+        // v1.66.0 — payment status for the active PLM. effectiveFee
+        // resolves through the canonical resolver — feeOverride > position
+        // match > defaultFee.
+        paidStatus: a.paidStatus,
+        effectiveFee: resolvePlayerFee(
+          { position: a.position, feeOverride: a.feeOverride },
+          feeLeague,
+        ),
+        feeOverride: a.feeOverride,
+        membershipId: a.id,
         assignments: [aWithTeam],
       })
     }

@@ -8,6 +8,7 @@ import StatsDashboard from "@/components/StatsDashboard";
 import { getPublicLeagueData } from "@/lib/publicData";
 import { getDefaultLeagueId } from "@/lib/leagueSlug";
 import { getLeagueFlags } from "@/lib/leagueFlags";
+import { getUnpaidFeeBannerData } from "@/lib/unpaidFeeBanner";
 
 async function fetchPlayerPictures(
   playerIds: string[],
@@ -55,8 +56,13 @@ export default async function StatsPage() {
   }
 
   let data;
+  // v1.66.0 — unpaid-fee banner data; null when banner stays hidden.
+  let unpaidFee = null;
   try {
-    data = await getPublicLeagueData(leagueId ?? undefined);
+    [data, unpaidFee] = await Promise.all([
+      getPublicLeagueData(leagueId ?? undefined),
+      leagueId ? getUnpaidFeeBannerData(leagueId) : Promise.resolve(null),
+    ]);
   } catch {
     return (
       <div className="flex items-center justify-center min-h-dvh bg-midnight text-white px-6 text-center">
@@ -90,6 +96,7 @@ export default async function StatsPage() {
       nextMatchdayId={nextMd?.matchday.id ?? "md1"}
       nextMatchdayLabel={nextMd?.matchday.label ?? "MD1"}
       playerPictures={playerPictures}
+      unpaidFee={unpaidFee}
     />
   );
 }

@@ -6,6 +6,8 @@ import MatchdayCard from "@/components/MatchdayCard";
 import Header from "@/components/Header";
 import { getPublicLeagueData } from "@/lib/publicData";
 import { getDefaultLeagueId } from "@/lib/leagueSlug";
+import { getUnpaidFeeBannerData } from "@/lib/unpaidFeeBanner";
+import UnpaidFeeBanner from "@/components/UnpaidFeeBanner";
 
 export const metadata = {
   title: "Schedule | T9L",
@@ -22,8 +24,15 @@ export default async function SchedulePage() {
   const leagueId = await getDefaultLeagueId();
 
   let data;
+  // v1.66.0 — unpaid-fee banner: fetch alongside league data so the
+  // schedule page surfaces the same fee-due nudge as the homepage.
+  // Null when banner stays hidden (no auth, no PLM, paid, no fee).
+  let unpaidFee = null;
   try {
-    data = await getPublicLeagueData(leagueId ?? undefined);
+    [data, unpaidFee] = await Promise.all([
+      getPublicLeagueData(leagueId ?? undefined),
+      leagueId ? getUnpaidFeeBannerData(leagueId) : Promise.resolve(null),
+    ]);
   } catch {
     return (
       <div className="flex items-center justify-center min-h-dvh bg-midnight text-white px-6 text-center">
@@ -54,6 +63,7 @@ export default async function SchedulePage() {
       <Header />
 
       <main className="flex-1 max-w-lg mx-auto px-4 pt-16 pb-12">
+        <UnpaidFeeBanner data={unpaidFee} />
         <div className="flex items-center justify-between mb-8">
           <h1 className="font-display text-5xl font-black uppercase tracking-tighter text-fg-high">
             Schedule
