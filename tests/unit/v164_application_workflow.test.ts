@@ -488,17 +488,20 @@ describe('v1.64.0 — getLeaguePlayers fetches pending applications (v1.65.4 —
     )
   })
 
-  it('returns 6-element tuple including merged pending applications (v1.65.1)', () => {
-    // v1.65.1 — last tuple element is `mergedPendingApplications` which
-    // unions the v1.64.0 `pendingApplications` source (Player rows) with
-    // the new v1.65.1 `pendingMemberships` source (PLM rows). Both
-    // surfaces' `Player` shape is what consumers receive.
-    expect(ADMIN_DATA_SRC).toMatch(/mergedPendingApplications,?\s*\] as const/)
+  it('returns 7-element tuple including merged pending applications (v1.70.0 added idDataByPlayerId)', () => {
+    // v1.65.1 — `mergedPendingApplications` unions v1.64.0
+    // `pendingApplications` (Player rows) with v1.65.1
+    // `pendingMemberships` (PLM rows).
+    // v1.70.0 — `idDataByPlayerId` appended as the 7th element so the
+    // page-level builder can surface ID upload state from User.
+    expect(ADMIN_DATA_SRC).toMatch(/mergedPendingApplications,/)
+    expect(ADMIN_DATA_SRC).toMatch(/idDataByPlayerId,?\s*\] as const/)
   })
 
   it('players page destructures the new tuple element', () => {
+    // v1.70.0 — destructure picks up the 7th element idDataByPlayerId.
     expect(PLAYERS_PAGE_SRC).toMatch(
-      /\[assignments,\s*leagueTeams,\s*gameWeeks,\s*lineLoginsByLineId,\s*activeInviteCountByPlayerId,\s*pendingApplications\]/,
+      /\[\s*assignments,\s*leagueTeams,\s*gameWeeks,\s*lineLoginsByLineId,\s*activeInviteCountByPlayerId,\s*pendingApplications,\s*idDataByPlayerId,?\s*\]/,
     )
   })
 

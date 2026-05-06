@@ -95,6 +95,17 @@ export default async function AccountPlayerPage() {
     player = await prisma.player.findUnique({ where: { lineId }, include: playerInclude })
   }
 
+  // v1.70.0 — ID upload state lives on User. Fetch via the resolved
+  // userId (or via the linked Player.userId fallback for legacy
+  // lineId-only sessions).
+  const idUserId = userId ?? player?.userId ?? null
+  const idUser = idUserId
+    ? await prisma.user.findUnique({
+        where: { id: idUserId },
+        select: { idUploadedAt: true },
+      })
+    : null
+
   if (!player) {
     // Authenticated but no Player linked. Two sub-cases share this
     // copy — Google/email lurker who hasn't redeemed an invite, or
@@ -170,7 +181,7 @@ export default async function AccountPlayerPage() {
     blobConfigured: !!process.env.BLOB_READ_WRITE_TOKEN,
     currentTeamName: activeAssignment?.leagueTeam?.team.name ?? null,
     currentLeagueName: activeAssignment?.leagueTeam?.league.name ?? null,
-    hasUploadedId: !!player.idUploadedAt,
+    hasUploadedId: !!idUser?.idUploadedAt,
     adminContactEmail: ADMIN_CONTACT_EMAIL,
   }
 

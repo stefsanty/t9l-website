@@ -74,7 +74,15 @@ describe('PR λ — redeemInvite routes BOTH branches through linkUserToPlayer',
 
   it('does NOT contain a standalone tx.user.update({...playerId}) outside the helper', () => {
     // Same shape — the helper handles the User.update.
-    expect(cleaned).not.toMatch(/tx\.user\.update\(\s*\{[\s\S]*?where:\s*\{\s*id:\s*userId\s*\}[\s\S]*?data:\s*\{[\s\S]*?playerId/)
+    // v1.70.0 — tightened regex to require `playerId` as the FIRST data
+    // key (matches the pre-λ regression target shape exactly). The
+    // post-v1.70.0 file does carry `tx.user.update({where: {id: userId},
+    // data: {idFrontUrl, ...}})` blocks for ID image writes, which the
+    // looser pre-v1.70.0 regex would have falsely matched against
+    // unrelated `playerId` references later in the file.
+    expect(cleaned).not.toMatch(
+      /tx\.user\.update\(\s*\{\s*where:\s*\{\s*id:\s*userId\s*\}\s*,\s*data:\s*\{\s*playerId/,
+    )
   })
 })
 

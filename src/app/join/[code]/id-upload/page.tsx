@@ -50,7 +50,10 @@ export default async function IdUploadPage({ params }: Props) {
   })
   if (!invite) redirect(`/join/${code}`)
 
-  const [league, assignment] = await Promise.all([
+  // v1.70.0 — ID upload state lives on User now (per-person identity
+  // proof). Fetch the User alongside the league + assignment in
+  // parallel for the idempotent re-visit gate.
+  const [league, assignment, user] = await Promise.all([
     prisma.league.findUnique({
       where: { id: invite.leagueId },
       select: { id: true, name: true, subdomain: true },
@@ -65,12 +68,13 @@ export default async function IdUploadPage({ params }: Props) {
           select: {
             id: true,
             name: true,
-            idFrontUrl: true,
-            idBackUrl: true,
-            idUploadedAt: true,
           },
         },
       },
+    }),
+    prisma.user.findUnique({
+      where: { id: userId },
+      select: { idUploadedAt: true },
     }),
   ])
 
@@ -86,7 +90,7 @@ export default async function IdUploadPage({ params }: Props) {
   }
 
   const blobConfigured = !!process.env.BLOB_READ_WRITE_TOKEN
-  const alreadyUploaded = !!assignment.player.idUploadedAt
+  const alreadyUploaded = !!user?.idUploadedAt
 
   return (
     <main

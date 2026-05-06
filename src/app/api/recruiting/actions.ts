@@ -362,21 +362,24 @@ export async function registerToLeague(formData: FormData): Promise<ApplyToLeagu
   // Atomic transaction: Player + User.playerId mirror + PLM(PENDING)
   // with every URL populated up-front. Onboarding is COMPLETE — the
   // user filled everything in one shot, no follow-up step.
+  // v1.70.0 — ID images move to User; profile picture stays on Player.
   const player = await prisma.$transaction(async (tx) => {
     const created = await tx.player.create({
       data: {
         name: trimmedName,
         userId: user.id,
         lineId: user.lineId ?? null,
-        idFrontUrl: frontResult.url,
-        idBackUrl: backResult.url,
-        idUploadedAt: new Date(),
         profilePictureUrl: picResult?.url ?? null,
       },
     })
     await tx.user.update({
       where: { id: user.id },
-      data: { playerId: created.id },
+      data: {
+        playerId: created.id,
+        idFrontUrl: frontResult.url,
+        idBackUrl: backResult.url,
+        idUploadedAt: new Date(),
+      },
     })
     await tx.playerLeagueMembership.create({
       data: {

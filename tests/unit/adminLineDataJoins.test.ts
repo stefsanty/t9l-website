@@ -24,6 +24,7 @@ const {
   findManyLineLoginsMock,
   findManyPlayersMock,
   findManyInvitesMock,
+  findManyUsersMock,
 } = vi.hoisted(() => ({
   findManyAssignmentsMock: vi.fn(),
   findManyLeagueTeamsMock: vi.fn(),
@@ -33,6 +34,9 @@ const {
   // v1.38.0 (PR κ) — admin-data now also fetches active PERSONAL invites
   // per league for the new "Invited" sign-in-status badge.
   findManyInvitesMock: vi.fn(),
+  // v1.70.0 — admin-data fetches Users with uploaded IDs to build
+  // `idDataByPlayerId` (ID images moved from Player to User).
+  findManyUsersMock: vi.fn(),
 }))
 
 vi.mock('@/lib/prisma', () => ({
@@ -43,6 +47,7 @@ vi.mock('@/lib/prisma', () => ({
     lineLogin: { findMany: findManyLineLoginsMock },
     player: { findMany: findManyPlayersMock },
     leagueInvite: { findMany: findManyInvitesMock },
+    user: { findMany: findManyUsersMock },
   },
 }))
 
@@ -67,6 +72,9 @@ beforeEach(() => {
   // v1.64.0 — `getLeaguePlayers` calls `prisma.player.findMany` for legacy
   // pending applications. Default to empty so unset cases don't crash.
   findManyPlayersMock.mockResolvedValue([])
+  // v1.70.0 — `getLeaguePlayers` calls `prisma.user.findMany` to build
+  // `idDataByPlayerId`. Default to empty so unset cases don't crash.
+  findManyUsersMock.mockResolvedValue([])
 })
 
 describe('getLeaguePlayers v1.10.0 4-tuple shape', () => {

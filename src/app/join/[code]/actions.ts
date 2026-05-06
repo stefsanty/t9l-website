@@ -396,8 +396,10 @@ export async function submitIdUpload(formData: FormData): Promise<void> {
   ])
 
   await prisma.$transaction(async (tx) => {
-    await tx.player.update({
-      where: { id: playerId },
+    // v1.70.0 — ID images now live on User (per-person identity proof,
+    // not per-league). Caller is the bound User; write directly.
+    await tx.user.update({
+      where: { id: userId },
       data: {
         idFrontUrl: frontResult.url,
         idBackUrl: backResult.url,
@@ -447,8 +449,9 @@ function extOf(filename: string): string {
  *   - BLOB_READ_WRITE_TOKEN present
  *
  * Side effects in one transaction:
- *   - Player.name + Player.idFrontUrl + idBackUrl + idUploadedAt
- *     + profilePictureUrl (if picture supplied)
+ *   - Player.name + Player.profilePictureUrl (if picture supplied)
+ *   - User.idFrontUrl + idBackUrl + idUploadedAt (v1.70.0 — moved
+ *     from Player; per-person identity proof, not per-league)
  *   - PLM.position (active assignments only) + PLM.onboardingStatus
  *     = COMPLETED
  *
@@ -537,14 +540,22 @@ export async function completeOnboardingWithId(formData: FormData): Promise<void
   const picResult = hasProfilePicture ? results[2] : null
 
   await prisma.$transaction(async (tx) => {
+    // v1.70.0 — Player.name + profilePictureUrl stay on Player; ID
+    // images move to User (per-person identity proof). Caller is the
+    // bound User; write directly.
     await tx.player.update({
       where: { id: playerId },
       data: {
         name: trimmedName,
+        ...(picResult ? { profilePictureUrl: picResult.url } : {}),
+      },
+    })
+    await tx.user.update({
+      where: { id: userId },
+      data: {
         idFrontUrl: frontResult.url,
         idBackUrl: backResult.url,
         idUploadedAt: new Date(),
-        ...(picResult ? { profilePictureUrl: picResult.url } : {}),
       },
     })
     await tx.playerLeagueMembership.updateMany({

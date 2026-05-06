@@ -2,14 +2,20 @@
  * v1.35.0 (PR η) — submitIdUpload + skipIdUpload + adminPurgePlayerId
  * server actions.
  *
+ * v1.70.0 — ID columns moved from Player to User. Tests updated to
+ * pin the new write target (`tx.user.update`) and the new
+ * adminPurgePlayerId resolution path (Player.userId → User.id → null
+ * the User columns).
+ *
  * Pin the load-bearing behavior:
  *   - submitIdUpload requires both files + BLOB token + bound user;
- *     uploads via @vercel/blob.put; writes URLs + timestamp; flips
- *     onboardingStatus to COMPLETED in same transaction.
+ *     uploads via @vercel/blob.put; writes URLs + timestamp to User
+ *     (v1.70.0); flips onboardingStatus to COMPLETED in same transaction.
  *   - skipIdUpload flips onboardingStatus to COMPLETED without writing
  *     URLs (operator-gate fallback when BLOB token is missing).
- *   - adminPurgePlayerId DELs Blob assets and nulls the columns; no-op
- *     when nothing was uploaded.
+ *   - adminPurgePlayerId resolves the linked User via Player.userId,
+ *     DELs Blob assets and nulls the User columns; no-op when nothing
+ *     was uploaded.
  *   - submitOnboarding (PR ζ change) no longer flips onboardingStatus;
  *     redirects to /id-upload not /welcome.
  */
@@ -19,6 +25,8 @@ const {
   inviteFindUniqueMock,
   playerFindUniqueMock,
   playerUpdateMock,
+  userFindUniqueMock,
+  userUpdateMock,
   assignmentUpdateManyMock,
   txMock,
   revalidateMock,
@@ -30,10 +38,13 @@ const {
   const inviteFindUniqueMock = vi.fn()
   const playerFindUniqueMock = vi.fn()
   const playerUpdateMock = vi.fn().mockResolvedValue({})
+  const userFindUniqueMock = vi.fn()
+  const userUpdateMock = vi.fn().mockResolvedValue({})
   const assignmentUpdateManyMock = vi.fn().mockResolvedValue({ count: 1 })
   const txMock = vi.fn(async (cb: (tx: unknown) => Promise<unknown>) => {
     const tx = {
       player: { update: playerUpdateMock },
+      user: { update: userUpdateMock },
       playerLeagueMembership: { updateMany: assignmentUpdateManyMock },
     }
     return cb(tx)
@@ -42,6 +53,8 @@ const {
     inviteFindUniqueMock,
     playerFindUniqueMock,
     playerUpdateMock,
+    userFindUniqueMock,
+    userUpdateMock,
     assignmentUpdateManyMock,
     txMock,
     revalidateMock: vi.fn(),
@@ -63,9 +76,9 @@ vi.mock('@/lib/prisma', () => ({
   prisma: {
     leagueInvite: { findUnique: inviteFindUniqueMock },
     player: { findUnique: playerFindUniqueMock, update: playerUpdateMock },
+    user: { findUnique: userFindUniqueMock, update: userUpdateMock },
     playerLeagueMembership: { updateMany: assignmentUpdateManyMock, findFirst: vi.fn() },
     $transaction: txMock,
-    user: { update: vi.fn() },
   },
 }))
 vi.mock('@/lib/revalidate', () => ({ revalidate: revalidateMock }))
@@ -100,6 +113,8 @@ beforeEach(() => {
   inviteFindUniqueMock.mockReset()
   playerFindUniqueMock.mockReset()
   playerUpdateMock.mockClear()
+  userFindUniqueMock.mockReset()
+  userUpdateMock.mockClear()
   assignmentUpdateManyMock.mockClear()
   assignmentUpdateManyMock.mockResolvedValue({ count: 1 })
   txMock.mockClear()
@@ -116,7 +131,7 @@ function makeFile(name: string, type: string, size: number): File {
 
 // ── submitIdUpload ──────────────────────────────────────────────────────────
 
-describe('v1.35.0 (PR η) — submitIdUpload', () => {
+describe('v1.35.0 (PR η) — submitIdUpload (v1.70.0 writes to User)', () => {
   beforeEach(() => {
     sessionMock.mockResolvedValue({ userId: 'u-1' })
     playerFindUniqueMock.mockResolvedValue({ id: 'p-1', userId: 'u-1' })
@@ -139,18 +154,21 @@ describe('v1.35.0 (PR η) — submitIdUpload', () => {
     return fd
   }
 
-  it('happy path: uploads both files, writes Player + flips onboardingStatus, redirects', async () => {
+  it('happy path: uploads both files, writes User + flips onboardingStatus, redirects', async () => {
     process.env.BLOB_READ_WRITE_TOKEN = 'fake-token'
     await expect(submitIdUpload(makeFormData())).rejects.toThrow('NEXT_REDIRECT')
     expect(putMock).toHaveBeenCalledTimes(2)
-    expect(playerUpdateMock).toHaveBeenCalledWith({
-      where: { id: 'p-1' },
+    // v1.70.0 — writes go to User, not Player.
+    expect(userUpdateMock).toHaveBeenCalledWith({
+      where: { id: 'u-1' },
       data: expect.objectContaining({
         idFrontUrl: expect.stringContaining('player-id/p-1/front-'),
         idBackUrl: expect.stringContaining('player-id/p-1/back-'),
         idUploadedAt: expect.any(Date),
       }),
     })
+    // Player.update is NOT called by submitIdUpload post-v1.70.0.
+    expect(playerUpdateMock).not.toHaveBeenCalled()
     expect(assignmentUpdateManyMock).toHaveBeenCalledWith({
       where: { playerId: 'p-1', leagueTeam: { leagueId: 'l-1' } },
       data: { onboardingStatus: 'COMPLETED' },
@@ -163,7 +181,7 @@ describe('v1.35.0 (PR η) — submitIdUpload', () => {
     delete process.env.BLOB_READ_WRITE_TOKEN
     await expect(submitIdUpload(makeFormData())).rejects.toThrow(/unavailable/i)
     expect(putMock).not.toHaveBeenCalled()
-    expect(playerUpdateMock).not.toHaveBeenCalled()
+    expect(userUpdateMock).not.toHaveBeenCalled()
   })
 
   it('rejects when not signed in', async () => {
@@ -232,6 +250,7 @@ describe('v1.35.0 (PR η) — skipIdUpload', () => {
       data: { onboardingStatus: 'COMPLETED' },
     })
     expect(playerUpdateMock).not.toHaveBeenCalled()
+    expect(userUpdateMock).not.toHaveBeenCalled()
     expect(redirectMock).toHaveBeenCalledWith('/join/CODE12345678/welcome')
   })
 
@@ -294,15 +313,16 @@ describe('v1.35.0 (PR η) — submitOnboarding routing change', () => {
 
 // ── adminPurgePlayerId ──────────────────────────────────────────────────────
 
-describe('v1.35.0 (PR η) — adminPurgePlayerId', () => {
+describe('v1.35.0 (PR η) — adminPurgePlayerId (v1.70.0 reads/writes User)', () => {
   beforeEach(() => {
     sessionMock.mockResolvedValue({ isAdmin: true })
   })
 
-  it('happy path: DELs Blob URLs and nulls the three columns', async () => {
+  it('happy path: resolves User via Player.userId, DELs Blob URLs, nulls the three User columns', async () => {
     process.env.BLOB_READ_WRITE_TOKEN = 'fake-token'
-    playerFindUniqueMock.mockResolvedValue({
-      id: 'p-1',
+    playerFindUniqueMock.mockResolvedValue({ id: 'p-1', userId: 'u-1' })
+    userFindUniqueMock.mockResolvedValue({
+      id: 'u-1',
       idFrontUrl: 'https://blob.example/front.jpg',
       idBackUrl: 'https://blob.example/back.jpg',
     })
@@ -312,10 +332,12 @@ describe('v1.35.0 (PR η) — adminPurgePlayerId', () => {
       'https://blob.example/front.jpg',
       'https://blob.example/back.jpg',
     ])
-    expect(playerUpdateMock).toHaveBeenCalledWith({
-      where: { id: 'p-1' },
+    // v1.70.0 — writes to User, not Player.
+    expect(userUpdateMock).toHaveBeenCalledWith({
+      where: { id: 'u-1' },
       data: { idFrontUrl: null, idBackUrl: null, idUploadedAt: null },
     })
+    expect(playerUpdateMock).not.toHaveBeenCalled()
     expect(revalidateMock).toHaveBeenCalledWith({
       domain: 'admin',
       paths: ['/admin/leagues/l-1/players'],
@@ -323,40 +345,51 @@ describe('v1.35.0 (PR η) — adminPurgePlayerId', () => {
     delete process.env.BLOB_READ_WRITE_TOKEN
   })
 
-  it('idempotent no-op when both URLs are null (already purged or never uploaded)', async () => {
-    playerFindUniqueMock.mockResolvedValue({
-      id: 'p-1',
+  it('idempotent no-op when both User URLs are null (already purged or never uploaded)', async () => {
+    playerFindUniqueMock.mockResolvedValue({ id: 'p-1', userId: 'u-1' })
+    userFindUniqueMock.mockResolvedValue({
+      id: 'u-1',
       idFrontUrl: null,
       idBackUrl: null,
     })
     await adminPurgePlayerId({ playerId: 'p-1', leagueId: 'l-1' })
     expect(delMock).not.toHaveBeenCalled()
+    expect(userUpdateMock).not.toHaveBeenCalled()
     expect(playerUpdateMock).not.toHaveBeenCalled()
     expect(revalidateMock).not.toHaveBeenCalled()
   })
 
-  it('still nulls the columns when BLOB token is missing (Blob delete skipped, DB update fires)', async () => {
+  it('no-op when Player has no linked User (userId null) — no User row holds an ID', async () => {
+    playerFindUniqueMock.mockResolvedValue({ id: 'p-1', userId: null })
+    await adminPurgePlayerId({ playerId: 'p-1', leagueId: 'l-1' })
+    expect(userFindUniqueMock).not.toHaveBeenCalled()
+    expect(userUpdateMock).not.toHaveBeenCalled()
+  })
+
+  it('still nulls the User columns when BLOB token is missing (Blob delete skipped, DB update fires)', async () => {
     delete process.env.BLOB_READ_WRITE_TOKEN
-    playerFindUniqueMock.mockResolvedValue({
-      id: 'p-1',
+    playerFindUniqueMock.mockResolvedValue({ id: 'p-1', userId: 'u-1' })
+    userFindUniqueMock.mockResolvedValue({
+      id: 'u-1',
       idFrontUrl: 'https://blob.example/front.jpg',
       idBackUrl: 'https://blob.example/back.jpg',
     })
     await adminPurgePlayerId({ playerId: 'p-1', leagueId: 'l-1' })
     expect(delMock).not.toHaveBeenCalled()
-    expect(playerUpdateMock).toHaveBeenCalled()
+    expect(userUpdateMock).toHaveBeenCalled()
   })
 
   it('Blob del failure is non-fatal (best-effort) — DB update still fires', async () => {
     process.env.BLOB_READ_WRITE_TOKEN = 'fake-token'
-    playerFindUniqueMock.mockResolvedValue({
-      id: 'p-1',
+    playerFindUniqueMock.mockResolvedValue({ id: 'p-1', userId: 'u-1' })
+    userFindUniqueMock.mockResolvedValue({
+      id: 'u-1',
       idFrontUrl: 'https://blob.example/front.jpg',
       idBackUrl: 'https://blob.example/back.jpg',
     })
     delMock.mockRejectedValueOnce(new Error('Blob 503'))
     await adminPurgePlayerId({ playerId: 'p-1', leagueId: 'l-1' })
-    expect(playerUpdateMock).toHaveBeenCalled()
+    expect(userUpdateMock).toHaveBeenCalled()
     delete process.env.BLOB_READ_WRITE_TOKEN
   })
 
