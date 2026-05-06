@@ -55,7 +55,10 @@ export default async function WelcomePage({ params }: Props) {
         player: { userId },
       },
       include: {
-        player: { select: { id: true, name: true, position: true } },
+        // v1.65.4 — position lives on PLM, not Player; the welcome page
+        // doesn't currently surface position so the include doesn't
+        // need it, but kept consistent with onboarding/page.tsx.
+        player: { select: { id: true, name: true } },
         leagueTeam: { include: { team: true } },
       },
     }),

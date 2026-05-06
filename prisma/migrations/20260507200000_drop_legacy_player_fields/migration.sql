@@ -1,0 +1,51 @@
+-- v1.65.4 — Membership-spec rework, stage 4: drop legacy Player.* fields.
+--
+-- Per outputs/data-model-spec-audit.md §3 "Stage 4 — Drop legacy columns".
+-- This is the only destructive step in the chain. Gated behind v1.65.3's
+-- read-flip + soak window:
+--   - v1.65.0 added the new fields on PlayerLeagueMembership.
+--   - v1.65.1 dual-wrote at every write site.
+--   - v1.65.2 introduced the read-source flag (default 'legacy', inert).
+--   - v1.65.3 flipped the default to 'plm'.
+--   - v1.65.4 drops the legacy columns now that all reads are PLM-canonical.
+--
+-- DROP COLUMN operations:
+--   1. Player.position           — moved to PlayerLeagueMembership.position
+--   2. Player.applicationStatus  — moved to PlayerLeagueMembership.applicationStatus
+--   3. Player.applicationLeagueId — gone entirely (was a memo workaround;
+--      per-league truth now lives on the PLM row's leagueId + applicationStatus)
+--
+-- The `PlayerApplicationStatus` enum is KEPT — PlayerLeagueMembership
+-- still uses it. Dropping the enum would also require schema changes to
+-- the PLM column type, which is unnecessary churn.
+--
+-- Rollback recipe (data-loss risk; only viable if rolled back BEFORE
+-- new admin writes have flowed through the post-v1.65.4 code paths):
+--
+--   ALTER TABLE "Player"
+--     ADD COLUMN "position" "PlayerPosition",
+--     ADD COLUMN "applicationStatus" "PlayerApplicationStatus" NOT NULL DEFAULT 'APPROVED',
+--     ADD COLUMN "applicationLeagueId" TEXT;
+--   -- Re-backfill from PLM if needed (mirror of v1.65.0 inverse direction):
+--   UPDATE "Player" p
+--      SET "position" = (
+--        SELECT pla."position" FROM "PlayerLeagueAssignment" pla
+--         WHERE pla."playerId" = p."id" AND pla."toGameWeek" IS NULL
+--         LIMIT 1
+--      );
+--   UPDATE "Player" p
+--      SET "applicationStatus" = 'PENDING', "applicationLeagueId" = (
+--        SELECT pla."leagueId" FROM "PlayerLeagueAssignment" pla
+--         WHERE pla."playerId" = p."id" AND pla."applicationStatus" = 'PENDING'
+--         LIMIT 1
+--      )
+--    WHERE EXISTS (
+--      SELECT 1 FROM "PlayerLeagueAssignment" pla
+--       WHERE pla."playerId" = p."id" AND pla."applicationStatus" = 'PENDING'
+--    );
+--   + code revert (reverts every src/ + scripts/ change in v1.65.4).
+
+ALTER TABLE "Player"
+  DROP COLUMN "position",
+  DROP COLUMN "applicationStatus",
+  DROP COLUMN "applicationLeagueId";

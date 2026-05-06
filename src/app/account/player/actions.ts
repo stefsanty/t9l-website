@@ -126,12 +126,19 @@ export async function updatePlayerSelf(input: UpdatePlayerSelfInput): Promise<vo
   // v1.62.0 — `Player.onboardingPreferences` is no longer written here.
   // The column stays in the schema for compatibility (existing JSON data
   // is preserved). The form no longer captures preference fields.
-  await prisma.player.update({
-    where: { id: playerId },
-    data: {
-      name: trimmedName,
-      position: input.position ?? null,
-    },
+  // v1.65.4 — position lives on PlayerLeagueMembership, not Player.
+  // Update Player's identity (name) + PLM(s)' position in one transaction.
+  await prisma.$transaction(async (tx) => {
+    await tx.player.update({
+      where: { id: playerId },
+      data: {
+        name: trimmedName,
+      },
+    })
+    await tx.playerLeagueMembership.updateMany({
+      where: { playerId, toGameWeek: null },
+      data: { position: input.position ?? null },
+    })
   })
 
   // v1.62.0 — invalidate the per-league Redis mapping store (v1.5.0

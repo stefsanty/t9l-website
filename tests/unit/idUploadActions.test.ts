@@ -271,17 +271,24 @@ describe('v1.35.0 (PR η) — submitOnboarding routing change', () => {
     expect(redirectMock).toHaveBeenCalledWith('/join/CODE12345678/id-upload')
   })
 
-  it('does NOT flip onboardingStatus to COMPLETED — that is the ID-upload step\'s job', async () => {
+  it('does NOT flip onboardingStatus to COMPLETED — that is the ID-upload step\'s job (v1.65.4)', async () => {
     await expect(
       submitOnboarding({
         code: 'CODE12345678',
         playerId: 'p-1',
         name: 'Stefan S',
+        position: 'MF',
       }),
     ).rejects.toThrow('NEXT_REDIRECT')
-    // Only the player update happens; assignment update should NOT fire.
+    // Player gets the identity update (name).
     expect(playerUpdateMock).toHaveBeenCalled()
-    expect(assignmentUpdateManyMock).not.toHaveBeenCalled()
+    // v1.65.4 — position now writes to PLM, so PLM.updateMany IS called
+    // with the position (NOT with onboardingStatus). Pin the data shape:
+    // the call must not include `onboardingStatus`, only `position`.
+    expect(assignmentUpdateManyMock).toHaveBeenCalled()
+    const plmCall = assignmentUpdateManyMock.mock.calls[0][0] as { data: Record<string, unknown> }
+    expect(plmCall.data.onboardingStatus).toBeUndefined()
+    expect(plmCall.data.position).toBe('MF')
   })
 })
 

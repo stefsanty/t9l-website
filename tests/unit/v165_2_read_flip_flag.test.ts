@@ -107,31 +107,28 @@ describe('v1.65.3 — getPlayerDataReadSource defensive fallback (default flippe
   })
 })
 
-describe('v1.65.2 — getRecruitingViewerState honors the flag', () => {
-  it('imports getPlayerDataReadSource from @/lib/settings', () => {
-    expect(VIEWER_STATE_SRC).toMatch(
-      /import\s*\{[^}]*getPlayerDataReadSource[^}]*\}\s+from\s+['"]@\/lib\/settings['"]/,
-    )
+describe('v1.65.4 — getRecruitingViewerState is PLM-only (flag dispatch removed)', () => {
+  // v1.65.2 added a `getPlayerDataReadSource()` flag dispatch into the
+  // viewer-state resolver to gate the legacy Player.* fallback. v1.65.4
+  // dropped the legacy fields, so the flag dispatch is gone — only the
+  // PLM path remains. The Setting helper is preserved in lib/settings.ts
+  // for backwards compat (no consumer reads it post-v1.65.4).
+  it('viewer-state no longer imports getPlayerDataReadSource', () => {
+    const exec = VIEWER_STATE_SRC.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')
+    expect(exec).not.toMatch(/getPlayerDataReadSource/)
   })
 
-  it('reads the flag inside the resolver', () => {
-    expect(VIEWER_STATE_SRC).toMatch(/await\s+getPlayerDataReadSource\(\)/)
+  it('viewer-state no longer references readSource', () => {
+    const exec = VIEWER_STATE_SRC.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')
+    expect(exec).not.toMatch(/readSource/)
   })
 
-  it('legacy Player.* fallback only fires under "legacy" source', () => {
-    // The State A legacy approval check is gated on readSource === 'legacy'.
-    expect(VIEWER_STATE_SRC).toMatch(
-      /readSource === ['"]legacy['"][\s\S]*?applicationStatus === ['"]APPROVED['"]/,
-    )
+  it('Setting helper survives in lib/settings.ts for backwards compat', () => {
+    // The helper itself stays exported (other code may still import it).
+    expect(SETTINGS_SRC).toMatch(/export const getPlayerDataReadSource/)
   })
 
-  it('legacy Player.* PENDING memo only honored under "legacy" source', () => {
-    expect(VIEWER_STATE_SRC).toMatch(
-      /legacyPending\s*=\s*[\s\S]*?readSource === ['"]legacy['"]/,
-    )
-  })
-
-  it('PLM signals still fire under both sources (PENDING + APPROVED)', () => {
+  it('PLM signals still fire (PENDING + APPROVED) — only path post-v1.65.4', () => {
     // approvedPlm and pendingPlm are not gated on readSource — they always fire
     // when the PLM data says so.
     expect(VIEWER_STATE_SRC).toMatch(/const approvedPlm\s*=/)

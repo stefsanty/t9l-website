@@ -100,14 +100,14 @@ describe('v1.64.0 — schema additions are purely additive', () => {
     )
   })
 
-  it('adds Player.applicationStatus with DEFAULT(APPROVED) — backward compat', () => {
-    expect(SCHEMA_SRC).toMatch(
-      /applicationStatus\s+PlayerApplicationStatus\s+@default\(APPROVED\)/,
-    )
-  })
-
-  it('adds Player.applicationLeagueId nullable', () => {
-    expect(SCHEMA_SRC).toMatch(/applicationLeagueId\s+String\?/)
+  it('Player.applicationStatus / applicationLeagueId DROPPED in v1.65.4 (regression target)', () => {
+    // v1.64.0 added these columns; v1.65.4 dropped them after the read-flip
+    // soak (membership-spec rework PR 5). Pin the post-v1.65.4 state — a
+    // regression that re-adds them would need a fresh additive migration.
+    const playerBlock = SCHEMA_SRC.match(/model Player\s*\{[\s\S]*?\n\}/)![0]
+    const exec = playerBlock.replace(/\/\/.*$/gm, '')
+    expect(exec).not.toMatch(/applicationStatus\s+PlayerApplicationStatus/)
+    expect(exec).not.toMatch(/applicationLeagueId\s+String\?/)
   })
 
   it('migration creates the enum and adds two columns with the right defaults', () => {
@@ -172,9 +172,18 @@ describe("v1.64.0 — applyToLeague action", () => {
     )
   })
 
-  it('State C — creates Player with applicationStatus PENDING + applicationLeagueId set', () => {
-    expect(APPLY_ACTION_SRC).toMatch(/applicationStatus:\s*['"]PENDING['"]/)
-    expect(APPLY_ACTION_SRC).toMatch(/applicationLeagueId:/)
+  it('State C — creates Player + PLM(PENDING) (v1.65.4 — Player.* legacy fields gone)', () => {
+    // v1.65.4 — Player.applicationStatus + applicationLeagueId dropped.
+    // The PENDING signal lives only on PLM. Pin: the PLM.create payload
+    // carries applicationStatus PENDING; Player.create payload doesn't.
+    const stateCIdx = APPLY_ACTION_SRC.indexOf('State C — fresh Player')
+    expect(stateCIdx).toBeGreaterThan(0)
+    const block = APPLY_ACTION_SRC.slice(stateCIdx, stateCIdx + 3000)
+    expect(block).toMatch(/playerLeagueMembership\.create[\s\S]*applicationStatus:\s*['"]PENDING['"]/)
+    // Regression target: legacy Player.applicationLeagueId is NOT in the
+    // executable code post-v1.65.4.
+    const exec = APPLY_ACTION_SRC.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')
+    expect(exec).not.toMatch(/applicationLeagueId/)
   })
 
   it("dual-writes the User binding (Player.userId AND User.playerId)", () => {
@@ -223,17 +232,18 @@ describe('v1.64.0 — admin approve/reject actions', () => {
     expect(block).toMatch(/leagueTeam\.leagueId !== input\.leagueId/)
   })
 
-  it('approve atomically flips status + creates/updates PLM in $transaction (v1.65.1 — both branches)', () => {
+  it('approve flips PENDING PLM to APPROVED (v1.65.4 — single PLM-update path)', () => {
+    // v1.65.1 had two branches (PLM-update + legacy PLM-create). v1.65.4
+    // collapsed to a single PLM-update path since the legacy v1.64.0
+    // pending source is gone.
     const idx = ADMIN_ACTIONS_SRC.indexOf('export async function adminApproveApplication')
     const block = ADMIN_ACTIONS_SRC.slice(idx, idx + 3500)
-    expect(block).toMatch(/prisma\.\$transaction\b/)
+    expect(block).toMatch(/playerLeagueMembership\.update/)
     expect(block).toMatch(/applicationStatus:\s*['"]APPROVED['"]/)
-    // Two branches: v1.65.1 PLM-update path AND legacy v1.64.0 PLM-create path.
-    expect(block).toMatch(/tx\.playerLeagueMembership\.update/)
-    expect(block).toMatch(/tx\.playerLeagueMembership\.create/)
-    // Legacy Player.* clear only fires when the legacy field matched.
-    expect(block).toMatch(/legacyMatchForThisLeague/)
-    expect(block).toMatch(/applicationLeagueId:\s*null/)
+    // Regression: legacy `legacyMatchForThisLeague` variable + legacy
+    // Player.applicationLeagueId clear are gone.
+    expect(block).not.toMatch(/legacyMatchForThisLeague/)
+    expect(block).not.toMatch(/applicationLeagueId:\s*null/)
   })
 
   it('reject gates on assertAdmin and verifies pending status for THIS league (v1.65.1)', () => {
@@ -287,10 +297,15 @@ describe('v1.64.0 — getRecruitingViewerState helper', () => {
     expect(VIEWER_STATE_SRC).toMatch(/kind:\s*['"]in_other_league['"]/)
   })
 
-  it('checks Player.applicationLeagueId === leagueId for the pending_this branch', () => {
+  it('checks PLM(PENDING) for this league (v1.65.4 — Player.applicationLeagueId is gone)', () => {
+    // v1.64.0 read `Player.applicationLeagueId === leagueId`. v1.65.4
+    // dropped the column; the resolver now reads PLM-canonical only.
     expect(VIEWER_STATE_SRC).toMatch(
-      /applicationStatus === ['"]PENDING['"][\s\S]*?applicationLeagueId === leagueId/,
+      /applicationStatus === ['"]PENDING['"]/,
     )
+    // Regression target: legacy field reference is gone from executable code.
+    const exec = VIEWER_STATE_SRC.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')
+    expect(exec).not.toMatch(/applicationLeagueId/)
   })
 
   it('approved_this returns the team identity (id + name + logoUrl)', () => {
@@ -454,10 +469,12 @@ describe('v1.64.0 — admin Players tab application surface', () => {
 // 9) admin-data + page-level pending-application merger
 // ────────────────────────────────────────────────────────────────────────────
 
-describe('v1.64.0 — getLeaguePlayers fetches pending applications', () => {
-  it('extends Promise.all with a 6th query for pending applications', () => {
+describe('v1.64.0 — getLeaguePlayers fetches pending applications (v1.65.4 — PLM-only)', () => {
+  it('queries PlayerLeagueMembership.findMany for PENDING applications (v1.65.4)', () => {
+    // v1.64.0 queried Player.applicationLeagueId + applicationStatus.
+    // v1.65.4 dropped those columns; the query now hits PLM directly.
     expect(ADMIN_DATA_SRC).toMatch(
-      /applicationLeagueId:\s*leagueId,[\s\S]*?applicationStatus:\s*['"]PENDING['"]/,
+      /playerLeagueMembership\.findMany\([\s\S]*?applicationStatus:\s*['"]PENDING['"]/,
     )
   })
 
@@ -477,7 +494,10 @@ describe('v1.64.0 — getLeaguePlayers fetches pending applications', () => {
 
   it('players page merges pending applications as synthetic rows with empty assignments', () => {
     expect(PLAYERS_PAGE_SRC).toMatch(/for\s*\(const p of pendingApplications\)/)
-    expect(PLAYERS_PAGE_SRC).toMatch(/applicationStatus:\s*p\.applicationStatus/)
+    // v1.65.4 — Player.applicationStatus is dropped; the page hardcodes
+    // 'PENDING' since pendingApplications now comes exclusively from
+    // PLM(PENDING) rows.
+    expect(PLAYERS_PAGE_SRC).toMatch(/applicationStatus:\s*['"]PENDING['"]/)
     expect(PLAYERS_PAGE_SRC).toMatch(/assignments:\s*\[\]/)
   })
 })

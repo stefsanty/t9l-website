@@ -190,14 +190,15 @@ describe('v1.41.0 — adminUpdatePlayerPosition server action', () => {
     )
   })
 
-  it('rejects empty playerId before touching Prisma', () => {
+  it('rejects empty playerId before touching Prisma (v1.65.4 — writes to PLM)', () => {
     const fnIdx = LEAGUES_ACTIONS.indexOf('export async function adminUpdatePlayerPosition')
     const fnBody = LEAGUES_ACTIONS.slice(fnIdx, fnIdx + 1500)
     // Validation order: assertAdmin, then `if (!playerId) throw`. The
-    // throw comes BEFORE prisma.player.update so the action can't no-op
-    // an arbitrary row.
+    // throw comes BEFORE the Prisma update so the action can't no-op an
+    // arbitrary row. v1.65.4 — position now writes to playerLeagueMembership,
+    // not Player.
     const idGuardIdx = fnBody.indexOf("if (!playerId) throw new Error('playerId is required')")
-    const updateIdx = fnBody.indexOf('prisma.player.update')
+    const updateIdx = fnBody.indexOf('prisma.playerLeagueMembership.updateMany')
     expect(idGuardIdx).toBeGreaterThan(0)
     expect(updateIdx).toBeGreaterThan(idGuardIdx)
   })

@@ -79,7 +79,7 @@ beforeEach(() => {
 })
 
 describe('v1.33.0 (PR ε) — adminCreatePlayer', () => {
-  it('creates a player with name, position enum, and team assignment', async () => {
+  it('creates a player with name, position enum, and team assignment (v1.65.4 — position on PLM)', async () => {
     leagueTeamFindUniqueMock.mockResolvedValue({ leagueId: 'league-1' })
     const result = await adminCreatePlayer({
       leagueId: 'league-1',
@@ -89,12 +89,20 @@ describe('v1.33.0 (PR ε) — adminCreatePlayer', () => {
       fromGameWeek: 3,
     })
     expect(result).toEqual({ id: 'p-new-player' })
+    // v1.65.4 — Player.create payload is identity-only (name).
     expect(playerCreateMock).toHaveBeenCalledWith({
-      data: { name: 'Ian Noseda', position: 'MF' },
+      data: { name: 'Ian Noseda' },
     })
+    // PLM.create carries the position alongside the team binding.
     expect(assignmentCreateMock).toHaveBeenCalledWith({
-      // v1.34.0 (PR ζ) — admin-created assignments carry joinSource: 'ADMIN'.
-      data: { playerId: 'p-new-player', leagueTeamId: 'lt-mariners', fromGameWeek: 3, joinSource: 'ADMIN' },
+      data: {
+        playerId: 'p-new-player',
+        leagueTeamId: 'lt-mariners',
+        leagueId: 'league-1',
+        fromGameWeek: 3,
+        joinSource: 'ADMIN',
+        position: 'MF',
+      },
     })
     expect(revalidateMock).toHaveBeenCalledWith({
       domain: 'admin',
@@ -102,11 +110,12 @@ describe('v1.33.0 (PR ε) — adminCreatePlayer', () => {
     })
   })
 
-  it('creates a pre-staged slot with all fields null (the new ε flow)', async () => {
+  it('creates a pre-staged slot with all fields null (the new ε flow, v1.65.4-shape)', async () => {
     const result = await adminCreatePlayer({ leagueId: 'league-1' })
     expect(result).toEqual({ id: 'p-new-player' })
+    // v1.65.4 — Player.create no longer carries position.
     expect(playerCreateMock).toHaveBeenCalledWith({
-      data: { name: null, position: null },
+      data: { name: null },
     })
     expect(assignmentCreateMock).not.toHaveBeenCalled()
   })
@@ -114,7 +123,7 @@ describe('v1.33.0 (PR ε) — adminCreatePlayer', () => {
   it('trims the name and treats whitespace-only as null', async () => {
     await adminCreatePlayer({ leagueId: 'league-1', name: '   ' })
     expect(playerCreateMock).toHaveBeenCalledWith({
-      data: { name: null, position: null },
+      data: { name: null },
     })
   })
 
@@ -126,18 +135,37 @@ describe('v1.33.0 (PR ε) — adminCreatePlayer', () => {
     expect(revalidateMock).not.toHaveBeenCalled()
   })
 
-  it('coerces unknown position strings to null (defensive against typos)', async () => {
-    await adminCreatePlayer({ leagueId: 'league-1', name: 'X', position: 'wing-back' })
-    expect(playerCreateMock).toHaveBeenCalledWith({
-      data: { name: 'X', position: null },
+  it('coerces unknown position strings to null (defensive against typos, v1.65.4 — position on PLM)', async () => {
+    leagueTeamFindUniqueMock.mockResolvedValue({ leagueId: 'league-1' })
+    await adminCreatePlayer({
+      leagueId: 'league-1',
+      name: 'X',
+      position: 'wing-back',
+      leagueTeamId: 'lt-x',
     })
+    expect(playerCreateMock).toHaveBeenCalledWith({
+      data: { name: 'X' },
+    })
+    // The unknown position coerces to null on the PLM payload.
+    expect(assignmentCreateMock).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ position: null }) }),
+    )
   })
 
-  it('uppercases position case-insensitively', async () => {
-    await adminCreatePlayer({ leagueId: 'league-1', name: 'X', position: 'mf' })
-    expect(playerCreateMock).toHaveBeenCalledWith({
-      data: { name: 'X', position: 'MF' },
+  it('uppercases position case-insensitively (v1.65.4 — position on PLM)', async () => {
+    leagueTeamFindUniqueMock.mockResolvedValue({ leagueId: 'league-1' })
+    await adminCreatePlayer({
+      leagueId: 'league-1',
+      name: 'X',
+      position: 'mf',
+      leagueTeamId: 'lt-x',
     })
+    expect(playerCreateMock).toHaveBeenCalledWith({
+      data: { name: 'X' },
+    })
+    expect(assignmentCreateMock).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ position: 'MF' }) }),
+    )
   })
 
   it('defaults fromGameWeek to 1 when not supplied AND a team is given', async () => {
@@ -148,7 +176,15 @@ describe('v1.33.0 (PR ε) — adminCreatePlayer', () => {
     })
     expect(assignmentCreateMock).toHaveBeenCalledWith({
       // v1.34.0 (PR ζ) — admin-created assignments carry joinSource: 'ADMIN'.
-      data: { playerId: 'p-new-player', leagueTeamId: 'lt-x', fromGameWeek: 1, joinSource: 'ADMIN' },
+      // v1.65.4 — leagueId + position fields added.
+      data: {
+        playerId: 'p-new-player',
+        leagueTeamId: 'lt-x',
+        leagueId: 'league-1',
+        fromGameWeek: 1,
+        joinSource: 'ADMIN',
+        position: null,
+      },
     })
   })
 

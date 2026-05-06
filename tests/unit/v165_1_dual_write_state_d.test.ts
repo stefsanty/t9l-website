@@ -136,23 +136,29 @@ describe('v1.65.1 — State D bug fix in applyToLeague', () => {
   })
 })
 
-describe('v1.65.1 — getRecruitingViewerState UNION read', () => {
-  it('checks PLM(PENDING) for this league as a primary signal', () => {
+describe('v1.65.4 — getRecruitingViewerState (PLM-canonical, post-cleanup)', () => {
+  // v1.65.1 shipped a UNION read (PLM + legacy Player.* fallback). v1.65.4
+  // dropped the legacy Player.applicationStatus/applicationLeagueId fields
+  // entirely; the resolver is now PLM-only. The UNION block above is gone.
+  it('checks PLM(PENDING) for this league as the primary (and only) signal', () => {
     expect(VIEWER_STATE_SRC).toMatch(/applicationStatus:\s*true/)
     expect(VIEWER_STATE_SRC).toMatch(
       /pendingPlm[\s\S]*applicationStatus === ['"]PENDING['"]/,
     )
   })
 
-  it('legacy v1.64.0 Player.* PENDING fallback still fires', () => {
-    expect(VIEWER_STATE_SRC).toMatch(/legacyPending/)
-    expect(VIEWER_STATE_SRC).toMatch(
-      /applicationStatus === ['"]PENDING['"][\s\S]*applicationLeagueId === leagueId/,
-    )
+  it('legacy v1.64.0 Player.* PENDING fallback is GONE post-v1.65.4 (regression target)', () => {
+    // The `legacyPending` variable + `applicationLeagueId === leagueId`
+    // check are gone from the executable code. Regression target — strip
+    // comments first since the docstring legitimately mentions the
+    // historical fields.
+    const exec = VIEWER_STATE_SRC.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')
+    expect(exec).not.toMatch(/legacyPending/)
+    expect(exec).not.toMatch(/applicationLeagueId/)
   })
 
-  it('returns pending_this when EITHER signal fires', () => {
-    expect(VIEWER_STATE_SRC).toMatch(/if\s*\(pendingPlm\s*\|\|\s*legacyPending\)/)
+  it('returns pending_this on the PLM signal alone', () => {
+    expect(VIEWER_STATE_SRC).toMatch(/if\s*\(pendingPlm\)/)
   })
 
   it('State A (approved_this) checks for APPROVED PLM with team', () => {
@@ -213,7 +219,7 @@ describe('v1.65.1 — ApplyToLeagueModal mode prop', () => {
   })
 })
 
-describe('v1.65.1 — adminApproveApplication v1.65.1 dual-path', () => {
+describe('v1.65.4 — adminApproveApplication PLM-canonical path', () => {
   it('looks up PENDING PLM via playerLeagueMembership.findFirst', () => {
     const idx = ADMIN_ACTIONS_SRC.indexOf('export async function adminApproveApplication')
     const block = ADMIN_ACTIONS_SRC.slice(idx, idx + 4000)
@@ -221,27 +227,23 @@ describe('v1.65.1 — adminApproveApplication v1.65.1 dual-path', () => {
     expect(block).toMatch(/applicationStatus:\s*['"]PENDING['"]/)
   })
 
-  it('updates existing PENDING PLM in v1.65.1 path', () => {
+  it('updates the existing PENDING PLM (only path; v1.65.1 dual-path collapsed in v1.65.4)', () => {
     const idx = ADMIN_ACTIONS_SRC.indexOf('export async function adminApproveApplication')
     const block = ADMIN_ACTIONS_SRC.slice(idx, idx + 4000)
-    expect(block).toMatch(/tx\.playerLeagueMembership\.update/)
+    expect(block).toMatch(/playerLeagueMembership\.update/)
     expect(block).toMatch(/applicationStatus:\s*['"]APPROVED['"]/)
   })
 
-  it('creates new PLM in legacy v1.64.0 path (no PENDING PLM exists)', () => {
+  it('legacy v1.64.0 PLM-create branch is GONE (regression target — single PLM-update path)', () => {
+    // v1.65.4 removed the legacy fallback that created a fresh PLM when
+    // no PENDING PLM existed. After v1.65.4 only the PLM-update path exists.
     const idx = ADMIN_ACTIONS_SRC.indexOf('export async function adminApproveApplication')
     const block = ADMIN_ACTIONS_SRC.slice(idx, idx + 4000)
-    expect(block).toMatch(/tx\.playerLeagueMembership\.create/)
-    expect(block).toMatch(/joinSource:\s*['"]SELF_SERVE['"]/)
-    expect(block).toMatch(/onboardingStatus:\s*['"]COMPLETED['"]/)
-  })
-
-  it('only clears legacy Player.applicationStatus when legacy match for THIS league', () => {
-    const idx = ADMIN_ACTIONS_SRC.indexOf('export async function adminApproveApplication')
-    const block = ADMIN_ACTIONS_SRC.slice(idx, idx + 4000)
-    expect(block).toMatch(/legacyMatchForThisLeague/)
-    // The Player.* clear is gated behind `if (legacyMatchForThisLeague)`.
-    expect(block).toMatch(/if\s*\(legacyMatchForThisLeague\)\s*\{[\s\S]*?tx\.player\.update/)
+    // No legacy `legacyMatchForThisLeague` variable.
+    expect(block).not.toMatch(/legacyMatchForThisLeague/)
+    // No `tx.playerLeagueMembership.create` call inside this action — only
+    // updates. (PLM creates happen elsewhere — applyToLeague, adminCreatePlayer.)
+    expect(block).not.toMatch(/tx\.playerLeagueMembership\.create/)
   })
 })
 
@@ -275,19 +277,29 @@ describe('v1.65.1 — adminRejectApplication preserves State D Player', () => {
   })
 })
 
-describe('v1.65.1 — getLeaguePlayers merges legacy + PLM pending applications', () => {
+describe('v1.65.4 — getLeaguePlayers PLM-only pending applications', () => {
+  // v1.65.1 merged legacy v1.64.0 Player rows + PLM rows; v1.65.4
+  // dropped the legacy source entirely. The merge step is now a
+  // simple map over the PLM rows with PLM.position attached.
   it('queries playerLeagueMembership.findMany with applicationStatus PENDING', () => {
     expect(ADMIN_DATA_SRC).toMatch(
       /playerLeagueMembership\.findMany\([\s\S]*?applicationStatus:\s*['"]PENDING['"]/,
     )
   })
 
-  it('dedupes by playerId — keeps one entry when both sources fire', () => {
-    expect(ADMIN_DATA_SRC).toMatch(/seenPendingPlayerIds/)
-    expect(ADMIN_DATA_SRC).toMatch(/mergedPendingApplications/)
+  it('legacy Player.findMany pending-applications query is GONE (regression target)', () => {
+    // Strip comments so docstrings referencing the historical query
+    // don't trip the regex.
+    const exec = ADMIN_DATA_SRC.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')
+    expect(exec).not.toMatch(/applicationLeagueId:\s*leagueId/)
+    expect(exec).not.toMatch(/seenPendingPlayerIds/)
   })
 
   it('returns 6-element tuple ending in mergedPendingApplications', () => {
     expect(ADMIN_DATA_SRC).toMatch(/mergedPendingApplications,?\s*\] as const/)
+  })
+
+  it('attaches PLM.position to each pending applicant row', () => {
+    expect(ADMIN_DATA_SRC).toMatch(/position:\s*plm\.position/)
   })
 })

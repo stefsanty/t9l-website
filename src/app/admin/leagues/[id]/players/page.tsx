@@ -101,7 +101,9 @@ export default async function PlayersPage({ params }: Props) {
       playerMap.set(a.playerId, {
         id: a.player.id,
         name: a.player.name,
-        position: a.player.position ?? null,
+        // v1.65.4 — position now lives on PLM, not Player. Read from the
+        // PLM row (a.position) directly.
+        position: a.position ?? null,
         profilePictureUrl: a.player.profilePictureUrl ?? null,
         pictureUrl: a.player.pictureUrl ?? null,
         userId: a.player.userId ?? null,
@@ -129,19 +131,26 @@ export default async function PlayersPage({ params }: Props) {
         // `.toISOString()` here would crash post-cache. v1.17.1.
         lineLastSeenAt: ll?.lastSeenAt ?? null,
         otherLeagues: otherLeaguesByPlayerId[a.player.id] ?? [],
-        applicationStatus: a.player.applicationStatus,
+        // v1.65.4 — applicationStatus is now per-PLM. APPROVED memberships
+        // (no synthetic-row applicants reach this loop) get APPROVED.
+        applicationStatus: a.applicationStatus,
         assignments: [aWithTeam],
       })
     }
   }
 
-  // v1.64.0 — append pending applications as synthetic player rows.
-  // These Player rows have NO PlayerLeagueMembership (admin creates
-  // one on Approve), so they don't surface in the assignments-driven
-  // loop above. PlayersTab renders them with empty `assignments`
-  // (currentTeam → null) plus a PENDING status badge.
+  // v1.65.4 — append pending applications as synthetic player rows.
+  // PLM(PENDING) rows have leagueTeamId=null (the admin assigns a team
+  // on approval), so they don't appear in the assignments-driven loop
+  // above (which filtered to non-null leagueTeam). PlayersTab renders
+  // these with empty `assignments` (currentTeam → null) plus the
+  // PENDING status badge.
+  //
+  // `pendingApplications` here is shaped as a Player row with `position`
+  // attached from the PLM (see admin-data.ts merge step). Position is
+  // PLM-derived so the admin sees the applicant's stated position.
   for (const p of pendingApplications) {
-    if (playerMap.has(p.id)) continue // safety: a pending player should not also have a PLA
+    if (playerMap.has(p.id)) continue // safety: a pending player should not also have an APPROVED PLM
     const ll = p.lineId ? lineLoginsByLineId[p.lineId] : undefined
     playerMap.set(p.id, {
       id: p.id,
@@ -163,7 +172,10 @@ export default async function PlayersPage({ params }: Props) {
       linePictureUrl: ll?.pictureUrl ?? null,
       lineLastSeenAt: ll?.lastSeenAt ?? null,
       otherLeagues: otherLeaguesByPlayerId[p.id] ?? [],
-      applicationStatus: p.applicationStatus,
+      // v1.65.4 — Player no longer carries applicationStatus; the
+      // synthetic-row builder hardcodes 'PENDING' since the
+      // pending-applications source returns only PLM(PENDING) rows.
+      applicationStatus: 'PENDING',
       assignments: [],
     })
   }

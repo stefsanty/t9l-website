@@ -623,8 +623,12 @@ export async function adminUpdatePlayerPosition(input: {
   const allowed = new Set(['GK', 'DF', 'MF', 'FW'])
   const next = input.position && allowed.has(input.position) ? input.position : null
 
-  await prisma.player.update({
-    where: { id: playerId },
+  // v1.65.4 — position now lives on PlayerLeagueMembership, not on
+  // Player. Update every PLM for this player in this league (typically
+  // one — the active assignment; players rarely have multiple PLMs in
+  // the same league at once).
+  await prisma.playerLeagueMembership.updateMany({
+    where: { playerId, leagueId },
     data: { position: next },
   })
 
@@ -782,16 +786,16 @@ export async function adminApproveApplication(input: {
   if (!input.leagueId) throw new Error('leagueId is required')
   if (!input.leagueTeamId) throw new Error('leagueTeamId is required')
 
-  // v1.65.1 — accept BOTH legacy v1.64.0 PENDING applicants (Player.applicationStatus=PENDING,
-  // no PLM yet) AND v1.65.1 PENDING applicants (PLM(PENDING) in this league, Player.* may be
-  // either APPROVED-elsewhere [State D] or PENDING [State C dual-write]).
+  // v1.65.4 — Player.applicationStatus + Player.applicationLeagueId are
+  // dropped. The PENDING signal lives only on PlayerLeagueMembership.
+  // v1.65.1's legacy-v1.64.0 fallback branch is gone; pending applications
+  // are exclusively PLM rows from v1.65.4 onward.
   const player = await prisma.player.findUnique({
     where: { id: input.playerId },
-    select: { id: true, applicationStatus: true, applicationLeagueId: true },
+    select: { id: true },
   })
   if (!player) throw new Error('Player not found')
 
-  // Look for a PENDING PLM in this league (v1.65.1 path).
   const pendingPlm = await prisma.playerLeagueMembership.findFirst({
     where: {
       playerId: input.playerId,
@@ -800,12 +804,7 @@ export async function adminApproveApplication(input: {
     },
     select: { id: true },
   })
-
-  // Acceptance gate: either a v1.65.1 PENDING PLM exists for this league, OR the v1.64.0
-  // legacy Player.applicationStatus=PENDING + applicationLeagueId match this league.
-  const legacyMatchForThisLeague =
-    player.applicationStatus === 'PENDING' && player.applicationLeagueId === input.leagueId
-  if (!pendingPlm && !legacyMatchForThisLeague) {
+  if (!pendingPlm) {
     throw new Error('Player is not a pending application')
   }
 
@@ -820,46 +819,15 @@ export async function adminApproveApplication(input: {
 
   const fromGameWeek = input.fromGameWeek && input.fromGameWeek > 0 ? input.fromGameWeek : 1
 
-  await prisma.$transaction(async (tx) => {
-    if (pendingPlm) {
-      // v1.65.1 path — flip the existing PENDING PLM to APPROVED + assign team.
-      await tx.playerLeagueMembership.update({
-        where: { id: pendingPlm.id },
-        data: {
-          leagueTeamId: input.leagueTeamId,
-          applicationStatus: 'APPROVED',
-          fromGameWeek,
-          onboardingStatus: 'COMPLETED',
-        },
-      })
-    } else {
-      // v1.64.0 legacy path — create a fresh APPROVED PLM for this league.
-      await tx.playerLeagueMembership.create({
-        data: {
-          playerId: input.playerId,
-          leagueTeamId: input.leagueTeamId,
-          leagueId: input.leagueId,
-          fromGameWeek,
-          applicationStatus: 'APPROVED',
-          joinSource: 'SELF_SERVE',
-          onboardingStatus: 'COMPLETED',
-        },
-      })
-    }
-
-    // v1.65.1 — only clear the legacy Player.applicationStatus if it matches THIS league.
-    // For State D applicants (Player.applicationStatus=APPROVED elsewhere), DO NOT touch
-    // Player.applicationStatus — the user is APPROVED in their original league, and the
-    // v1.65.4 cleanup PR drops these legacy fields entirely.
-    if (legacyMatchForThisLeague) {
-      await tx.player.update({
-        where: { id: input.playerId },
-        data: {
-          applicationStatus: 'APPROVED',
-          applicationLeagueId: null,
-        },
-      })
-    }
+  // Flip the existing PENDING PLM to APPROVED + assign team in one update.
+  await prisma.playerLeagueMembership.update({
+    where: { id: pendingPlm.id },
+    data: {
+      leagueTeamId: input.leagueTeamId,
+      applicationStatus: 'APPROVED',
+      fromGameWeek,
+      onboardingStatus: 'COMPLETED',
+    },
   })
 
   revalidate({ domain: 'admin', paths: [`/admin/leagues/${input.leagueId}/players`] })
@@ -896,13 +864,16 @@ export async function adminRejectApplication(input: {
   if (!input.playerId) throw new Error('playerId is required')
   if (!input.leagueId) throw new Error('leagueId is required')
 
+  // v1.65.4 — Player.applicationStatus + Player.applicationLeagueId are
+  // dropped. PENDING signal lives only on PLM. Two reject branches:
+  //   (1) approvedElsewhere truthy → delete only the PLM (State D).
+  //   (2) approvedElsewhere null → delete the Player (fresh applicant).
   const player = await prisma.player.findUnique({
     where: { id: input.playerId },
-    select: { id: true, applicationStatus: true, applicationLeagueId: true, userId: true },
+    select: { id: true, userId: true },
   })
   if (!player) throw new Error('Player not found')
 
-  // Check if there's a PLM(PENDING) for this league.
   const pendingPlm = await prisma.playerLeagueMembership.findFirst({
     where: {
       playerId: input.playerId,
@@ -911,16 +882,12 @@ export async function adminRejectApplication(input: {
     },
     select: { id: true },
   })
-
-  const legacyMatchForThisLeague =
-    player.applicationStatus === 'PENDING' && player.applicationLeagueId === input.leagueId
-  if (!pendingPlm && !legacyMatchForThisLeague) {
+  if (!pendingPlm) {
     throw new Error('Player is not a pending application for this league')
   }
 
-  // Check for ANY APPROVED PLM (other-league memberships that should survive
-  // this rejection). If present, the Player is a State D applicant — only
-  // delete the PLM, leave the Player + other-league PLMs intact.
+  // Check for ANY APPROVED PLM elsewhere — preserves the Player record
+  // for State D applicants whose Player exists across multiple leagues.
   const approvedElsewhere = await prisma.playerLeagueMembership.findFirst({
     where: {
       playerId: input.playerId,
@@ -930,27 +897,15 @@ export async function adminRejectApplication(input: {
   })
 
   await prisma.$transaction(async (tx) => {
-    if (pendingPlm) {
-      await tx.playerLeagueMembership.delete({ where: { id: pendingPlm.id } })
-    }
+    await tx.playerLeagueMembership.delete({ where: { id: pendingPlm.id } })
 
     if (approvedElsewhere) {
-      // State D — Player survives. Don't touch User.playerId or Player itself.
-      // Just clear the legacy Player.applicationStatus memo if it pointed at THIS league.
-      if (legacyMatchForThisLeague) {
-        await tx.player.update({
-          where: { id: input.playerId },
-          data: {
-            applicationStatus: 'APPROVED',
-            applicationLeagueId: null,
-          },
-        })
-      }
+      // State D — Player survives along with their other-league PLMs.
       return
     }
 
     // No other-league APPROVED PLM — Player is a fresh applicant. Delete
-    // them entirely (matches v1.64.0 behavior).
+    // them entirely (clears User.playerId first to avoid dangling FK).
     if (player.userId) {
       await tx.user.update({
         where: { id: player.userId },
@@ -1032,11 +987,13 @@ export async function adminCreatePlayer(input: {
     }
   }
 
+  // v1.65.4 — position lives on PlayerLeagueMembership, not Player.
+  // Player.create payload is identity-only (name + lineId/userId/profile
+  // picture). Position is set on the PLM row when an assignment exists.
   const created = await prisma.$transaction(async (tx) => {
     const player = await tx.player.create({
       data: {
         name,
-        position,
       },
     })
     if (leagueTeamId) {
@@ -1044,7 +1001,14 @@ export async function adminCreatePlayer(input: {
         // v1.34.0 (PR ζ) — tag admin-created assignments with `joinSource: ADMIN`
         // so audit / abuse-mitigation queries can distinguish them from
         // CODE / PERSONAL / SELF_SERVE rows.
-        data: { playerId: player.id, leagueTeamId, fromGameWeek, joinSource: 'ADMIN' },
+        data: {
+          playerId: player.id,
+          leagueTeamId,
+          leagueId,
+          fromGameWeek,
+          joinSource: 'ADMIN',
+          position,
+        },
       })
     }
     return player
