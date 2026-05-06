@@ -212,8 +212,10 @@ describe('v1.70.3 — Recruit + join flows preserve league context (regression t
 })
 
 describe('v1.70.3 — version bump', () => {
-  it('APP_VERSION === 1.70.3', () => {
+  // Relaxed to "any v1.70.x or later" per the v1.69.1 pattern: pinning a
+  // literal forces unrelated patch bumps to touch this file.
+  it('APP_VERSION is at v1.70.x floor or later', () => {
     const src = read('src/lib/version.ts')
-    expect(src).toMatch(/APP_VERSION = '1\.70\.3'/)
+    expect(src).toMatch(/APP_VERSION = '1\.(7[0-9]|[89][0-9])\.\d+'/)
   })
 })
