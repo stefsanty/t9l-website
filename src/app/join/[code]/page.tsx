@@ -130,30 +130,34 @@ export default async function JoinPage({ params }: Props) {
     if (!invite.targetPlayerId) {
       return <ErrorState validation={{ kind: 'not-found' }} code={code} />
     }
+    // v1.65.4 — position lives on PLM, not Player. Pull the PLM-side
+    // position via the leagueAssignments include.
     const target = await prisma.player.findUnique({
       where: { id: invite.targetPlayerId },
       select: {
         id: true,
         name: true,
-        position: true,
         pictureUrl: true,
         leagueAssignments: {
           where: { leagueTeam: { leagueId: invite.leagueId } },
           take: 1,
           orderBy: { fromGameWeek: 'desc' },
-          include: { leagueTeam: { include: { team: true } } },
+          select: {
+            position: true,
+            leagueTeam: { include: { team: true } },
+          },
         },
       },
     })
     if (!target) return <ErrorState validation={{ kind: 'not-found' }} code={code} />
 
+    const targetPlm = target.leagueAssignments.find((a) => a.leagueTeam !== null) ?? null
     const player: PreviewPlayer = {
       id: target.id,
       name: target.name,
-      position: target.position,
+      position: targetPlm?.position ?? null,
       pictureUrl: target.pictureUrl,
-      // v1.65.0 — leagueTeam nullable post-rework. Find first membership with a real team.
-      teamName: target.leagueAssignments.find((a) => a.leagueTeam !== null)?.leagueTeam?.team.name ?? null,
+      teamName: targetPlm?.leagueTeam?.team.name ?? null,
     }
 
     return (
@@ -192,13 +196,15 @@ export default async function JoinPage({ params }: Props) {
     id: lt.id,
     name: lt.team.name,
   }))
+  // v1.65.4 — position now lives on PLM (the playerAssignments row) instead
+  // of Player. The picker shape carries position from the membership row.
   const unlinkedPlayers = leagueTeams.flatMap((lt) =>
     lt.playerAssignments
       .filter((pa) => pa.player.userId === null)
       .map((pa) => ({
         id: pa.player.id,
         name: pa.player.name,
-        position: pa.player.position,
+        position: pa.position,
         pictureUrl: pa.player.pictureUrl,
         teamId: lt.id,
         teamName: lt.team.name,

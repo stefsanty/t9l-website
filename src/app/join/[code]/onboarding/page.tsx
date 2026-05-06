@@ -64,7 +64,6 @@ export default async function OnboardingPage({ params }: Props) {
           select: {
             id: true,
             name: true,
-            position: true,
           },
         },
         leagueTeam: { include: { team: true } },
@@ -100,7 +99,9 @@ export default async function OnboardingPage({ params }: Props) {
           code={code}
           playerId={currentBinding.player.id}
           initialName={currentBinding.player.name ?? ''}
-          initialPosition={(currentBinding.player.position as 'GK' | 'DF' | 'MF' | 'FW' | null) ?? null}
+          // v1.65.4 — position lives on PLM, not Player. Read from the
+          // current PLM (currentBinding) directly.
+          initialPosition={(currentBinding.position as 'GK' | 'DF' | 'MF' | 'FW' | null) ?? null}
         />
       </div>
     </main>

@@ -144,27 +144,25 @@ export async function applyToLeague(
     return { ok: false, error: 'Name must be 100 characters or fewer' }
   }
 
+  // v1.65.4 — legacy `Player.applicationStatus` + `Player.applicationLeagueId`
+  // are dropped from the schema. Position now lives only on the PLM. The
+  // Player row is purely identity (name + lineId/userId + profile picture).
   const player = await prisma.$transaction(async (tx) => {
     const created = await tx.player.create({
       data: {
         name: trimmedName,
-        position: input.position ?? null,
         userId: user.id,
         // Set Player.lineId for LINE users so the legacy resolver path
         // works through stage 3 (γ). Google/email users have lineId null.
         lineId: user.lineId ?? null,
-        // Legacy fields kept dual-written through stage 3 (v1.65.2 read
-        // flip). v1.65.4 drops them entirely.
-        applicationStatus: 'PENDING',
-        applicationLeagueId: league.id,
       },
     })
     await tx.user.update({
       where: { id: user.id },
       data: { playerId: created.id },
     })
-    // v1.65.1 — also create the PLM(PENDING) for this league. The PLM
-    // is the canonical source of truth from v1.65.2 onward.
+    // v1.65.1 — PLM(PENDING) for this league is the canonical source of
+    // truth (v1.65.4 drops the legacy Player.* fields).
     await tx.playerLeagueMembership.create({
       data: {
         playerId: created.id,

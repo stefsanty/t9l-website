@@ -205,17 +205,16 @@ model LeagueTeam {
 }
 
 model Player {
-  id                String          @id @default(cuid())
+  id                String   @id @default(cuid())
   // v1.33.0 (PR ε of the onboarding chain) — `name` becomes nullable so
   // admins can pre-stage a roster slot (team known, name not yet) and let
   // the user fill it in via the upcoming `/join/[code]` flow (PR ζ).
   // Backward-compat: every row at v1.33.0 deploy time has a non-null name.
   name              String?
-  // v1.33.0 — formal enum. Pre-ε this was `String?` populated from Sheets;
-  // observed prod values are exactly the four literals (or NULL). Migration
-  // CASE-WHEN-backfills; non-conforming free-text values land as NULL.
-  position          PlayerPosition?
-  lineId            String?         @unique
+  // v1.65.4 — `Player.position` was DROPPED in v1.65.4 (membership-spec
+  // rework PR 5). Position now lives on `PlayerLeagueMembership.position`
+  // — per-league. Reads + writes through that field.
+  lineId            String?  @unique
   pictureUrl        String?
   // v1.37.0 (PR ι) — user-uploaded profile picture (Vercel Blob).
   // Replace-only: re-upload via /account/player deletes the prior
@@ -224,8 +223,8 @@ model Player {
   // src/lib/playerAvatar.ts: profilePictureUrl > pictureUrl > static
   // fallback. Nullable — pre-ι rows have no user-uploaded asset.
   profilePictureUrl String?
-  createdAt         DateTime        @default(now())
-  updatedAt         DateTime        @updatedAt
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
   // Stage 1 of account-player-rework (v1.27.0). Mirror of User.playerId — the
   // 1:1 binding from the canonical Player profile to its global User
@@ -259,16 +258,11 @@ model Player {
   idBackUrl    String?
   idUploadedAt DateTime?
 
-  // v1.64.0 — application/recruiting workflow. `applicationStatus`
-  // gates whether a Player is a real roster member (APPROVED) or a
-  // pending self-service application from the recruiting banner
-  // (PENDING). Default APPROVED so every existing Player row backfills
-  // to "real" — only new Players created via the recruiting banner
-  // get PENDING. `applicationLeagueId` memos which league the
-  // application targets (admin reviews per-league); nullable on
-  // existing rows.
-  applicationStatus   PlayerApplicationStatus @default(APPROVED)
-  applicationLeagueId String?
+  // v1.65.4 — `Player.applicationStatus` and `Player.applicationLeagueId`
+  // were DROPPED in v1.65.4 (membership-spec rework PR 5).
+  // Application status now lives on `PlayerLeagueMembership.applicationStatus`
+  // — per-league. The `PlayerApplicationStatus` enum is kept because PLM
+  // still uses it.
 
   // v1.65.0 (membership-spec rework PR 1) — date of birth, per spec
   // ("profile-level data: name, avatar, DOB"). Optional — historical

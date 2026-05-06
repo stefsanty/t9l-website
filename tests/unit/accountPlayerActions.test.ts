@@ -29,24 +29,49 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 const {
   playerFindUniqueMock,
   playerUpdateMock,
+  plmUpdateManyMock,
+  transactionMock,
   revalidateMock,
   putMock,
   delMock,
   sessionMock,
   deleteMappingMock,
-} = vi.hoisted(() => ({
-  playerFindUniqueMock: vi.fn(),
-  playerUpdateMock: vi.fn().mockResolvedValue({}),
-  revalidateMock: vi.fn(),
-  putMock: vi.fn(),
-  delMock: vi.fn(),
-  sessionMock: vi.fn(),
-  deleteMappingMock: vi.fn().mockResolvedValue(undefined),
-}))
+} = vi.hoisted(() => {
+  const playerFindUniqueMock = vi.fn()
+  const playerUpdateMock = vi.fn().mockResolvedValue({})
+  const plmUpdateManyMock = vi.fn().mockResolvedValue({ count: 1 })
+  // v1.65.4 — updatePlayerSelf now uses prisma.$transaction with an inner
+  // callback that calls tx.player.update + tx.playerLeagueMembership.updateMany.
+  // The transaction mock invokes the callback with a tx delegating to the
+  // per-method mocks so existing assertions on playerUpdateMock still fire.
+  const transactionMock = vi.fn().mockImplementation(async (arg) => {
+    if (typeof arg === 'function') {
+      const tx = {
+        player: { update: playerUpdateMock, findUnique: playerFindUniqueMock },
+        playerLeagueMembership: { updateMany: plmUpdateManyMock },
+      }
+      return arg(tx)
+    }
+    return Promise.all(arg)
+  })
+  return {
+    playerFindUniqueMock,
+    playerUpdateMock,
+    plmUpdateManyMock,
+    transactionMock,
+    revalidateMock: vi.fn(),
+    putMock: vi.fn(),
+    delMock: vi.fn(),
+    sessionMock: vi.fn(),
+    deleteMappingMock: vi.fn().mockResolvedValue(undefined),
+  }
+})
 
 vi.mock('@/lib/prisma', () => ({
   prisma: {
     player: { findUnique: playerFindUniqueMock, update: playerUpdateMock },
+    playerLeagueMembership: { updateMany: plmUpdateManyMock },
+    $transaction: transactionMock,
   },
 }))
 vi.mock('@/lib/revalidate', () => ({ revalidate: revalidateMock }))
@@ -171,14 +196,21 @@ describe('updatePlayerSelf — validation', () => {
     expect(playerUpdateMock).not.toHaveBeenCalled()
   })
 
-  it('trims name and writes Prisma update', async () => {
+  it('trims name and writes Prisma update (v1.65.4 — position split to PLM)', async () => {
     await updatePlayerSelf({ name: '  Stefan S  ', position: 'MF' })
+    // v1.65.4 — Player.update receives only identity fields (name); the
+    // position update is dispatched to playerLeagueMembership.updateMany.
     expect(playerUpdateMock).toHaveBeenCalledWith({
       where: { id: 'p-stefan-s' },
-      data: expect.objectContaining({
-        name: 'Stefan S',
-        position: 'MF',
-      }),
+      data: expect.objectContaining({ name: 'Stefan S' }),
+    })
+    // Position is no longer on the Player.update payload.
+    const call = playerUpdateMock.mock.calls[0][0]
+    expect(call.data.position).toBeUndefined()
+    // The PLM updateMany carries the position.
+    expect(plmUpdateManyMock).toHaveBeenCalledWith({
+      where: { playerId: 'p-stefan-s', toGameWeek: null },
+      data: { position: 'MF' },
     })
   })
 
@@ -213,10 +245,16 @@ describe('updatePlayerSelf — validation', () => {
     expect(playerUpdateMock).toHaveBeenCalled()
   })
 
-  it('treats empty position string as null', async () => {
+  it('treats empty position string as null (v1.65.4 — position writes to PLM)', async () => {
     await updatePlayerSelf({ name: 'Stefan', position: null })
-    const call = playerUpdateMock.mock.calls[0][0]
-    expect(call.data.position).toBeNull()
+    // v1.65.4 — position lives on PLM. The Player.update payload no
+    // longer carries position; the PLM.updateMany payload does.
+    const playerCall = playerUpdateMock.mock.calls[0][0]
+    expect(playerCall.data.position).toBeUndefined()
+    expect(plmUpdateManyMock).toHaveBeenCalledWith({
+      where: { playerId: 'p-stefan-s', toGameWeek: null },
+      data: { position: null },
+    })
   })
 
   it("revalidates the public domain so dashboard reflects the new name", async () => {

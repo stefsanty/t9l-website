@@ -106,53 +106,31 @@ export const getIdentityReadSource = unstable_cache(
 )
 
 /**
- * v1.65.2 / v1.65.3 — Membership-spec rework, stage 3 read-flip flag.
+ * v1.65.2 / v1.65.3 / v1.65.4 — Membership-spec rework read-flip flag.
  *
- * Per [outputs/data-model-spec-audit.md] §3 stage 3: switch reads from
- * the legacy `Player.position` / `Player.applicationStatus` /
- * `Player.applicationLeagueId` to the new `PlayerLeagueMembership.position` /
- * `PlayerLeagueMembership.applicationStatus` / direct PLM.leagueId fields.
+ * Stage 3 (v1.65.2) shipped this flag with default 'legacy' (inert);
+ * v1.65.3 flipped the default to 'plm'; v1.65.4 dropped the legacy
+ * `Player.position` / `Player.applicationStatus` / `Player.applicationLeagueId`
+ * columns entirely.
  *
- *   - 'plm' (DEFAULT after v1.65.3): reads use PlayerLeagueMembership.*
- *     fields (canonical after dual-write soak in v1.65.1+v1.65.2).
- *   - 'legacy' (revert path): reads use Player.* legacy fields.
- *     Operator can flip back via the Setting row if v1.65.3 surfaces
- *     issues during soak.
+ * Post-v1.65.4 the flag is **load-bearing for nothing** — every read
+ * site is PLM-canonical because the legacy fields no longer exist in
+ * the schema. The helper is preserved for backwards compat (so any
+ * stale Setting rows or external references don't trip), but the
+ * resolved value has no effect on application behavior.
  *
- * v1.65.2 shipped with default 'legacy' — code in place but inert.
- * **v1.65.3 flips the default to 'plm'** — every authenticated session
- * post-deploy reads from the new fields by default. The Setting row
- * still overrides the default; operator can flip back to 'legacy' via:
+ * The Setting row can be safely deleted by an operator post-v1.65.4:
  *
- *   INSERT INTO "Setting" (id, category, key, "leagueId", value, "updatedAt")
- *   VALUES ('s-playerData-readSource-global', 'playerData', 'read-source',
- *           NULL, 'legacy', NOW())
- *   ON CONFLICT (id) DO UPDATE
- *      SET value = 'legacy', "updatedAt" = NOW();
+ *   DELETE FROM "Setting"
+ *    WHERE id = 's-playerData-readSource-global';
  *
- * v1.65.4 drops the legacy Player.* fields entirely; the flag becomes
- * meaningless (only the PLM path remains).
- *
- * Position reads (SquadList / MatchdayAvailability / dbToPublicLeagueData)
- * are NOT branched at v1.65.2/v1.65.3 — dual-write keeps `Player.position`
- * and `PlayerLeagueMembership.position` in sync, so the cosmetic divergence
- * doesn't exist yet. v1.65.4 migrates these atomically when Player.position
- * is dropped.
+ * A future cleanup PR (v1.66+) can drop this helper entirely when
+ * confidence is high that no external consumer references it.
  */
 export type PlayerDataReadSource = 'legacy' | 'plm'
 
 export const SETTING_ID_PLAYER_DATA_READ_SOURCE = 's-playerData-readSource-global'
 
-/**
- * v1.65.3 — default flipped from 'legacy' to 'plm'.
- *
- * Only the literal 'legacy' string returns 'legacy'. Everything else
- * (null / undefined / unknown / 'plm' / etc.) returns 'plm'.
- *
- * The case sensitivity matters: 'LEGACY' / 'Legacy' / arbitrary strings
- * all return 'plm'. Operator opt-out is intentionally precise — typos
- * land on the new default rather than the legacy fallback.
- */
 export function resolvePlayerDataReadSource(
   value: string | null | undefined,
 ): PlayerDataReadSource {
@@ -167,12 +145,8 @@ export const getPlayerDataReadSource = unstable_cache(
       })
       return resolvePlayerDataReadSource(row?.value)
     } catch (err) {
-      // v1.65.3 — Settings outage falls back to the new 'plm' default.
-      // The Player.* legacy fields are still populated through v1.65.4,
-      // so the worst-case-flag-failure outcome is "PLM-canonical reads
-      // proceed", which is the post-soak target anyway.
       console.warn(
-        '[settings] getPlayerDataReadSource failed; falling back to plm (v1.65.3 default):',
+        '[settings] getPlayerDataReadSource failed; falling back to plm:',
         err,
       )
       return 'plm'

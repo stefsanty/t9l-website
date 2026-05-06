@@ -157,7 +157,13 @@ export default async function AccountPlayerPage() {
 
   const formProps: AccountPlayerFormProps = {
     initialName: player.name ?? '',
-    initialPosition: player.position ?? null,
+    // v1.65.4 — position lives on PlayerLeagueMembership, not Player.
+    // Surface the position from the active membership in the default
+    // league (or the most recent assignment as a fallback).
+    initialPosition:
+      activeAssignment?.position ??
+      realAssignments[0]?.position ??
+      null,
     profilePictureUrl: player.profilePictureUrl ?? null,
     pictureUrl: player.pictureUrl ?? null,
     sessionPictureUrl,

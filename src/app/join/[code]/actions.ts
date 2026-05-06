@@ -284,13 +284,19 @@ export async function submitOnboarding(input: SubmitOnboardingInput): Promise<vo
   // v1.62.0 — `Player.onboardingPreferences` is no longer written. The
   // column stays in the schema for compatibility but the form no longer
   // captures preference fields.
+  // v1.65.4 — position lives on PlayerLeagueMembership, not Player.
+  // Update the active PLM(s) for this player; Player gets only the
+  // identity field (name).
   await prisma.$transaction(async (tx) => {
     await tx.player.update({
       where: { id: input.playerId },
       data: {
         name: trimmedName,
-        position: input.position ?? null,
       },
+    })
+    await tx.playerLeagueMembership.updateMany({
+      where: { playerId: input.playerId, toGameWeek: null },
+      data: { position: input.position ?? null },
     })
     // No onboardingStatus update — that flips in submitIdUpload (or
     // skipIdUpload when BLOB is unconfigured). The form-completed state

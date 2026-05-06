@@ -155,7 +155,8 @@ export async function dbToPublicLeagueData(
       // we fall back to "TBD" mirroring the v1.31 empty-matchday convention.
       name: pla.player.name ?? 'TBD',
       teamId: teamSlug,
-      position: pla.player.position ?? null,
+      // v1.65.4 — position lives on PlayerLeagueMembership, not Player.
+      position: pla.position ?? null,
       picture: pla.player.pictureUrl ?? null,
     })
   }

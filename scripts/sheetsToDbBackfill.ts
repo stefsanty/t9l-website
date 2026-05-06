@@ -273,8 +273,9 @@ async function runBackfill(prisma: PrismaClient, parsed: LeagueData, flags: Flag
   const playerIdBySlug = new Map<string, string>()
   for (const p of parsed.players) {
     const pId = ids.player(p.id)
-    // v1.33.0 (PR ε) — Player.position is now `PlayerPosition?` enum.
-    // Sheets-side values are free-text; coerce to enum or null.
+    // v1.65.4 — Player.position is dropped; position now lives on PLM.
+    // Sheets-side values are free-text; coerce to enum or null and write
+    // through the PLM upsert below.
     const validPositions = ['GK', 'DF', 'MF', 'FW'] as const
     const positionEnum = p.position && (validPositions as readonly string[]).includes(p.position.toUpperCase())
       ? (p.position.toUpperCase() as 'GK' | 'DF' | 'MF' | 'FW')
@@ -284,12 +285,10 @@ async function runBackfill(prisma: PrismaClient, parsed: LeagueData, flags: Flag
       create: {
         id: pId,
         name: p.name,
-        position: positionEnum,
         pictureUrl: p.picture ?? null,
       },
       update: {
         name: p.name,
-        position: positionEnum,
         pictureUrl: p.picture ?? null,
       },
     })
@@ -301,7 +300,7 @@ async function runBackfill(prisma: PrismaClient, parsed: LeagueData, flags: Flag
     const plaId = ids.pla(pId, ltId)
     await prisma.playerLeagueMembership.upsert({
       where: { id: plaId },
-      create: { id: plaId, playerId: pId, leagueTeamId: ltId, fromGameWeek: 1 },
+      create: { id: plaId, playerId: pId, leagueTeamId: ltId, fromGameWeek: 1, position: positionEnum },
       update: {}, // don't disturb admin transfers
     })
     counts.plas++

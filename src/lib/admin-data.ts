@@ -115,7 +115,6 @@ export const getLeaguePlayers = unstable_cache(
       gameWeeks,
       allLineLogins,
       activeInvites,
-      pendingApplications,
       pendingMemberships,
     ] = await Promise.all([
       prisma.playerLeagueMembership.findMany({
@@ -164,27 +163,11 @@ export const getLeaguePlayers = unstable_cache(
           usedCount: true,
         },
       }),
-      // v1.64.0 / v1.65.1 — pending applications targeting THIS league.
-      //
-      // v1.64.0 source: Player rows with applicationStatus=PENDING and
-      // applicationLeagueId=leagueId. These have NO PlayerLeagueMembership
-      // yet; admin creates one on approval.
-      //
-      // v1.65.1 source (NEW): PLM rows with applicationStatus=PENDING and
-      // leagueId=leagueId. These exist for State C (where Player.* is also
-      // dual-written PENDING) and State D (where Player.* may be APPROVED
-      // for a different league entirely). Both are merged into one
-      // pending-applications surface for the admin Players tab.
-      //
-      // Both sources are queried; the page-level merger dedupes by playerId
-      // (keep the v1.65.1 PLM source as canonical when both fire).
-      prisma.player.findMany({
-        where: {
-          applicationLeagueId: leagueId,
-          applicationStatus: 'PENDING',
-        },
-        orderBy: { createdAt: 'desc' },
-      }),
+      // v1.65.4 — pending applications targeting THIS league. The
+      // legacy `Player.applicationStatus` + `Player.applicationLeagueId`
+      // columns are dropped; pending state lives only on PLM. Reading
+      // PLM.position so the admin Players tab surfaces the per-league
+      // position even before approval.
       prisma.playerLeagueMembership.findMany({
         where: {
           leagueId,
@@ -221,20 +204,18 @@ export const getLeaguePlayers = unstable_cache(
       activeInviteCountByPlayerId[inv.targetPlayerId] =
         (activeInviteCountByPlayerId[inv.targetPlayerId] ?? 0) + 1
     }
-    // v1.65.1 — merge legacy v1.64.0 pending Player rows with new v1.65.1
-    // PLM(PENDING) rows. Dedupe by playerId — when a Player surfaces from
-    // both sources (State C dual-write), keep one entry. The PLM source is
-    // canonical going forward; the Player source covers v1.64.0 PENDING
-    // applicants who haven't been migrated.
-    const seenPendingPlayerIds = new Set(pendingApplications.map((p) => p.id))
-    const mergedPendingApplications = [...pendingApplications]
-    for (const plm of pendingMemberships) {
-      if (seenPendingPlayerIds.has(plm.player.id)) continue
-      seenPendingPlayerIds.add(plm.player.id)
-      // Synthesize the same Player shape the legacy query returns so the
-      // page-level merger doesn't need to know about both sources.
-      mergedPendingApplications.push(plm.player)
-    }
+    // v1.65.4 — pending applications come exclusively from PLM rows now.
+    // The legacy Player.* source is gone; the merge step is unnecessary.
+    // Surface as the same Player-shaped array consumers expect, with
+    // `position` carried from the PLM row so the admin Players tab can
+    // render the applicant's stated position before approval.
+    const mergedPendingApplications = pendingMemberships.map((plm) => ({
+      ...plm.player,
+      // PLM-derived position attached for the page-level synthetic-row
+      // builder; PlayerRow consumers read `player.position` post-v1.65.4
+      // expecting the per-league position.
+      position: plm.position,
+    }))
     return [
       assignments,
       leagueTeams,
@@ -770,14 +751,17 @@ export async function getLinkablePlayersForLeague(leagueId: string): Promise<
       select: {
         id: true,
         name: true,
-        position: true,
         profilePictureUrl: true,
         pictureUrl: true,
         userId: true,
         lineId: true,
+        // v1.65.4 — pull leagueAssignments with position so we can
+        // surface the player's last-known position when listing them
+        // as a candidate for linking into a new league.
         leagueAssignments: {
-          where: { toGameWeek: null },
           select: {
+            position: true,
+            toGameWeek: true,
             leagueTeam: { select: { league: { select: { id: true, name: true } } } },
           },
         },
@@ -798,7 +782,14 @@ export async function getLinkablePlayersForLeague(leagueId: string): Promise<
     .map((p) => ({
       id: p.id,
       name: p.name,
-      position: p.position,
+      // v1.65.4 — position lives on PLM. Pick the position from the
+      // most-recent active assignment; null when no assignments. This
+      // is the "linkable existing player" surface so showing their
+      // last-known position is the useful signal.
+      position:
+        p.leagueAssignments.find((a) => a.toGameWeek === null)?.position ??
+        p.leagueAssignments[0]?.position ??
+        null,
       profilePictureUrl: p.profilePictureUrl,
       pictureUrl: p.pictureUrl,
       userId: p.userId,
