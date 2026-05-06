@@ -280,26 +280,25 @@ describe('v1.67.2 /recruit/[slug] route + form', () => {
     expect(src).toMatch(/<RegistrationForm/)
   })
 
-  it('RegistrationForm uses applyToLeague (atomic Player + PLM creation)', () => {
+  it('RegistrationForm uses registerToLeague (v1.68.0 — atomic Player + PLM + ID upload)', () => {
     const src = read('src/app/recruit/[slug]/RegistrationForm.tsx')
     expect(src).toMatch(/'use client'/)
-    expect(src).toMatch(/import\s*\{\s*applyToLeague\s*\}\s*from/)
-    // Form submit must call applyToLeague — NOT a synthetic-invite action.
-    expect(src).toMatch(/applyToLeague\(\{/)
+    // v1.68.0 — flipped to registerToLeague (FormData with files).
+    expect(src).toMatch(/import\s*\{\s*registerToLeague\s*\}\s*from/)
+    expect(src).toMatch(/registerToLeague\(formData\)/)
     // No reference to the dropped legacy action.
     expect(src).not.toMatch(/recruitToLeagueWithOnboarding/)
     // Lands on /id/<slug> on success so the banner shows State B.
     expect(src).toMatch(/router\.push\(`\/id\/\$\{leagueSlug\}`\)/)
-    // Standard form testids.
+    // Wrapper testid preserved.
     expect(src).toMatch(/data-testid="recruit-registration-form"/)
-    expect(src).toMatch(/data-testid="recruit-name"/)
-    expect(src).toMatch(/data-testid="recruit-position"/)
-    expect(src).toMatch(/data-testid="recruit-submit"/)
+    // v1.68.0 — field testids live in the shared component.
+    expect(src).toMatch(/<RegistrationFields/)
   })
 
-  it('RegistrationForm mirrors OnboardingForm position-enum shape', () => {
-    const src = read('src/app/recruit/[slug]/RegistrationForm.tsx')
-    // Same five options as OnboardingForm — kept in sync per the doc comment.
+  it('RegistrationFields mirrors OnboardingForm position-enum shape (v1.68.0 — moved to shared component)', () => {
+    const src = read('src/components/registration/RegistrationFields.tsx')
+    // Same five options shared by /recruit and /join/[code]/onboarding.
     expect(src).toMatch(/Prefer not to say/)
     expect(src).toMatch(/GK\s*—\s*Goalkeeper/)
     expect(src).toMatch(/DF\s*—\s*Defender/)
