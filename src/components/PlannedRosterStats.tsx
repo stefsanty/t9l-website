@@ -2,6 +2,7 @@
 
 import type { PlannedRosterStats } from '@/lib/plannedRosterStats'
 import { formatJstFriendly } from '@/lib/jst'
+import { formatJpyFee } from '@/lib/playerFee'
 
 /**
  * v1.67.0 — Public planned-roster stats panel.
@@ -32,9 +33,19 @@ export default function PlannedRosterStats({ data }: Props) {
   const showPlannedTeams = data.plannedNumberOfTeams > 0
   const showPlannedPerTeam = data.plannedPlayersPerTeam > 0
   const showDeadline = data.registrationDeadline !== null
+  // v1.67.1 — fee row hides when the league has no fee configured at
+  // all (defaultFee === 0 AND no per-position fees). Matches the same
+  // hide-empty pattern the rest of the panel uses.
+  const showFee = data.defaultFee > 0 || data.positionFees.length > 0
   // If nothing is set up, hide the whole panel — no point showing
   // "Current players: 0" with no targets.
-  if (!showPlannedTeams && !showPlannedPerTeam && !showDeadline && data.currentPlayers === 0) {
+  if (
+    !showPlannedTeams &&
+    !showPlannedPerTeam &&
+    !showDeadline &&
+    !showFee &&
+    data.currentPlayers === 0
+  ) {
     return null
   }
 
@@ -94,6 +105,37 @@ export default function PlannedRosterStats({ data }: Props) {
             <dd className="font-display font-black text-fg-high">
               {formatJstFriendly(data.registrationDeadline, 'en')}
             </dd>
+          </div>
+        )}
+        {showFee && (
+          <div
+            className="col-span-2 pt-1.5 mt-0.5 border-t border-border-subtle"
+            data-testid="player-fee-row"
+          >
+            <div className="flex justify-between items-baseline gap-2 flex-wrap">
+              <dt className="text-fg-mid text-xs uppercase tracking-wider font-bold">
+                Player fee
+              </dt>
+              <dd className="font-display font-black text-fg-high tabular-nums">
+                {formatJpyFee(data.defaultFee)}
+                {data.positionFees.length > 0 && (
+                  <span
+                    className="ml-2 text-[10px] font-bold text-fg-mid tracking-wider"
+                    data-testid="player-fee-position-rows"
+                  >
+                    {data.positionFees.map((p, idx) => (
+                      <span key={p.position}>
+                        {idx > 0 && ' '}
+                        ({p.position} – {formatJpyFee(p.fee)})
+                      </span>
+                    ))}
+                  </span>
+                )}
+              </dd>
+            </div>
+            <p className="text-[10px] text-fg-low mt-1 leading-snug">
+              Player fee is used to pay referee volunteers and league management work.
+            </p>
           </div>
         )}
       </dl>
