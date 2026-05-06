@@ -16,6 +16,8 @@ import UnpaidFeeBanner from './UnpaidFeeBanner';
 import type { UnpaidFeeBannerData } from '@/lib/unpaidFeeBanner';
 import RsvpBar from './RsvpBar';
 import type { RecruitingViewerState } from '@/lib/recruitingViewerState';
+import type { PlannedRosterStats as PlannedRosterStatsData } from '@/lib/plannedRosterStats';
+import PlannedRosterStats from './PlannedRosterStats';
 import { selfReportGateOpen } from '@/lib/playerSelfReportGate';
 import { combineJstDateAndTime } from '@/lib/jst';
 
@@ -82,6 +84,13 @@ interface DashboardProps {
    * (no auth, no PLM in this league, paid, or no fee configured).
    */
   unpaidFee?: UnpaidFeeBannerData | null;
+  /**
+   * v1.67.0 — planned-roster stats panel data. Page.tsx server-renders
+   * this and only passes a non-null value when the viewer is
+   * authenticated AND preseasonMode + recruiting are both on. The panel
+   * sits between RecruitingBanner and CompressedMatchdaySchedule.
+   */
+  plannedRosterStats?: PlannedRosterStatsData | null;
 }
 
 /**
@@ -115,6 +124,7 @@ export default function Dashboard({
   recruitingState,
   league,
   unpaidFee,
+  plannedRosterStats,
 }: DashboardProps) {
   const { data: session } = useSession();
   const [selectedMatchdayId, setSelectedMatchdayId] = useState(
@@ -215,6 +225,11 @@ export default function Dashboard({
           {recruiting && league && recruitingState && (
             <RecruitingBanner league={league} viewer={recruitingState} />
           )}
+          {/* v1.67.0 — planned-roster stats. Server gates this with auth +
+              preseasonMode + recruiting; we render whenever the prop is
+              non-null. Sits between RecruitingBanner and the schedule
+              per the spec. */}
+          {plannedRosterStats && <PlannedRosterStats data={plannedRosterStats} />}
 
           {nextMd ? (
             <>

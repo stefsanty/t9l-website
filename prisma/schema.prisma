@@ -160,6 +160,14 @@ model League {
   // and the unpaid-fee banner stays hidden.
   defaultFee Int @default(0)
 
+  // v1.67.0 — planned-roster targets surfaced in the preseason stats
+  // panel above the planned schedule. Defaults of 0 mean "not set"
+  // for both numeric fields; the stats panel hides them in that case.
+  // `registrationDeadline` is nullable — admins may not have set one.
+  plannedPlayersPerTeam Int       @default(0)
+  plannedNumberOfTeams  Int       @default(0)
+  registrationDeadline  DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

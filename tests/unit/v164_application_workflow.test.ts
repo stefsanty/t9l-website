@@ -347,18 +347,23 @@ describe('v1.64.0 — RecruitingBanner state rendering', () => {
     expect(BANNER_SRC).toMatch(/onClick:\s*\(\)\s*=>\s*signIn\(/)
   })
 
-  it('no_player CTA testid + opens ApplyToLeagueModal in fresh mode', () => {
+  it('no_player CTA testid is present (v1.67.0 — full onboarding flow, not modal)', () => {
     expect(BANNER_SRC).toMatch(/['"]recruiting-banner-cta-noplayer['"]/)
-    expect(BANNER_SRC).toMatch(/<ApplyToLeagueModal\b/)
-    // v1.65.1 — modal is rendered for both no_player and in_other_league
-    // states. The mode prop differentiates the form shape.
-    expect(BANNER_SRC).toMatch(/mode=\{viewer\.kind === ['"]in_other_league['"]/)
+    // v1.67.0 — State C no longer opens ApplyToLeagueModal. It now
+    // routes through `recruitToLeagueWithOnboarding` which creates a
+    // synthetic invite and navigates to /join/<code>/onboarding for the
+    // canonical full intake flow (parity with admin-issued invites).
+    expect(BANNER_SRC).toMatch(/recruitToLeagueWithOnboarding/)
+    expect(BANNER_SRC).toMatch(/router\.push\(`\/join\/\$\{result\.code\}`\)/)
   })
 
   it('in_other_league CTA testid + opens ApplyToLeagueModal in existing mode (v1.65.1 State D fix)', () => {
     expect(BANNER_SRC).toMatch(/['"]recruiting-banner-cta-otherleague['"]/)
-    // Mode dispatch — when viewer is in_other_league, mode='existing'.
-    expect(BANNER_SRC).toMatch(/['"]existing['"][\s\S]*?['"]fresh['"]/)
+    // v1.67.0 — State D still uses the inline modal (simplified intake —
+    // existing Player just needs a position for the new league); only
+    // State C migrated off. Mode is now hardcoded "existing" rather than
+    // dispatched via ternary.
+    expect(BANNER_SRC).toMatch(/mode="existing"/)
     // Regression target: the v1.64.0 "Contact the league admin" toast is
     // gone (replaced by the modal-open path).
     expect(BANNER_SRC).not.toMatch(/Contact the league admin/)

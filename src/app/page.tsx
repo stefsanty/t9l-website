@@ -5,6 +5,9 @@ import { DEFAULT_LEAGUE_SLUG, getDefaultLeagueId } from "@/lib/leagueSlug";
 import { getLeagueFlags } from "@/lib/leagueFlags";
 import { getRecruitingViewerState } from "@/lib/recruitingViewerState";
 import { getUnpaidFeeBannerData } from "@/lib/unpaidFeeBanner";
+import { getPlannedRosterStats } from "@/lib/plannedRosterStats";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
 /**
@@ -49,6 +52,7 @@ export default async function Home() {
   let recruitingState;
   let leagueRow;
   let unpaidFee;
+  let plannedRosterStats;
   try {
     // v1.63.0 — fetch LeagueData + per-league flags in parallel. Flags
     // are cached separately under the same `leagues` tag so admin writes
@@ -61,7 +65,19 @@ export default async function Home() {
     // name fetch is bounded by the cached LeagueData but we need the
     // canonical row for the banner (LeagueData carries teams + matches,
     // not the League's own fields).
-    [data, flags, recruitingState, leagueRow, unpaidFee] = await Promise.all([
+    // v1.67.0 — auth-gate the planned-roster stats panel. Compute
+    // session in parallel; the panel data fetch always runs (cheap, two
+    // small queries) but we only thread it into Dashboard when the
+    // viewer is authenticated AND both flags are on.
+    const [
+      _data,
+      _flags,
+      _recruitingState,
+      _leagueRow,
+      _unpaidFee,
+      _plannedRosterStats,
+      session,
+    ] = await Promise.all([
       getPublicLeagueData(leagueId),
       getLeagueFlags(leagueId),
       getRecruitingViewerState(leagueId),
@@ -71,7 +87,19 @@ export default async function Home() {
       }),
       // v1.66.0 — unpaid-fee banner data; null when banner stays hidden.
       getUnpaidFeeBannerData(leagueId),
+      // v1.67.0 — planned-roster panel data; consumer-side gates pick
+      // whether to render based on auth + flags.
+      getPlannedRosterStats(leagueId),
+      getServerSession(authOptions),
     ]);
+    data = _data;
+    flags = _flags;
+    recruitingState = _recruitingState;
+    leagueRow = _leagueRow;
+    unpaidFee = _unpaidFee;
+    const userId = (session as { userId?: string | null } | null)?.userId ?? null;
+    plannedRosterStats =
+      userId && flags.preseasonMode && flags.recruiting ? _plannedRosterStats : null;
   } catch {
     return (
       <div className="flex items-center justify-center min-h-dvh bg-midnight text-white px-6 text-center">
@@ -101,6 +129,7 @@ export default async function Home() {
       recruitingState={recruitingState}
       league={leagueRow ?? undefined}
       unpaidFee={unpaidFee ?? null}
+      plannedRosterStats={plannedRosterStats ?? null}
     />
   );
 }

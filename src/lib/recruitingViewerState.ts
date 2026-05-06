@@ -47,61 +47,101 @@ export async function getRecruitingViewerState(
   const session = await getServerSession(authOptions)
   if (!session) return { kind: 'unauthenticated' }
 
+  // v1.67.0 — admin-orthogonal resolution. The viewer state is computed
+  // purely from auth + Player linkage + PLM rows. Admin role is NOT a
+  // gate. This mirrors the architectural rule "admin role is orthogonal
+  // to user-facing UX": an admin who's a Player+PLM in this league sees
+  // State A exactly like a non-admin would; an admin with no Player
+  // sees State C (recruiting CTA) exactly like a non-admin would.
+  //
+  // Resolution strategy:
+  //   1. Try by session.userId (canonical post-α.5 / PR β path).
+  //   2. Fall back to session.lineId via legacy Player.lineId — covers
+  //      sessions whose User.playerId was never backfilled (pre-β rows)
+  //      or any drift between User.playerId and Player.userId.
+  //   3. If neither resolves (admin-credentials sessions, or genuinely
+  //      no Player), return 'no_player' — same surface a non-admin
+  //      regular-but-unlinked viewer would see.
   const userId = (session as { userId?: string | null }).userId ?? null
-  if (!userId) {
-    // Admin-credentials session — no Player binding, treat as
-    // "no_player" so the banner doesn't show admin-only chrome to a
-    // viewer who can't actually apply.
+  const lineId = (session as { lineId?: string | null }).lineId ?? null
+
+  if (!userId && !lineId) {
+    // No public-side identifier (e.g. admin-credentials login). Treat
+    // as no_player — they have no Player linkage to surface State A
+    // for, and they CAN apply if they want to (the State C CTA is
+    // semantically correct for someone with no Player).
     return { kind: 'no_player' }
   }
 
   try {
-    // User and Player are connected via `User.playerId` + `Player.userId`
-    // (1:1 mirrored unique columns from v1.27.0 / α). Neither side
-    // declares an `@relation` FK in the schema (per CLAUDE.md: stage Δ
-    // converts one direction; today they're independent). So we walk
-    // userId → Player.userId rather than via a relation include.
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { id: true, playerId: true },
-    })
-    if (!user || !user.playerId) {
-      return { kind: 'no_player' }
-    }
-
-    // v1.65.4 — Player.applicationStatus + Player.applicationLeagueId are
-    // dropped. The resolver reads PLM-canonical only. Pulls every
-    // membership for this league so we can check both PENDING (no team)
-    // and APPROVED (with team). The where-filter covers the new direct
-    // `leagueId` column AND the legacy `leagueTeam.leagueId` so old
-    // backfilled rows + new PENDING-no-team rows both match.
-    const player = await prisma.player.findUnique({
-      where: { userId: user.id },
-      select: {
-        id: true,
-        leagueAssignments: {
-          where: {
-            OR: [
-              { leagueId },
-              { leagueTeam: { leagueId } },
-            ],
-          },
+    // Try userId path first (canonical), fall back to lineId.
+    let player: {
+      id: string
+      leagueAssignments: Array<{
+        applicationStatus: string
+        toGameWeek: number | null
+        leagueTeam: { team: { id: string; name: string; logoUrl: string | null } } | null
+      }>
+    } | null = null
+    if (userId) {
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { id: true, playerId: true },
+      })
+      if (user?.playerId) {
+        player = await prisma.player.findUnique({
+          where: { userId: user.id },
           select: {
-            applicationStatus: true,
-            toGameWeek: true,
-            leagueTeam: {
+            id: true,
+            leagueAssignments: {
+              where: {
+                OR: [
+                  { leagueId },
+                  { leagueTeam: { leagueId } },
+                ],
+              },
               select: {
-                team: { select: { id: true, name: true, logoUrl: true } },
+                applicationStatus: true,
+                toGameWeek: true,
+                leagueTeam: {
+                  select: {
+                    team: { select: { id: true, name: true, logoUrl: true } },
+                  },
+                },
+              },
+            },
+          },
+        })
+      }
+    }
+    // Fallback: lineId-keyed lookup. Covers the drift case where
+    // User.playerId was never backfilled.
+    if (!player && lineId) {
+      player = await prisma.player.findUnique({
+        where: { lineId },
+        select: {
+          id: true,
+          leagueAssignments: {
+            where: {
+              OR: [
+                { leagueId },
+                { leagueTeam: { leagueId } },
+              ],
+            },
+            select: {
+              applicationStatus: true,
+              toGameWeek: true,
+              leagueTeam: {
+                select: {
+                  team: { select: { id: true, name: true, logoUrl: true } },
+                },
               },
             },
           },
         },
-      },
-    })
+      })
+    }
     if (!player) {
-      // Mirror drift — User.playerId points at a Player that doesn't
-      // resolve via Player.userId. Treat as no_player so the user can
-      // re-apply; the admin Players tab can flag the drift separately.
       return { kind: 'no_player' }
     }
 

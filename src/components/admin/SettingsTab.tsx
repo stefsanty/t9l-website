@@ -17,6 +17,7 @@ import {
 import type { DataSource, WriteMode } from '@/lib/settings'
 import { formatJstDate } from '@/lib/jst'
 import LeagueFeesEditor from './LeagueFeesEditor'
+import LeaguePlannedRosterEditor from './LeaguePlannedRosterEditor'
 
 interface League {
   id: string
@@ -38,6 +39,10 @@ interface League {
   // threaded from getLeagueSettings's include.
   defaultFee: number
   positionFees: ReadonlyArray<{ position: string; fee: number }>
+  // v1.67.0 — planned-roster targets surfaced in the preseason stats panel.
+  plannedPlayersPerTeam: number
+  plannedNumberOfTeams: number
+  registrationDeadline: Date | null
 }
 
 // JST calendar date as YYYY-MM-DD for `<input type="date">`. See lib/jst.ts.
@@ -635,6 +640,16 @@ export default function SettingsTab({
         leagueId={league.id}
         initialDefaultFee={league.defaultFee}
         initialPositionFees={league.positionFees}
+      />
+
+      {/* v1.67.0 — Planned roster targets (number of teams / players per team
+          / registration deadline). Surfaced via the public preseason stats
+          panel between the recruiting banner and the planned schedule. */}
+      <LeaguePlannedRosterEditor
+        leagueId={league.id}
+        initialPlannedPlayersPerTeam={league.plannedPlayersPerTeam}
+        initialPlannedNumberOfTeams={league.plannedNumberOfTeams}
+        initialRegistrationDeadline={league.registrationDeadline}
       />
 
       {/* Quick actions */}
