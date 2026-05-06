@@ -153,6 +153,13 @@ model League {
   // it to a per-league recruiting CTA target.
   recruiting Boolean @default(false)
 
+  // v1.66.0 — per-league fee in JPY (no decimals). The fallback when
+  // a player's PlayerLeagueMembership has no `feeOverride` and no
+  // matching `LeaguePositionFee` row exists. 0 by default — leagues
+  // that haven't set up fees see "no fee" semantics in the resolver
+  // and the unpaid-fee banner stays hidden.
+  defaultFee Int @default(0)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -164,14 +171,39 @@ model League {
 
   // v1.65.0 (membership-spec rework PR 1) — back-relations for the new
   // direct League FKs on PlayerLeagueMembership and PlayerLeagueStat.
-  // PlayerLeagueMembership.leagueId is a direct FK so PENDING-application
-  // memberships (no team yet) still know their league; PlayerLeagueStat
-  // is keyed on leagueId for per-league aggregate stats. Both cascade
-  // on League delete.
-  memberships PlayerLeagueMembership[]
-  playerStats PlayerLeagueStat[]
+  memberships  PlayerLeagueMembership[]
+  playerStats  PlayerLeagueStat[]
+  // v1.66.0 — per-position fee overrides (e.g. GK = 5000, FP = 4000).
+  positionFees LeaguePositionFee[]
 
   @@index([isDefault])
+}
+
+// v1.66.0 — per-league per-position fee override. When a player has a
+// `PlayerLeagueMembership.position` that matches a row's `position`
+// string (case-sensitive exact match), `fee` is used as the resolved
+// fee for that membership UNLESS membership.feeOverride is non-null.
+// Otherwise falls through to League.defaultFee. See
+// `src/lib/playerFee.ts#resolvePlayerFee` for the canonical resolution
+// order.
+//
+// The position column is `String` (not the `PlayerPosition` enum) so
+// admins can use richer categorization than the four enum literals
+// (e.g. "GK" + "FP" = field-player, where "FP" doesn't match any
+// PlayerPosition value and so naturally falls through to defaultFee
+// for non-GK players).
+model LeaguePositionFee {
+  id        String   @id @default(cuid())
+  leagueId  String
+  position  String
+  fee       Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  league League @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+
+  @@unique([leagueId, position])
+  @@index([leagueId])
 }
 
 model Team {
@@ -407,6 +439,20 @@ model PlayerLeagueMembership {
   // toggling.
   idShared Boolean @default(true)
 
+  // v1.66.0 — per-membership payment status. Defaults UNPAID; admin
+  // flips to PAID via the admin Players tab (per-row toggle or bulk
+  // action). `paidAt` is the timestamp the admin marked the membership
+  // PAID; nulled when flipped back to UNPAID.
+  paidStatus PaidStatus @default(UNPAID)
+  paidAt     DateTime?
+
+  // v1.66.0 — per-membership fee override in JPY. When non-null, takes
+  // precedence over both `LeaguePositionFee.fee` and `League.defaultFee`.
+  // Used for case-by-case adjustments (waivers, partial scholarships, etc.).
+  // null means "use the resolved fee from position/default" — see
+  // `src/lib/playerFee.ts#resolvePlayerFee` for the resolution order.
+  feeOverride Int?
+
   player     Player      @relation(fields: [playerId], references: [id], onDelete: Cascade)
   leagueTeam LeagueTeam? @relation(fields: [leagueTeamId], references: [id], onDelete: Cascade)
   league     League?     @relation(fields: [leagueId], references: [id], onDelete: Cascade)
@@ -415,6 +461,16 @@ model PlayerLeagueMembership {
   @@index([leagueTeamId])
   @@index([leagueId])
   @@map("PlayerLeagueAssignment")
+}
+
+// v1.66.0 — payment status enum for PlayerLeagueMembership.paidStatus.
+// PAID and UNPAID — no intermediate states (e.g. PARTIALLY_PAID) at
+// v1.66; if needed, future iteration adds them. Default for new
+// memberships is UNPAID; admin flips to PAID via the admin Players
+// tab toggle or bulk action.
+enum PaidStatus {
+  PAID
+  UNPAID
 }
 
 // v1.65.0 (membership-spec rework PR 1) — membership lifecycle status.

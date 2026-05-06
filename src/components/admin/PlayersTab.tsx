@@ -22,7 +22,9 @@ import {
   adminResetOnboarding,
   adminApproveApplication,
   adminRejectApplication,
+  updateMembershipPaidStatus,
 } from '@/app/admin/leagues/actions'
+import { formatJpyFee } from '@/lib/playerFee'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -83,6 +85,16 @@ interface PlayerRow {
   // items.
   applicationStatus: 'APPROVED' | 'PENDING'
   assignments: Assignment[]
+  // v1.66.0 — payment system surface. paidStatus + effectiveFee are
+  // derived from the active PLM (or null when no active membership);
+  // membershipId is the active PLM's id, used to dispatch toggle/override
+  // server actions. All four are optional so existing callers don't
+  // need to pass them; minimal admin Players UI in v1.66.0 just shows
+  // a fee indicator + adds Mark paid/unpaid to the kebab.
+  paidStatus?: 'PAID' | 'UNPAID'
+  effectiveFee?: number
+  feeOverride?: number | null
+  membershipId?: string
 }
 
 interface OrphanLineLogin {
@@ -264,6 +276,28 @@ export default function PlayersTab({
       toast(`Application rejected — ${playerName ?? 'player'} record deleted.`)
     } catch (err) {
       toast(err instanceof Error ? err.message : 'Failed to reject application', 'error')
+    }
+  }
+
+  // v1.66.0 — Toggle paidStatus on a player's active PLM. Both directions
+  // (PAID → UNPAID and UNPAID → PAID) handled in one handler; the kebab
+  // item label flips based on current state.
+  async function handleTogglePaid(player: PlayerRow) {
+    if (!player.membershipId || !player.paidStatus) return
+    const next = player.paidStatus === 'PAID' ? 'UNPAID' : 'PAID'
+    try {
+      await updateMembershipPaidStatus({
+        membershipId: player.membershipId,
+        leagueId,
+        status: next,
+      })
+      toast(
+        next === 'PAID'
+          ? `Marked ${player.name ?? 'player'} as paid.`
+          : `Marked ${player.name ?? 'player'} as unpaid.`,
+      )
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Failed to update payment status', 'error')
     }
   }
 
@@ -475,6 +509,7 @@ export default function PlayersTab({
                         onApproveApplication: () => setApprovePlayerId(player.id),
                         onRejectApplication: () =>
                           handleRejectApplication(player.id, player.name),
+                        onTogglePaid: () => handleTogglePaid(player),
                       },
                     })}
                   />
@@ -698,6 +733,7 @@ export default function PlayersTab({
                         onApproveApplication: () => setApprovePlayerId(player.id),
                         onRejectApplication: () =>
                           handleRejectApplication(player.id, player.name),
+                        onTogglePaid: () => handleTogglePaid(player),
                       },
                     })}
                   />
@@ -863,6 +899,10 @@ interface BuildPlayerMenuArgs {
     // when player.applicationStatus === 'PENDING'.
     onApproveApplication: () => void
     onRejectApplication: () => Promise<void>
+    // v1.66.0 — payment toggle. Only surfaces when the player has an
+    // active membership (membershipId set) — pre-staged or no-PLM
+    // applicants can't have a paid status to toggle.
+    onTogglePaid: () => Promise<void>
   }
 }
 
@@ -910,6 +950,14 @@ function buildPlayerMenuItems(args: BuildPlayerMenuArgs) {
   }
   if (player.idUploadedAt) {
     items.push({ label: 'View ID', onSelect: handlers.onViewId })
+  }
+  // v1.66.0 — Mark paid / Mark unpaid. Only when the player has an
+  // active membership (membershipId set + paidStatus known).
+  if (player.membershipId && player.paidStatus) {
+    items.push({
+      label: player.paidStatus === 'PAID' ? 'Mark unpaid' : 'Mark paid',
+      onSelect: handlers.onTogglePaid,
+    })
   }
   items.push({
     label: isTransferOpen ? 'Cancel transfer' : 'Transfer to team…',

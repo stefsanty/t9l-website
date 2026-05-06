@@ -333,7 +333,14 @@ export const getLeagueEvents = unstable_cache(
 
 export const getLeagueSettings = unstable_cache(
   async (leagueId: string) =>
-    prisma.league.findUnique({ where: { id: leagueId } }),
+    prisma.league.findUnique({
+      where: { id: leagueId },
+      // v1.66.0 — include positionFees so the SettingsTab > LeagueFeesEditor
+      // can render the per-position rows without a separate fetch.
+      include: {
+        positionFees: { orderBy: { position: 'asc' } },
+      },
+    }),
   ['league-settings'],
   { revalidate: 30, tags: ['leagues'] },
 )

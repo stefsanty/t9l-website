@@ -5,6 +5,7 @@ import { getLeagueIdBySlug, normalizeLeagueSlug } from '@/lib/leagueSlug'
 import { getPublicLeagueData } from '@/lib/publicData'
 import { getLeagueFlags } from '@/lib/leagueFlags'
 import { getRecruitingViewerState } from '@/lib/recruitingViewerState'
+import { getUnpaidFeeBannerData } from '@/lib/unpaidFeeBanner'
 import { prisma } from '@/lib/prisma'
 
 export const metadata = {
@@ -46,13 +47,9 @@ export default async function LeagueByIdPage({ params }: Props) {
   let flags
   let recruitingState
   let leagueRow
+  let unpaidFee
   try {
-    // v1.63.0 — per-league flags fetched in parallel with public data.
-    // Each league has its own preseason/recruiting state.
-    //
-    // v1.64.0 — also fetch the recruiting viewer state and league row
-    // (name needed by the banner). Mirror of the apex `/` page.
-    ;[data, flags, recruitingState, leagueRow] = await Promise.all([
+    ;[data, flags, recruitingState, leagueRow, unpaidFee] = await Promise.all([
       getPublicLeagueData(leagueId),
       getLeagueFlags(leagueId),
       getRecruitingViewerState(leagueId),
@@ -60,6 +57,8 @@ export default async function LeagueByIdPage({ params }: Props) {
         where: { id: leagueId },
         select: { id: true, name: true },
       }),
+      // v1.66.0 — unpaid-fee banner data; null when banner stays hidden.
+      getUnpaidFeeBannerData(leagueId),
     ])
   } catch {
     return (
@@ -93,6 +92,7 @@ export default async function LeagueByIdPage({ params }: Props) {
       recruiting={flags.recruiting}
       recruitingState={recruitingState}
       league={leagueRow ?? undefined}
+      unpaidFee={unpaidFee ?? null}
     />
   )
 }

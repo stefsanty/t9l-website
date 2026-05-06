@@ -70,7 +70,10 @@ describe('v1.65.1 — APP_VERSION bumped (chain proceeds)', () => {
     // Pin the bump that landed in v1.65.1; subsequent chain PRs (v1.65.2+)
     // can bump higher. Match v1.65.1, v1.65.2, ... v1.65.9 (single-digit
     // patch is plenty for the chain).
-    expect(VERSION_SRC).toMatch(/APP_VERSION\s*=\s*['"]1\.65\.[1-9]['"]/)
+    // Chain ships sequentially. v1.65.1 introduced these contracts; later
+    // versions may continue to honor them. Match any v1.65.[1-9] OR any
+    // higher minor (1.66+) so the test stays green as the codebase grows.
+    expect(VERSION_SRC).toMatch(/APP_VERSION\s*=\s*['"]1\.(65\.[1-9]|6[6-9]\.\d+|[7-9]\d?\.\d+)['"]/)
   })
 })
 

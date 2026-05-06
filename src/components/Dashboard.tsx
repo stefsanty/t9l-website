@@ -12,6 +12,8 @@ import SubmitGoalForm from './matchday/SubmitGoalForm';
 import ClassicLeagueHomepage from './ClassicLeagueHomepage';
 import CompressedMatchdaySchedule from './CompressedMatchdaySchedule';
 import RecruitingBanner from './RecruitingBanner';
+import UnpaidFeeBanner from './UnpaidFeeBanner';
+import type { UnpaidFeeBannerData } from '@/lib/unpaidFeeBanner';
 import RsvpBar from './RsvpBar';
 import type { RecruitingViewerState } from '@/lib/recruitingViewerState';
 import { selfReportGateOpen } from '@/lib/playerSelfReportGate';
@@ -74,6 +76,12 @@ interface DashboardProps {
    * single prop so a future per-league rebrand only touches one site.
    */
   league?: { id: string; name: string };
+  /**
+   * v1.66.0 — unpaid league-fee banner data, computed server-side via
+   * `getUnpaidFeeBannerData(leagueId)`. Null = banner stays hidden
+   * (no auth, no PLM in this league, paid, or no fee configured).
+   */
+  unpaidFee?: UnpaidFeeBannerData | null;
 }
 
 /**
@@ -106,6 +114,7 @@ export default function Dashboard({
   recruiting = false,
   recruitingState,
   league,
+  unpaidFee,
 }: DashboardProps) {
   const { data: session } = useSession();
   const [selectedMatchdayId, setSelectedMatchdayId] = useState(
@@ -198,6 +207,11 @@ export default function Dashboard({
 
       <main className={`flex-1 px-4 relative z-10 pt-12 ${showRsvpBar ? 'pb-32' : 'pb-2'}`}>
         <div className="animate-in pt-2">
+          {/* v1.66.0 — unpaid-fee banner renders ABOVE the recruiting
+              banner. The unpaid-fee message takes priority because it's
+              actionable for an existing roster member; recruiting is
+              for prospective members. */}
+          <UnpaidFeeBanner data={unpaidFee ?? null} />
           {recruiting && league && recruitingState && (
             <RecruitingBanner league={league} viewer={recruitingState} />
           )}

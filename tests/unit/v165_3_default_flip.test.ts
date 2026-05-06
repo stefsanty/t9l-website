@@ -32,7 +32,8 @@ const SETTINGS_SRC = readFileSync(join(REPO_ROOT, 'src/lib/settings.ts'), 'utf8'
 
 describe('v1.65.3 — APP_VERSION bumped', () => {
   it('APP_VERSION is at least 1.65.3 (chain ships sequentially)', () => {
-    expect(VERSION_SRC).toMatch(/APP_VERSION\s*=\s*['"]1\.65\.[3-9]['"]/)
+    // Match any v1.65.[3-9] OR any higher minor.
+    expect(VERSION_SRC).toMatch(/APP_VERSION\s*=\s*['"]1\.(65\.[3-9]|6[6-9]\.\d+|[7-9]\d?\.\d+)['"]/)
   })
 })
 
