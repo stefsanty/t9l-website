@@ -50,9 +50,14 @@ html.light {
   --foreground: #1a0f1e;
   --primary: #E0005A;
   --secondary: #7733CC;
-  --success: #00A855;
-  --tertiary: #00A855;
-  --warning: #B45309;
+  /* v1.70.2 — darker greens/ambers in light mode so `text-success` /
+     `text-warning` clear WCAG AA contrast (~4.5:1) when paired with
+     `bg-success/15` / `bg-warning/15` over the light background. The
+     prior `#00A855` / `#B45309` rendered around 2.2:1 / 3.5:1 — visible
+     but visually too bright and below AA for body text. */
+  --success: #006633;
+  --tertiary: #006633;
+  --warning: #92400E;
   --muted: #7A6885;
   --border: #D9C8E6;
   --card: #F5EEF9;
@@ -95,9 +100,9 @@ html.light {
     --foreground: #1a0f1e;
     --primary: #E0005A;
     --secondary: #7733CC;
-    --success: #00A855;
-    --tertiary: #00A855;
-    --warning: #B45309;
+    --success: #006633;
+    --tertiary: #006633;
+    --warning: #92400E;
     --muted: #7A6885;
     --border: #D9C8E6;
     --card: #F5EEF9;

@@ -32,12 +32,12 @@ export default function UnpaidFeeBanner({ data }: Props) {
   return (
     <div
       data-testid="unpaid-fee-banner"
-      className="w-full mt-2 mb-3 rounded-2xl border border-amber-500/60 bg-gradient-to-r from-amber-500/20 to-red-500/15 px-4 py-3 relative overflow-hidden"
+      className="w-full mt-2 mb-3 rounded-2xl border border-warning/40 bg-warning/10 px-4 py-3 relative overflow-hidden"
     >
       <div className="flex items-center gap-3">
-        <div className="w-10 h-10 rounded-full bg-amber-500/25 border border-amber-500/50 flex items-center justify-center shrink-0">
+        <div className="w-10 h-10 rounded-full bg-warning/15 border border-warning/40 flex items-center justify-center shrink-0">
           <svg
-            className="w-5 h-5 text-amber-400"
+            className="w-5 h-5 text-warning"
             fill="none"
             viewBox="0 0 24 24"
             stroke="currentColor"
@@ -52,7 +52,7 @@ export default function UnpaidFeeBanner({ data }: Props) {
           </svg>
         </div>
         <div className="min-w-0">
-          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-amber-400">
+          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-warning">
             League fee due
           </p>
           <p
