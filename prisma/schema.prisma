@@ -45,6 +45,25 @@ model User {
   email         String?   @unique
   emailVerified DateTime?
 
+  // v1.70.0 — moved from Player. Identity proof is per-person, not
+  // per-league. One person, one ID. Three additive nullable columns
+  // backfilled from Player at migration time (one row per User, copied
+  // up via Player.userId), then dropped from Player in the same
+  // migration. URL columns hold Vercel Blob public URLs; `idUploadedAt`
+  // is non-null when both URLs are uploaded successfully.
+  //
+  // Retention: forever (no user-facing disclosure per operator decision
+  // 2026-05-02). Admin can purge via the per-row "Purge ID" action,
+  // which DELs the Blob objects and nulls these columns. Used solely
+  // for venue booking documentation.
+  //
+  // Operator gate: writes require `BLOB_READ_WRITE_TOKEN` on Vercel.
+  // Without the env var, the upload route surfaces a "skip" path that
+  // flips onboardingStatus → COMPLETED without writing these columns.
+  idFrontUrl   String?
+  idBackUrl    String?
+  idUploadedAt DateTime?
+
   accounts Account[]
 
   // v1.42.0 (epic match events PR α) — audit trail for who entered each
@@ -280,23 +299,11 @@ model Player {
   // on the form. Nullable — admin pre-stages start with no preferences.
   onboardingPreferences Json?
 
-  // v1.35.0 (PR η) — ID upload step in the onboarding flow. Two URL
-  // columns hold Vercel Blob public URLs for the front + back of the
-  // user's photo ID. `idUploadedAt` is the timestamp gate (non-null
-  // means both URLs were uploaded successfully). All three nullable —
-  // admin pre-stages and pre-η users have no IDs.
-  //
-  // Retention: forever (no user-facing disclosure per operator decision
-  // 2026-05-02). Admin can purge via the per-row "Purge ID" action,
-  // which DELs the Blob objects and nulls the columns. Used solely for
-  // venue booking documentation.
-  //
-  // Operator gate: writes require `BLOB_READ_WRITE_TOKEN` on Vercel.
-  // Without the env var, the upload route surfaces a "skip" path that
-  // flips onboardingStatus → COMPLETED without writing these columns.
-  idFrontUrl   String?
-  idBackUrl    String?
-  idUploadedAt DateTime?
+  // v1.70.0 — `Player.idFrontUrl`, `Player.idBackUrl`, and
+  // `Player.idUploadedAt` were MOVED to User in v1.70.0 (the
+  // `move_id_to_user` migration). Identity proof is per-person, not
+  // per-league. The columns were backfilled into the linked User row
+  // via Player.userId then dropped here. See `User.idFrontUrl` etc.
 
   // v1.65.4 — `Player.applicationStatus` and `Player.applicationLeagueId`
   // were DROPPED in v1.65.4 (membership-spec rework PR 5).

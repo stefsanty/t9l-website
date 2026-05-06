@@ -116,6 +116,15 @@ export const getLeaguePlayers = unstable_cache(
       allLineLogins,
       activeInvites,
       pendingMemberships,
+      // v1.70.0 — ID images now live on User. Fetch every User with an
+      // uploaded ID; we'll build a `Map<playerId, IdData>` keyed on
+      // User.playerId so the page-level synthetic-row builder can
+      // surface ID state per Player without a per-row join.
+      // Cardinality is bounded by the total user population that has
+      // uploaded an ID (small — ~50 today). The cache wraps this whole
+      // function with a 30s TTL + 'leagues' tag, matching the rest of
+      // the read path.
+      idUsers,
     ] = await Promise.all([
       prisma.playerLeagueMembership.findMany({
         where: { leagueTeam: { leagueId } },
@@ -176,6 +185,20 @@ export const getLeaguePlayers = unstable_cache(
         include: { player: true },
         orderBy: { createdAt: 'desc' },
       }),
+      // v1.70.0 — User-side ID columns. Keyed on User.playerId so the
+      // page-level builder can look up ID state per Player.
+      prisma.user.findMany({
+        where: {
+          playerId: { not: null },
+          idUploadedAt: { not: null },
+        },
+        select: {
+          playerId: true,
+          idFrontUrl: true,
+          idBackUrl: true,
+          idUploadedAt: true,
+        },
+      }),
     ])
     const lineLoginsByLineId: Record<
       string,
@@ -216,6 +239,22 @@ export const getLeaguePlayers = unstable_cache(
       // expecting the per-league position.
       position: plm.position,
     }))
+    // v1.70.0 — `idDataByPlayerId` keyed on User.playerId. Date is
+    // serialized to ISO string at this boundary because the function is
+    // wrapped in `unstable_cache`, which JSON-round-trips its return
+    // value (same v1.17.1 cache-Date trap defense as `lastSeenAt`).
+    const idDataByPlayerId: Record<
+      string,
+      { idFrontUrl: string | null; idBackUrl: string | null; idUploadedAt: string }
+    > = {}
+    for (const u of idUsers) {
+      if (!u.playerId || !u.idUploadedAt) continue
+      idDataByPlayerId[u.playerId] = {
+        idFrontUrl: u.idFrontUrl,
+        idBackUrl: u.idBackUrl,
+        idUploadedAt: u.idUploadedAt.toISOString(),
+      }
+    }
     return [
       assignments,
       leagueTeams,
@@ -223,6 +262,7 @@ export const getLeaguePlayers = unstable_cache(
       lineLoginsByLineId,
       activeInviteCountByPlayerId,
       mergedPendingApplications,
+      idDataByPlayerId,
     ] as const
   },
   ['league-players'],

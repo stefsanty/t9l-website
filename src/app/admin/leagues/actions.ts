@@ -760,8 +760,9 @@ export async function adminUpdatePlayerPosition(input: {
  * the onboarding flow on their next visit.
  *
  * Preserves all existing data:
- *   - Player.name / position / onboardingPreferences / idFront/idBack/idUploadedAt
- *     are NOT cleared. The user re-enters the form pre-filled with
+ *   - Player.name / position / onboardingPreferences are NOT cleared.
+ *     User.idFrontUrl / idBackUrl / idUploadedAt (post-v1.70.0) are
+ *     also NOT cleared. The user re-enters the form pre-filled with
  *     whatever they previously submitted (PR ζ's onboarding form
  *     already handles that idempotent case via the page-level fetch).
  *   - Player.userId / lineId are NOT cleared. The User remains bound;
@@ -836,12 +837,24 @@ export async function adminPurgePlayerId(input: {
   await assertAdmin()
   if (!input.playerId) throw new Error('playerId is required')
 
+  // v1.70.0 — ID images live on User now (per-person identity proof).
+  // Resolve the linked User via Player.userId; reject if the player has
+  // no User binding (no ID could exist).
   const player = await prisma.player.findUnique({
     where: { id: input.playerId },
-    select: { id: true, idFrontUrl: true, idBackUrl: true },
+    select: { id: true, userId: true },
   })
   if (!player) throw new Error('Player not found')
-  if (!player.idFrontUrl && !player.idBackUrl) {
+  if (!player.userId) {
+    return // unlinked Player; no User row holds an ID for this slot.
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { id: player.userId },
+    select: { id: true, idFrontUrl: true, idBackUrl: true },
+  })
+  if (!user) return // shouldn't happen with a valid userId; defensive.
+  if (!user.idFrontUrl && !user.idBackUrl) {
     return // already purged / never uploaded
   }
 
@@ -850,7 +863,7 @@ export async function adminPurgePlayerId(input: {
   if (process.env.BLOB_READ_WRITE_TOKEN) {
     try {
       const { del } = await import('@vercel/blob')
-      const urls = [player.idFrontUrl, player.idBackUrl].filter(
+      const urls = [user.idFrontUrl, user.idBackUrl].filter(
         (u): u is string => !!u,
       )
       if (urls.length > 0) await del(urls)
@@ -859,8 +872,8 @@ export async function adminPurgePlayerId(input: {
     }
   }
 
-  await prisma.player.update({
-    where: { id: input.playerId },
+  await prisma.user.update({
+    where: { id: user.id },
     data: {
       idFrontUrl: null,
       idBackUrl: null,

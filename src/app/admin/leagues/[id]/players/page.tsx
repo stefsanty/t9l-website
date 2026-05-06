@@ -16,9 +16,18 @@ export default async function PlayersPage({ params }: Props) {
   // v1.10.0 / PR B — `getLeaguePlayers` returns a tuple of admin-page
   // payload pieces. v1.38.0 (PR κ) added `activeInviteCountByPlayerId`
   // as the 5th element so the new "Invited" sign-in-status badge can
-  // render without a separate fetch.
+  // render without a separate fetch. v1.70.0 added `idDataByPlayerId`
+  // so ID upload state surfaces post-Player→User migration.
   const [
-    [assignments, leagueTeams, gameWeeks, lineLoginsByLineId, activeInviteCountByPlayerId, pendingApplications],
+    [
+      assignments,
+      leagueTeams,
+      gameWeeks,
+      lineLoginsByLineId,
+      activeInviteCountByPlayerId,
+      pendingApplications,
+      idDataByPlayerId,
+    ],
     orphansRaw,
     allLineLoginsRaw,
     linkableCandidates,
@@ -124,20 +133,13 @@ export default async function PlayersPage({ params }: Props) {
         pictureUrl: a.player.pictureUrl ?? null,
         userId: a.player.userId ?? null,
         activeInviteCount: activeInviteCountByPlayerId[a.player.id] ?? 0,
-        // v1.35.0 (PR η) — surface ID upload state. Date → ISO string at
-        // the boundary (matches lineLastSeenAt's cache-safe pattern).
-        idFrontUrl: a.player.idFrontUrl ?? null,
-        idBackUrl: a.player.idBackUrl ?? null,
-        // v1.35.0 — defensive against the v1.17.1 cache-Date trap:
-        // `getLeaguePlayers` is wrapped in `unstable_cache`, which
-        // JSON-round-trips its return value, so a Date may arrive as a
-        // string post-cache. Coerce both shapes via String() — works on
-        // both Date (toString → cache-friendly) and pre-stringified ISO.
-        idUploadedAt: a.player.idUploadedAt
-          ? a.player.idUploadedAt instanceof Date
-            ? a.player.idUploadedAt.toISOString()
-            : String(a.player.idUploadedAt)
-          : null,
+        // v1.70.0 — ID images live on User now. `idDataByPlayerId` is
+        // already-keyed-on-Player.id by the admin-data builder, with
+        // `idUploadedAt` already serialized to an ISO string at the
+        // cache boundary (defensive against the v1.17.1 cache-Date trap).
+        idFrontUrl: idDataByPlayerId[a.player.id]?.idFrontUrl ?? null,
+        idBackUrl: idDataByPlayerId[a.player.id]?.idBackUrl ?? null,
+        idUploadedAt: idDataByPlayerId[a.player.id]?.idUploadedAt ?? null,
         lineId: a.player.lineId ?? null,
         lineDisplayName: ll?.name ?? null,
         linePictureUrl: ll?.pictureUrl ?? null,
@@ -186,13 +188,11 @@ export default async function PlayersPage({ params }: Props) {
       pictureUrl: p.pictureUrl ?? null,
       userId: p.userId ?? null,
       activeInviteCount: activeInviteCountByPlayerId[p.id] ?? 0,
-      idFrontUrl: p.idFrontUrl ?? null,
-      idBackUrl: p.idBackUrl ?? null,
-      idUploadedAt: p.idUploadedAt
-        ? p.idUploadedAt instanceof Date
-          ? p.idUploadedAt.toISOString()
-          : String(p.idUploadedAt)
-        : null,
+      // v1.70.0 — ID images live on User; pendingApplications still
+      // surfaces them via the same lookup as APPROVED rows.
+      idFrontUrl: idDataByPlayerId[p.id]?.idFrontUrl ?? null,
+      idBackUrl: idDataByPlayerId[p.id]?.idBackUrl ?? null,
+      idUploadedAt: idDataByPlayerId[p.id]?.idUploadedAt ?? null,
       lineId: p.lineId ?? null,
       lineDisplayName: ll?.name ?? null,
       linePictureUrl: ll?.pictureUrl ?? null,

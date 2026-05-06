@@ -299,8 +299,12 @@ describe('v1.65.4 — getLeaguePlayers PLM-only pending applications', () => {
     expect(exec).not.toMatch(/seenPendingPlayerIds/)
   })
 
-  it('returns 6-element tuple ending in mergedPendingApplications', () => {
-    expect(ADMIN_DATA_SRC).toMatch(/mergedPendingApplications,?\s*\] as const/)
+  it('returns 7-element tuple including mergedPendingApplications (v1.70.0 added idDataByPlayerId)', () => {
+    // v1.70.0 (PR move_id_to_user) appends idDataByPlayerId as the 7th
+    // element. The mergedPendingApplications block is preserved as the
+    // 6th element; both must be present in the return.
+    expect(ADMIN_DATA_SRC).toMatch(/mergedPendingApplications,/)
+    expect(ADMIN_DATA_SRC).toMatch(/idDataByPlayerId,?\s*\] as const/)
   })
 
   it('attaches PLM.position to each pending applicant row', () => {
