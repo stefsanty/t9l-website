@@ -130,8 +130,21 @@ describe('v1.74.1 — TeamsAllRow interface and getAllTeamsForAdmin', () => {
 // ── Version ───────────────────────────────────────────────────────────
 
 describe('v1.74.1 — version bump', () => {
-  it('APP_VERSION is 1.74.1', () => {
+  it('APP_VERSION is 1.74.1 or later', () => {
+    // v1.69.1 ledger: pinning the literal patch makes every later patch
+    // bump touch this file unnecessarily. Match any v1.74.x or later.
     const src = read('src/lib/version.ts')
-    expect(src).toMatch(/1\.74\.1/)
+    const m = src.match(/APP_VERSION\s*=\s*['"](\d+)\.(\d+)\.(\d+)['"]/)
+    expect(m).not.toBeNull()
+    if (!m) return
+    const [, major, minor, patch] = m
+    const majorN = parseInt(major, 10)
+    const minorN = parseInt(minor, 10)
+    const patchN = parseInt(patch, 10)
+    const ok =
+      majorN > 1 ||
+      (majorN === 1 && minorN > 74) ||
+      (majorN === 1 && minorN === 74 && patchN >= 1)
+    expect(ok).toBe(true)
   })
 })

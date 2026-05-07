@@ -7,6 +7,7 @@ import { getLeagueFlags } from "@/lib/leagueFlags";
 import { getRecruitingViewerState } from "@/lib/recruitingViewerState";
 import { getUnpaidFeeBannerData } from "@/lib/unpaidFeeBanner";
 import { getPlannedRosterStats } from "@/lib/plannedRosterStats";
+import { getLeagueDetails } from "@/lib/leagueDetails";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -66,6 +67,7 @@ export default async function Home() {
   let leagueRow;
   let unpaidFee;
   let plannedRosterStats;
+  let leagueDetails;
   try {
     // v1.63.0 — fetch LeagueData + per-league flags in parallel. Flags
     // are cached separately under the same `leagues` tag so admin writes
@@ -89,6 +91,7 @@ export default async function Home() {
       _leagueRow,
       _unpaidFee,
       _plannedRosterStats,
+      _leagueDetails,
       session,
     ] = await Promise.all([
       getPublicLeagueData(leagueId),
@@ -103,6 +106,11 @@ export default async function Home() {
       // v1.67.0 — planned-roster panel data; consumer-side gates pick
       // whether to render based on auth + flags.
       getPlannedRosterStats(leagueId),
+      // v1.75.0 — league details panel data; helper returns null when
+      // `League.showLeagueDetails === false`. Caller additionally
+      // gates on `preseasonMode` so the panel only surfaces on the
+      // preseason homepage.
+      getLeagueDetails(leagueId),
       getServerSession(authOptions),
     ]);
     data = _data;
@@ -113,6 +121,7 @@ export default async function Home() {
     const userId = (session as { userId?: string | null } | null)?.userId ?? null;
     plannedRosterStats =
       userId && flags.preseasonMode && flags.recruiting ? _plannedRosterStats : null;
+    leagueDetails = flags.preseasonMode ? _leagueDetails : null;
   } catch {
     return (
       <div className="flex items-center justify-center min-h-dvh bg-midnight text-white px-6 text-center">
@@ -143,6 +152,7 @@ export default async function Home() {
       league={leagueRow ?? undefined}
       unpaidFee={unpaidFee ?? null}
       plannedRosterStats={plannedRosterStats ?? null}
+      leagueDetails={leagueDetails ?? null}
     />
   );
 }

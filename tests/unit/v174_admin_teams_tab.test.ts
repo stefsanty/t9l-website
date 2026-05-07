@@ -304,7 +304,16 @@ describe('v1.74.0 — AdminNav', () => {
 
 describe('v1.74.0 — version bump', () => {
   it('APP_VERSION is 1.74.x or later', () => {
+    // v1.69.1 ledger: don't pin the literal minor version — match any
+    // v1.74.x or later so a later minor bump (1.75.0+) doesn't drag
+    // this file along.
     const src = read('src/lib/version.ts')
-    expect(src).toMatch(/APP_VERSION\s*=\s*['"]1\.74\./)
+    const m = src.match(/APP_VERSION\s*=\s*['"](\d+)\.(\d+)\.(\d+)['"]/)
+    expect(m).not.toBeNull()
+    if (!m) return
+    const [, major, minor] = m
+    const majorN = parseInt(major, 10)
+    const minorN = parseInt(minor, 10)
+    expect(majorN > 1 || (majorN === 1 && minorN >= 74)).toBe(true)
   })
 })

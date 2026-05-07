@@ -329,6 +329,142 @@ export async function updateLeaguePlannedRoster(input: {
   revalidate({ domain: 'public' })
 }
 
+/**
+ * v1.75.0 — League details surface.
+ *
+ * Sets the ten new `League` columns (ballType / goalSize / throwInType /
+ * offsideRule / backpassRule / matchDurationMinutes / playerFormat /
+ * unlimitedSubstitutions / organizerMessage / showLeagueDetails). The
+ * admin SettingsTab posts the full set in one call; every field is
+ * optional so partial updates are also valid.
+ *
+ * Validation:
+ *   - ballType / goalSize / throwInType: one of the enum literals.
+ *   - matchDurationMinutes: positive integer or null. 0 is rejected
+ *     because a match with zero minutes is meaningless; admin clears
+ *     the field by sending null.
+ *   - playerFormat: one of {5, 6, 7, 9, 11} or null. Non-null values
+ *     outside the allowed set are rejected.
+ *   - organizerMessage: free text, trimmed; empty string is normalized
+ *     to null so the public panel hides the section cleanly.
+ *
+ * Cache: busts the canonical `admin` and `public` tags so the public
+ * preseason homepage picks up the new values on the next render.
+ */
+const ALLOWED_BALL_TYPES = ['SOCCER', 'FUTSAL'] as const
+const ALLOWED_GOAL_SIZES = ['FUTSAL', 'YOUTH_SOCCER', 'FULL_SIZE_SOCCER'] as const
+const ALLOWED_THROW_IN_TYPES = ['THROW_IN', 'KICK_IN'] as const
+const ALLOWED_PLAYER_FORMATS = [5, 6, 7, 9, 11] as const
+
+export async function updateLeagueDetails(input: {
+  leagueId: string
+  ballType?: 'SOCCER' | 'FUTSAL'
+  goalSize?: 'FUTSAL' | 'YOUTH_SOCCER' | 'FULL_SIZE_SOCCER'
+  throwInType?: 'THROW_IN' | 'KICK_IN'
+  offsideRule?: boolean
+  backpassRule?: boolean
+  matchDurationMinutes?: number | null
+  playerFormat?: number | null
+  unlimitedSubstitutions?: boolean
+  organizerMessage?: string | null
+  showLeagueDetails?: boolean
+}): Promise<void> {
+  await assertAdmin()
+  if (!input.leagueId) throw new Error('leagueId is required')
+
+  const data: Record<string, unknown> = {}
+
+  if (input.ballType !== undefined) {
+    if (!ALLOWED_BALL_TYPES.includes(input.ballType)) {
+      throw new Error(`ballType must be one of ${ALLOWED_BALL_TYPES.join(', ')}`)
+    }
+    data.ballType = input.ballType
+  }
+  if (input.goalSize !== undefined) {
+    if (!ALLOWED_GOAL_SIZES.includes(input.goalSize)) {
+      throw new Error(`goalSize must be one of ${ALLOWED_GOAL_SIZES.join(', ')}`)
+    }
+    data.goalSize = input.goalSize
+  }
+  if (input.throwInType !== undefined) {
+    if (!ALLOWED_THROW_IN_TYPES.includes(input.throwInType)) {
+      throw new Error(`throwInType must be one of ${ALLOWED_THROW_IN_TYPES.join(', ')}`)
+    }
+    data.throwInType = input.throwInType
+  }
+  if (input.offsideRule !== undefined) {
+    if (typeof input.offsideRule !== 'boolean') {
+      throw new Error('offsideRule must be a boolean')
+    }
+    data.offsideRule = input.offsideRule
+  }
+  if (input.backpassRule !== undefined) {
+    if (typeof input.backpassRule !== 'boolean') {
+      throw new Error('backpassRule must be a boolean')
+    }
+    data.backpassRule = input.backpassRule
+  }
+  if (input.matchDurationMinutes !== undefined) {
+    if (input.matchDurationMinutes === null) {
+      data.matchDurationMinutes = null
+    } else if (
+      !Number.isInteger(input.matchDurationMinutes) ||
+      input.matchDurationMinutes <= 0
+    ) {
+      throw new Error('matchDurationMinutes must be a positive integer or null')
+    } else {
+      data.matchDurationMinutes = input.matchDurationMinutes
+    }
+  }
+  if (input.playerFormat !== undefined) {
+    if (input.playerFormat === null) {
+      data.playerFormat = null
+    } else if (
+      !Number.isInteger(input.playerFormat) ||
+      !(ALLOWED_PLAYER_FORMATS as readonly number[]).includes(input.playerFormat)
+    ) {
+      throw new Error(`playerFormat must be one of ${ALLOWED_PLAYER_FORMATS.join(', ')} or null`)
+    } else {
+      data.playerFormat = input.playerFormat
+    }
+  }
+  if (input.unlimitedSubstitutions !== undefined) {
+    if (typeof input.unlimitedSubstitutions !== 'boolean') {
+      throw new Error('unlimitedSubstitutions must be a boolean')
+    }
+    data.unlimitedSubstitutions = input.unlimitedSubstitutions
+  }
+  if (input.organizerMessage !== undefined) {
+    if (input.organizerMessage === null) {
+      data.organizerMessage = null
+    } else {
+      const trimmed = input.organizerMessage.trim()
+      data.organizerMessage = trimmed === '' ? null : trimmed
+    }
+  }
+  if (input.showLeagueDetails !== undefined) {
+    if (typeof input.showLeagueDetails !== 'boolean') {
+      throw new Error('showLeagueDetails must be a boolean')
+    }
+    data.showLeagueDetails = input.showLeagueDetails
+  }
+
+  await prisma.league.update({
+    where: { id: input.leagueId },
+    data,
+  })
+
+  revalidate({
+    domain: 'admin',
+    paths: [
+      `/admin/leagues/${input.leagueId}/settings`,
+      `/admin/leagues/${input.leagueId}`,
+      '/admin',
+    ],
+  })
+  revalidate({ domain: 'public' })
+}
+
 // ── GameWeek ────────────────────────────────────────────────────────────────
 
 export async function createGameWeek(leagueId: string, data: {

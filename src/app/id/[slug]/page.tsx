@@ -8,6 +8,7 @@ import { getLeagueFlags } from '@/lib/leagueFlags'
 import { getRecruitingViewerState } from '@/lib/recruitingViewerState'
 import { getUnpaidFeeBannerData } from '@/lib/unpaidFeeBanner'
 import { getPlannedRosterStats } from '@/lib/plannedRosterStats'
+import { getLeagueDetails } from '@/lib/leagueDetails'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
@@ -62,6 +63,7 @@ export default async function LeagueByIdPage({ params }: Props) {
   let leagueRow
   let unpaidFee
   let plannedRosterStats
+  let leagueDetails
   try {
     const [
       _data,
@@ -70,6 +72,7 @@ export default async function LeagueByIdPage({ params }: Props) {
       _leagueRow,
       _unpaidFee,
       _plannedRosterStats,
+      _leagueDetails,
       session,
     ] = await Promise.all([
       getPublicLeagueData(leagueId),
@@ -83,6 +86,8 @@ export default async function LeagueByIdPage({ params }: Props) {
       getUnpaidFeeBannerData(leagueId),
       // v1.67.0 — planned-roster panel; auth + flag gates resolved below.
       getPlannedRosterStats(leagueId),
+      // v1.75.0 — league details panel; preseasonMode gate resolved below.
+      getLeagueDetails(leagueId),
       getServerSession(authOptions),
     ])
     data = _data
@@ -93,6 +98,7 @@ export default async function LeagueByIdPage({ params }: Props) {
     const userId = (session as { userId?: string | null } | null)?.userId ?? null
     plannedRosterStats =
       userId && flags.preseasonMode && flags.recruiting ? _plannedRosterStats : null
+    leagueDetails = flags.preseasonMode ? _leagueDetails : null
   } catch {
     return (
       <div className="flex items-center justify-center min-h-dvh bg-midnight text-white px-6 text-center">
@@ -127,6 +133,7 @@ export default async function LeagueByIdPage({ params }: Props) {
       league={leagueRow ?? undefined}
       unpaidFee={unpaidFee ?? null}
       plannedRosterStats={plannedRosterStats ?? null}
+      leagueDetails={leagueDetails ?? null}
     />
   )
 }
