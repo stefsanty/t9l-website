@@ -152,9 +152,9 @@ describe('v1.67.0 page-level auth + flag gate', () => {
       const src = read(path)
       expect(src).toMatch(/getPlannedRosterStats\(leagueId\)/)
       expect(src).toMatch(/getServerSession\(authOptions\)/)
-      // Auth-gate AND flag-gate. The guard pattern threads userId &&
-      // preseasonMode && recruiting before passing the data through.
-      expect(src).toMatch(/userId\s*&&\s*flags\.preseasonMode\s*&&\s*flags\.recruiting/)
+      // Auth-gate AND recruiting flag gate.
+      // v1.75.1 — preseasonMode gate removed; now only userId + recruiting required.
+      expect(src).toMatch(/userId\s*&&\s*flags\.recruiting/)
       expect(src).toMatch(/plannedRosterStats=\{plannedRosterStats\s*\?\?\s*null\}/)
     })
   }

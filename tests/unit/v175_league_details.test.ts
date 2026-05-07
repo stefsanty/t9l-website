@@ -256,7 +256,7 @@ describe('v1.75.0 LeagueDetailsEditor admin UI', () => {
 describe('v1.75.0 LeagueDetailsPanel public component', () => {
   const src = read('src/components/LeagueDetailsPanel.tsx')
 
-  it('renders only the LeagueDetailsPanel testid root', () => {
+  it('renders the LeagueDetailsPanel testid root', () => {
     expect(src).toMatch(/data-testid="league-details-panel"/)
   })
 
@@ -282,6 +282,11 @@ describe('v1.75.0 LeagueDetailsPanel public component', () => {
     expect(src).toMatch(/data\.offsideRule \? 'Yes' : 'No'/)
     expect(src).toMatch(/data\.unlimitedSubstitutions \? 'Unlimited' : 'Limited'/)
   })
+
+  it('is collapsible — renders expand/collapse toggle on the header (v1.75.1)', () => {
+    expect(src).toMatch(/league-details-panel-header/)
+    expect(src).toMatch(/expanded/)
+  })
 })
 
 describe('v1.75.0 Dashboard wiring', () => {
@@ -296,15 +301,17 @@ describe('v1.75.0 Dashboard wiring', () => {
     expect(dash).toMatch(/leagueDetails\?:\s*LeagueDetailsData \| null/)
   })
 
-  it('renders LeagueDetailsPanel after PlannedRosterStats', () => {
-    const idxPlanned = dash.indexOf('<PlannedRosterStats')
-    const idxDetails = dash.indexOf('<LeagueDetailsPanel')
-    expect(idxPlanned).toBeGreaterThan(0)
-    expect(idxDetails).toBeGreaterThan(idxPlanned)
+  it('renders LeagueDetailsPanel in the Dashboard body', () => {
+    // v1.75.1 — LeagueDetailsPanel now contains PlannedRosterStats inline;
+    // the ordering assertion is moved to v1751_league_details_consolidation.test.ts.
+    expect(dash).toMatch(/<LeagueDetailsPanel/)
   })
 
-  it('only renders the panel when leagueDetails prop is non-null', () => {
-    expect(dash).toMatch(/\{leagueDetails && <LeagueDetailsPanel/)
+  it('renders LeagueDetailsPanel when leagueDetails is non-null', () => {
+    // v1.75.1 — uses a ternary (leagueDetails ? <LDP> : <PRS fallback>)
+    // rather than the old unconditional `{leagueDetails && <LeagueDetailsPanel`.
+    expect(dash).toMatch(/leagueDetails\s*\?\s*\(/)
+    expect(dash).toMatch(/<LeagueDetailsPanel/)
   })
 })
 
@@ -324,8 +331,10 @@ describe('v1.75.0 page-level wiring (apex + /id/<slug> + /id/<slug>/md/<id>)', (
     expect(read(rel)).toMatch(/leagueDetails=\{leagueDetails \?\? null\}/)
   })
 
-  it.each(sources)('%s gates leagueDetails on flags.preseasonMode', (rel) => {
-    expect(read(rel)).toMatch(/flags\.preseasonMode \? _leagueDetails : null/)
+  it.each(sources)('%s passes _leagueDetails directly (no preseasonMode gate — v1.75.1)', (rel) => {
+    // v1.75.1 removed the preseasonMode gate; leagueDetails now renders on
+    // both classic and preseason homepages when showLeagueDetails=true.
+    expect(read(rel)).toMatch(/leagueDetails\s*=\s*_leagueDetails/)
   })
 })
 
