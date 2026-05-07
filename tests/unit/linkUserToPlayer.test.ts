@@ -1,5 +1,6 @@
 /**
  * v1.39.0 (PR λ) — `linkUserToPlayer` helper.
+ * v1.72.0 — updated for User.name ↔ Player.name sync.
  *
  * Generic User↔Player binder keyed on `User.id` (not `User.lineId`),
  * so it works for Google / email / LINE flows alike. Same invariant-
@@ -20,11 +21,12 @@ interface Tx {
   }
 }
 
-function makeTx(): Tx {
+function makeTx(playerName = 'Test Player'): Tx {
   return {
     user: { findUnique: vi.fn(), update: vi.fn().mockResolvedValue({}) },
     player: {
-      update: vi.fn().mockResolvedValue({}),
+      // v1.72.0 — player.update returns { name } via select
+      update: vi.fn().mockResolvedValue({ name: playerName }),
       updateMany: vi.fn().mockResolvedValue({ count: 0 }),
     },
   }
@@ -33,7 +35,7 @@ function makeTx(): Tx {
 describe('linkUserToPlayer — happy path (no prior bindings)', () => {
   let tx: Tx
   beforeEach(() => {
-    tx = makeTx()
+    tx = makeTx('Stefan S')
     tx.user.findUnique.mockResolvedValue({ id: 'u-1', playerId: null })
   })
 
@@ -53,16 +55,21 @@ describe('linkUserToPlayer — happy path (no prior bindings)', () => {
       where: { userId: 'u-1', id: { not: 'p-target' } },
       data: { userId: null },
     })
-    // Forward pointer.
-    expect(tx.player.update).toHaveBeenCalledWith({
-      where: { id: 'p-target' },
-      data: { userId: 'u-1' },
-    })
-    // Back pointer.
-    expect(tx.user.update).toHaveBeenCalledWith({
-      where: { id: 'u-1' },
-      data: { playerId: 'p-target' },
-    })
+    // Forward pointer — v1.72.0: includes select: { name: true }
+    expect(tx.player.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'p-target' },
+        data: { userId: 'u-1' },
+        select: { name: true },
+      }),
+    )
+    // Back pointer — v1.72.0: includes name: 'Stefan S'
+    expect(tx.user.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'u-1' },
+        data: expect.objectContaining({ playerId: 'p-target', name: 'Stefan S' }),
+      }),
+    )
   })
 
   it('does NOT touch Player.lineId when lineId arg is omitted', async () => {
@@ -77,10 +84,12 @@ describe('linkUserToPlayer — happy path (no prior bindings)', () => {
       playerId: 'p-target',
       lineId: 'U_LINE123',
     })
-    expect(tx.player.update).toHaveBeenCalledWith({
-      where: { id: 'p-target' },
-      data: { userId: 'u-1', lineId: 'U_LINE123' },
-    })
+    expect(tx.player.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'p-target' },
+        data: { userId: 'u-1', lineId: 'U_LINE123' },
+      }),
+    )
   })
 
   it('SETS Player.lineId to null when lineId arg is explicitly null (admin clear flow)', async () => {
@@ -92,10 +101,12 @@ describe('linkUserToPlayer — happy path (no prior bindings)', () => {
       playerId: 'p-target',
       lineId: null,
     })
-    expect(tx.player.update).toHaveBeenCalledWith({
-      where: { id: 'p-target' },
-      data: { userId: 'u-1', lineId: null },
-    })
+    expect(tx.player.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'p-target' },
+        data: { userId: 'u-1', lineId: null },
+      }),
+    )
   })
 })
 

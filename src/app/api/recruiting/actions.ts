@@ -159,7 +159,8 @@ export async function applyToLeague(
     })
     await tx.user.update({
       where: { id: user.id },
-      data: { playerId: created.id },
+      // v1.72.0 — User.name = Player.name when linking.
+      data: { playerId: created.id, name: trimmedName },
     })
     // v1.65.1 — PLM(PENDING) for this league is the canonical source of
     // truth (v1.65.4 drops the legacy Player.* fields).
@@ -326,6 +327,8 @@ export async function registerToLeague(
       where: { id: user.id },
       data: {
         playerId: created.id,
+        // v1.72.0 — User.name = Player.name when linking.
+        name: trimmedName,
         idFrontUrl: input.idFrontUrl,
         idBackUrl: input.idBackUrl,
         idUploadedAt: new Date(),

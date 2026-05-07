@@ -702,9 +702,16 @@ export async function adminUpdatePlayerName(input: {
   if (!trimmed) throw new Error('Player name is required')
   if (trimmed.length > 100) throw new Error('Player name must be 100 characters or fewer')
 
-  await prisma.player.update({
-    where: { id: playerId },
-    data: { name: trimmed },
+  await prisma.$transaction(async (tx) => {
+    await tx.player.update({
+      where: { id: playerId },
+      data: { name: trimmed },
+    })
+    // v1.72.0 — sync User.name = Player.name for the linked User, if any.
+    await tx.user.updateMany({
+      where: { playerId },
+      data: { name: trimmed },
+    })
   })
 
   revalidate({ domain: 'admin', paths: [`/admin/leagues/${leagueId}/players`] })
@@ -1177,14 +1184,21 @@ export async function adminUnlinkUserFromPlayer(input: {
   await prisma.$transaction(async (tx) => {
     const user = await tx.user.findUnique({
       where: { id: userId },
-      select: { id: true, playerId: true },
+      select: { id: true, playerId: true, authAccountName: true },
     })
     if (!user) throw new Error('User not found')
     if (user.playerId === null) {
       // Already unlinked — no-op. Idempotent contract.
       return
     }
-    await tx.user.update({ where: { id: userId }, data: { playerId: null } })
+    // v1.72.0 — restore User.name = authAccountName on unlink.
+    await tx.user.update({
+      where: { id: userId },
+      data: {
+        playerId: null,
+        name: user.authAccountName ?? null,
+      },
+    })
     await tx.player.updateMany({
       where: { userId },
       data: { userId: null },

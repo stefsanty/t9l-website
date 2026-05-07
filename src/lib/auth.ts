@@ -427,6 +427,43 @@ async function syncUserLineId(userId: string, lineId: string): Promise<void> {
   });
 }
 
+/**
+ * v1.72.0 — Writes `authAccountName` (the auth-provider-supplied name)
+ * and derives `User.name` from the linked Player when one is bound.
+ *
+ * Called on the initial sign-in for every provider. On subsequent JWT
+ * refreshes `user` is undefined so this path doesn't run — names drift
+ * only when Player.name is edited (handled by the rename + link/unlink
+ * flows). Failure is non-fatal: name sync is cosmetic; auth must not block.
+ */
+async function syncUserAuthAccountName(
+  userId: string,
+  providerName: string | null | undefined,
+): Promise<void> {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { playerId: true },
+  });
+  if (!user) return;
+
+  let derivedName: string | null = providerName ?? null;
+  if (user.playerId) {
+    const player = await prisma.player.findUnique({
+      where: { id: user.playerId },
+      select: { name: true },
+    });
+    if (player?.name) derivedName = player.name;
+  }
+
+  await prisma.user.update({
+    where: { id: userId },
+    data: {
+      authAccountName: providerName ?? null,
+      name: derivedName,
+    },
+  });
+}
+
 // Upsert a LineLogin row on every authenticated request. Powers the admin
 // "Assign Player" Flow B orphan-user dropdown. Failure is non-fatal — auth
 // must not block on the tracking write.
@@ -704,6 +741,10 @@ export const authOptions: AuthOptions = {
         // gives us all three; EmailProvider gives only email.
         if (user.name) token.name = user.name;
         if (user.email) token.email = user.email;
+        // v1.72.0 — write authAccountName + derive User.name from linked Player.
+        await syncUserAuthAccountName(user.id, user.name ?? null).catch((err) =>
+          console.error("[auth] syncUserAuthAccountName (google/email) failed userId=%s: %o", user.id, err),
+        );
         return token;
       }
 
@@ -752,6 +793,15 @@ export const authOptions: AuthOptions = {
           (profile as Record<string, unknown>).name as string | undefined,
           (profile as Record<string, unknown>).picture as string | undefined,
         );
+        // v1.72.0 — write authAccountName + derive User.name from linked Player.
+        if (user?.id) {
+          await syncUserAuthAccountName(
+            user.id,
+            (profile as Record<string, unknown>).name as string | undefined,
+          ).catch((err) =>
+            console.error("[auth] syncUserAuthAccountName (LINE) failed userId=%s: %o", user.id, err),
+          );
+        }
       }
 
       // v1.53.0 — subdomain teardown. The JWT callback resolves against

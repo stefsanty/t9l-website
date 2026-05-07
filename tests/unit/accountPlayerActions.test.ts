@@ -30,6 +30,7 @@ const {
   playerFindUniqueMock,
   playerUpdateMock,
   plmUpdateManyMock,
+  userUpdateManyMock,
   transactionMock,
   revalidateMock,
   putMock,
@@ -40,8 +41,10 @@ const {
   const playerFindUniqueMock = vi.fn()
   const playerUpdateMock = vi.fn().mockResolvedValue({})
   const plmUpdateManyMock = vi.fn().mockResolvedValue({ count: 1 })
+  const userUpdateManyMock = vi.fn().mockResolvedValue({ count: 0 })
   // v1.65.4 — updatePlayerSelf now uses prisma.$transaction with an inner
   // callback that calls tx.player.update + tx.playerLeagueMembership.updateMany.
+  // v1.72.0 — also calls tx.user.updateMany to sync User.name = Player.name.
   // The transaction mock invokes the callback with a tx delegating to the
   // per-method mocks so existing assertions on playerUpdateMock still fire.
   const transactionMock = vi.fn().mockImplementation(async (arg) => {
@@ -49,6 +52,7 @@ const {
       const tx = {
         player: { update: playerUpdateMock, findUnique: playerFindUniqueMock },
         playerLeagueMembership: { updateMany: plmUpdateManyMock },
+        user: { updateMany: userUpdateManyMock },
       }
       return arg(tx)
     }
@@ -58,6 +62,7 @@ const {
     playerFindUniqueMock,
     playerUpdateMock,
     plmUpdateManyMock,
+    userUpdateManyMock,
     transactionMock,
     revalidateMock: vi.fn(),
     putMock: vi.fn(),

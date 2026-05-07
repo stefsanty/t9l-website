@@ -79,16 +79,20 @@ export async function linkPlayerToUser(
   });
 
   // Forward pointer: Player.userId.
-  await tx.player.update({
+  const player = await tx.player.update({
     where: { id: args.playerId },
     data: { userId: user.id },
+    select: { name: true },
   });
 
-  // Back pointer: User.playerId. The User may have been unbound (null) or
-  // bound to a different Player above; either way this update is correct.
+  // Back pointer: User.playerId + v1.72.0 name sync.
   await tx.user.update({
     where: { id: user.id },
-    data: { playerId: args.playerId },
+    data: {
+      playerId: args.playerId,
+      // v1.72.0 — User.name mirrors the linked Player's name.
+      ...(player.name ? { name: player.name } : {}),
+    },
   });
 
   return true;
@@ -163,18 +167,23 @@ export async function linkUserToPlayer(
   // For non-LINE flows (Google / email), `lineId` is undefined so the
   // spread is a no-op and Player.lineId is left at whatever value it
   // already had (typically null for a fresh non-LINE redemption).
-  await tx.player.update({
+  const linkedPlayer = await tx.player.update({
     where: { id: args.playerId },
     data: {
       userId: user.id,
       ...(args.lineId !== undefined ? { lineId: args.lineId } : {}),
     },
+    select: { name: true },
   });
 
-  // Back pointer: User.playerId.
+  // Back pointer: User.playerId + v1.72.0 name sync.
   await tx.user.update({
     where: { id: user.id },
-    data: { playerId: args.playerId },
+    data: {
+      playerId: args.playerId,
+      // v1.72.0 — User.name mirrors the linked Player's name.
+      ...(linkedPlayer.name ? { name: linkedPlayer.name } : {}),
+    },
   });
 
   return true;
@@ -191,7 +200,7 @@ export async function unlinkPlayerFromUser(
 ): Promise<boolean> {
   const user = await tx.user.findUnique({
     where: { lineId: args.lineId },
-    select: { id: true, playerId: true },
+    select: { id: true, playerId: true, authAccountName: true },
   });
   if (!user) return false;
 
@@ -202,9 +211,13 @@ export async function unlinkPlayerFromUser(
     });
   }
 
+  // v1.72.0 — restore User.name = authAccountName when unlinked.
   await tx.user.update({
     where: { id: user.id },
-    data: { playerId: null },
+    data: {
+      playerId: null,
+      name: user.authAccountName ?? null,
+    },
   });
 
   return true;
@@ -229,7 +242,7 @@ export async function unlinkUserFromPlayer(
 ): Promise<{ unlinkedPlayerId: string | null }> {
   const user = await tx.user.findUnique({
     where: { id: args.userId },
-    select: { id: true, playerId: true },
+    select: { id: true, playerId: true, authAccountName: true },
   });
   if (!user) return { unlinkedPlayerId: null };
 
@@ -242,9 +255,13 @@ export async function unlinkUserFromPlayer(
     });
   }
 
+  // v1.72.0 — restore User.name = authAccountName when unlinked.
   await tx.user.update({
     where: { id: user.id },
-    data: { playerId: null },
+    data: {
+      playerId: null,
+      name: user.authAccountName ?? null,
+    },
   });
 
   return { unlinkedPlayerId };
