@@ -251,12 +251,11 @@ export default function Dashboard({
           )}
           {/* v1.75.1 — LeagueDetailsPanel consolidates league-rule rows +
               planned-roster stats (formerly separate PlannedRosterStats).
-              Panel is visible whenever leagueDetails is non-null
-              (showLeagueDetails=true), regardless of preseasonMode.
-              Fallback: if showLeagueDetails=false but recruiting=true,
-              render standalone PlannedRosterStats so roster info stays
-              visible. */}
-          {leagueDetails ? (
+              v1.75.4 — In preseason mode the panel renders here (before the
+              schedule). In classic mode it moves inside ClassicLeagueHomepage
+              between NextMatchdayBanner and MatchdayAvailability via the
+              leagueDetailsPanelSlot prop. */}
+          {preseasonMode && (leagueDetails ? (
             <LeagueDetailsPanel
               data={leagueDetails}
               plannedRosterStats={plannedRosterStats}
@@ -264,7 +263,7 @@ export default function Dashboard({
             />
           ) : (
             plannedRosterStats && <PlannedRosterStats data={plannedRosterStats} />
-          )}
+          ))}
 
           {nextMd ? (
             <>
@@ -287,6 +286,15 @@ export default function Dashboard({
                   initialMatchdayId={initialMatchdayId}
                   leagueSlug={leagueSlug}
                   submitGoalSlot={submitGoalSlot}
+                  leagueDetailsPanelSlot={leagueDetails ? (
+                    <LeagueDetailsPanel
+                      data={leagueDetails}
+                      plannedRosterStats={plannedRosterStats}
+                      preseasonMode={preseasonMode}
+                    />
+                  ) : (
+                    plannedRosterStats && <PlannedRosterStats data={plannedRosterStats} />
+                  )}
                 />
               )}
             </>

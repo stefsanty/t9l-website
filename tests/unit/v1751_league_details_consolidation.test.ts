@@ -227,9 +227,9 @@ describe('v1.75.1 Dashboard wiring', () => {
 })
 
 describe('v1.75.1 stash-pop regression target', () => {
-  it('version is 1.75.3', () => {
+  it('version is 1.75.4 or later', () => {
     const v = read('src/lib/version.ts')
-    expect(v).toMatch(/APP_VERSION\s*=\s*'1\.75\.3'/)
+    expect(v).toMatch(/APP_VERSION\s*=\s*'1\.75\.[4-9]'/)
   })
 
   it('LeagueDetailsPanel does NOT have the old non-collapsible header (plain <p> without toggle)', () => {
@@ -263,5 +263,40 @@ describe('v1.75.2 header clickable-button styling', () => {
     // The span containing "League details" must use text-fg-high, not text-fg-mid.
     expect(src).toMatch(/<span className="[^"]*text-fg-high[^"]*">\s*League details/)
     expect(src).not.toMatch(/<span className="[^"]*text-fg-mid[^"]*">\s*League details/)
+  })
+})
+
+describe('v1.75.4 LeagueDetailsPanel positioned between banner and availability in Classic mode', () => {
+  const classic = read('src/components/ClassicLeagueHomepage.tsx')
+  const dash = read('src/components/Dashboard.tsx')
+
+  it('ClassicLeagueHomepage declares leagueDetailsPanelSlot prop', () => {
+    expect(classic).toMatch(/leagueDetailsPanelSlot\?:\s*ReactNode/)
+  })
+
+  it('ClassicLeagueHomepage renders leagueDetailsPanelSlot between NextMatchdayBanner and MatchdayAvailability (source order)', () => {
+    // Use render-site patterns (not import lines) for the order check.
+    const bannerIdx = classic.indexOf('<NextMatchdayBanner')
+    const slotIdx = classic.indexOf('{leagueDetailsPanelSlot}')
+    const availIdx = classic.indexOf('<MatchdayAvailability')
+    expect(bannerIdx).toBeGreaterThan(-1)
+    expect(slotIdx).toBeGreaterThan(bannerIdx)
+    expect(availIdx).toBeGreaterThan(slotIdx)
+  })
+
+  it('Dashboard passes leagueDetailsPanelSlot to ClassicLeagueHomepage', () => {
+    expect(dash).toMatch(/leagueDetailsPanelSlot=/)
+  })
+
+  it('Dashboard does NOT render LeagueDetailsPanel at top level in classic mode — gated on preseasonMode', () => {
+    // Regression target: rendering the panel both at top level and inside
+    // ClassicLeagueHomepage would show it twice in classic mode.
+    // Post v1.75.4 the top-level block is wrapped in {preseasonMode && ...}.
+    expect(dash).toMatch(/preseasonMode &&\s*\(leagueDetails \?/)
+  })
+
+  it('stash-pop: version is 1.75.4', () => {
+    const v = read('src/lib/version.ts')
+    expect(v).toMatch(/APP_VERSION\s*=\s*'1\.75\.4'/)
   })
 })
