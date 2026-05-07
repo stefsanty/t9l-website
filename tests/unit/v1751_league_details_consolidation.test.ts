@@ -163,6 +163,14 @@ describe('v1.75.1 collapsible behavior', () => {
     expect(src).toMatch(/expanded &&[\s\S]*league-details-panel-body/)
   })
 
+  it('panel body has top padding (v1.75.3 spacing fix)', () => {
+    // Regression target — removing pt-4 re-introduces the tight spacing.
+    // className="... pt-4 ..." appears before data-testid="league-details-panel-body"
+    // on the same div, so check the full line contains both.
+    expect(src).toMatch(/pt-4[^"]*"[^>]*league-details-panel-body/)
+    expect(src).not.toMatch(/(?:pt-0|pt-1|pt-2|pt-3)\b[^"]*"[^>]*league-details-panel-body/)
+  })
+
   it('default state is expanded when preseasonMode=true', () => {
     // useState(preseasonMode) means:
     //   preseasonMode=true  → expanded=true  (starts open)
@@ -219,9 +227,9 @@ describe('v1.75.1 Dashboard wiring', () => {
 })
 
 describe('v1.75.1 stash-pop regression target', () => {
-  it('version is 1.75.2', () => {
+  it('version is 1.75.3', () => {
     const v = read('src/lib/version.ts')
-    expect(v).toMatch(/APP_VERSION\s*=\s*'1\.75\.2'/)
+    expect(v).toMatch(/APP_VERSION\s*=\s*'1\.75\.3'/)
   })
 
   it('LeagueDetailsPanel does NOT have the old non-collapsible header (plain <p> without toggle)', () => {
