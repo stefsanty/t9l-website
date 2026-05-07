@@ -59,13 +59,15 @@ export interface PlannedRosterStats {
    * by position string for deterministic render order.
    */
   positionFees: PlannedRosterPositionFee[]
+  /** v1.75.6 — Total number of GameWeek rows for this league. */
+  matchdays: number
 }
 
 export async function getPlannedRosterStats(
   leagueId: string,
 ): Promise<PlannedRosterStats | null> {
   try {
-    const [league, currentPlayers] = await Promise.all([
+    const [league, currentPlayers, matchdays] = await Promise.all([
       prisma.league.findUnique({
         where: { id: leagueId },
         select: {
@@ -89,6 +91,7 @@ export async function getPlannedRosterStats(
           toGameWeek: null,
         },
       }),
+      prisma.gameWeek.count({ where: { leagueId } }),
     ])
     if (!league) return null
     const plannedTotal = league.plannedNumberOfTeams * league.plannedPlayersPerTeam
@@ -108,6 +111,7 @@ export async function getPlannedRosterStats(
       registrationDeadline: league.registrationDeadline,
       defaultFee: league.defaultFee,
       positionFees,
+      matchdays,
     }
   } catch (err) {
     console.warn('[plannedRosterStats] read failed:', err)

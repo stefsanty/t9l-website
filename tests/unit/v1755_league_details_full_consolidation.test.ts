@@ -136,8 +136,8 @@ describe('v1.75.5 LeagueDetailsEditor unified form', () => {
 describe('v1.75.5 LeagueDetailsPanel stats mini-section', () => {
   const src = read('src/components/LeagueDetailsPanel.tsx')
 
-  it('renders the player-fee row when fee is configured', () => {
-    expect(src).toMatch(/showFee &&[\s\S]*player-fee-row/)
+  it('renders the season-fee-row when fee or deadline is configured (v1.75.6 combined row)', () => {
+    expect(src).toMatch(/season-fee-row/)
   })
 
   it('player-fee row uses formatJpyFee for currency formatting', () => {
@@ -155,13 +155,15 @@ describe('v1.75.5 LeagueDetailsPanel stats mini-section', () => {
     expect(src).toMatch(/showPlannedPerTeam &&[\s\S]*planned-per-team-row/)
   })
 
-  it('current-players and spots-left rows are gated on BOTH planned targets being non-zero', () => {
-    // v1.75.5 — gate added so non-recruiting leagues with no planned
-    // targets don't surface "Spots left: 0" ghost rows.
+  it('spots-left row is gated on BOTH planned targets being non-zero', () => {
+    // v1.75.5 gate preserved; current-players-row removed in v1.75.6.
     expect(src).toMatch(/const showCurrentAndSpots\s*=\s*showPlannedTeams && showPlannedPerTeam/)
-    expect(src).toMatch(/showCurrentAndSpots && \(/)
-    expect(src).toMatch(/data-testid="current-players-row"/)
+    expect(src).toMatch(/showCurrentAndSpots &&/)
     expect(src).toMatch(/data-testid="spots-left-row"/)
+  })
+
+  it('does NOT render current-players-row (removed in v1.75.6)', () => {
+    expect(src).not.toMatch(/data-testid="current-players-row"/)
   })
 
   it('spots-left value reads from plannedRosterStats.spotsLeft (helper-side computation)', () => {
