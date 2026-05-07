@@ -195,11 +195,13 @@ describe('v1.65.1 — RecruitingBanner State D + E', () => {
     expect(BANNER_SRC).toMatch(/mode="existing"/)
   })
 
-  it('State E click toasts instead of redirecting', () => {
-    expect(BANNER_SRC).toMatch(/case ['"]unauthenticated['"]:[\s\S]*?toast\.message\(/)
-    expect(BANNER_SRC).toMatch(/Sign in to apply/)
-    // signIn is now inside the toast action callback, not a direct call.
-    expect(BANNER_SRC).toMatch(/onClick:\s*\(\)\s*=>\s*signIn\(/)
+  it('State E click opens the SignInLightbox instead of redirecting', () => {
+    // v1.65.1 used a toast nudge with a sign-in action callback.
+    // v1.76.0 replaced the toast with a SignInLightbox (matches
+    // GuestLoginBanner). The unauth click stays on page and surfaces
+    // the provider list inline; signIn fires from inside the modal.
+    expect(BANNER_SRC).toMatch(/case ['"]unauthenticated['"]:[\s\S]*?setSignInOpen\(true\)/)
+    expect(BANNER_SRC).toMatch(/SignInLightbox/)
   })
 })
 

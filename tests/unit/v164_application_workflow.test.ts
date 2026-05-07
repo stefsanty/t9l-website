@@ -335,16 +335,17 @@ describe('v1.64.0 — RecruitingBanner state rendering', () => {
     expect(BANNER_SRC).toMatch(/data-testid="recruiting-banner-pending"/)
   })
 
-  it('unauthenticated CTA testid + State E v1.65.1 toast nudge with sign-in action', () => {
-    // v1.64.0 hard-redirected to /auth/signin. v1.65.1 toasts "Sign in
-    // to apply" with a sign-in action button (per the brief — stay on
-    // page, signIn fires only when the user explicitly clicks the
-    // toast action).
+  it('unauthenticated CTA testid + State E sign-in lightbox', () => {
+    // v1.64.0 hard-redirected to /auth/signin. v1.65.1 used a toast with
+    // a sign-in action button. v1.76.0 replaced the toast with a full
+    // SignInLightbox modal (matching the GuestLoginBanner pattern). The
+    // unauth click stays on page and opens the lightbox; signIn fires
+    // only when the user explicitly picks a provider inside the modal.
     expect(BANNER_SRC).toMatch(/['"]recruiting-banner-cta-unauth['"]/)
-    expect(BANNER_SRC).toMatch(/Sign in to apply/)
-    expect(BANNER_SRC).toMatch(/toast\.message/)
-    // signIn STILL exists, but only inside the toast action callback.
-    expect(BANNER_SRC).toMatch(/onClick:\s*\(\)\s*=>\s*signIn\(/)
+    expect(BANNER_SRC).toMatch(/SignInLightbox/)
+    // Lightbox open state is set on the unauth click (the new "stay on
+    // page, surface providers in-modal" affordance).
+    expect(BANNER_SRC).toMatch(/setSignInOpen\(true\)/)
   })
 
   it('no_player CTA testid is present (v1.67.2 — navigates to /recruit/<slug>)', () => {
