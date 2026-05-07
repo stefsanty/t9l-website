@@ -31,7 +31,8 @@ describe('v1.73.3 — CompressedMatchdaySchedule team logos', () => {
   })
 
   it('img is 16px (w-4 h-4)', () => {
-    expect(src).toMatch(/className="w-4 h-4 rounded-full object-cover/)
+    // v1.73.4 changed rounded-full → rounded-sm (rounded square standardization)
+    expect(src).toMatch(/className="w-4 h-4 rounded-sm object-cover/)
   })
 
   it('renders placeholder span with team-logo-placeholder-{id} testid when logo is null', () => {

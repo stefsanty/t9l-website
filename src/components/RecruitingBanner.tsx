@@ -69,7 +69,7 @@ export default function RecruitingBanner({
       >
         <div className="flex items-center gap-3">
           {viewer.team.logoUrl ? (
-            <div className="w-10 h-10 rounded-full overflow-hidden bg-background border border-border-default shrink-0">
+            <div className="w-10 h-10 rounded-md overflow-hidden bg-background border border-border-default shrink-0">
               <Image
                 src={viewer.team.logoUrl}
                 alt={viewer.team.name}
@@ -80,7 +80,7 @@ export default function RecruitingBanner({
               />
             </div>
           ) : (
-            <div className="w-10 h-10 rounded-full bg-success/15 border border-success/40 flex items-center justify-center text-success font-black text-sm shrink-0">
+            <div className="w-10 h-10 rounded-md bg-success/15 border border-success/40 flex items-center justify-center text-success font-black text-sm shrink-0">
               {viewer.team.name[0]?.toUpperCase() ?? '?'}
             </div>
           )}

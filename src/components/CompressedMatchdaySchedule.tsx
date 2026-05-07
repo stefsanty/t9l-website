@@ -38,7 +38,7 @@ function TeamLogo({ team, teamId }: { team: Team | null; teamId: string }) {
         alt=""
         aria-hidden
         data-testid={`team-logo-${team.id}`}
-        className="w-4 h-4 rounded-full object-cover shrink-0"
+        className="w-4 h-4 rounded-sm object-cover shrink-0"
       />
     )
   }
@@ -46,7 +46,7 @@ function TeamLogo({ team, teamId }: { team: Team | null; teamId: string }) {
   return (
     <span
       data-testid={`team-logo-placeholder-${team?.id ?? teamId}`}
-      className="w-4 h-4 rounded-full bg-fg-low/30 flex items-center justify-center shrink-0 text-[8px] font-black text-fg-mid"
+      className="w-4 h-4 rounded-sm bg-fg-low/30 flex items-center justify-center shrink-0 text-[8px] font-black text-fg-mid"
     >
       {initials}
     </span>
