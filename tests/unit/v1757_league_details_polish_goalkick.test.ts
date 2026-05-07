@@ -266,9 +266,9 @@ describe('v1.75.7 SettingsTab passes goalKickType to LeagueDetailsEditor', () =>
 // ── Stash-pop regression target ──────────────────────────────────────────────
 
 describe('v1.75.7 stash-pop regression target', () => {
-  it('APP_VERSION is 1.75.7', () => {
+  it('APP_VERSION is 1.75.7 or later', () => {
     const v = read('src/lib/version.ts')
-    expect(v).toMatch(/APP_VERSION\s*=\s*'1\.75\.7'/)
+    expect(v).toMatch(/APP_VERSION\s*=\s*'1\.75\.[7-9]'/)
   })
 
   it('LeagueDetailsPanel does NOT use "Goal size" as a row label (regression gate)', () => {

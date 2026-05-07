@@ -138,27 +138,31 @@ export default function CompressedMatchdaySchedule({
                   return (
                     <div
                       key={match.id}
-                      className="flex items-center gap-3 text-[13px] leading-tight"
+                      data-testid={`match-row-${match.id}`}
+                      className="grid grid-cols-[3rem_1fr_auto_1fr] items-center gap-x-2 text-[13px] leading-tight"
                     >
-                      <span className="font-mono font-bold text-fg-mid w-12 shrink-0 tabular-nums">
+                      <span className="font-mono font-bold text-fg-mid tabular-nums">
                         {match.kickoff || '—'}
                       </span>
                       <span
-                        className="flex items-center gap-1 font-display font-black uppercase tracking-tight text-fg-high truncate"
+                        className="flex items-center justify-end gap-1 font-display font-black uppercase tracking-tight text-fg-high min-w-0"
                         translate="no"
                       >
                         <TeamLogo team={home ?? null} teamId={match.homeTeamId} />
-                        {home?.name ?? match.homeTeamId}
+                        <span className="truncate">{home?.name ?? match.homeTeamId}</span>
                       </span>
-                      <span className="text-fg-low font-bold text-[10px] uppercase tracking-widest shrink-0">
+                      <span
+                        data-testid="match-vs"
+                        className="text-fg-low font-bold text-[10px] uppercase tracking-widest text-center"
+                      >
                         vs
                       </span>
                       <span
-                        className="flex items-center gap-1 font-display font-black uppercase tracking-tight text-fg-high truncate"
+                        className="flex items-center gap-1 font-display font-black uppercase tracking-tight text-fg-high min-w-0"
                         translate="no"
                       >
                         <TeamLogo team={away ?? null} teamId={match.awayTeamId} />
-                        {away?.name ?? match.awayTeamId}
+                        <span className="truncate">{away?.name ?? match.awayTeamId}</span>
                       </span>
                     </div>
                   )
