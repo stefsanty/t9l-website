@@ -73,10 +73,10 @@ export default function LeagueDetailsPanel({
         type="button"
         data-testid="league-details-panel-header"
         onClick={() => setExpanded((v) => !v)}
-        className="w-full flex items-center justify-between px-4 py-3 text-left"
+        className="w-full flex items-center justify-between px-4 py-3 text-left bg-surface hover:bg-surface-md transition-colors"
         aria-expanded={expanded}
       >
-        <span className="text-[10px] font-black uppercase tracking-[0.25em] text-fg-mid">
+        <span className="text-[10px] font-black uppercase tracking-[0.25em] text-fg-high">
           League details
         </span>
         <ChevronDown
