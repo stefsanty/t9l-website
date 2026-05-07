@@ -95,10 +95,12 @@ interface DashboardProps {
   plannedRosterStats?: PlannedRosterStatsData | null;
   /**
    * v1.75.0 — league details panel data. Page.tsx fetches this via
-   * `getLeagueDetails(leagueId)` and only passes a non-null value
-   * when both `preseasonMode === true` AND the helper returns non-null
-   * (i.e. `League.showLeagueDetails === true`). The panel renders
-   * after PlannedRosterStats and before CompressedMatchdaySchedule.
+   * `getLeagueDetails(leagueId)` and passes a non-null value when
+   * `League.showLeagueDetails === true`.
+   * v1.75.1 — no longer gated on `preseasonMode`; the panel renders
+   * on both classic and preseason homepages when the flag is on.
+   * When non-null, LeagueDetailsPanel also renders plannedRosterStats
+   * inline (the separate PlannedRosterStats render is the fallback).
    */
   leagueDetails?: LeagueDetailsData | null;
 }
@@ -247,17 +249,22 @@ export default function Dashboard({
               leagueSlug={leagueSlug}
             />
           )}
-          {/* v1.67.0 — planned-roster stats. Server gates this with auth +
-              preseasonMode + recruiting; we render whenever the prop is
-              non-null. Sits between RecruitingBanner and the schedule
-              per the spec. */}
-          {plannedRosterStats && <PlannedRosterStats data={plannedRosterStats} />}
-
-          {/* v1.75.0 — league details panel. Server gates this with
-              preseasonMode + League.showLeagueDetails (the helper
-              returns null when the flag is off). Sits below
-              PlannedRosterStats and above the schedule. */}
-          {leagueDetails && <LeagueDetailsPanel data={leagueDetails} />}
+          {/* v1.75.1 — LeagueDetailsPanel consolidates league-rule rows +
+              planned-roster stats (formerly separate PlannedRosterStats).
+              Panel is visible whenever leagueDetails is non-null
+              (showLeagueDetails=true), regardless of preseasonMode.
+              Fallback: if showLeagueDetails=false but recruiting=true,
+              render standalone PlannedRosterStats so roster info stays
+              visible. */}
+          {leagueDetails ? (
+            <LeagueDetailsPanel
+              data={leagueDetails}
+              plannedRosterStats={plannedRosterStats}
+              preseasonMode={preseasonMode}
+            />
+          ) : (
+            plannedRosterStats && <PlannedRosterStats data={plannedRosterStats} />
+          )}
 
           {nextMd ? (
             <>

@@ -8,24 +8,14 @@ import { cn } from '@/lib/utils'
 
 /**
  * v1.75.0 — Admin League Settings: "League details" section.
+ * v1.75.1 — Fields reordered by player-perspective importance to match
+ *   the public LeagueDetailsPanel display order.
  *
- * Edits the ten new `League` columns introduced in v1.75.0 (ballType,
- * goalSize, throwInType, offsideRule, backpassRule,
- * matchDurationMinutes, playerFormat, unlimitedSubstitutions,
- * organizerMessage, showLeagueDetails). Surfaced server-side by the
- * new `LeagueDetailsPanel` on the public preseason homepage when both
- * `preseasonMode` and `showLeagueDetails` are true.
- *
- * Conventions:
- *   - `backpassRule` toggle is conditionally rendered: only meaningful
- *     when ballType === FUTSAL. The public panel applies the same
- *     hide rule.
- *   - `matchDurationMinutes` and `playerFormat` are optional. Empty
- *     input clears the column (sent as null).
- *   - `playerFormat` is a dropdown with allowed values (5, 6, 7, 9, 11).
- *   - `organizerMessage` is a textarea (~6 rows default; auto-grows
- *     visually via min-h). Persists newlines.
- *   - All ten fields save together via one server action call.
+ * Field order:
+ *   1. Player format   2. Match duration   3. Ball type   4. Goal size
+ *   5. Offside rule    6. Backpass rule (futsal-only)
+ *   7. Throw-in/kick-in   8. Unlimited subs   9. Organizer message
+ *  10. Show on homepage toggle
  */
 
 type BallType = 'SOCCER' | 'FUTSAL'
@@ -129,12 +119,45 @@ export default function LeagueDetailsEditor({
       <div>
         <h2 className="font-condensed font-bold text-admin-text text-lg">League details</h2>
         <p className="text-xs text-admin-text3 mt-1 leading-relaxed">
-          Match-format details surfaced on the public preseason homepage.
-          Toggle &ldquo;Show on homepage&rdquo; off to hide the panel without losing the values.
+          Match-format details surfaced on the public homepage when &ldquo;Show on homepage&rdquo; is on.
+          Toggle off to hide the panel without losing the values.
         </p>
       </div>
 
-      {/* Ball type */}
+      {/* 1 — Player format + 2 — Match duration (side by side) */}
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-1.5">
+          <label className="text-xs font-medium text-admin-text2 uppercase tracking-wide">Player format</label>
+          <select
+            value={playerFormat}
+            onChange={(e) => setPlayerFormat(e.target.value)}
+            className="w-full bg-admin-surface2 border border-admin-border rounded-lg px-3 py-2 text-sm text-admin-text focus:outline-none focus:border-admin-border2"
+            data-testid="league-details-player-format"
+          >
+            <option value="">— not set —</option>
+            <option value="5">5-a-side</option>
+            <option value="6">6-a-side</option>
+            <option value="7">7-a-side</option>
+            <option value="9">9-a-side</option>
+            <option value="11">11-a-side</option>
+          </select>
+        </div>
+        <div className="space-y-1.5">
+          <label className="text-xs font-medium text-admin-text2 uppercase tracking-wide">Match duration (min)</label>
+          <input
+            type="number"
+            min={1}
+            step={1}
+            value={matchDurationMinutes}
+            onChange={(e) => setMatchDurationMinutes(e.target.value)}
+            placeholder="e.g. 33"
+            className="w-full bg-admin-surface2 border border-admin-border rounded-lg px-3 py-2 text-sm text-admin-text placeholder:text-admin-text3 focus:outline-none focus:border-admin-border2"
+            data-testid="league-details-match-duration"
+          />
+        </div>
+      </div>
+
+      {/* 3 — Ball type */}
       <div className="space-y-1.5">
         <label className="text-xs font-medium text-admin-text2 uppercase tracking-wide">Ball type</label>
         <div className="grid grid-cols-2 gap-3">
@@ -157,7 +180,7 @@ export default function LeagueDetailsEditor({
         </div>
       </div>
 
-      {/* Goal size */}
+      {/* 4 — Goal size */}
       <div className="space-y-1.5">
         <label className="text-xs font-medium text-admin-text2 uppercase tracking-wide">Goal size</label>
         <select
@@ -172,30 +195,7 @@ export default function LeagueDetailsEditor({
         </select>
       </div>
 
-      {/* Throw-in vs kick-in */}
-      <div className="space-y-1.5">
-        <label className="text-xs font-medium text-admin-text2 uppercase tracking-wide">Restart from sideline</label>
-        <div className="grid grid-cols-2 gap-3">
-          {(['THROW_IN', 'KICK_IN'] as const).map((opt) => (
-            <button
-              key={opt}
-              type="button"
-              data-testid={`league-details-throw-in-${opt.toLowerCase().replace('_', '-')}`}
-              onClick={() => setThrowInType(opt)}
-              className={cn(
-                'rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors',
-                throwInType === opt
-                  ? 'border-admin-green bg-admin-green/10 text-admin-text'
-                  : 'border-admin-border bg-admin-surface2 text-admin-text2 hover:border-admin-border2 hover:text-admin-text',
-              )}
-            >
-              {opt === 'THROW_IN' ? 'Throw-in' : 'Kick-in'}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Offside rule */}
+      {/* 5 — Offside rule */}
       <div className="flex items-center justify-between gap-3" data-testid="league-details-offside-toggle">
         <div>
           <p className="text-sm font-medium text-admin-text">Offside rule</p>
@@ -216,7 +216,7 @@ export default function LeagueDetailsEditor({
         </button>
       </div>
 
-      {/* Backpass — futsal-only */}
+      {/* 6 — Backpass (futsal-only) */}
       {ballType === 'FUTSAL' && (
         <div className="flex items-center justify-between gap-3" data-testid="league-details-backpass-toggle">
           <div>
@@ -239,40 +239,30 @@ export default function LeagueDetailsEditor({
         </div>
       )}
 
-      {/* Match duration + player format */}
-      <div className="grid grid-cols-2 gap-3">
-        <div className="space-y-1.5">
-          <label className="text-xs font-medium text-admin-text2 uppercase tracking-wide">Match duration (min)</label>
-          <input
-            type="number"
-            min={1}
-            step={1}
-            value={matchDurationMinutes}
-            onChange={(e) => setMatchDurationMinutes(e.target.value)}
-            placeholder="e.g. 33"
-            className="w-full bg-admin-surface2 border border-admin-border rounded-lg px-3 py-2 text-sm text-admin-text placeholder:text-admin-text3 focus:outline-none focus:border-admin-border2"
-            data-testid="league-details-match-duration"
-          />
-        </div>
-        <div className="space-y-1.5">
-          <label className="text-xs font-medium text-admin-text2 uppercase tracking-wide">Player format</label>
-          <select
-            value={playerFormat}
-            onChange={(e) => setPlayerFormat(e.target.value)}
-            className="w-full bg-admin-surface2 border border-admin-border rounded-lg px-3 py-2 text-sm text-admin-text focus:outline-none focus:border-admin-border2"
-            data-testid="league-details-player-format"
-          >
-            <option value="">— not set —</option>
-            <option value="5">5-a-side</option>
-            <option value="6">6-a-side</option>
-            <option value="7">7-a-side</option>
-            <option value="9">9-a-side</option>
-            <option value="11">11-a-side</option>
-          </select>
+      {/* 7 — Throw-in vs kick-in */}
+      <div className="space-y-1.5">
+        <label className="text-xs font-medium text-admin-text2 uppercase tracking-wide">Restart from sideline</label>
+        <div className="grid grid-cols-2 gap-3">
+          {(['THROW_IN', 'KICK_IN'] as const).map((opt) => (
+            <button
+              key={opt}
+              type="button"
+              data-testid={`league-details-throw-in-${opt.toLowerCase().replace('_', '-')}`}
+              onClick={() => setThrowInType(opt)}
+              className={cn(
+                'rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors',
+                throwInType === opt
+                  ? 'border-admin-green bg-admin-green/10 text-admin-text'
+                  : 'border-admin-border bg-admin-surface2 text-admin-text2 hover:border-admin-border2 hover:text-admin-text',
+              )}
+            >
+              {opt === 'THROW_IN' ? 'Throw-in' : 'Kick-in'}
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* Unlimited subs */}
+      {/* 8 — Unlimited subs */}
       <div className="flex items-center justify-between gap-3" data-testid="league-details-unlimited-subs-toggle">
         <div>
           <p className="text-sm font-medium text-admin-text">Unlimited substitutions</p>
@@ -293,7 +283,7 @@ export default function LeagueDetailsEditor({
         </button>
       </div>
 
-      {/* Organizer message */}
+      {/* 9 — Organizer message */}
       <div className="space-y-1.5">
         <label className="text-xs font-medium text-admin-text2 uppercase tracking-wide">Organizer message</label>
         <textarea
@@ -306,10 +296,10 @@ export default function LeagueDetailsEditor({
         />
       </div>
 
-      {/* Show on homepage toggle */}
+      {/* 10 — Show on homepage toggle */}
       <div className="flex items-center justify-between gap-3 pt-2 border-t border-admin-border" data-testid="league-details-show-toggle">
         <div>
-          <p className="text-sm font-medium text-admin-text">Show on preseason homepage</p>
+          <p className="text-sm font-medium text-admin-text">Show on homepage</p>
           <p className="text-xs text-admin-text3">When off, the public details panel is hidden but values are kept.</p>
         </div>
         <button

@@ -96,9 +96,12 @@ export default async function LeagueByIdPage({ params }: Props) {
     leagueRow = _leagueRow
     unpaidFee = _unpaidFee
     const userId = (session as { userId?: string | null } | null)?.userId ?? null
+    // v1.75.1 — preseasonMode gate removed; leagueDetails renders on
+    // both classic and preseason homepages when showLeagueDetails=true.
+    // plannedRosterStats gate relaxed to userId + recruiting only.
     plannedRosterStats =
-      userId && flags.preseasonMode && flags.recruiting ? _plannedRosterStats : null
-    leagueDetails = flags.preseasonMode ? _leagueDetails : null
+      userId && flags.recruiting ? _plannedRosterStats : null
+    leagueDetails = _leagueDetails
   } catch {
     return (
       <div className="flex items-center justify-center min-h-dvh bg-midnight text-white px-6 text-center">
