@@ -30,6 +30,7 @@
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { teamIdToSlug } from '@/lib/ids'
 
 export type RecruitingViewerState =
   | { kind: 'unauthenticated' }
@@ -37,6 +38,15 @@ export type RecruitingViewerState =
   | { kind: 'pending_this' }
   | {
       kind: 'approved_this'
+      /**
+       * `team.id` is the public slug form (no `t-` prefix), matching the
+       * `Team.id` shape in `LeagueData.teams` produced by
+       * `dbToPublicLeagueData`. This makes `recruitingState.team.id`
+       * directly comparable against `teams[i].id` in client consumers
+       * (e.g. UserTeamBadge → pickUserTeam). v1.73.1 introduced this
+       * field with the raw DB id which broke that comparison; v1.73.2
+       * fixes the contract here at the source.
+       */
       team: { id: string; name: string; logoUrl: string | null }
     }
   | { kind: 'in_other_league' }
@@ -156,7 +166,7 @@ export async function getRecruitingViewerState(
       return {
         kind: 'approved_this',
         team: {
-          id: approvedPlm.leagueTeam.team.id,
+          id: teamIdToSlug(approvedPlm.leagueTeam.team.id),
           name: approvedPlm.leagueTeam.team.name,
           logoUrl: approvedPlm.leagueTeam.team.logoUrl,
         },
