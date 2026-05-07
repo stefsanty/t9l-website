@@ -450,10 +450,22 @@ function extOf(filename: string): string {
  *     `*.public.blob.vercel-storage.com` AND pathname under the
  *     player-keyed prefix
  */
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const EMAIL_MAX_LENGTH = 254
+
 export interface CompleteOnboardingWithIdInput {
   code: string
   playerId: string
   name: string
+  /**
+   * v1.78.0 — required. Validated server-side (regex + ≤254 chars).
+   * Conditionally written to `User.email` only if the User row's email
+   * is currently null (mirrors `registerToLeague`). The `@unique`
+   * constraint on `User.email` may surface a Prisma `P2002` if the
+   * submitted address belongs to a different User; that surfaces as a
+   * friendly error.
+   */
+  email: string
   position?: 'GK' | 'DF' | 'MF' | 'FW' | null
   idFrontUrl: string
   idBackUrl: string
@@ -474,6 +486,15 @@ export async function completeOnboardingWithId(
   const trimmedName = input.name.trim()
   if (!trimmedName) throw new Error('Your name is required')
   if (trimmedName.length > 100) throw new Error('Name must be 100 characters or fewer')
+
+  // v1.78.0 — email is required. Trimmed + lowercased before validation
+  // and storage so case differences don't bypass the unique constraint.
+  const trimmedEmail = input.email.trim().toLowerCase()
+  if (!trimmedEmail) throw new Error('Email is required')
+  if (trimmedEmail.length > EMAIL_MAX_LENGTH) throw new Error('Email is too long')
+  if (!EMAIL_REGEX.test(trimmedEmail)) {
+    throw new Error('Please enter a valid email address')
+  }
 
   const idPrefix = `/player-id/${input.playerId}/`
   const picPrefix = `/player-profile/${input.playerId}/`
@@ -502,39 +523,63 @@ export async function completeOnboardingWithId(
   })
   if (!invite) throw new Error('Invite not found')
 
-  await prisma.$transaction(async (tx) => {
-    // v1.70.0 — Player.name + profilePictureUrl stay on Player; ID
-    // images move to User (per-person identity proof). Caller is the
-    // bound User; write directly.
-    await tx.player.update({
-      where: { id: input.playerId },
-      data: {
-        name: trimmedName,
-        ...(input.profilePictureUrl
-          ? { profilePictureUrl: input.profilePictureUrl }
-          : {}),
-      },
-    })
-    await tx.user.update({
-      where: { id: userId },
-      data: {
-        idFrontUrl: input.idFrontUrl,
-        idBackUrl: input.idBackUrl,
-        idUploadedAt: new Date(),
-      },
-    })
-    await tx.playerLeagueMembership.updateMany({
-      where: { playerId: input.playerId, toGameWeek: null },
-      data: { position: input.position ?? null },
-    })
-    await tx.playerLeagueMembership.updateMany({
-      where: {
-        playerId: input.playerId,
-        leagueTeam: { leagueId: invite.leagueId },
-      },
-      data: { onboardingStatus: 'COMPLETED' },
-    })
+  // v1.78.0 — only WRITE the submitted email if `User.email` is currently
+  // null. Mirrors `registerToLeague` — verified pre-existing addresses
+  // (Google or magic-link sign-in) are not silently overwritten.
+  const userRow = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { email: true },
   })
+  const shouldWriteEmail = !userRow?.email
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      // v1.70.0 — Player.name + profilePictureUrl stay on Player; ID
+      // images move to User (per-person identity proof). Caller is the
+      // bound User; write directly.
+      await tx.player.update({
+        where: { id: input.playerId },
+        data: {
+          name: trimmedName,
+          ...(input.profilePictureUrl
+            ? { profilePictureUrl: input.profilePictureUrl }
+            : {}),
+        },
+      })
+      await tx.user.update({
+        where: { id: userId },
+        data: {
+          idFrontUrl: input.idFrontUrl,
+          idBackUrl: input.idBackUrl,
+          idUploadedAt: new Date(),
+          // v1.78.0 — conditionally write email; do not overwrite a
+          // pre-existing verified address.
+          ...(shouldWriteEmail ? { email: trimmedEmail } : {}),
+        },
+      })
+      await tx.playerLeagueMembership.updateMany({
+        where: { playerId: input.playerId, toGameWeek: null },
+        data: { position: input.position ?? null },
+      })
+      await tx.playerLeagueMembership.updateMany({
+        where: {
+          playerId: input.playerId,
+          leagueTeam: { leagueId: invite.leagueId },
+        },
+        data: { onboardingStatus: 'COMPLETED' },
+      })
+    })
+  } catch (err) {
+    // v1.78.0 — Prisma P2002 = unique-constraint violation. Most common
+    // cause on this write path is a `User.email` collision with another
+    // account.
+    if (err && typeof err === 'object' && 'code' in err && err.code === 'P2002') {
+      throw new Error(
+        'This email is already linked to another account. Sign in with that account, or use a different email.',
+      )
+    }
+    throw err
+  }
 
   if (lineId) {
     await deleteMapping(lineId).catch((err) => {

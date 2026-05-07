@@ -71,13 +71,18 @@ export default async function RecruitPage({ params }: Props) {
   // Check user's existing Player binding. State C requires NO Player at all.
   // State A/B/D users are routed back to the apex `/id/<slug>` where the
   // RecruitingBanner already shows the right surface for their state.
+  // v1.78.0 — also pull email + emailVerified so the form pre-fills the
+  // email input when we already have a verified address (Google OAuth /
+  // magic-link). Un-verified emails are not pre-filled — that would
+  // soft-confirm an unverified address through this flow.
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { playerId: true },
+    select: { playerId: true, email: true, emailVerified: true },
   })
   if (user?.playerId) {
     redirect(`/id/${slug}`)
   }
+  const initialEmail = user?.email && user?.emailVerified ? user.email : ''
 
   return (
     <main
@@ -98,6 +103,7 @@ export default async function RecruitPage({ params }: Props) {
           leagueSlug={slug}
           leagueName={league.name}
           userId={userId}
+          initialEmail={initialEmail}
         />
       </div>
     </main>

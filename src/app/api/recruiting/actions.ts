@@ -244,9 +244,22 @@ export async function applyToLeague(
  *   - User must NOT already have a Player binding (recruit is the
  *     fresh-Player path; State D users redirect at the route layer)
  */
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const EMAIL_MAX_LENGTH = 254
+
 export interface RegisterToLeagueInput {
   leagueId: string
   name: string
+  /**
+   * v1.78.0 — required. Validated server-side (regex + ≤254 chars).
+   * Conditionally written to `User.email` only if the User row's email
+   * is currently null. Existing verified emails are NOT overwritten so
+   * a user who already authenticated via Google/email-magic-link keeps
+   * their verified address. The `@unique` constraint on `User.email`
+   * may surface a Prisma `P2002` if the submitted address belongs to a
+   * different User; that surfaces as a friendly error.
+   */
+  email: string
   position?: 'GK' | 'DF' | 'MF' | 'FW' | null
   idFrontUrl: string
   idBackUrl: string
@@ -276,6 +289,19 @@ export async function registerToLeague(
     return { ok: false, error: 'Name must be 100 characters or fewer' }
   }
 
+  // v1.78.0 — email is required. Trimmed + lowercased before validation
+  // and storage so case differences don't bypass the unique constraint.
+  const trimmedEmail = input.email.trim().toLowerCase()
+  if (!trimmedEmail) {
+    return { ok: false, error: 'Email is required' }
+  }
+  if (trimmedEmail.length > EMAIL_MAX_LENGTH) {
+    return { ok: false, error: 'Email is too long' }
+  }
+  if (!EMAIL_REGEX.test(trimmedEmail)) {
+    return { ok: false, error: 'Please enter a valid email address' }
+  }
+
   // Defense in depth: the URLs must live under the user's own
   // register-pending prefix on Vercel Blob. The token route already
   // gated the PUT, but a forged URL on submit would land here without
@@ -302,7 +328,7 @@ export async function registerToLeague(
 
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { id: true, playerId: true, lineId: true },
+    select: { id: true, playerId: true, lineId: true, email: true },
   })
   if (!user) return { ok: false, error: 'User not found' }
   if (user.playerId) {
@@ -312,44 +338,70 @@ export async function registerToLeague(
     }
   }
 
+  // v1.78.0 — only WRITE the submitted email if `User.email` is currently
+  // null. If the User already has a verified email (Google or magic-link
+  // sign-in), we don't silently overwrite it; the user can edit it via
+  // a separate self-service surface in a follow-up. Submitting a
+  // different address than the one already on file is harmless — we
+  // just keep the verified one.
+  const shouldWriteEmail = !user.email
+
   // Atomic transaction: Player + User.playerId mirror + PLM(PENDING)
   // with every URL populated up-front. Onboarding is COMPLETE — the
   // user filled everything in one shot, no follow-up step.
   // v1.70.0 — ID images move to User; profile picture stays on Player.
-  const player = await prisma.$transaction(async (tx) => {
-    const created = await tx.player.create({
-      data: {
-        name: trimmedName,
-        userId: user.id,
-        lineId: user.lineId ?? null,
-        profilePictureUrl: input.profilePictureUrl ?? null,
-      },
+  let player: { id: string }
+  try {
+    player = await prisma.$transaction(async (tx) => {
+      const created = await tx.player.create({
+        data: {
+          name: trimmedName,
+          userId: user.id,
+          lineId: user.lineId ?? null,
+          profilePictureUrl: input.profilePictureUrl ?? null,
+        },
+      })
+      await tx.user.update({
+        where: { id: user.id },
+        data: {
+          playerId: created.id,
+          // v1.72.0 — User.name = Player.name when linking.
+          name: trimmedName,
+          idFrontUrl: input.idFrontUrl,
+          idBackUrl: input.idBackUrl,
+          idUploadedAt: new Date(),
+          // v1.78.0 — conditionally write email; do not overwrite a
+          // pre-existing verified address.
+          ...(shouldWriteEmail ? { email: trimmedEmail } : {}),
+        },
+      })
+      await tx.playerLeagueMembership.create({
+        data: {
+          playerId: created.id,
+          leagueTeamId: null,
+          leagueId: league.id,
+          fromGameWeek: 1,
+          applicationStatus: 'PENDING',
+          position: input.position ?? null,
+          joinSource: 'SELF_SERVE',
+          onboardingStatus: 'COMPLETED',
+        },
+      })
+      return created
     })
-    await tx.user.update({
-      where: { id: user.id },
-      data: {
-        playerId: created.id,
-        // v1.72.0 — User.name = Player.name when linking.
-        name: trimmedName,
-        idFrontUrl: input.idFrontUrl,
-        idBackUrl: input.idBackUrl,
-        idUploadedAt: new Date(),
-      },
-    })
-    await tx.playerLeagueMembership.create({
-      data: {
-        playerId: created.id,
-        leagueTeamId: null,
-        leagueId: league.id,
-        fromGameWeek: 1,
-        applicationStatus: 'PENDING',
-        position: input.position ?? null,
-        joinSource: 'SELF_SERVE',
-        onboardingStatus: 'COMPLETED',
-      },
-    })
-    return created
-  })
+  } catch (err) {
+    // v1.78.0 — Prisma P2002 = unique-constraint violation. With this
+    // PR the only newly-introduced unique field on the write path is
+    // `User.email`; surface a friendly error so the user knows the
+    // submitted email is already linked to a different account.
+    if (err && typeof err === 'object' && 'code' in err && err.code === 'P2002') {
+      return {
+        ok: false,
+        error: 'This email is already linked to another account. Sign in with that account, or use a different email.',
+      }
+    }
+    throw err
+  }
 
   revalidate({
     domain: 'admin',

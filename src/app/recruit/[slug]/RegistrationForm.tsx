@@ -26,6 +26,12 @@ interface Props {
   leagueName: string
   /** The signed-in user's id; threaded into the upload pathname prefix. */
   userId: string
+  /**
+   * v1.78.0 — pre-fill for the email field. Threaded from the page
+   * server-component when the User has a verified email (Google OAuth
+   * or email-magic-link). Empty string for LINE-only users.
+   */
+  initialEmail?: string
 }
 
 export default function RegistrationForm({
@@ -33,6 +39,7 @@ export default function RegistrationForm({
   leagueSlug,
   leagueName,
   userId,
+  initialEmail = '',
 }: Props) {
   const router = useRouter()
 
@@ -46,6 +53,7 @@ export default function RegistrationForm({
     await registerToLeague({
       leagueId,
       name: input.name,
+      email: input.email,
       position: input.position === '' ? null : input.position,
       idFrontUrl: input.idFrontUrl,
       idBackUrl: input.idBackUrl,
@@ -57,6 +65,7 @@ export default function RegistrationForm({
   return (
     <div data-testid="recruit-registration-form">
       <RegistrationFields
+        initialEmail={initialEmail}
         submitLabel={`Apply to ${leagueName}`}
         uploadPathPrefix={`register-pending/${userId}`}
         onSubmit={handleSubmit}

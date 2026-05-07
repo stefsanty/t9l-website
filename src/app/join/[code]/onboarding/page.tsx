@@ -49,7 +49,9 @@ export default async function OnboardingPage({ params }: Props) {
   // v1.62.0 — preferred-team / preferred-teammate fields removed from
   // the form. We no longer fetch leagueTeams or the in-league roster
   // for the picker.
-  const [league, currentBinding] = await Promise.all([
+  // v1.78.0 — also fetch User.email + emailVerified so the form pre-fills
+  // when we already have a verified address.
+  const [league, currentBinding, userRow] = await Promise.all([
     prisma.league.findUnique({
       where: { id: invite.leagueId },
       select: { id: true, name: true, subdomain: true },
@@ -69,12 +71,17 @@ export default async function OnboardingPage({ params }: Props) {
         leagueTeam: { include: { team: true } },
       },
     }),
+    prisma.user.findUnique({
+      where: { id: userId },
+      select: { email: true, emailVerified: true },
+    }),
   ])
 
   if (!league || !currentBinding) {
     // Not bound — re-route through the resolver.
     redirect(`/join/${code}`)
   }
+  const initialEmail = userRow?.email && userRow?.emailVerified ? userRow.email : ''
 
   return (
     <main
@@ -99,6 +106,7 @@ export default async function OnboardingPage({ params }: Props) {
           code={code}
           playerId={currentBinding.player.id}
           initialName={currentBinding.player.name ?? ''}
+          initialEmail={initialEmail}
           // v1.65.4 — position lives on PLM, not Player. Read from the
           // current PLM (currentBinding) directly.
           initialPosition={(currentBinding.position as 'GK' | 'DF' | 'MF' | 'FW' | null) ?? null}

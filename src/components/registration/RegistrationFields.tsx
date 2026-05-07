@@ -40,15 +40,25 @@ const UPLOAD_TOKEN_URL = '/api/blob/upload-token'
 
 export interface RegistrationFieldsSubmit {
   name: string
+  email: string
   position: '' | 'GK' | 'DF' | 'MF' | 'FW'
   idFrontUrl: string
   idBackUrl: string
   profilePictureUrl: string | null
 }
 
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const EMAIL_MAX_LENGTH = 254
+
 export interface RegistrationFieldsProps {
   /** Initial name — for invite mode the bound Player's name; for recruit mode empty. */
   initialName?: string
+  /**
+   * Initial email — when the calling user has a verified email (Google
+   * OAuth or magic-link), the page passes it here so the field is
+   * pre-filled. LINE-only users see an empty field. v1.78.0.
+   */
+  initialEmail?: string
   initialPosition?: 'GK' | 'DF' | 'MF' | 'FW' | null
   /** Submit button label, e.g. "Apply to T9L" or "Save and finish". */
   submitLabel: string
@@ -76,6 +86,7 @@ export interface RegistrationFieldsProps {
 
 export default function RegistrationFields({
   initialName = '',
+  initialEmail = '',
   initialPosition = null,
   submitLabel,
   uploadPathPrefix,
@@ -84,6 +95,7 @@ export default function RegistrationFields({
 }: RegistrationFieldsProps) {
   const [pending, startTransition] = useTransition()
   const [name, setName] = useState(initialName)
+  const [email, setEmail] = useState(initialEmail)
   const [position, setPosition] = useState<'' | 'GK' | 'DF' | 'MF' | 'FW'>(initialPosition ?? '')
   const [error, setError] = useState<string | null>(null)
 
@@ -138,6 +150,19 @@ export default function RegistrationFields({
       setError('Name must be 100 characters or fewer')
       return
     }
+    const trimmedEmail = email.trim().toLowerCase()
+    if (!trimmedEmail) {
+      setError('Email is required')
+      return
+    }
+    if (trimmedEmail.length > EMAIL_MAX_LENGTH) {
+      setError('Email is too long')
+      return
+    }
+    if (!EMAIL_REGEX.test(trimmedEmail)) {
+      setError('Please enter a valid email address')
+      return
+    }
     if (!idFrontFile) {
       setError('Front of ID is required')
       return
@@ -178,6 +203,7 @@ export default function RegistrationFields({
 
         await onSubmit({
           name: trimmed,
+          email: trimmedEmail,
           position,
           idFrontUrl: front.url,
           idBackUrl: back.url,
@@ -193,7 +219,7 @@ export default function RegistrationFields({
     })
   }
 
-  const submitDisabled = pending || !name.trim() || !idFrontFile || !idBackFile
+  const submitDisabled = pending || !name.trim() || !email.trim() || !idFrontFile || !idBackFile
 
   return (
     <form
@@ -215,6 +241,26 @@ export default function RegistrationFields({
           className="w-full bg-background border border-border-default rounded-lg px-3 py-2 text-sm text-fg-high"
           data-testid="registration-name"
         />
+      </label>
+
+      <label className="block">
+        <span className="block text-fg-mid text-xs uppercase tracking-widest font-bold mb-1.5">
+          Email <span className="text-vibrant-pink">*</span>
+        </span>
+        <input
+          type="email"
+          required
+          autoComplete="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          maxLength={EMAIL_MAX_LENGTH}
+          placeholder="you@example.com"
+          className="w-full bg-background border border-border-default rounded-lg px-3 py-2 text-sm text-fg-high"
+          data-testid="registration-email"
+        />
+        <span className="block text-fg-low text-xs mt-1">
+          We'll use this for league notifications and to follow up on your application.
+        </span>
       </label>
 
       <label className="block">
