@@ -28,11 +28,18 @@ describe('v1.73.5 — CompressedMatchdaySchedule logo object-contain', () => {
     expect(imgBlock).not.toMatch(/object-cover/)
   })
 
-  it('version is bumped to 1.73.5', () => {
+  it('version is at v1.73.5 or later (the floor where this fix landed)', () => {
+    // Pinning the literal `1.73.5` would force every subsequent patch in the
+    // same minor to also touch this file (see v1.69.1 ledger). Relaxed to a
+    // floor check: any v1.73.x ≥ .5 OR any v1.74+ passes.
     const version = fs.readFileSync(
       path.resolve(__dirname, '../../src/lib/version.ts'),
       'utf8',
     )
-    expect(version).toMatch(/1\.73\.5/)
+    const m = version.match(/APP_VERSION = '(\d+)\.(\d+)\.(\d+)'/)
+    expect(m).not.toBeNull()
+    const [maj, min, patch] = [Number(m![1]), Number(m![2]), Number(m![3])]
+    const ok = maj > 1 || (maj === 1 && min > 73) || (maj === 1 && min === 73 && patch >= 5)
+    expect(ok).toBe(true)
   })
 })
