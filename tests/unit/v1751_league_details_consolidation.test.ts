@@ -25,17 +25,21 @@ describe('v1.75.1 LeagueDetailsPanel includes planned-roster sub-section', () =>
     expect(src).toMatch(/plannedRosterStats\?:\s*PlannedRosterStatsData \| null/)
   })
 
-  it('renders fee row when plannedRosterStats is provided and fee is configured', () => {
-    expect(src).toMatch(/showFee &&[\s\S]*player-fee-row/)
+  it('renders season-fee-row when plannedRosterStats is provided and fee or deadline is configured', () => {
+    // v1.75.6 — fee + deadline combined into one row, testid season-fee-row.
+    expect(src).toMatch(/season-fee-row/)
   })
 
   it('renders planned-teams row when plannedRosterStats is provided', () => {
     expect(src).toMatch(/showPlannedTeams &&[\s\S]*planned-teams-row/)
   })
 
-  it('renders current-players and spots-left rows from plannedRosterStats', () => {
-    expect(src).toMatch(/data-testid="current-players-row"/)
+  it('renders spots-left row from plannedRosterStats', () => {
     expect(src).toMatch(/data-testid="spots-left-row"/)
+  })
+
+  it('does NOT render current-players-row (removed in v1.75.6)', () => {
+    expect(src).not.toMatch(/data-testid="current-players-row"/)
   })
 
   it('renders deadline row from plannedRosterStats when present', () => {
@@ -75,11 +79,14 @@ describe('v1.75.1 field render order matches importance list', () => {
     expect(idxGoal).toBeGreaterThan(idxBall)
   })
 
-  it('fee + roster rows appear before offside row', () => {
-    const idxFee = src.indexOf('player-fee-row')
+  it('stats section (season-fee-row) appears AFTER offside row (v1.75.6 — stats moved to bottom)', () => {
+    // v1.75.6 moved the fee + planned roster + matchdays rows into a
+    // bottom subsection below the rule rows. Regression target: moving
+    // them back above offside would re-introduce the old order.
     const idxOffside = src.indexOf('league-details-offside-row')
-    expect(idxFee).toBeGreaterThan(0)
-    expect(idxOffside).toBeGreaterThan(idxFee)
+    const idxFee = src.indexOf('season-fee-row')
+    expect(idxOffside).toBeGreaterThan(0)
+    expect(idxFee).toBeGreaterThan(idxOffside)
   })
 
   it('offside row appears before throw-in row', () => {

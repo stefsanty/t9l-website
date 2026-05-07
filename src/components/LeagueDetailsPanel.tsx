@@ -15,25 +15,31 @@ import { formatJpyFee } from '@/lib/playerFee'
 
 /**
  * v1.75.0 — Public League details panel.
- * v1.75.1 — Consolidated: includes planned-roster stats + fee inline
- *   (formerly a separate PlannedRosterStats render in Dashboard).
+ * v1.75.1 — Consolidated: includes planned-roster stats + fee inline.
  *   Decoupled from preseasonMode — renders whenever showLeagueDetails=true.
  *   Collapsible: expanded by default when preseasonMode=true, collapsed
- *   when preseasonMode=false. Fields ordered by player-perspective importance.
+ *   when preseasonMode=false.
+ * v1.75.6 — Stats moved to a dedicated bottom subsection separated from
+ *   the rule rows. Labels renamed; "Current Players" row removed;
+ *   "Matchdays" row added. Season Fee + Register By combined onto one line.
  *
- * Field order (most → least important):
- *   1. Player format          — primary "what kind of game"
+ * Rules section order:
+ *   1. Player format
  *   2. Match duration
  *   3. Ball type
  *   4. Goal size
- *   5. Player fee             — when configured
- *   6. Planned teams / per-team / current / spots left — when recruiting=true
- *   7. Registration deadline  — when recruiting=true
- *   8. Offside rule
- *   9. Throw-in / kick-in
- *  10. Backpass rule          — futsal-only
- *  11. Unlimited substitutions
- *  12. Organizer message      — long text, last
+ *   5. Offside rule
+ *   6. Throw-in / kick-in
+ *   7. Backpass rule (futsal-only)
+ *   8. Unlimited substitutions
+ *   9. Organizer message (long text)
+ *
+ * Season info subsection (bottom, separated by divider):
+ *   1. Season Fee + Register By (combined line)
+ *   2. Teams
+ *   3. Roster Size
+ *   4. Matchdays
+ *   5. Spots left
  */
 interface Props {
   data: LeagueDetails
@@ -54,19 +60,17 @@ export default function LeagueDetailsPanel({
   const showMessage =
     data.organizerMessage != null && data.organizerMessage.trim() !== ''
 
-  // Planned-roster visibility (mirrors PlannedRosterStats component logic).
-  // v1.75.5 — current/spots-left rows are gated on BOTH planned targets
-  // being non-zero. With the relaxed gate (plannedRosterStats threads
-  // unconditionally) we'd otherwise show "Spots left: 0" on non-recruiting
-  // leagues, which is meaningless.
+  // Season info section visibility gates.
   const showPlannedTeams = !!plannedRosterStats && plannedRosterStats.plannedNumberOfTeams > 0
   const showPlannedPerTeam = !!plannedRosterStats && plannedRosterStats.plannedPlayersPerTeam > 0
   const showCurrentAndSpots = showPlannedTeams && showPlannedPerTeam
   const showDeadline = !!plannedRosterStats && plannedRosterStats.registrationDeadline !== null
+  const showMatchdays = !!plannedRosterStats && plannedRosterStats.matchdays > 0
   const showFee =
     !!plannedRosterStats &&
     (plannedRosterStats.defaultFee > 0 || plannedRosterStats.positionFees.length > 0)
-  const showRosterSection = showFee || showPlannedTeams || showPlannedPerTeam || showCurrentAndSpots || showDeadline
+  const showStatsSection =
+    showFee || showPlannedTeams || showPlannedPerTeam || showCurrentAndSpots || showDeadline || showMatchdays
 
   return (
     <section
@@ -92,7 +96,8 @@ export default function LeagueDetailsPanel({
 
       {expanded && (
         <div className="px-4 pt-4 pb-3" data-testid="league-details-panel-body">
-          <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-sm">
+          {/* Rules section */}
+          <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-sm" data-testid="league-details-rules-section">
             {/* 1 — Player format */}
             {showFormat && (
               <Row
@@ -125,118 +130,21 @@ export default function LeagueDetailsPanel({
               testid="league-details-goal-row"
             />
 
-            {/* 5 — Player fee */}
-            {showFee && plannedRosterStats && (
-              <div
-                className="col-span-2 pt-1.5 mt-0.5 border-t border-border-subtle"
-                data-testid="player-fee-row"
-              >
-                <div className="flex justify-between items-baseline gap-2 flex-wrap">
-                  <dt className="text-fg-mid text-xs uppercase tracking-wider font-bold">
-                    Player fee
-                  </dt>
-                  <dd className="font-display font-black text-fg-high tabular-nums">
-                    {formatJpyFee(plannedRosterStats.defaultFee)}
-                    {plannedRosterStats.positionFees.length > 0 && (
-                      <span
-                        className="ml-2 text-[10px] font-bold text-fg-mid tracking-wider"
-                        data-testid="player-fee-position-rows"
-                      >
-                        {plannedRosterStats.positionFees.map((p, idx) => (
-                          <span key={p.position}>
-                            {idx > 0 && ' '}
-                            ({p.position} – {formatJpyFee(p.fee)})
-                          </span>
-                        ))}
-                      </span>
-                    )}
-                  </dd>
-                </div>
-                <p className="text-[10px] text-fg-low mt-1 leading-snug">
-                  Player fee is used to pay referee volunteers and league management work.
-                </p>
-              </div>
-            )}
-
-            {/* 6 — Planned teams / per-team / current count / spots left */}
-            {showRosterSection && plannedRosterStats && (
-              <>
-                {showPlannedTeams && (
-                  <div
-                    className={`flex justify-between items-baseline${!showFee ? ' pt-1.5 mt-0.5 border-t border-border-subtle col-span-2' : ''}`}
-                    data-testid="planned-teams-row"
-                  >
-                    <dt className="text-fg-mid text-xs uppercase tracking-wider font-bold">
-                      Planned teams
-                    </dt>
-                    <dd className="font-display font-black text-fg-high tabular-nums">
-                      {plannedRosterStats.plannedNumberOfTeams}
-                    </dd>
-                  </div>
-                )}
-                {showPlannedPerTeam && (
-                  <div className="flex justify-between items-baseline" data-testid="planned-per-team-row">
-                    <dt className="text-fg-mid text-xs uppercase tracking-wider font-bold">
-                      Per team
-                    </dt>
-                    <dd className="font-display font-black text-fg-high tabular-nums">
-                      {plannedRosterStats.plannedPlayersPerTeam}
-                    </dd>
-                  </div>
-                )}
-                {showCurrentAndSpots && (
-                  <>
-                    <div className="flex justify-between items-baseline" data-testid="current-players-row">
-                      <dt className="text-fg-mid text-xs uppercase tracking-wider font-bold">
-                        Current players
-                      </dt>
-                      <dd className="font-display font-black text-fg-high tabular-nums">
-                        {plannedRosterStats.currentPlayers}
-                      </dd>
-                    </div>
-                    <div className="flex justify-between items-baseline" data-testid="spots-left-row">
-                      <dt className="text-fg-mid text-xs uppercase tracking-wider font-bold">
-                        Spots left
-                      </dt>
-                      <dd className="font-display font-black text-vibrant-pink tabular-nums">
-                        {plannedRosterStats.spotsLeft}
-                      </dd>
-                    </div>
-                  </>
-                )}
-              </>
-            )}
-
-            {/* 7 — Registration deadline */}
-            {showDeadline && plannedRosterStats?.registrationDeadline && (
-              <div
-                className="col-span-2 flex justify-between items-baseline pt-1.5 mt-0.5 border-t border-border-subtle"
-                data-testid="deadline-row"
-              >
-                <dt className="text-fg-mid text-xs uppercase tracking-wider font-bold">
-                  Registration deadline
-                </dt>
-                <dd className="font-display font-black text-fg-high">
-                  {formatJstFriendly(plannedRosterStats.registrationDeadline, 'en')}
-                </dd>
-              </div>
-            )}
-
-            {/* 8 — Offside rule */}
+            {/* 5 — Offside rule */}
             <Row
               label="Offside"
               value={data.offsideRule ? 'Yes' : 'No'}
               testid="league-details-offside-row"
             />
 
-            {/* 9 — Throw-in vs kick-in */}
+            {/* 6 — Throw-in vs kick-in */}
             <Row
               label="Sideline restart"
               value={THROW_IN_TYPE_LABELS[data.throwInType]}
               testid="league-details-throw-in-row"
             />
 
-            {/* 10 — Backpass (futsal-only) */}
+            {/* 7 — Backpass (futsal-only) */}
             {showBackpass && (
               <Row
                 label="Backpass rule"
@@ -245,7 +153,7 @@ export default function LeagueDetailsPanel({
               />
             )}
 
-            {/* 11 — Substitutions */}
+            {/* 8 — Substitutions */}
             <Row
               label="Subs"
               value={data.unlimitedSubstitutions ? 'Unlimited' : 'Limited'}
@@ -253,7 +161,7 @@ export default function LeagueDetailsPanel({
             />
           </dl>
 
-          {/* 12 — Organizer message (long text, last) */}
+          {/* 9 — Organizer message (long text, after rules) */}
           {showMessage && (
             <div
               className="mt-3 pt-3 border-t border-border-subtle"
@@ -265,6 +173,96 @@ export default function LeagueDetailsPanel({
               <p className="text-sm text-fg-high whitespace-pre-line leading-relaxed">
                 {data.organizerMessage}
               </p>
+            </div>
+          )}
+
+          {/* Season info — bottom subsection, separated by a divider */}
+          {showStatsSection && plannedRosterStats && (
+            <div
+              className="mt-3 pt-3 border-t border-border-subtle"
+              data-testid="league-stats-section"
+            >
+              <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-sm">
+                {/* Season Fee + Register By — combined first line */}
+                {(showFee || showDeadline) && (
+                  <div className="col-span-2" data-testid="season-fee-row">
+                    <div className="flex items-baseline justify-between gap-4 flex-wrap">
+                      {showFee && (
+                        <div className="flex items-baseline gap-1.5 min-w-0">
+                          <dt className="text-fg-mid text-xs uppercase tracking-wider font-bold shrink-0">
+                            Season Fee
+                          </dt>
+                          <dd className="font-display font-black text-fg-high tabular-nums">
+                            {formatJpyFee(plannedRosterStats.defaultFee)}
+                          </dd>
+                        </div>
+                      )}
+                      {showDeadline && plannedRosterStats.registrationDeadline && (
+                        <div className="flex items-baseline gap-1.5 min-w-0" data-testid="deadline-row">
+                          <dt className="text-fg-mid text-xs uppercase tracking-wider font-bold shrink-0">
+                            Register By
+                          </dt>
+                          <dd className="font-display font-black text-fg-high">
+                            {formatJstFriendly(plannedRosterStats.registrationDeadline, 'en')}
+                          </dd>
+                        </div>
+                      )}
+                    </div>
+                    {showFee && plannedRosterStats.positionFees.length > 0 && (
+                      <p
+                        className="text-[10px] text-fg-low mt-1 leading-snug"
+                        data-testid="player-fee-position-rows"
+                      >
+                        {plannedRosterStats.positionFees.map((p, idx) => (
+                          <span key={p.position}>
+                            {idx > 0 && ' '}
+                            ({p.position} – {formatJpyFee(p.fee)})
+                          </span>
+                        ))}
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {/* Teams */}
+                {showPlannedTeams && (
+                  <Row
+                    label="Teams"
+                    value={String(plannedRosterStats.plannedNumberOfTeams)}
+                    testid="planned-teams-row"
+                  />
+                )}
+
+                {/* Roster Size */}
+                {showPlannedPerTeam && (
+                  <Row
+                    label="Roster Size"
+                    value={String(plannedRosterStats.plannedPlayersPerTeam)}
+                    testid="planned-per-team-row"
+                  />
+                )}
+
+                {/* Matchdays */}
+                {showMatchdays && (
+                  <Row
+                    label="Matchdays"
+                    value={String(plannedRosterStats.matchdays)}
+                    testid="matchdays-row"
+                  />
+                )}
+
+                {/* Spots left — gated on both planned targets being non-zero */}
+                {showCurrentAndSpots && (
+                  <div className="flex justify-between items-baseline" data-testid="spots-left-row">
+                    <dt className="text-fg-mid text-xs uppercase tracking-wider font-bold">
+                      Spots left
+                    </dt>
+                    <dd className="font-display font-black text-vibrant-pink tabular-nums">
+                      {plannedRosterStats.spotsLeft}
+                    </dd>
+                  </div>
+                )}
+              </dl>
             </div>
           )}
         </div>

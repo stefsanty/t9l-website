@@ -54,7 +54,8 @@ describe('v1.67.1 getPlannedRosterStats fetches fee data', () => {
 
   it('returns defaultFee + positionFees on the success path', () => {
     expect(src).toMatch(/defaultFee:\s*league\.defaultFee/)
-    expect(src).toMatch(/positionFees,?\s*\}/)
+    // positionFees is returned in the object (v1.75.6 adds matchdays after it).
+    expect(src).toMatch(/positionFees,/)
   })
 })
 
