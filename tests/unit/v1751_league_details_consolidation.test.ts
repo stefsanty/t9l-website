@@ -219,9 +219,9 @@ describe('v1.75.1 Dashboard wiring', () => {
 })
 
 describe('v1.75.1 stash-pop regression target', () => {
-  it('version is 1.75.1', () => {
+  it('version is 1.75.2', () => {
     const v = read('src/lib/version.ts')
-    expect(v).toMatch(/APP_VERSION\s*=\s*'1\.75\.1'/)
+    expect(v).toMatch(/APP_VERSION\s*=\s*'1\.75\.2'/)
   })
 
   it('LeagueDetailsPanel does NOT have the old non-collapsible header (plain <p> without toggle)', () => {
@@ -230,5 +230,30 @@ describe('v1.75.1 stash-pop regression target', () => {
     // Regression: reverting to static <p> would break the expand/collapse UX.
     expect(src).toMatch(/league-details-panel-header/)
     expect(src).not.toMatch(/<p[^>]*>[\s\S]*?League details[\s\S]*?<\/p>/)
+  })
+})
+
+describe('v1.75.2 header clickable-button styling', () => {
+  const src = read('src/components/LeagueDetailsPanel.tsx')
+
+  it('header button has bg-surface background (regression target: removing it loses the visual toggle cue)', () => {
+    // Verifies the header has a slightly elevated tinted background to signal
+    // it is interactive. Reverting to no background makes it look like plain text.
+    const headerBlock = src.slice(src.indexOf('league-details-panel-header') - 200, src.indexOf('league-details-panel-header') + 400)
+    expect(headerBlock).toMatch(/bg-surface\b/)
+  })
+
+  it('header button has hover:bg-surface-md for hover affordance', () => {
+    const headerBlock = src.slice(src.indexOf('league-details-panel-header') - 200, src.indexOf('league-details-panel-header') + 400)
+    expect(headerBlock).toMatch(/hover:bg-surface-md/)
+  })
+
+  it('header label span uses text-fg-high (more prominent than text-fg-mid)', () => {
+    // fg-high makes the label text more visually prominent, reinforcing
+    // that this is an actionable toggle rather than a passive section heading.
+    // Regression target: reverting to text-fg-mid on the label span reduces visual prominence.
+    // The span containing "League details" must use text-fg-high, not text-fg-mid.
+    expect(src).toMatch(/<span className="[^"]*text-fg-high[^"]*">\s*League details/)
+    expect(src).not.toMatch(/<span className="[^"]*text-fg-mid[^"]*">\s*League details/)
   })
 })
