@@ -10,12 +10,6 @@ import SignInLightbox from './SignInLightbox';
 import { getCurrentCallbackUrl } from '@/lib/signInCallbackUrl';
 
 const GUEST_DISMISSED_KEY = 't9l-guest-dismissed';
-const INSTALL_DISMISSED_KEY = 't9l-install-dismissed';
-
-interface BeforeInstallPromptEvent extends Event {
-  prompt(): Promise<void>;
-  userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
-}
 
 function LineIcon({ className = 'w-4 h-4' }: { className?: string }) {
   return (
@@ -74,97 +68,11 @@ function AssignModal({ onDismiss }: { onDismiss: () => void }) {
   );
 }
 
-function InstallBanner({
-  isIOS,
-  deferredPrompt,
-  onDismiss,
-}: {
-  isIOS: boolean;
-  deferredPrompt: BeforeInstallPromptEvent | null;
-  onDismiss: (dontShowAgain: boolean) => void;
-}) {
-  const [dontShowAgain, setDontShowAgain] = useState(false);
-
-  async function handleInstall() {
-    if (deferredPrompt) {
-      await deferredPrompt.prompt();
-      const { outcome } = await deferredPrompt.userChoice;
-      if (outcome === 'accepted') {
-        onDismiss(true);
-        return;
-      }
-    }
-    onDismiss(dontShowAgain);
-  }
-
-  return (
-    <div className="fixed top-0 inset-x-0 z-[200] flex justify-center px-3 pt-3 sm:hidden">
-      <div className="w-full max-w-sm bg-card border border-border-default rounded-2xl shadow-2xl overflow-hidden">
-        <div className="px-4 pt-4 pb-3">
-          {/* Header row */}
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-xl bg-electric-green/10 border border-electric-green/20 flex items-center justify-center shrink-0">
-              <svg className="w-4 h-4 text-electric-green" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-              </svg>
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="font-display text-sm font-black uppercase tracking-tight text-fg-high leading-none">{"Add to Home Screen"}</p>
-              <p className="text-[11px] text-fg-mid mt-0.5 leading-tight">{"Install T9L for quick access — no browser needed."}</p>
-            </div>
-            <button
-              onClick={() => onDismiss(dontShowAgain)}
-              className="shrink-0 w-6 h-6 flex items-center justify-center rounded-full text-fg-mid hover:text-fg-high hover:bg-surface transition-colors"
-              aria-label="Dismiss"
-            >
-              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
-
-          {/* iOS instructions or install button */}
-          {isIOS ? (
-            <p className="text-[11px] text-fg-mid mt-3 leading-relaxed">
-              {"Tap "}
-              <span className="font-bold text-fg-high">{"Share ⎙"}</span>
-              {" at the bottom of Safari, then "}
-              <span className="font-bold text-fg-high">{"Add to Home Screen"}</span>
-              {"."}
-            </p>
-          ) : (
-            <button
-              onClick={handleInstall}
-              className="flex items-center justify-center gap-1.5 w-full mt-3 py-2.5 rounded-xl bg-electric-green text-black font-display text-[13px] font-black uppercase tracking-wider hover:bg-electric-green/90 active:scale-[0.98] transition-all"
-            >
-              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-              </svg>
-              {"Install App"}
-            </button>
-          )}
-
-          {/* Don't show again */}
-          <label className="flex items-center gap-2 mt-3 cursor-pointer select-none">
-            <input
-              type="checkbox"
-              checked={dontShowAgain}
-              onChange={(e) => setDontShowAgain(e.target.checked)}
-              className="w-3.5 h-3.5 rounded accent-electric-green"
-            />
-            <span className="text-[11px] text-fg-mid">{"Don't show this again"}</span>
-          </label>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 export default function LineLoginButton() {
     const { data: session, status } = useSession();
   const [open, setOpen] = useState(false);
   const [showAssignModal, setShowAssignModal] = useState(false);
-  const [showInstallModal, setShowInstallModal] = useState(false);
   const [showSignInLightbox, setShowSignInLightbox] = useState(false);
   // v1.70.3 — capture the current page path at click time so the OAuth
   // round-trip returns the user to whichever league subpage they
@@ -176,23 +84,7 @@ export default function LineLoginButton() {
     setSignInCallbackUrl(getCurrentCallbackUrl());
     setShowSignInLightbox(true);
   }
-  const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
-  const [isIOS, setIsIOS] = useState(false);
-  const [isStandalone, setIsStandalone] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
-
-  // Detect platform and capture install prompt
-  useEffect(() => {
-    setIsStandalone(window.matchMedia('(display-mode: standalone)').matches);
-    setIsIOS(/iphone|ipad|ipod/i.test(navigator.userAgent));
-
-    const handler = (e: Event) => {
-      e.preventDefault();
-      setDeferredPrompt(e as BeforeInstallPromptEvent);
-    };
-    window.addEventListener('beforeinstallprompt', handler);
-    return () => window.removeEventListener('beforeinstallprompt', handler);
-  }, []);
 
   // Show the assign modal on first login (no player assigned, not previously dismissed).
   //
@@ -216,22 +108,6 @@ export default function LineLoginButton() {
       }
     }
   }, [status, session?.lineId, session?.userId, session?.playerId, session?.allowSelfLink]);
-
-  // Show install modal for authenticated users who haven't dismissed it
-  useEffect(() => {
-    if (status !== 'authenticated') return;
-    if (isStandalone) return;
-    if (localStorage.getItem(INSTALL_DISMISSED_KEY)) return;
-    if (deferredPrompt || isIOS) {
-      setShowInstallModal(true);
-    }
-  }, [status, deferredPrompt, isIOS, isStandalone]);
-
-  function handleInstallDismiss(dontShowAgain: boolean) {
-    if (dontShowAgain) localStorage.setItem(INSTALL_DISMISSED_KEY, '1');
-    setShowInstallModal(false);
-    setDeferredPrompt(null);
-  }
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -354,16 +230,6 @@ export default function LineLoginButton() {
       {/* First-login lightbox — rendered via portal to escape header's transform stacking context */}
       {showAssignModal && createPortal(
         <AssignModal onDismiss={handleVisitAsGuest} />,
-        document.body,
-      )}
-
-      {/* Install app banner (top of screen, no backdrop) */}
-      {showInstallModal && !showAssignModal && createPortal(
-        <InstallBanner
-          isIOS={isIOS}
-          deferredPrompt={deferredPrompt}
-          onDismiss={handleInstallDismiss}
-        />,
         document.body,
       )}
 
@@ -494,18 +360,6 @@ export default function LineLoginButton() {
                 The header chevron `LeagueSwitcher` stays as the only
                 league switcher (rendered next to the brand title in
                 Header.tsx). */}
-
-            {!isStandalone && (deferredPrompt || isIOS) && (
-              <button
-                onClick={() => { setOpen(false); setShowInstallModal(true); }}
-                className="w-full flex items-center gap-2 px-4 py-3 text-[12px] font-bold text-fg-high hover:text-fg-mid hover:bg-surface transition-colors"
-              >
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-                </svg>
-                {"Add to Home Screen"}
-              </button>
-            )}
 
             {session.isAdmin && (
               <Link
