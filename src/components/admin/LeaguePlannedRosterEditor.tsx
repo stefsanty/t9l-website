@@ -76,8 +76,8 @@ export default function LeaguePlannedRosterEditor({
       data-testid="league-planned-roster-editor"
     >
       <div>
-        <h3 className="text-sm font-bold text-fg-high mb-1">Planned roster</h3>
-        <p className="text-xs text-fg-mid leading-relaxed">
+        <h3 className="text-sm font-bold text-admin-text mb-1">Planned roster</h3>
+        <p className="text-xs text-admin-text2 leading-relaxed">
           Targets surfaced in the preseason stats panel above the planned
           schedule. Set to 0 to hide a row from the public panel.
         </p>
@@ -85,7 +85,7 @@ export default function LeaguePlannedRosterEditor({
 
       <div className="grid grid-cols-2 gap-3">
         <label className="block">
-          <span className="block text-xs uppercase tracking-widest font-bold text-fg-mid mb-1.5">
+          <span className="block text-xs uppercase tracking-widest font-bold text-admin-text2 mb-1.5">
             Planned teams
           </span>
           <input
@@ -94,13 +94,13 @@ export default function LeaguePlannedRosterEditor({
             step={1}
             value={plannedNumberOfTeams}
             onChange={(e) => setPlannedNumberOfTeams(parseInt(e.target.value, 10) || 0)}
-            className="w-full bg-admin-surface2 border border-admin-border rounded px-2 py-1 text-sm font-mono"
+            className="w-full bg-admin-surface2 border border-admin-border rounded px-2 py-1 text-sm font-mono text-admin-text"
             data-testid="planned-number-of-teams-input"
           />
         </label>
 
         <label className="block">
-          <span className="block text-xs uppercase tracking-widest font-bold text-fg-mid mb-1.5">
+          <span className="block text-xs uppercase tracking-widest font-bold text-admin-text2 mb-1.5">
             Planned players / team
           </span>
           <input
@@ -109,24 +109,24 @@ export default function LeaguePlannedRosterEditor({
             step={1}
             value={plannedPlayersPerTeam}
             onChange={(e) => setPlannedPlayersPerTeam(parseInt(e.target.value, 10) || 0)}
-            className="w-full bg-admin-surface2 border border-admin-border rounded px-2 py-1 text-sm font-mono"
+            className="w-full bg-admin-surface2 border border-admin-border rounded px-2 py-1 text-sm font-mono text-admin-text"
             data-testid="planned-players-per-team-input"
           />
         </label>
       </div>
 
       <label className="block">
-        <span className="block text-xs uppercase tracking-widest font-bold text-fg-mid mb-1.5">
+        <span className="block text-xs uppercase tracking-widest font-bold text-admin-text2 mb-1.5">
           Registration deadline
         </span>
         <input
           type="date"
           value={registrationDeadline}
           onChange={(e) => setRegistrationDeadline(e.target.value)}
-          className="bg-admin-surface2 border border-admin-border rounded px-2 py-1 text-sm font-mono"
+          className="bg-admin-surface2 border border-admin-border rounded px-2 py-1 text-sm font-mono text-admin-text"
           data-testid="registration-deadline-input"
         />
-        <p className="text-[11px] text-fg-low mt-1">
+        <p className="text-[11px] text-admin-text3 mt-1">
           JST calendar date. Leave empty to hide the deadline row from the public panel.
         </p>
       </label>

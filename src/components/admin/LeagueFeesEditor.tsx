@@ -79,17 +79,17 @@ export default function LeagueFeesEditor({
       data-testid="league-fees-editor"
     >
       <div>
-        <h3 className="text-sm font-bold text-fg-high mb-1">Player fees</h3>
-        <p className="text-xs text-fg-mid leading-relaxed">
+        <h3 className="text-sm font-bold text-admin-text mb-1">Player fees</h3>
+        <p className="text-xs text-admin-text2 leading-relaxed">
           Default fee applies to every player whose position has no
           override below. Per-position rows match
-          <code className="mx-1 px-1 bg-admin-surface2 rounded text-[11px] font-mono">PlayerLeagueMembership.position</code>
+          <code className="mx-1 px-1 bg-admin-surface2 rounded text-[11px] font-mono text-admin-text">PlayerLeagueMembership.position</code>
           via case-sensitive exact match (e.g. <code>GK</code> = 5,000 + default = 4,000).
         </p>
       </div>
 
       <label className="block">
-        <span className="block text-xs uppercase tracking-widest font-bold text-fg-mid mb-1.5">
+        <span className="block text-xs uppercase tracking-widest font-bold text-admin-text2 mb-1.5">
           Default fee (JPY)
         </span>
         <input
@@ -98,18 +98,18 @@ export default function LeagueFeesEditor({
           step={100}
           value={defaultFee}
           onChange={(e) => setDefaultFee(parseInt(e.target.value, 10) || 0)}
-          className="w-32 bg-admin-surface2 border border-admin-border rounded px-2 py-1 text-sm font-mono"
+          className="w-32 bg-admin-surface2 border border-admin-border rounded px-2 py-1 text-sm font-mono text-admin-text"
           data-testid="default-fee-input"
         />
-        <p className="text-[11px] text-fg-low mt-1">
+        <p className="text-[11px] text-admin-text3 mt-1">
           {formatJpyFee(defaultFee)} per matchday (or season — your call)
         </p>
       </label>
 
       <div className="space-y-2">
-        <p className="text-xs uppercase tracking-widest font-bold text-fg-mid">Per-position overrides</p>
+        <p className="text-xs uppercase tracking-widest font-bold text-admin-text2">Per-position overrides</p>
         {rows.length === 0 && (
-          <p className="text-xs text-fg-low italic">No per-position overrides — every player pays the default fee.</p>
+          <p className="text-xs text-admin-text3 italic">No per-position overrides — every player pays the default fee.</p>
         )}
         {rows.map((row, idx) => (
           <div
@@ -123,7 +123,7 @@ export default function LeagueFeesEditor({
               onChange={(e) => updateRow(idx, { position: e.target.value })}
               placeholder="GK"
               maxLength={32}
-              className="w-20 bg-admin-surface2 border border-admin-border rounded px-2 py-1 text-sm font-mono uppercase"
+              className="w-20 bg-admin-surface2 border border-admin-border rounded px-2 py-1 text-sm font-mono uppercase text-admin-text placeholder:text-admin-text3"
               data-testid={`fee-position-${idx}`}
             />
             <input
@@ -132,15 +132,15 @@ export default function LeagueFeesEditor({
               step={100}
               value={row.fee}
               onChange={(e) => updateRow(idx, { fee: parseInt(e.target.value, 10) || 0 })}
-              className="w-32 bg-admin-surface2 border border-admin-border rounded px-2 py-1 text-sm font-mono"
+              className="w-32 bg-admin-surface2 border border-admin-border rounded px-2 py-1 text-sm font-mono text-admin-text"
               data-testid={`fee-amount-${idx}`}
             />
-            <span className="text-[11px] text-fg-low">{formatJpyFee(row.fee)}</span>
+            <span className="text-[11px] text-admin-text3">{formatJpyFee(row.fee)}</span>
             <button
               type="button"
               onClick={() => removeRow(idx)}
               aria-label="Remove fee row"
-              className="ml-auto w-7 h-7 flex items-center justify-center rounded text-fg-low hover:text-fg-high hover:bg-admin-surface2 transition-colors"
+              className="ml-auto w-7 h-7 flex items-center justify-center rounded text-admin-text3 hover:text-admin-text hover:bg-admin-surface2 transition-colors"
               data-testid={`fee-remove-${idx}`}
             >
               <X className="w-4 h-4" />
@@ -150,7 +150,7 @@ export default function LeagueFeesEditor({
         <button
           type="button"
           onClick={addRow}
-          className="inline-flex items-center gap-1.5 text-xs font-bold text-fg-mid hover:text-fg-high px-2 py-1 rounded border border-dashed border-admin-border hover:border-admin-border2 transition-colors"
+          className="inline-flex items-center gap-1.5 text-xs font-bold text-admin-text2 hover:text-admin-text px-2 py-1 rounded border border-dashed border-admin-border hover:border-admin-border2 transition-colors"
           data-testid="fee-add-row"
         >
           <Plus className="w-3.5 h-3.5" />
