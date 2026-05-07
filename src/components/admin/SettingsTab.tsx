@@ -16,6 +16,7 @@ import {
 import { formatJstDate } from '@/lib/jst'
 import LeagueFeesEditor from './LeagueFeesEditor'
 import LeaguePlannedRosterEditor from './LeaguePlannedRosterEditor'
+import LeagueDetailsEditor from './LeagueDetailsEditor'
 
 interface League {
   id: string
@@ -43,6 +44,20 @@ interface League {
   registrationDeadline: Date | null
   // v1.73.0 — short display label for header + page title.
   abbreviation: string | null
+  // v1.75.0 — League details fields. All threaded straight from the
+  // `getLeagueSettings` Prisma row. Defaults are guaranteed by the
+  // schema migration; the LeagueDetailsEditor receives raw enum
+  // strings + booleans.
+  ballType: 'SOCCER' | 'FUTSAL'
+  goalSize: 'FUTSAL' | 'YOUTH_SOCCER' | 'FULL_SIZE_SOCCER'
+  throwInType: 'THROW_IN' | 'KICK_IN'
+  offsideRule: boolean
+  backpassRule: boolean
+  matchDurationMinutes: number | null
+  playerFormat: number | null
+  unlimitedSubstitutions: boolean
+  organizerMessage: string | null
+  showLeagueDetails: boolean
 }
 
 // JST calendar date as YYYY-MM-DD for `<input type="date">`. See lib/jst.ts.
@@ -547,6 +562,25 @@ export default function SettingsTab({ league }: SettingsTabProps) {
         initialPlannedPlayersPerTeam={league.plannedPlayersPerTeam}
         initialPlannedNumberOfTeams={league.plannedNumberOfTeams}
         initialRegistrationDeadline={league.registrationDeadline}
+      />
+
+      {/* v1.75.0 — League details (ball / goal / restart / offside /
+          backpass / match duration / player format / subs / organizer
+          message). Surfaced via the public LeagueDetailsPanel on the
+          preseason homepage when both `preseasonMode` and
+          `showLeagueDetails` are true. */}
+      <LeagueDetailsEditor
+        leagueId={league.id}
+        initialBallType={league.ballType}
+        initialGoalSize={league.goalSize}
+        initialThrowInType={league.throwInType}
+        initialOffsideRule={league.offsideRule}
+        initialBackpassRule={league.backpassRule}
+        initialMatchDurationMinutes={league.matchDurationMinutes}
+        initialPlayerFormat={league.playerFormat}
+        initialUnlimitedSubstitutions={league.unlimitedSubstitutions}
+        initialOrganizerMessage={league.organizerMessage}
+        initialShowLeagueDetails={league.showLeagueDetails}
       />
 
       {/* Quick actions */}

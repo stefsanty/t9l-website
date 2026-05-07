@@ -18,6 +18,8 @@ import RsvpBar from './RsvpBar';
 import type { RecruitingViewerState } from '@/lib/recruitingViewerState';
 import type { PlannedRosterStats as PlannedRosterStatsData } from '@/lib/plannedRosterStats';
 import PlannedRosterStats from './PlannedRosterStats';
+import type { LeagueDetails as LeagueDetailsData } from '@/lib/leagueDetails';
+import LeagueDetailsPanel from './LeagueDetailsPanel';
 import { selfReportGateOpen } from '@/lib/playerSelfReportGate';
 import { combineJstDateAndTime } from '@/lib/jst';
 
@@ -91,6 +93,14 @@ interface DashboardProps {
    * sits between RecruitingBanner and CompressedMatchdaySchedule.
    */
   plannedRosterStats?: PlannedRosterStatsData | null;
+  /**
+   * v1.75.0 — league details panel data. Page.tsx fetches this via
+   * `getLeagueDetails(leagueId)` and only passes a non-null value
+   * when both `preseasonMode === true` AND the helper returns non-null
+   * (i.e. `League.showLeagueDetails === true`). The panel renders
+   * after PlannedRosterStats and before CompressedMatchdaySchedule.
+   */
+  leagueDetails?: LeagueDetailsData | null;
 }
 
 /**
@@ -125,6 +135,7 @@ export default function Dashboard({
   league,
   unpaidFee,
   plannedRosterStats,
+  leagueDetails,
 }: DashboardProps) {
   const { data: session } = useSession();
   const [selectedMatchdayId, setSelectedMatchdayId] = useState(
@@ -241,6 +252,12 @@ export default function Dashboard({
               non-null. Sits between RecruitingBanner and the schedule
               per the spec. */}
           {plannedRosterStats && <PlannedRosterStats data={plannedRosterStats} />}
+
+          {/* v1.75.0 — league details panel. Server gates this with
+              preseasonMode + League.showLeagueDetails (the helper
+              returns null when the flag is off). Sits below
+              PlannedRosterStats and above the schedule. */}
+          {leagueDetails && <LeagueDetailsPanel data={leagueDetails} />}
 
           {nextMd ? (
             <>
