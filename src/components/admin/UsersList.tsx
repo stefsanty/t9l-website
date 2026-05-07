@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useTransition } from 'react'
 import Link from 'next/link'
-import { Search, Filter, ExternalLink, Unlink2, Shield, Mail, Smartphone } from 'lucide-react'
+import { Search, Filter, ExternalLink, Unlink2, Shield, Mail, Smartphone, Eye, X } from 'lucide-react'
 import { adminUnlinkUserFromPlayer } from '@/app/admin/leagues/actions'
 import { useToast } from './ToastProvider'
 import AdminPlayerAvatar from './AdminPlayerAvatar'
@@ -24,6 +24,9 @@ export interface UserRow {
     otherLeagues: string[]
   } | null
   lineLastSeenAt: string | null
+  idFrontUrl: string | null
+  idBackUrl: string | null
+  idUploadedAt: string | null
 }
 
 interface UsersListProps {
@@ -65,6 +68,7 @@ export default function UsersList({ users }: UsersListProps) {
   const [linkedFilter, setLinkedFilter] = useState<LinkedFilter>('all')
   const [pending, startTransition] = useTransition()
   const [pendingUserId, setPendingUserId] = useState<string | null>(null)
+  const [viewingIdUser, setViewingIdUser] = useState<UserRow | null>(null)
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -107,6 +111,9 @@ export default function UsersList({ users }: UsersListProps) {
 
   return (
     <div className="px-4 md:px-8 py-6">
+      {viewingIdUser && (
+        <UserIdModal user={viewingIdUser} onClose={() => setViewingIdUser(null)} />
+      )}
       {/* Header */}
       <div className="mb-5">
         <h1 className="font-condensed font-extrabold text-admin-text text-[26px] leading-tight">
@@ -163,12 +170,13 @@ export default function UsersList({ users }: UsersListProps) {
           <div className="hidden md:block">
             <div
               className="grid items-center gap-3 px-5 py-2 border-b border-admin-border text-[10px] font-semibold uppercase tracking-[1.5px] text-admin-text3"
-              style={{ gridTemplateColumns: '40px 1fr 180px 200px 100px 80px' }}
+              style={{ gridTemplateColumns: '40px 1fr 180px 200px 48px 100px 80px' }}
             >
               <span />
               <span>Name / email</span>
               <span>Providers</span>
               <span>Linked player</span>
+              <span>ID</span>
               <span>Last seen</span>
               <span className="text-right">Actions</span>
             </div>
@@ -177,7 +185,7 @@ export default function UsersList({ users }: UsersListProps) {
                 <li
                   key={u.id}
                   className="grid items-center gap-3 px-5 py-3 hover:bg-admin-surface2/40"
-                  style={{ gridTemplateColumns: '40px 1fr 180px 200px 100px 80px' }}
+                  style={{ gridTemplateColumns: '40px 1fr 180px 200px 48px 100px 80px' }}
                   data-testid={`admin-users-row-${u.id}`}
                 >
                   <AdminPlayerAvatar name={u.name} pictureUrl={u.image ?? u.pictureUrl} size={32} />
@@ -203,6 +211,7 @@ export default function UsersList({ users }: UsersListProps) {
                     userId={u.id}
                     linkedPlayer={u.linkedPlayer}
                   />
+                  <IdThumbnailCell user={u} onView={() => setViewingIdUser(u)} />
                   <span className="text-[11px] text-admin-text3 font-mono">
                     {u.lineLastSeenAt
                       ? formatJstDayMonth(new Date(u.lineLastSeenAt))
@@ -260,17 +269,30 @@ export default function UsersList({ users }: UsersListProps) {
                       />
                     </div>
                   </div>
-                  {u.linkedPlayer && (
-                    <button
-                      type="button"
-                      onClick={() => handleUnlink(u)}
-                      disabled={pending && pendingUserId === u.id}
-                      className="shrink-0 inline-flex items-center gap-1 rounded-[6px] border border-admin-border2 px-2 py-1 text-[11px] font-semibold text-admin-text hover:bg-admin-surface3 disabled:opacity-50"
-                      data-testid={`admin-users-unlink-mobile-${u.id}`}
-                    >
-                      <Unlink2 className="w-3 h-3" />
-                    </button>
-                  )}
+                  <div className="shrink-0 flex flex-col items-end gap-1">
+                    {u.idFrontUrl && (
+                      <button
+                        type="button"
+                        onClick={() => setViewingIdUser(u)}
+                        className="inline-flex items-center gap-1 rounded-[6px] border border-admin-border2 px-2 py-1 text-[11px] font-semibold text-admin-text hover:bg-admin-surface3"
+                        data-testid={`admin-users-view-id-mobile-${u.id}`}
+                      >
+                        <Eye className="w-3 h-3" />
+                        ID
+                      </button>
+                    )}
+                    {u.linkedPlayer && (
+                      <button
+                        type="button"
+                        onClick={() => handleUnlink(u)}
+                        disabled={pending && pendingUserId === u.id}
+                        className="inline-flex items-center gap-1 rounded-[6px] border border-admin-border2 px-2 py-1 text-[11px] font-semibold text-admin-text hover:bg-admin-surface3 disabled:opacity-50"
+                        data-testid={`admin-users-unlink-mobile-${u.id}`}
+                      >
+                        <Unlink2 className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
                 </div>
               </li>
             ))}
@@ -307,6 +329,108 @@ function ProviderPills({ providers, userId }: { providers: string[]; userId: str
           {PROVIDER_LABELS[p] ?? p}
         </span>
       ))}
+    </div>
+  )
+}
+
+function IdThumbnailCell({ user, onView }: { user: UserRow; onView: () => void }) {
+  if (!user.idFrontUrl) {
+    return (
+      <span
+        className="text-[11px] text-admin-text3"
+        data-testid={`admin-users-id-none-${user.id}`}
+      >
+        —
+      </span>
+    )
+  }
+  return (
+    <button
+      type="button"
+      onClick={onView}
+      className="relative block w-10 h-10 rounded overflow-hidden border border-admin-border hover:border-admin-green/60 group"
+      data-testid={`admin-users-id-thumb-${user.id}`}
+      aria-label="View ID"
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={user.idFrontUrl}
+        alt="ID front thumbnail"
+        className="w-full h-full object-cover"
+      />
+      <span className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/40 transition-colors">
+        <Eye className="w-3.5 h-3.5 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+      </span>
+    </button>
+  )
+}
+
+function UserIdModal({ user, onClose }: { user: UserRow; onClose: () => void }) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center"
+      data-testid="user-id-modal"
+    >
+      <div className="absolute inset-0 bg-black/70" onClick={onClose} />
+      <div className="relative bg-admin-surface border border-admin-border rounded-xl p-6 w-full max-w-3xl mx-4 shadow-2xl max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="text-admin-text font-condensed font-bold text-lg">
+              ID for {user.name ?? user.email ?? 'Unnamed user'}
+            </h3>
+            {user.idUploadedAt && (
+              <p className="text-admin-text3 text-xs mt-0.5">
+                Uploaded{' '}
+                {new Date(user.idUploadedAt).toLocaleString('en-US', {
+                  month: 'short',
+                  day: 'numeric',
+                  year: 'numeric',
+                  hour: 'numeric',
+                  minute: '2-digit',
+                })}
+              </p>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-admin-text3 hover:text-admin-text"
+            aria-label="Close"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <IdModalPane label="Front" url={user.idFrontUrl} testid="user-id-modal-front" />
+          <IdModalPane label="Back" url={user.idBackUrl} testid="user-id-modal-back" />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function IdModalPane({ label, url, testid }: { label: string; url: string | null; testid: string }) {
+  if (!url) {
+    return (
+      <div className="rounded-md border border-admin-border bg-admin-surface2 p-4 text-center text-admin-text3 text-xs italic">
+        {label}: not available
+      </div>
+    )
+  }
+  return (
+    <div className="rounded-md border border-admin-border bg-admin-surface2 p-2">
+      <p className="text-admin-text3 text-[10px] font-bold uppercase tracking-widest mb-1.5">
+        {label}
+      </p>
+      <a href={url} target="_blank" rel="noopener noreferrer" data-testid={`${testid}-link`}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={url}
+          alt={`${label} of ID`}
+          className="w-full max-h-80 object-contain rounded bg-background"
+          data-testid={testid}
+        />
+      </a>
     </div>
   )
 }

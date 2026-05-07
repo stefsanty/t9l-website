@@ -592,6 +592,9 @@ export async function getAllUsersForAdmin(): Promise<
       otherLeagues: string[]
     } | null
     lineLastSeenAt: string | null
+    idFrontUrl: string | null
+    idBackUrl: string | null
+    idUploadedAt: string | null
   }>
 > {
   const users = await prisma.user.findMany({
@@ -606,6 +609,9 @@ export async function getAllUsersForAdmin(): Promise<
       role: true,
       createdAt: true,
       playerId: true,
+      idFrontUrl: true,
+      idBackUrl: true,
+      idUploadedAt: true,
       accounts: { select: { provider: true } },
     },
   })
@@ -682,6 +688,9 @@ export async function getAllUsersForAdmin(): Promise<
       providers,
       linkedPlayer: u.playerId ? playerById.get(u.playerId) ?? null : null,
       lineLastSeenAt: lastSeen ? lastSeen.toISOString() : null,
+      idFrontUrl: u.idFrontUrl,
+      idBackUrl: u.idBackUrl,
+      idUploadedAt: u.idUploadedAt ? u.idUploadedAt.toISOString() : null,
     }
   })
 }
