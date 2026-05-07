@@ -7,6 +7,8 @@ import { pickUserTeam } from '@/lib/userTeam';
 
 interface UserTeamBadgeProps {
   teams: Team[];
+  /** Current-league override for session.teamId (which is default-league-scoped). */
+  teamId?: string | null;
 }
 
 /**
@@ -34,11 +36,12 @@ interface UserTeamBadgeProps {
  * is worth. Tradeoff: brief flash-of-no-badge for the first ~100ms,
  * same as the existing `RsvpBar` (which gates on the same session).
  */
-export default function UserTeamBadge({ teams }: UserTeamBadgeProps) {
+export default function UserTeamBadge({ teams, teamId: teamIdProp }: UserTeamBadgeProps) {
   const { data: session } = useSession();
-  // Render-branch decisions (null vs badge) are owned by the pure
-  // `pickUserTeam` helper so they can be tested without React.
-  const team = pickUserTeam(session ?? null, teams);
+  const team = pickUserTeam(
+    { playerId: session?.playerId, teamId: teamIdProp ?? session?.teamId },
+    teams,
+  );
   if (!team) return null;
 
   return (

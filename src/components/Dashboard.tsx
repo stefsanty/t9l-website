@@ -136,6 +136,13 @@ export default function Dashboard({
 
   const userTeamId = session?.teamId ?? null;
   const userPlayerId = session?.playerId ?? null;
+  // session.teamId is default-league-scoped (JWT always resolves against
+  // getDefaultLeagueId). For non-default leagues, use the per-league
+  // team resolved server-side by recruitingViewerState instead.
+  const currentLeagueTeamId: string | null =
+    recruitingState?.kind === 'approved_this'
+      ? recruitingState.team.id
+      : userTeamId;
   const userTeam = userTeamId ? (teams.find((t) => t.id === userTeamId) ?? null) : null;
   const userTeamIsPlaying = !!(userTeamId && selectedMatchday && selectedMatchday.sittingOutTeamId !== userTeamId);
   const isCompleted = !!(selectedMatchday && selectedMatchday.matches[0].homeGoals !== null);
@@ -238,7 +245,7 @@ export default function Dashboard({
           {nextMd ? (
             <>
               <GuestLoginBanner />
-              <UserTeamBadge teams={teams} />
+              <UserTeamBadge teams={teams} teamId={currentLeagueTeamId} />
 
               {preseasonMode ? (
                 <CompressedMatchdaySchedule matchdays={matchdays} teams={teams} />
