@@ -77,11 +77,14 @@ describe('v1.75.8 — CompressedMatchdaySchedule column alignment', () => {
     expect(src).toMatch(/teams: Team\[\]/)
   })
 
-  it('version is bumped to 1.75.8', () => {
+  it('version is bumped to 1.75.8 or later', () => {
+    // v1.78.0 — floor pin relaxed to accept v1.75.8+ / v1.[76-99].x / v2+.
     const version = fs.readFileSync(
       path.resolve(__dirname, '../../src/lib/version.ts'),
       'utf8',
     )
-    expect(version).toMatch(/1\.75\.8/)
+    expect(version).toMatch(
+      /APP_VERSION\s*=\s*'(?:1\.75\.(?:[89]|\d{2,})|1\.(?:7[6-9]|[89]\d|\d{3,})\.\d+|[2-9]\.\d+\.\d+)'/,
+    )
   })
 })

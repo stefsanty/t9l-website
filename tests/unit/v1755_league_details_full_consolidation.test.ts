@@ -221,7 +221,10 @@ describe('v1.75.5 page-level threading: plannedRosterStats unconditional', () =>
 
 describe('v1.75.5 stash-pop regression target', () => {
   it('APP_VERSION is 1.75.5 or later', () => {
+    // v1.78.0 — floor pin relaxed to accept v1.75.5+ / v1.[76-99].x / v2+.
     const v = read('src/lib/version.ts')
-    expect(v).toMatch(/APP_VERSION\s*=\s*'1\.75\.[5-9]'/)
+    expect(v).toMatch(
+      /APP_VERSION\s*=\s*'(?:1\.75\.(?:[5-9]|\d{2,})|1\.(?:7[6-9]|[89]\d|\d{3,})\.\d+|[2-9]\.\d+\.\d+)'/,
+    )
   })
 })

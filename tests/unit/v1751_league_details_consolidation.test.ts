@@ -240,8 +240,13 @@ describe('v1.75.1 Dashboard wiring', () => {
 
 describe('v1.75.1 stash-pop regression target', () => {
   it('version is 1.75.4 or later', () => {
+    // v1.78.0 — floor pin relaxed to accept any v1.75.4+ / v1.[76-99].x /
+    // v2+ so future bumps don't churn this file. Same pattern as
+    // v169_availability_toggle.test.ts.
     const v = read('src/lib/version.ts')
-    expect(v).toMatch(/APP_VERSION\s*=\s*'1\.75\.[4-9]'/)
+    expect(v).toMatch(
+      /APP_VERSION\s*=\s*'(?:1\.75\.(?:[4-9]|\d{2,})|1\.(?:7[6-9]|[89]\d|\d{3,})\.\d+|[2-9]\.\d+\.\d+)'/,
+    )
   })
 
   it('LeagueDetailsPanel does NOT have the old non-collapsible header (plain <p> without toggle)', () => {
@@ -308,7 +313,10 @@ describe('v1.75.4 LeagueDetailsPanel positioned between banner and availability 
   })
 
   it('stash-pop: version is 1.75.4 or later', () => {
+    // v1.78.0 — floor pin relaxed (see same-file note above).
     const v = read('src/lib/version.ts')
-    expect(v).toMatch(/APP_VERSION\s*=\s*'1\.75\.[4-9]'/)
+    expect(v).toMatch(
+      /APP_VERSION\s*=\s*'(?:1\.75\.(?:[4-9]|\d{2,})|1\.(?:7[6-9]|[89]\d|\d{3,})\.\d+|[2-9]\.\d+\.\d+)'/,
+    )
   })
 })

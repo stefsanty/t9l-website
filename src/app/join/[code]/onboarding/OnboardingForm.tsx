@@ -18,6 +18,12 @@ interface Props {
   code: string
   playerId: string
   initialName: string
+  /**
+   * v1.78.0 — pre-fill for the email field. Threaded from the page
+   * server-component when the User has a verified email; empty string
+   * for LINE-only users.
+   */
+  initialEmail: string
   initialPosition: 'GK' | 'DF' | 'MF' | 'FW' | null
 }
 
@@ -25,6 +31,7 @@ export default function OnboardingForm({
   code,
   playerId,
   initialName,
+  initialEmail,
   initialPosition,
 }: Props) {
   async function handleSubmit(input: RegistrationFieldsSubmit) {
@@ -32,6 +39,7 @@ export default function OnboardingForm({
       code,
       playerId,
       name: input.name,
+      email: input.email,
       position: input.position === '' ? null : input.position,
       idFrontUrl: input.idFrontUrl,
       idBackUrl: input.idBackUrl,
@@ -45,6 +53,7 @@ export default function OnboardingForm({
     <div data-testid="onboarding-form">
       <RegistrationFields
         initialName={initialName}
+        initialEmail={initialEmail}
         initialPosition={initialPosition}
         submitLabel="Save and finish"
         uploadPathPrefix={`player-id/${playerId}`}
