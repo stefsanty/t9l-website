@@ -396,8 +396,10 @@ describe('v1.63.0 — ClassicLeagueHomepage', () => {
 
   it('accepts a submitGoalSlot prop and renders it between banner and availability', () => {
     expect(CLASSIC_SRC).toMatch(/submitGoalSlot\?:\s*ReactNode/)
+    // submitGoalSlot is after NextMatchdayBanner and before MatchdayAvailability;
+    // v1.75.4 added leagueDetailsPanelSlot between submitGoalSlot and MatchdayAvailability.
     expect(CLASSIC_SRC).toMatch(
-      /<NextMatchdayBanner[\s\S]+?\/>\s*\n\s*\{submitGoalSlot\}\s*\n\s*<MatchdayAvailability\b/,
+      /<NextMatchdayBanner[\s\S]+?\/>\s*\n\s*\{submitGoalSlot\}[\s\S]*?<MatchdayAvailability\b/,
     )
   })
 

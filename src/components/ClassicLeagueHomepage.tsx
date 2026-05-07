@@ -55,6 +55,8 @@ interface ClassicLeagueHomepageProps {
   leagueSlug?: string
   /** Submit-Goal CTA — gated on kickoff in Dashboard. Slot kept neutral here. */
   submitGoalSlot?: ReactNode
+  /** v1.75.4 — LeagueDetailsPanel slot, positioned between NextMatchdayBanner and MatchdayAvailability. */
+  leagueDetailsPanelSlot?: ReactNode
 }
 
 export default function ClassicLeagueHomepage({
@@ -70,6 +72,7 @@ export default function ClassicLeagueHomepage({
   initialMatchdayId,
   leagueSlug,
   submitGoalSlot,
+  leagueDetailsPanelSlot,
 }: ClassicLeagueHomepageProps) {
   const selectedMatchday =
     matchdays.find((m) => m.id === selectedMatchdayId) ?? matchdays[0]
@@ -87,6 +90,8 @@ export default function ClassicLeagueHomepage({
       />
 
       {submitGoalSlot}
+
+      {leagueDetailsPanelSlot}
 
       <MatchdayAvailability
         key={selectedMatchdayId}
