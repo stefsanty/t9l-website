@@ -2,12 +2,15 @@
 
 import { redirect } from 'next/navigation'
 import { getServerSession } from 'next-auth'
+import { waitUntil } from '@vercel/functions'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { revalidate } from '@/lib/revalidate'
 import { validateInvite } from '@/lib/joinValidation'
 import { linkUserToPlayer } from '@/lib/identityLink'
 import { deleteMapping } from '@/lib/playerMappingStore'
+import { sendMail } from '@/lib/email'
+import { applicationReceivedEmail } from '@/lib/emailTemplates'
 
 /**
  * v1.34.0 (PR ζ) — public redemption endpoint.
@@ -519,7 +522,9 @@ export async function completeOnboardingWithId(
 
   const invite = await prisma.leagueInvite.findUnique({
     where: { code: input.code },
-    select: { leagueId: true },
+    // v1.79.0 — `league.name` is needed for the application-received
+    // email queued below. Cheap join (LeagueInvite → League is 1:1).
+    select: { leagueId: true, league: { select: { name: true } } },
   })
   if (!invite) throw new Error('Invite not found')
 
@@ -593,6 +598,29 @@ export async function completeOnboardingWithId(
 
   revalidate({ domain: 'admin', paths: [`/admin/leagues/${invite.leagueId}/players`] })
   revalidate({ domain: 'public' })
+
+  // v1.79.0 — fire-and-forget application-received email. Same shape as
+  // `registerToLeague`: `waitUntil` keeps SMTP latency off the response
+  // critical path; failures are logged for operator grep but never block
+  // the redirect.
+  waitUntil(
+    sendMail({
+      to: trimmedEmail,
+      ...applicationReceivedEmail({
+        leagueName: invite.league.name,
+        playerName: trimmedName,
+      }),
+    }).then((result) => {
+      if (result.status !== 'sent') {
+        console.error(
+          '[v1.79.0 EMAIL] kind=applicant-received path=completeOnboardingWithId status=%s reason=%s',
+          result.status,
+          result.reason,
+        )
+      }
+    }),
+  )
+
   redirect(`/join/${input.code}/welcome`)
 }
 

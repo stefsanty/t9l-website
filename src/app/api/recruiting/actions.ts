@@ -2,10 +2,13 @@
 
 import { getServerSession } from 'next-auth'
 import { redirect } from 'next/navigation'
+import { waitUntil } from '@vercel/functions'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { revalidate } from '@/lib/revalidate'
 import { DEFAULT_LEAGUE_SLUG } from '@/lib/leagueSlug'
+import { sendMail } from '@/lib/email'
+import { applicationReceivedEmail } from '@/lib/emailTemplates'
 
 /**
  * v1.64.0 / v1.65.1 — Application/recruiting workflow.
@@ -408,6 +411,29 @@ export async function registerToLeague(
     paths: [`/admin/leagues/${league.id}/players`],
   })
   revalidate({ domain: 'public' })
+
+  // v1.79.0 — fire-and-forget application-received email. Queued via
+  // `waitUntil` so SMTP latency stays off the response critical path; a
+  // failure here MUST NOT block the redirect. `sendMail` resolves a
+  // discriminated result rather than throwing, so swallow on error and
+  // log so operators can grep for `[v1.79.0 EMAIL]`.
+  waitUntil(
+    sendMail({
+      to: trimmedEmail,
+      ...applicationReceivedEmail({
+        leagueName: league.name,
+        playerName: trimmedName,
+      }),
+    }).then((result) => {
+      if (result.status !== 'sent') {
+        console.error(
+          '[v1.79.0 EMAIL] kind=applicant-received path=registerToLeague status=%s reason=%s',
+          result.status,
+          result.reason,
+        )
+      }
+    }),
+  )
 
   // v1.77.1 — redirect server-side so the NEXT_REDIRECT signal propagates
   // through useTransition even when iOS Safari backgrounds the tab mid-flight.
