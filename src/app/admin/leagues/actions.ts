@@ -354,6 +354,7 @@ export async function updateLeaguePlannedRoster(input: {
 const ALLOWED_BALL_TYPES = ['SOCCER', 'FUTSAL'] as const
 const ALLOWED_GOAL_SIZES = ['FUTSAL', 'YOUTH_SOCCER', 'FULL_SIZE_SOCCER'] as const
 const ALLOWED_THROW_IN_TYPES = ['THROW_IN', 'KICK_IN'] as const
+const ALLOWED_GOAL_KICK_TYPES = ['THROW', 'KICK'] as const
 const ALLOWED_PLAYER_FORMATS = [5, 6, 7, 9, 11] as const
 
 export async function updateLeagueDetails(input: {
@@ -361,6 +362,7 @@ export async function updateLeagueDetails(input: {
   ballType?: 'SOCCER' | 'FUTSAL'
   goalSize?: 'FUTSAL' | 'YOUTH_SOCCER' | 'FULL_SIZE_SOCCER'
   throwInType?: 'THROW_IN' | 'KICK_IN'
+  goalKickType?: 'THROW' | 'KICK'
   offsideRule?: boolean
   backpassRule?: boolean
   matchDurationMinutes?: number | null
@@ -391,6 +393,12 @@ export async function updateLeagueDetails(input: {
       throw new Error(`throwInType must be one of ${ALLOWED_THROW_IN_TYPES.join(', ')}`)
     }
     data.throwInType = input.throwInType
+  }
+  if (input.goalKickType !== undefined) {
+    if (!ALLOWED_GOAL_KICK_TYPES.includes(input.goalKickType)) {
+      throw new Error(`goalKickType must be one of ${ALLOWED_GOAL_KICK_TYPES.join(', ')}`)
+    }
+    data.goalKickType = input.goalKickType
   }
   if (input.offsideRule !== undefined) {
     if (typeof input.offsideRule !== 'boolean') {

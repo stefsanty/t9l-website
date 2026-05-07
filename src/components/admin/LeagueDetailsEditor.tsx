@@ -38,6 +38,7 @@ import { formatJstDate } from '@/lib/jst'
 type BallType = 'SOCCER' | 'FUTSAL'
 type GoalSize = 'FUTSAL' | 'YOUTH_SOCCER' | 'FULL_SIZE_SOCCER'
 type ThrowInType = 'THROW_IN' | 'KICK_IN'
+type GoalKickType = 'THROW' | 'KICK'
 
 interface FeeRow {
   position: string
@@ -53,6 +54,7 @@ interface Props {
   initialBackpassRule: boolean
   initialMatchDurationMinutes: number | null
   initialPlayerFormat: number | null
+  initialGoalKickType: GoalKickType
   initialUnlimitedSubstitutions: boolean
   initialOrganizerMessage: string | null
   initialShowLeagueDetails: boolean
@@ -75,6 +77,7 @@ export default function LeagueDetailsEditor({
   initialBallType,
   initialGoalSize,
   initialThrowInType,
+  initialGoalKickType,
   initialOffsideRule,
   initialBackpassRule,
   initialMatchDurationMinutes,
@@ -95,6 +98,7 @@ export default function LeagueDetailsEditor({
   const [ballType, setBallType] = useState<BallType>(initialBallType)
   const [goalSize, setGoalSize] = useState<GoalSize>(initialGoalSize)
   const [throwInType, setThrowInType] = useState<ThrowInType>(initialThrowInType)
+  const [goalKickType, setGoalKickType] = useState<GoalKickType>(initialGoalKickType)
   const [offsideRule, setOffsideRule] = useState<boolean>(initialOffsideRule)
   const [backpassRule, setBackpassRule] = useState<boolean>(initialBackpassRule)
   const [matchDurationMinutes, setMatchDurationMinutes] = useState<string>(
@@ -159,6 +163,7 @@ export default function LeagueDetailsEditor({
             ballType,
             goalSize,
             throwInType,
+            goalKickType,
             offsideRule,
             // Only persist backpassRule when relevant. Sending the value
             // when the field is hidden would silently overwrite a
@@ -262,7 +267,7 @@ export default function LeagueDetailsEditor({
 
       {/* 4 — Goal size */}
       <div className="space-y-1.5">
-        <label className="text-xs font-medium text-admin-text2 uppercase tracking-wide">Goal size</label>
+        <label className="text-xs font-medium text-admin-text2 uppercase tracking-wide">Goal</label>
         <select
           value={goalSize}
           onChange={(e) => setGoalSize(e.target.value as GoalSize)}
@@ -448,7 +453,7 @@ export default function LeagueDetailsEditor({
 
       {/* 10 — Throw-in vs kick-in */}
       <div className="space-y-1.5">
-        <label className="text-xs font-medium text-admin-text2 uppercase tracking-wide">Restart from sideline</label>
+        <label className="text-xs font-medium text-admin-text2 uppercase tracking-wide">Sideline</label>
         <div className="grid grid-cols-2 gap-3">
           {(['THROW_IN', 'KICK_IN'] as const).map((opt) => (
             <button
@@ -469,7 +474,30 @@ export default function LeagueDetailsEditor({
         </div>
       </div>
 
-      {/* 11 — Backpass (futsal-only) */}
+      {/* 11 — Goal kick */}
+      <div className="space-y-1.5">
+        <label className="text-xs font-medium text-admin-text2 uppercase tracking-wide">Goal kick</label>
+        <div className="grid grid-cols-2 gap-3">
+          {(['THROW', 'KICK'] as const).map((opt) => (
+            <button
+              key={opt}
+              type="button"
+              data-testid={`league-details-goal-kick-${opt.toLowerCase()}`}
+              onClick={() => setGoalKickType(opt)}
+              className={cn(
+                'rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors',
+                goalKickType === opt
+                  ? 'border-admin-green bg-admin-green/10 text-admin-text'
+                  : 'border-admin-border bg-admin-surface2 text-admin-text2 hover:border-admin-border2 hover:text-admin-text',
+              )}
+            >
+              {opt === 'THROW' ? 'Throw' : 'Kick'}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* 12 — Backpass rule (futsal-only) */}
       {ballType === 'FUTSAL' && (
         <div className="flex items-center justify-between gap-3" data-testid="league-details-backpass-toggle">
           <div>

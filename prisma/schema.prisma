@@ -207,6 +207,7 @@ model League {
   ballType               BallType     @default(SOCCER)
   goalSize               GoalSize     @default(FULL_SIZE_SOCCER)
   throwInType            ThrowInType  @default(THROW_IN)
+  goalKickType           GoalKickType @default(KICK)
   offsideRule            Boolean      @default(true)
   // Backpass rule is only meaningful when ballType === FUTSAL. The
   // admin UI conditionally renders the toggle and the public panel
@@ -608,6 +609,15 @@ enum GoalSize {
 enum ThrowInType {
   THROW_IN
   KICK_IN
+}
+
+// v1.75.7 — Goal kick restart type: standard kick (both soccer + futsal)
+// or throw (handball-style formats). Default KICK covers all standard
+// football-derived formats. The field is displayed alongside ThrowInType
+// in the public LeagueDetailsPanel and the admin LeagueDetailsEditor.
+enum GoalKickType {
+  THROW
+  KICK
 }
 
 model GameWeek {

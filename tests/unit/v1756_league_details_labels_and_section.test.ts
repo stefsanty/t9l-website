@@ -196,9 +196,9 @@ describe('v1.75.6 plannedRosterStats helper gains matchdays field', () => {
 })
 
 describe('v1.75.6 stash-pop regression target', () => {
-  it('APP_VERSION is 1.75.6', () => {
+  it('APP_VERSION is 1.75.6 or later', () => {
     const v = read('src/lib/version.ts')
-    expect(v).toMatch(/APP_VERSION\s*=\s*'1\.75\.6'/)
+    expect(v).toMatch(/APP_VERSION\s*=\s*'1\.75\.[6-9]'/)
   })
 
   it('LeagueDetailsPanel does NOT contain current-players-row (stash-pop gate)', () => {
