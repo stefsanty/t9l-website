@@ -31,8 +31,17 @@ Operator-side outstanding actions: env vars to set, scripts to run, manual data 
 
 - **HLEN check on legacy `line-player-map` Redis hash** (carried from v1.12.0 out-of-scope item). If `redis.hlen('line-player-map') === 0`, drop the `legacyRedisCleanup` helper + the dropPic branch from `/api/assign-player/route.ts`. Otherwise drain residue first.
 
+- **Delete orphan Sheets-cutover Setting rows** (post-v1.71.0 cleanup). The `s-public-dataSource-global` and `s-public-writeMode-global` rows are no longer read by any code path. Cosmetic-only cleanup:
+  ```sql
+  DELETE FROM "Setting"
+   WHERE id IN ('s-public-dataSource-global', 's-public-writeMode-global');
+  ```
+
+- **Remove Sheets-related env vars from Vercel** (post-v1.71.0). `GOOGLE_SHEET_ID` / `GOOGLE_SERVICE_ACCOUNT_EMAIL` / `GOOGLE_PRIVATE_KEY` are no longer read by any code path. Strip from prod + preview project settings when convenient (kept for now in case of accidental rollback).
+
 ## Done (most-recent-5; older entries cleared)
 
+- v1.71.0 — Retire Google Sheets surface (delete `lib/sheets.ts` + `lib/mock-data.ts` + `scripts/importFromSheets.ts`; remove `googleapis` dep; drop `dataSource` / `writeMode` toggles)
 - v1.70.0 — Move ID images from Player to User (migration `20260509000000_move_id_to_user`)
 - v1.7.0 — RSVP-on-Redis cutover (`backfillRedisRsvpFromPrisma --apply` against prod, 12 GameWeeks seeded)
 - v1.5.0 — Redis-canonical lineId→Player auth path (24h sliding TTL)

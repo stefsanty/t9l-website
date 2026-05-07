@@ -2,8 +2,6 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { waitUntil } from '@vercel/functions'
 import { authOptions } from '@/lib/auth'
-import { writeRosterAvailability } from '@/lib/sheets'
-import { getWriteMode, type WriteMode } from '@/lib/settings'
 import { prisma } from '@/lib/prisma'
 import { setRsvpOrThrow } from '@/lib/rsvpStore'
 import { getDefaultLeagueId } from '@/lib/leagueSlug'
@@ -53,10 +51,8 @@ export function parseMatchdayId(matchdayId: string): number | null {
 // and this function runs in `waitUntil` so the response returns as soon as
 // the Redis write lands (and the gameWeek lookup it requires).
 //
-// The Prisma upsert is the durable secondary that backs admin queries and
-// the recovery script. The Sheets dual-write (when `writeMode === 'dual'`)
-// rides along — pre-v1.8.0 it was already best-effort with a console.warn
-// on failure, so the behavior here is identical except for being deferred.
+// v1.71.0 — Sheets dual-write retired with the rest of the Sheets surface.
+// Postgres is the only durable secondary now.
 //
 // On Prisma failure we emit a `[v1.8.0 DRIFT]` log. Operator recovery via
 // `scripts/auditRedisVsPrisma.ts --repair-prisma`.
@@ -64,12 +60,9 @@ async function persistRsvpToPrisma(args: {
   gameWeekId: string
   dbPlayerId: string
   rsvp: RsvpStatus | null
-  writeMode: WriteMode
   playerSlug: string
-  matchdayId: string
-  status: IncomingStatus
 }): Promise<void> {
-  const { gameWeekId, dbPlayerId, rsvp, writeMode, playerSlug, matchdayId, status } = args
+  const { gameWeekId, dbPlayerId, rsvp, playerSlug } = args
   try {
     await prisma.availability.upsert({
       where: {
@@ -94,23 +87,6 @@ async function persistRsvpToPrisma(args: {
       rsvp,
       err,
     )
-  }
-
-  // Sheets dual-write. Identical failure semantics to pre-v1.8.0 in dual
-  // mode: log-and-continue. Sheets-only mode is handled separately on the
-  // synchronous path (see POST below) — this code only runs when Redis is
-  // canonical (writeMode in {'dual', 'db-only'}).
-  if (writeMode === 'dual') {
-    try {
-      await writeRosterAvailability(playerSlug, matchdayId.toLowerCase(), status as 'GOING' | 'UNDECIDED' | '')
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'sheets write failed'
-      console.warn('[rsvp] Sheets dual-write failed; continuing', {
-        matchdayId,
-        playerId: playerSlug,
-        err: message,
-      })
-    }
   }
 }
 
@@ -153,32 +129,11 @@ export async function POST(req: Request) {
     )
   }
 
-  const writeMode = await getWriteMode()
   const dbStatus = mapStatusToDb(status as IncomingStatus)
   // session.playerId is the public slug (e.g. "ian-noseda"); DB ids carry "p-" prefix.
   const dbPlayerId = `p-${session.playerId}`
 
-  // ── sheets-only mode: pre-cutover path ──────────────────────────────────
-  // Sheets is canonical; no Redis or Prisma writes. Identical to pre-v1.8.0
-  // behavior — fail-on-error, no waitUntil.
-  if (writeMode === 'sheets-only') {
-    try {
-      await writeRosterAvailability(
-        session.playerId,
-        matchdayId.toLowerCase(),
-        status as 'GOING' | 'UNDECIDED' | '',
-      )
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'sheets write failed'
-      return NextResponse.json(
-        { error: 'rsvp-sheets-failed', detail: message },
-        { status: 500 },
-      )
-    }
-    return NextResponse.json({ ok: true })
-  }
-
-  // ── dual / db-only mode: Redis canonical sync, Prisma + Sheets deferred ──
+  // Redis canonical sync, Prisma deferred via waitUntil.
   // The gameWeek lookup stays synchronous because the Redis key shape and
   // TTL math both need `gameWeek.id` and `gameWeek.startDate`. Single keyed
   // findUnique — typically <200ms even cold.
@@ -206,18 +161,15 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'rsvp-redis-failed', detail: message }, { status: 500 })
   }
 
-  // Defer the Prisma upsert + (in dual mode) the Sheets write to background.
-  // The user's perceived latency is bounded by the gameWeek findUnique +
-  // setRsvpOrThrow above; everything else lands after the response returns.
+  // Defer the Prisma upsert to background. The user's perceived latency is
+  // bounded by the gameWeek findUnique + setRsvpOrThrow above; the durable
+  // upsert lands after the response returns.
   waitUntil(
     persistRsvpToPrisma({
       gameWeekId: gameWeek.id,
       dbPlayerId,
       rsvp: dbStatus.rsvp,
-      writeMode,
       playerSlug: session.playerId,
-      matchdayId,
-      status: status as IncomingStatus,
     }),
   )
 

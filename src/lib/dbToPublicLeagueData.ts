@@ -44,8 +44,7 @@ const EMPTY_RESULT: DbToPublicLeagueDataResult = {
 
 /**
  * Adapter: read a League's data from Postgres via Prisma and reshape into the
- * public `LeagueData` contract — the same shape `parseAllData()` produces
- * from Google Sheets, so consumer components don't have to change.
+ * public `LeagueData` contract that consumer components expect.
  *
  * v1.23.0 — accepts optional `leagueId`. When supplied, fetches that specific
  * league. When omitted, falls back to the league flagged `isDefault: true`
@@ -66,7 +65,8 @@ const EMPTY_RESULT: DbToPublicLeagueDataResult = {
  * Notes on contract preservation (regression-prone areas — see CLAUDE.md "Important Notes"):
  *  - Match.kickoff / Match.fullTime are JST "HH:MM" strings, not ISO timestamps.
  *  - Team/Player ids in the public shape are slugs ("mariners-fc", "ian-noseda"),
- *    matching what `slugify()` produces in `lib/data.ts`. DB ids carry "t-"/"p-" prefixes.
+ *    matching what `slugify()` produces in `lib/data.ts` (and the slug helpers in `lib/ids.ts`).
+ *    DB ids carry "t-"/"p-" prefixes.
  *  - Goal.scorer / Goal.assister are player NAMES (not ids) — stats.ts indexes by name.
  *  - sittingOutTeamId is derived (the team in the league that doesn't appear in any
  *    of this matchday's matches), not stored in DB.

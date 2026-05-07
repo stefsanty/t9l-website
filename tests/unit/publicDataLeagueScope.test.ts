@@ -37,18 +37,6 @@ vi.mock('@/lib/prisma', () => ({
   },
 }))
 
-vi.mock('@/lib/settings', () => ({
-  getDataSource: vi.fn().mockResolvedValue('db'),
-}))
-
-vi.mock('@/lib/sheets', () => ({
-  fetchSheetData: vi.fn(),
-}))
-
-vi.mock('@/lib/data', () => ({
-  parseAllData: vi.fn(),
-}))
-
 vi.mock('@/lib/rsvpStore', () => ({
   getRsvpForGameWeeks: vi.fn().mockResolvedValue(new Map()),
   setRsvp: vi.fn(),

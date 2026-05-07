@@ -11,7 +11,6 @@
     "test:run": "vitest run",
     "test:e2e": "playwright test",
     "test:ci": "vitest run",
-    "db:import": "npx ts-node --project tsconfig.scripts.json scripts/importFromSheets.ts",
     "db:studio": "npx prisma studio",
     "db:migrate": "npx prisma migrate dev",
     "db:generate": "npx prisma generate"
@@ -30,7 +29,6 @@
     "@vercel/functions": "^3.4.4",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "googleapis": "^171.4.0",
     "lucide-react": "^1.11.0",
     "next": "16.2.2",
     "next-auth": "^4.24.13",

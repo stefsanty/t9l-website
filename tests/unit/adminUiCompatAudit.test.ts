@@ -78,11 +78,10 @@ describe('v1.55.0 — SettingsTab user-facing label + URL preview', () => {
     expect(src).toMatch(/data-testid="settings-tab-slug-helper"/)
   })
 
-  it('data-source helper copy says "non-default leagues" not "subdomain leagues"', () => {
-    const src = stripComments(read(path))
-    expect(src).toMatch(/non-default leagues already read from the database/)
-    expect(src).not.toMatch(/subdomain leagues already read from the database/)
-  })
+  // v1.71.0 — the "Public site source-of-truth" data-source/write-mode
+  // section was removed when the Sheets surface was retired. Asserting on
+  // its helper copy used to be a regression target; now the regression
+  // target is its absence (covered in tests/unit/sheetsRemoved.test.ts).
 })
 
 describe('v1.55.0 — admin/page.tsx dashboard tile URL preview', () => {

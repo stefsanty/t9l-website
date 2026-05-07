@@ -24,10 +24,9 @@ import { updateTag, revalidateTag, revalidatePath } from 'next/cache'
  *                  public dashboard reads. Use `paths` to add the specific
  *                  admin route(s) the action just mutated (e.g.
  *                  `/admin/leagues/${id}/schedule`).
- *   - `settings` — `settings` + the public/admin tag set. The `dataSource`
- *                  + `writeMode` flips propagate to both the settings cache
- *                  AND the public cache (the public read switches sources
- *                  on the next render).
+ *   - `settings` — `settings` + the public/admin tag set. Setting flips
+ *                  propagate to both the settings cache AND the public cache
+ *                  on the next render.
  *   - `all`      — `public-data` + `leagues` + `settings`. For nuclear
  *                  options (rare).
  *

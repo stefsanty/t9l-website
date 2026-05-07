@@ -23,10 +23,11 @@
 >
 > **Recent ledger (top 20 PRs in full; older entries condensed below).**
 >
+> **Current release:** v1.71.0 — **Retire the Google Sheets surface entirely.** App fully cut over to Postgres at v1.0.x; the legacy Sheets parser path (`dataSource='sheets'`) and the Sheets RSVP dual-write (`writeMode='dual'`) had been dormant since 2026-04-27 (operational `dataSource='db'` flip). v1.71.0 deletes the dead weight. **Files deleted:** [`src/lib/sheets.ts`](src/lib/sheets.ts) (`fetchSheetData` / `writeRosterAvailability` / `RawSheetData` — 127 lines); [`src/lib/mock-data.ts`](src/lib/mock-data.ts) (Sheets-credentials fallback fixtures — 149 lines); [`scripts/importFromSheets.ts`](scripts/importFromSheets.ts) (legacy one-shot importer — 374 lines). **Files archived (not deleted) for operator reference:** [`scripts/_archive/sheetsToDbBackfill.ts`](scripts/_archive/sheetsToDbBackfill.ts) and [`scripts/_archive/backfillMatchEventsFromSheet.ts`](scripts/_archive/backfillMatchEventsFromSheet.ts). Both `tsconfig.json` and `tsconfig.scripts.json` gain `exclude: ["scripts/_archive"]` so archived scripts no longer typecheck against the live tree. **Refactors:** [`src/lib/data.ts`](src/lib/data.ts) collapses to just `slugify()` (the load-bearing helper used by `/api/assign-player`'s LINE-CDN mirror); the Sheets parser family (`parseTeams` / `parsePlayers` / `parseSchedule` / `parseGoals` / `parseAllData` / `computeMatchScores` / `normalizeTeamName` / `normalizeDate` / `resolveMatchdayId`) is gone. [`src/lib/publicData.ts`](src/lib/publicData.ts) drops the `getFromSheets` cache wrapper and the dispatcher; `getPublicLeagueData` / `getPlayerByPublicId` go straight to the DB reader. [`src/app/api/rsvp/route.ts`](src/app/api/rsvp/route.ts) drops the `writeRosterAvailability` import + the `writeMode === 'sheets-only'` branch + the dual-write call inside `persistRsvpToPrisma`; Postgres is now the only durable secondary. [`src/lib/settings.ts`](src/lib/settings.ts) loses `DataSource` / `WriteMode` types, `SETTING_IDS`, `resolveDataSource`, `getDataSource`, `getWriteMode` (the `Setting` rows on prod become harmless dead data). [`src/components/admin/SettingsTab.tsx`](src/components/admin/SettingsTab.tsx) drops the entire "Public site source-of-truth" section (data-source toggle + write-mode 3-button group). [`src/app/admin/leagues/[id]/settings/page.tsx`](src/app/admin/leagues/[id]/settings/page.tsx) stops fetching `getDataSource` / `getWriteMode` and stops threading `initialDataSource` / `initialWriteMode` props. [`src/app/admin/leagues/actions.ts`](src/app/admin/leagues/actions.ts) drops `setDataSource` and `setWriteMode` server actions + the `SETTING_IDS` / `DataSource` / `WriteMode` import from settings. [`src/lib/dbToPublicLeagueData.ts`](src/lib/dbToPublicLeagueData.ts) and [`src/lib/revalidate.ts`](src/lib/revalidate.ts) get docstring polish dropping stale `parseAllData` / `dataSource` references. **package.json:** `googleapis: ^171.4.0` removed from dependencies; `db:import` script removed. `npm install` confirms no transitive dep restored — `next-auth/providers/google` is OAuth-only. **Tests:** new [`tests/unit/sheetsRemoved.test.ts`](tests/unit/sheetsRemoved.test.ts) (34 cases — files removed (`src/lib/sheets.ts` / `src/lib/mock-data.ts` / `scripts/importFromSheets.ts` are gone; `sheetsToDbBackfill.ts` + `backfillMatchEventsFromSheet.ts` live in `_archive/`); package.json has no `googleapis` dep + no `db:import` script (regression target — re-adding either re-introduces the dependency); `lib/settings.ts` exports neither `DataSource` / `WriteMode` types nor `getDataSource` / `getWriteMode` / `resolveDataSource` / `SETTING_IDS`; admin actions exports neither `setDataSource` / `setWriteMode`; SettingsTab does not import `setDataSource`/`setWriteMode`/`DataSource`/`WriteMode` and does not render the legacy "Public site source-of-truth" section heading or the "Google Sheets" button label; rsvp/route.ts does not import `writeRosterAvailability` or `getWriteMode` and does not branch on `writeMode === 'sheets-only'`; publicData.ts does not import `fetchSheetData` / `parseAllData` / `getDataSource` and does not declare `getFromSheets`; data.ts exports `slugify` and does NOT export the parser family; admin Settings page does not import `getDataSource` / `getWriteMode` and does not pass `initialDataSource` / `initialWriteMode` props). [`tests/unit/settings.test.ts`](tests/unit/settings.test.ts) reduced to the surviving `resolveIdentityReadSource` + `SETTING_ID_IDENTITY_READ_SOURCE` cases (the `SETTING_IDS` / `resolveDataSource` blocks removed). [`tests/unit/rsvpRouteWriteInversion.test.ts`](tests/unit/rsvpRouteWriteInversion.test.ts) and [`tests/unit/rsvpRouteIntegration.test.ts`](tests/unit/rsvpRouteIntegration.test.ts) drop their `@/lib/sheets` + `@/lib/settings#getWriteMode` mocks and the `sheets-only` mode branch case. [`tests/unit/publicDataLeagueScope.test.ts`](tests/unit/publicDataLeagueScope.test.ts) drops the same three mocks. Deleted: [`tests/unit/backfillHelpers.test.ts`](tests/unit/backfillHelpers.test.ts) and [`tests/unit/backfillMatchEvents.test.ts`](tests/unit/backfillMatchEvents.test.ts) (imported the now-archived backfill scripts). [`tests/unit/adminUiCompatAudit.test.ts`](tests/unit/adminUiCompatAudit.test.ts) drops the "data-source helper copy" case (the section the case asserted on no longer exists). 2039 passed | 2 skipped. Type-check clean. Minor bump (1.70.4 → 1.71.0) — meaningful surface change (admin loses the data-source/write-mode toggles; new dependency-removal regression targets). **Operator follow-up (queued in TODO.md):** delete the now-orphan `Setting` rows (`s-public-dataSource-global` + `s-public-writeMode-global`) when convenient — both rows are read by no code path post-v1.71.0; cosmetic-only cleanup. **Out of scope (deferred):** removing the `GOOGLE_SHEET_ID` / `GOOGLE_SERVICE_ACCOUNT_EMAIL` / `GOOGLE_PRIVATE_KEY` env vars from Vercel project settings (no code reads them anymore — leaving them is harmless; cleanup at operator's discretion); deleting the Setting seed migration file (rolling back unused migrations is invasive — keep it for historical record).
 >
 > v1.69.1 — **Bug fix: `/recruit/[slug]` and `/join/[code]/onboarding` form submissions failed with "An unexpected response was received from the server" because Next.js's server-action body limit (6MB, set in v1.62.0) was below v1.68.0's max payload (21MB).** User-reported: filling the recruit form with name + position + ID front + ID back + (optional) profile picture and submitting → server error → no Player or PLM created. **Diagnosis:** [`RegistrationFields.tsx:42-44`](src/components/registration/RegistrationFields.tsx) caps each ID file at 8MB and the optional profile picture at 5MB, so a complete submission can be up to 21MB; even a single ID file above 6MB triggers the framework's body-limit rejection BEFORE the server action runs, surfacing the exact "unexpected response" error message [`next.config.ts`](next.config.ts) already documents in its v1.62.0 docstring. Same bug shape as v1.62.0 (which had bumped the limit from 1MB → 6MB to fit the `/account/player` 5MB picture upload); v1.68.0 changed the workload without bumping the limit. NOT a `'use server'` non-async-export bug (every export in `src/app/api/recruiting/actions.ts` and `src/app/join/[code]/actions.ts` is either an async function or an erased TypeScript type/interface — Next 16's serialization contract is satisfied). NOT a Vercel Blob upload bug (`BLOB_READ_WRITE_TOKEN` is set on prod; the action's gate runs but never gets reached). **Fix:** [`next.config.ts`](next.config.ts) bumps `experimental.serverActions.bodySizeLimit` from `'6mb'` to `'25mb'` (21MB max payload + multipart/FormData overhead headroom). One-line change. **Tests:** new `v1.69.1 — body limit raised again for /recruit/[slug] multi-file upload` block in [`tests/unit/accountPlayerCleanupV162.test.ts`](tests/unit/accountPlayerCleanupV162.test.ts) (4 cases — limit ≥ 21MB; regression target that the literal `'6mb'` value is gone; `ID_MAX_BYTES` stays at 8MB so the 21MB floor is the right one; `PIC_MAX_BYTES` stays at 5MB same). Existing v1.62.0 test relaxed from literal `'6mb'` to flexible `'<digits>mb'` shape (the v1.62.0 floor check `>= 5MB` still passes at 25MB so the original architectural intent stays pinned). [`tests/unit/v169_availability_toggle.test.ts:158-163`](tests/unit/v169_availability_toggle.test.ts) version-pin floor relaxed from literal `1.69.0` to "any v1.69.x or later" — the pinned-literal pattern conflicts with patch bumps inside the same minor version (a v1.69.0 test pinning the literal would force v1.69.1 to also touch that file, fanning the fix across an unrelated test). Stash-pop sanity check confirmed: reverting just `next.config.ts` makes 2 of 4 new cases fail. 2023 passed | 2 skipped. Type-check clean. Patch bump (1.69.0 → 1.69.1) — bug fix on existing config; no schema change, no contract change to any server action, no UX flow change. **v1.70.0 queued (separate PR):** move `Player.idFrontUrl` / `idBackUrl` / `idUploadedAt` to User-level (one person, one ID — identity proof is a User-level attribute, not per-league; mirrors profile-picture being on User).
 >
-> **Current release:** v1.70.0 — **Move ID images from Player to User.** Identity proof (driver's license / passport photos) is per-person, not per-league. One person, one ID. Pre-v1.70.0 `Player.idFrontUrl` / `Player.idBackUrl` / `Player.idUploadedAt` could differ across a User's Players in different leagues, but the post-v1.65.x model has Player as global identity (1:1 with User via `Player.userId @unique`); ID belongs at the User level for consistency. **Schema:** new migration [`20260509000000_move_id_to_user`](prisma/migrations/20260509000000_move_id_to_user/migration.sql) — single transaction: ADD `User.idFrontUrl String?` / `idBackUrl String?` / `idUploadedAt DateTime?` → BACKFILL via `UPDATE "User" ... FROM (SELECT DISTINCT ON ("userId") ... FROM "Player" WHERE "userId" IS NOT NULL AND "idUploadedAt" IS NOT NULL ORDER BY "userId", "idUploadedAt" DESC NULLS LAST) src WHERE u."id" = src."userId"` (DISTINCT ON guards the defensive multi-Player-per-User edge case; the v1.65.x `User.playerId @unique` + `Player.userId @unique` pair already enforces 1:1, so realistic backfill is one-to-one) → DROP the three columns from Player. Rollback recipe inline in the migration SQL header. **Write paths flipped to User:** [`submitIdUpload`](src/app/join/[code]/actions.ts) and [`completeOnboardingWithId`](src/app/join/[code]/actions.ts) write `tx.user.update({ where: { id: userId }, data: { idFrontUrl, idBackUrl, idUploadedAt } })` instead of `tx.player.update`. [`registerToLeague`](src/app/api/recruiting/actions.ts) (the State C recruit flow) creates Player WITHOUT the ID columns then puts them on the User.update alongside `playerId: created.id`. **Read paths flipped to User:** [`adminPurgePlayerId`](src/app/admin/leagues/actions.ts) resolves `Player.userId → User.id` then DELs Blob assets + nulls the User columns (no-op when Player has no User binding). [`/join/[code]/id-upload`](src/app/join/[code]/id-upload/page.tsx) reads `idUploadedAt` from User. [`/account/player`](src/app/account/player/page.tsx) `hasUploadedId` derives from User. [`getLeaguePlayers`](src/lib/admin-data.ts) gains a 7th tuple element `idDataByPlayerId` — built from `prisma.user.findMany({ where: { playerId: { not: null }, idUploadedAt: { not: null } }, select: ... })` and keyed on `User.playerId` so the page-level synthetic-row builder can surface ID state per Player without changing the in-memory `PlayerRow` shape (callers continue to read `idFrontUrl/idBackUrl/idUploadedAt` off the row). The PlayersTab + IdViewerDialog client components are unchanged — they consume the in-memory row, which now sources from User instead of Player. **Tests:** new [`tests/unit/v170_id_to_user_migration.test.ts`](tests/unit/v170_id_to_user_migration.test.ts) (20 cases — schema asserts User has the three columns + Player no longer does (regression target — re-adding `Player.idFrontUrl` would fail); migration ADD-then-BACKFILL-then-DROP ordering pinned via index comparisons; backfill copies all three columns via `Player.userId` and uses `DISTINCT ON ("userId") ... ORDER BY "userId", "idUploadedAt" DESC` for the multi-Player-per-User defense; write paths assert `tx.user.update` block carries the URLs while `tx.player.update` does NOT (regression target — restoring the old write target would re-introduce the per-league split); read paths assert `getLeaguePlayers` exposes `idDataByPlayerId`, the players page consumes `idDataByPlayerId[a.player.id]?.idFrontUrl` not `a.player.idFrontUrl`, the id-upload page reads `prisma.user.findUnique({ select: { idUploadedAt: true } })`, account/player reads `idUser?.idUploadedAt`, and `adminPurgePlayerId` resolves the User and writes via `prisma.user.update`). Updated [`tests/unit/idUploadActions.test.ts`](tests/unit/idUploadActions.test.ts) (rewritten to mock `prisma.user.findUnique` + `prisma.user.update`; happy paths assert writes go to User not Player; new no-op case for unlinked Player). Updated [`tests/unit/idUploadSchema.test.ts`](tests/unit/idUploadSchema.test.ts) — keeps the historical assertion that the v1.35.0 migration file is purely additive (still true on disk; that file is unchanged), drops the schema-state assertion that referenced the now-moved Player columns. Updated [`tests/unit/v164_application_workflow.test.ts`](tests/unit/v164_application_workflow.test.ts) and [`tests/unit/v165_1_dual_write_state_d.test.ts`](tests/unit/v165_1_dual_write_state_d.test.ts) for the new 7-element tuple shape from `getLeaguePlayers`. Updated [`tests/unit/adminLineDataJoins.test.ts`](tests/unit/adminLineDataJoins.test.ts) — `prisma.user.findMany` mock added; default `[]`. Updated [`tests/unit/identityUnificationAudit.test.ts`](tests/unit/identityUnificationAudit.test.ts) — tightened the "no standalone tx.user.update({...playerId})" regex to require `playerId` as the FIRST data key (matches the pre-λ regression target shape exactly; post-v1.70.0 the file does carry `tx.user.update` blocks for ID image writes which the looser regex would have falsely matched). 2043 passed | 2 skipped. Type-check clean. Stash-pop sanity check confirmed: reverting just the source changes makes 14/20 of the new v170 cases fail (regression target catches the broken state). Minor bump (1.69.1 → 1.70.0) — schema migration that drops three columns from Player + meaningful behavior change to the read/write paths. **Out of scope (deferred):** any UI surface that lets users *replace* their ID directly (admin still purges + user re-uploads through the existing `/join/[code]/id-upload` flow when needed); migration of `User.image` ↔ `Player.pictureUrl` consolidation (still queued at "stage 4" in the auth chain).
+> v1.70.0 — **Move ID images from Player to User.** Identity proof (driver's license / passport photos) is per-person, not per-league. One person, one ID. Pre-v1.70.0 `Player.idFrontUrl` / `Player.idBackUrl` / `Player.idUploadedAt` could differ across a User's Players in different leagues, but the post-v1.65.x model has Player as global identity (1:1 with User via `Player.userId @unique`); ID belongs at the User level for consistency. **Schema:** new migration [`20260509000000_move_id_to_user`](prisma/migrations/20260509000000_move_id_to_user/migration.sql) — single transaction: ADD `User.idFrontUrl String?` / `idBackUrl String?` / `idUploadedAt DateTime?` → BACKFILL via `UPDATE "User" ... FROM (SELECT DISTINCT ON ("userId") ... FROM "Player" WHERE "userId" IS NOT NULL AND "idUploadedAt" IS NOT NULL ORDER BY "userId", "idUploadedAt" DESC NULLS LAST) src WHERE u."id" = src."userId"` (DISTINCT ON guards the defensive multi-Player-per-User edge case; the v1.65.x `User.playerId @unique` + `Player.userId @unique` pair already enforces 1:1, so realistic backfill is one-to-one) → DROP the three columns from Player. Rollback recipe inline in the migration SQL header. **Write paths flipped to User:** [`submitIdUpload`](src/app/join/[code]/actions.ts) and [`completeOnboardingWithId`](src/app/join/[code]/actions.ts) write `tx.user.update({ where: { id: userId }, data: { idFrontUrl, idBackUrl, idUploadedAt } })` instead of `tx.player.update`. [`registerToLeague`](src/app/api/recruiting/actions.ts) (the State C recruit flow) creates Player WITHOUT the ID columns then puts them on the User.update alongside `playerId: created.id`. **Read paths flipped to User:** [`adminPurgePlayerId`](src/app/admin/leagues/actions.ts) resolves `Player.userId → User.id` then DELs Blob assets + nulls the User columns (no-op when Player has no User binding). [`/join/[code]/id-upload`](src/app/join/[code]/id-upload/page.tsx) reads `idUploadedAt` from User. [`/account/player`](src/app/account/player/page.tsx) `hasUploadedId` derives from User. [`getLeaguePlayers`](src/lib/admin-data.ts) gains a 7th tuple element `idDataByPlayerId` — built from `prisma.user.findMany({ where: { playerId: { not: null }, idUploadedAt: { not: null } }, select: ... })` and keyed on `User.playerId` so the page-level synthetic-row builder can surface ID state per Player without changing the in-memory `PlayerRow` shape (callers continue to read `idFrontUrl/idBackUrl/idUploadedAt` off the row). The PlayersTab + IdViewerDialog client components are unchanged — they consume the in-memory row, which now sources from User instead of Player. **Tests:** new [`tests/unit/v170_id_to_user_migration.test.ts`](tests/unit/v170_id_to_user_migration.test.ts) (20 cases — schema asserts User has the three columns + Player no longer does (regression target — re-adding `Player.idFrontUrl` would fail); migration ADD-then-BACKFILL-then-DROP ordering pinned via index comparisons; backfill copies all three columns via `Player.userId` and uses `DISTINCT ON ("userId") ... ORDER BY "userId", "idUploadedAt" DESC` for the multi-Player-per-User defense; write paths assert `tx.user.update` block carries the URLs while `tx.player.update` does NOT (regression target — restoring the old write target would re-introduce the per-league split); read paths assert `getLeaguePlayers` exposes `idDataByPlayerId`, the players page consumes `idDataByPlayerId[a.player.id]?.idFrontUrl` not `a.player.idFrontUrl`, the id-upload page reads `prisma.user.findUnique({ select: { idUploadedAt: true } })`, account/player reads `idUser?.idUploadedAt`, and `adminPurgePlayerId` resolves the User and writes via `prisma.user.update`). Updated [`tests/unit/idUploadActions.test.ts`](tests/unit/idUploadActions.test.ts) (rewritten to mock `prisma.user.findUnique` + `prisma.user.update`; happy paths assert writes go to User not Player; new no-op case for unlinked Player). Updated [`tests/unit/idUploadSchema.test.ts`](tests/unit/idUploadSchema.test.ts) — keeps the historical assertion that the v1.35.0 migration file is purely additive (still true on disk; that file is unchanged), drops the schema-state assertion that referenced the now-moved Player columns. Updated [`tests/unit/v164_application_workflow.test.ts`](tests/unit/v164_application_workflow.test.ts) and [`tests/unit/v165_1_dual_write_state_d.test.ts`](tests/unit/v165_1_dual_write_state_d.test.ts) for the new 7-element tuple shape from `getLeaguePlayers`. Updated [`tests/unit/adminLineDataJoins.test.ts`](tests/unit/adminLineDataJoins.test.ts) — `prisma.user.findMany` mock added; default `[]`. Updated [`tests/unit/identityUnificationAudit.test.ts`](tests/unit/identityUnificationAudit.test.ts) — tightened the "no standalone tx.user.update({...playerId})" regex to require `playerId` as the FIRST data key (matches the pre-λ regression target shape exactly; post-v1.70.0 the file does carry `tx.user.update` blocks for ID image writes which the looser regex would have falsely matched). 2043 passed | 2 skipped. Type-check clean. Stash-pop sanity check confirmed: reverting just the source changes makes 14/20 of the new v170 cases fail (regression target catches the broken state). Minor bump (1.69.1 → 1.70.0) — schema migration that drops three columns from Player + meaningful behavior change to the read/write paths. **Out of scope (deferred):** any UI surface that lets users *replace* their ID directly (admin still purges + user re-uploads through the existing `/join/[code]/id-upload` flow when needed); migration of `User.image` ↔ `Player.pictureUrl` consolidation (still queued at "stage 4" in the auth chain).
 >
 > v1.61.0 — **Self-link gate unified: any authenticated session (LINE / Google / email) can claim a roster slot via `/assign-player` when `League.allowSelfLink === true`.** User-reported reframe of v1.60.1's copy fix: "no the problem is why can't this user select to assign themselves to a player?" The actual bug was two-layered: (1) the v1.39.2 LINE-only gate on `/assign-player` page + API blocked Google/email users entirely, regardless of league setting; (2) the account menu dropdown's no-player branch surfaced a dead-end "Need an invite to join" message instead of the picker CTA, even when the league had self-linking enabled. **Provider type is no longer a gate. The toggle is.** v1.61.0 collapses the two-axis gate (provider + toggle) to one axis (toggle only). **Page gate change** ([`src/app/assign-player/page.tsx`](src/app/assign-player/page.tsx)): the v1.39.2 `NeedInviteSurface` early-return for `session && !session.lineId` is gone (regression target — `function NeedInviteSurface` and `data-testid="assign-player-need-invite"` removed entirely). The v1.60.0 `SelfLinkDisabledSurface` gate stays as the sole gate; it fires only when `allowSelfLink === false`. **API gate change** ([`src/app/api/assign-player/route.ts`](src/app/api/assign-player/route.ts)): POST + DELETE now accept any session with EITHER `lineId` OR `userId` — the 401 gate is `!session || (!session.lineId && !session.userId)`. Provider-specific write paths branch internally: LINE users continue on the v1.5.0 + v1.8.0 path (Redis-canonical synchronous write via `setMappingOrThrow` → Prisma deferred via `waitUntil`); non-LINE users (Google / email) take a synchronous Prisma transaction via two new helpers `persistAssignmentToPrismaForUser` + `persistUnassignmentToPrismaForUser` that wrap the v1.39.0 `linkUserToPlayer` (User.id-keyed) and the new v1.61.0 `unlinkUserFromPlayer` helper. **Why synchronous Prisma for non-LINE users:** for LINE users the JWT callback's read path hits Redis-canonical so the deferred Prisma write doesn't matter for read-your-own-writes. Non-LINE users have no Redis-canonical store today; the JWT callback resolves their `playerId` via Prisma `User.playerId @unique`. If the Prisma write deferred via `waitUntil`, the immediate `await update()` on the client (next-auth refreshSession) would race the deferred write and surface stale (orphan) state in the session. Cost: ~50-300ms warm and 1-3s cold per link, paid only by non-LINE users (a minority today). v1.62.0+ may add a userId-keyed Redis namespace to invert this back. **New helper** [`src/lib/identityLink.ts#unlinkUserFromPlayer(tx, { userId })`](src/lib/identityLink.ts) — mirror of `unlinkPlayerFromUser` but keyed on `User.id @unique` instead of `User.lineId @unique`. Returns `{ unlinkedPlayerId }` so the caller can drop downstream artifacts (picture-mirror Redis key etc.) without a second query. Non-LINE users typically have `User.lineId === null` so the legacy `unlinkPlayerFromUser` would no-op for them; this helper closes that gap. **JWT callback update** ([`src/lib/auth.ts`](src/lib/auth.ts)): the v1.58.0 `if (!token.lineId)` short-circuit (skip `getDefaultLeagueId` + `getPlayerMapping` for non-LINE sessions) is REVERTED in v1.61.0. The callback now always reaches `getDefaultLeagueId` (cached, ~ms warm) AND a new `getLeagueAllowSelfLink(leagueId)` read so `session.allowSelfLink` is populated for every session regardless of provider. New resolver `getPlayerMappingByUserId(userId, leagueId)` — same chain as `getPlayerMappingViaUser` but keyed on `User.id` — runs in the non-LINE branch so `session.playerId` populates for Google/email users post-link. **Cost on the non-LINE auth path:** one extra cached read (`unstable_cache(getLeagueAllowSelfLink, 30s, ['leagues'])`) and one Prisma round-trip per JWT callback for non-LINE users WITH a User.playerId binding. Pre-link non-LINE users still fall through quickly (User has no playerId, the resolver returns null without hitting Player). **`session.allowSelfLink` surfaced** ([`src/types/next-auth.d.ts`](src/types/next-auth.d.ts)) so the account menu can render the right CTA without a fetch. **Account menu** ([`src/components/LineLoginButton.tsx`](src/components/LineLoginButton.tsx)): the v1.39.2 `hasLine` derived flag is gone; replaced by `allowSelfLink = session.allowSelfLink !== false` (default-true on missing field). The dropdown's no-player branch flips to `needsSetup ? (allowSelfLink ? <picker CTA> : <need-invite>) : ...` — provider-agnostic. The linked-player branch's "Change/Unassign player" link drops the v1.39.2 `hasLine && (...)` gate and shows for any linked session; clicking lands on `/assign-player` which either renders the picker (allowSelfLink === true) or the SelfLinkDisabledSurface (false). The `AssignModal` first-login popup gates on `allowSelfLink && !playerId && (lineId || userId)` instead of `lineId && !playerId` — popups only fire when the user can actually act on them. **`linkedPlayers.ts` extension** — `getLinkedPlayerIds(viewer: { lineId, userId } | null)` now filters players linked via EITHER `lineId` OR `userId`, with the viewer's own bindings excluded so they can re-confirm or unassign. Pre-v1.61.0 the helper only checked `lineId`. **Tests:** rewritten [`tests/unit/assignPlayerNonLineGate.test.ts`](tests/unit/assignPlayerNonLineGate.test.ts) (16 cases pinning v1.61.0 contracts: `NeedInviteSurface` GONE, API 401 gate accepts lineId or userId, branching write paths preserved, account menu gates by `allowSelfLink` not `hasLine`, modal useEffect gates on `allowSelfLink`); updated [`tests/unit/adminLoadPerf.test.ts`](tests/unit/adminLoadPerf.test.ts) for the v1.58.0 short-circuit revert (4 new structural cases: getDefaultLeagueId always reached, getPlayerMappingByUserId reached on non-LINE branch, getLeagueAllowSelfLink + token.allowSelfLink surfaced); updated [`tests/unit/leagueSelfLinkToggle.test.ts:201`](tests/unit/leagueSelfLinkToggle.test.ts) ordering assertion (v1.39.2 NeedInviteSurface gate removed); new [`tests/unit/linkedPlayers.test.ts`](tests/unit/linkedPlayers.test.ts) (7 cases pinning the v1.61.0 viewer-exclusion seam — both lineId and userId NOT clauses, OR-shape lineId/userId filter, defensive empty-Set on Prisma rejection); new cases on [`tests/unit/identityLink.test.ts`](tests/unit/identityLink.test.ts) for `unlinkUserFromPlayer` (4 cases — null on no-User, clears both pointers, idempotent, keys lookup on User.id). Stash-pop sanity check confirmed: reverting just the page edit makes 2/16 of the new test fail (regression target catches the broken state). 1579 passed | 2 skipped (1572 baseline + 11 — 16 rewritten/4 added/4 added/7 new minus 16 obsolete v1.39.2 cases minus net-new structural reshuffles). Type-check clean. Minor bump (1.60.1 → 1.61.0) — provider gate change is a meaningful behavior shift (Google/email users gain a feature they didn't have); JWT callback semantics change (allowSelfLink now on session; non-LINE users now get playerId resolved on every callback). **Out of scope:** Redis caching for the userId resolver path (deferred to v1.62.0); admin UI to surface "X non-LINE users linked" stats (no admin pain point yet).
 
@@ -134,7 +135,7 @@
 > - Major bump (1.1.0 → 2.0.0) — breaking changes / migrations of public contracts.
 > The bump lives in the same commit as the change. The matching test in `tests/unit/version.test.ts` updates in the same commit. After merge, the autonomy post-merge sequence pushes an annotated release tag `v<APP_VERSION>` at the merge SHA — separate from the rollback tag (`v-pre-pr-N-...`).
 
-> **Maintenance rule:** Whenever an architectural decision is made — new component, changed data flow, new API route, new Prisma model or column, modified Sheet schema, UX philosophy change — update this file **in the same PR** as the change. PRs that touch architecture without updating CLAUDE.md should be sent back. This file is the single source of truth for how the project works.
+> **Maintenance rule:** Whenever an architectural decision is made — new component, changed data flow, new API route, new Prisma model or column, UX philosophy change — update this file **in the same PR** as the change. PRs that touch architecture without updating CLAUDE.md should be sent back. This file is the single source of truth for how the project works.
 >
 > **Test rule:** Every PR that adds or changes behavior ships with at least one test that proves the new behavior. Unit tests for pure functions (Vitest), e2e tests for user-visible flows (Playwright). The CI workflow at `.github/workflows/test.yml` runs Vitest + tsc on every PR; merge is blocked on red. See [Testing](#testing) below for what to add per change-type.
 >
@@ -170,15 +171,14 @@
 
 ## Project
 
-T9L.me — mobile-first website for the Tennozu 9-Aside League, a recreational football league in Tokyo. Players can log in via LINE, assign themselves to their roster entry, RSVP availability for upcoming matchdays, and view live league data sourced from a Google Sheet.
+T9L.me — mobile-first website for the Tennozu 9-Aside League, a recreational football league in Tokyo. Players can log in via LINE, assign themselves to their roster entry, RSVP availability for upcoming matchdays, and view live league data backed by Postgres (Neon-hosted) via Prisma.
 
 ## Stack
 
 - Next.js (App Router, server + client components, ISR)
 - TypeScript (strict mode)
 - Tailwind CSS v4
-- `googleapis` — Google Sheets API (read + write) — public-site source of truth on apex (cutover to DB in progress; see [Sheets→DB Migration](#sheetsdb-migration))
-- `@prisma/client` + `@neondatabase/serverless` — Postgres ORM (Neon-hosted) — admin-side source of truth and target of public-site cutover
+- `@prisma/client` + `@neondatabase/serverless` — Postgres ORM (Neon-hosted) — single source of truth for the public site (Google Sheets surface retired in v1.71.0)
 - `next-auth` v4 — LINE OAuth (public players) + Credentials provider (admin)
 - `@upstash/redis` — Canonical store for lineId→Player mapping (v1.5.0) and per-GameWeek RSVP signals (v1.7.0). Also caches Vercel Blob URLs for player pics.
 - `@vercel/blob` — Player profile picture storage (LINE-CDN mirror)
@@ -189,11 +189,9 @@ T9L.me — mobile-first website for the Tennozu 9-Aside League, a recreational f
 ## Architecture Overview
 
 ```
-Google Sheets (source of truth)
-       ↕ read (batchGet) + write (availability cell updates)
-  lib/sheets.ts
-       ↓ parse
-  lib/data.ts → lib/stats.ts
+Postgres (Neon, source of truth via Prisma)
+       ↓ read (lib/dbToPublicLeagueData.ts)
+  lib/publicData.ts → lib/stats.ts
        ↓
   app/page.tsx (server component, dynamic — reads host header)
        └─ getLeagueIdFromRequest() → getPublicLeagueData(leagueId)
@@ -247,7 +245,7 @@ Two stores in this codebase follow a shared shape: Redis is the canonical read s
 9. **Tests pin the policy seam.** Each store ships with a Vitest suite that exercises hit/miss/error branches independently, namespace isolation, and the `RedisLike` injection seam. The test seam is `__setRedisClientForTesting(client | null)` — production code never calls it.
 10. **Public-write hot paths invert: Redis sync, Prisma deferred via `waitUntil`** (PR 20 / v1.8.0). Public-facing write sites (`/api/assign-player`, `/api/rsvp`) write Redis on the response critical path and defer the durable Prisma write to background via `waitUntil` from `@vercel/functions`. The Redis write is the gate (canonical store consulted by reads); the Prisma write is recoverable on failure via the audit script. Admin write sites stay Prisma-first because admin pages re-read Prisma directly on `revalidatePath('/admin/...')` — deferring there would surface stale state on the admin's own next render. **Throwing variants required.** Public hot paths use `setMappingOrThrow` / `setRsvpOrThrow` (the throwing variants); the silent `setMapping` / `setRsvp` would 200-OK with no durable write landing anywhere on Redis failure (since Prisma is now deferred). No-client (KV env unset) remains silent — that's a dev-only condition. **Drift on background-Prisma failure recovers via two layers.** Inline `console.error('[v1.8.0 DRIFT] kind=<domain> ...')` log lines emit per-failure for operator grep + replay; the per-domain backfill script (`backfillRedis<X>FromPrisma`) covers Redis-side drift (read-side); a new audit script (`auditRedisVsPrisma.ts`) covers the inverse direction (write-side, `--repair-prisma` flag).
 
-11. **Writes to Redis-canonical state should NOT invalidate the static `public-data` cache** (PR 21 / v1.8.2). State that lives in Redis (player mapping, RSVP) is its own read path — `getMapping` / `getRsvpForGameWeeks` are called at session-aware boundaries (JWT callback, dashboard render), NOT through `unstable_cache`. The static `public-data:db` / `public-data:sheets` cache holds team / player / matchday / match / goal / rating data — none of which depend on the link state of any session or the RSVP signals of any player. Calling `revalidatePath('/')` + `revalidateTag('public-data', { expire: 0 })` on a Redis-canonical write therefore forces a needless full re-derivation of the entire `LeagueData` blob (Prisma + RSVP fanout) on the user's next dashboard render — measurably ~580ms warm and multi-second cold per write. The cache-bust shape is reserved for writes that mutate the static fields themselves (admin actions on Team / Player / Match / Goal / Venue, picture-mirror Blob URL updates) and runs from those write sites, not from public hot paths. Concretely: `/api/rsvp` (v1.7.0) and `/api/assign-player` (v1.8.2) drop `revalidatePath('/')` and `revalidateTag('public-data')` from their synchronous response paths. The picture-mirror `uploadAndPersistLinePic` waitUntil keeps its `revalidateTag('public-data', { expire: 0 })` because it does mutate a static field (`Player.pictureUrl`), and that bust runs in the background after the response has already returned. **Audit before adding a `revalidateTag('public-data')` to any new write site:** if the field being written is reachable from `dbToPublicLeagueData` / the `getFromDb` Prisma include, the bust is correct; if not, drop it.
+11. **Writes to Redis-canonical state should NOT invalidate the static `public-data` cache** (PR 21 / v1.8.2). State that lives in Redis (player mapping, RSVP) is its own read path — `getMapping` / `getRsvpForGameWeeks` are called at session-aware boundaries (JWT callback, dashboard render), NOT through `unstable_cache`. The static `public-data:db` cache holds team / player / matchday / match / goal / rating data — none of which depend on the link state of any session or the RSVP signals of any player. Calling `revalidatePath('/')` + `revalidateTag('public-data', { expire: 0 })` on a Redis-canonical write therefore forces a needless full re-derivation of the entire `LeagueData` blob (Prisma + RSVP fanout) on the user's next dashboard render — measurably ~580ms warm and multi-second cold per write. The cache-bust shape is reserved for writes that mutate the static fields themselves (admin actions on Team / Player / Match / Goal / Venue, picture-mirror Blob URL updates) and runs from those write sites, not from public hot paths. Concretely: `/api/rsvp` (v1.7.0) and `/api/assign-player` (v1.8.2) drop `revalidatePath('/')` and `revalidateTag('public-data')` from their synchronous response paths. The picture-mirror `uploadAndPersistLinePic` waitUntil keeps its `revalidateTag('public-data', { expire: 0 })` because it does mutate a static field (`Player.pictureUrl`), and that bust runs in the background after the response has already returned. **Audit before adding a `revalidateTag('public-data')` to any new write site:** if the field being written is reachable from `dbToPublicLeagueData` / the `getFromDb` Prisma include, the bust is correct; if not, drop it.
 
 **Stores under this pattern:**
 
@@ -314,27 +312,23 @@ i18n is currently delivered via Google Translate's `googtrans` cookie set by [`s
 
 ## Data Source
 
-All data is read from a single Google Sheet via the Sheets API using a service account.
+All public-site data is read from Postgres (Neon-hosted) via Prisma. Admin writes mutate Postgres directly; the apex Dashboard reads through `lib/publicData.ts#getPublicLeagueData(leagueId?)` which pulls the cached static blob from `lib/dbToPublicLeagueData.ts` and merges live RSVP signals from Redis. The legacy Google Sheets parser surface was retired in v1.71.0.
 
-- Sheet ID: `1BLTV9v518fEi3DXRA-qcYY3bLDm_qftNoY_5SNzjKSc`
-- Caching: ISR with `revalidate = 300` (5 minutes)
-- Read strategy: Single `batchGet` call fetching all 7 tabs per page render
-- Write: `writeRosterAvailability()` in `sheets.ts` writes RSVP status back to `RosterRaw` (requires service account Editor access)
+- Caching: `unstable_cache` 30s TTL on the static read (`public-data` + `leagues` tags); admin writes bust via `revalidate({ domain: 'admin' })`.
+- RSVP signals: read directly from Redis at dispatch time (uncached) per the v1.7.0 architecture; Postgres `Availability` is the durable secondary written via `waitUntil` (v1.8.0).
 
 ### Environment Variables
 
 ```
-# Google Sheets (service account — needs Editor access for RSVP write-back)
-GOOGLE_SERVICE_ACCOUNT_EMAIL
-GOOGLE_PRIVATE_KEY             # PEM format, newlines as \n
-
-GOOGLE_SHEET_ID                # 1BLTV9v518fEi3DXRA-qcYY3bLDm_qftNoY_5SNzjKSc
-
 # LINE OAuth (next-auth)
 LINE_CLIENT_ID
 LINE_CLIENT_SECRET
 NEXTAUTH_SECRET
 NEXTAUTH_URL                   # https://t9l.me in prod, http://localhost:3000 in dev
+
+# Google OAuth (next-auth) — separate from the retired Sheets API; OAuth-only via next-auth/providers/google
+GOOGLE_CLIENT_ID
+GOOGLE_CLIENT_SECRET
 
 # Upstash Redis — canonical store for lineId→Player mapping (v1.5.0) and
 # per-GameWeek RSVP signals (v1.7.0). Also caches player-pic Blob URLs.
@@ -349,42 +343,13 @@ DATABASE_URL                   # Pooled connection (PgBouncer)
 DATABASE_URL_UNPOOLED          # Direct connection (used by `prisma migrate deploy` + Prisma `directUrl`)
 ```
 
-If `GOOGLE_SHEET_ID` or `GOOGLE_SERVICE_ACCOUNT_EMAIL` are absent, `fetchSheetData()` falls back to `lib/mock-data.ts` automatically. Auth features (RSVP, player assignment) degrade gracefully when KV/Blob vars are missing.
+Auth features (RSVP, player assignment) degrade gracefully when KV/Blob vars are missing.
 
-### Sheet Tabs & Ranges
+### Public id conventions
 
-| Tab | Range | Purpose |
-|-----|-------|---------|
-| `TeamRaw` | `A:B` | Team names and logos |
-| `RosterRaw` | `A:L` | Players: picture, name, team, position, MD1–MD8 availability (`Y` / `EXPECTED` / `PLAYED` / blank) |
-| `ScheduleRaw` | `A:F` | 24 matches: matchday, match number, kickoff, full time, home team, away team |
-| `GoalsRaw` | `A:F` | Goals: matchday, timestamp, scoring team, conceding team, scorer, assister |
-| `RatingsRaw` | `A:BH` | Peer ratings: matchday, timestamp, respondent team, 53 player columns (1–5), 4 meta columns |
-| `Schedule Formula` | `A:E` | Rotation: which team plays first/last/middle/sits out per matchday |
-| `MDScheduleRaw` | `A:B` | Matchday dates (label → YYYY-MM-DD or other parseable format) |
-
-### Data Parsing Rules
-
-**Row 1 of every tab is the header row. Skip it.**
-
-**Team name normalization** — RatingsRaw prepends color names. Strip them:
-- "Blue Mariners FC" → "Mariners FC"
-- "Yellow Fenix FC" → "Fenix FC"
-- "Hygge SC" / "FC Torpedo" — no change
-
-**Player ID** — `slugify(name)`: lowercase, strip accents (NFD), replace spaces with `-`, remove non-alphanumeric. Example: "Ian Noseda" → `ian-noseda`.
-
-**Team ID** — same slug approach: "Mariners FC" → `mariners-fc`.
-
-**`#REF!` handling** — GoalsRaw and RatingsRaw column 0 may contain `#REF!`. If value matches `/MD\d+/i`, use it. Otherwise fall back to inferring matchday from timestamp date against `MDScheduleRaw` dates.
-
-**Availability statuses** — `RosterRaw` MD columns: `Y` / `GOING` = confirmed, `EXPECTED` / `UNDECIDED` = tentative, `PLAYED` = actually played, blank = not going. Both confirmed and tentative statuses count toward `availability`. Only `PLAYED` counts toward `played` (used for match stats). New RSVPs write `GOING` / `UNDECIDED` / `''`; legacy `Y` / `EXPECTED` values from the sheet are still parsed correctly.
-
-**Goal-to-match mapping** — Match by `(scoringTeamId, concedingTeamId)` or `(concedingTeamId, scoringTeamId)` within the matchday's 3 matches.
-
-**"Guest" scorer** — non-rostered player, keep as-is in data, exclude from player stat aggregations.
-
-**Ratings** — RatingsRaw is wide. Columns 3 to `header.length - 4` are player columns (header = player name). Last 4 columns are meta ratings: refereeing, gamesClose, teamwork, enjoyment.
+- `Player.id` — slug shape via `lib/data.ts#slugify`. Example: "Ian Noseda" → `ian-noseda`.
+- `Team.id` — slug shape. Example: "Mariners FC" → `mariners-fc`.
+- DB-level ids are prefixed (`p-<slug>` / `t-<slug>` / `lt-...` / `m-...` / `g-...`) per `lib/ids.ts`. The slug↔DB-id helpers (`playerIdToSlug`, `slugToPlayerId`, etc.) bridge the two namespaces.
 
 ## File Structure
 
@@ -403,7 +368,7 @@ src/
 │       ├── assign-player/route.ts    # POST/DELETE: link/unlink lineId → playerId. Redis-canonical (v1.8.0); Prisma deferred via waitUntil.
 │       └── rsvp/route.ts             # POST: link RSVP. Redis-canonical (v1.7.0); Prisma deferred (v1.8.0).
 ├── components/
-│   ├── Dashboard.tsx                 # Client: 3-tab home (default-league public view from Sheets/DB)
+│   ├── Dashboard.tsx                 # Client: 3-tab home (default-league public view from Postgres)
 │   ├── NextMatchdayBanner.tsx        # Match cards above the fold
 │   ├── MatchdayAvailability.tsx      # Per-team attendance pitch view
 │   ├── LeagueTable.tsx, TopPerformers.tsx, SquadList.tsx, MatchdayCard.tsx, …
@@ -418,8 +383,7 @@ src/
 │   └── admin/, ui/                   # Admin tabs + shadcn-style primitives
 ├── lib/
 │   ├── ids.ts                        # Shared "p-"/"t-" prefix constants + slug↔DB-id helpers (v1.12)
-│   ├── sheets.ts                     # batchGet (read) + writeRosterAvailability (write)
-│   ├── data.ts                       # parseTeams/parsePlayers/parseSchedule/parseGoals/parseRatings
+│   ├── data.ts                       # `slugify` (the only surviving helper post-v1.71.0)
 │   ├── stats.ts                      # computeLeagueTable/computePlayerStats/findNextMatchday
 │   ├── jst.ts                        # Canonical JST date/time helpers (v1.9.0)
 │   ├── auth.ts                       # next-auth authOptions (LINE provider, JWT, Redis-primary lookup)
@@ -427,18 +391,17 @@ src/
 │   ├── rsvpStore.ts                  # Upstash-canonical store for per-GameWeek RSVP (v1.7.0) — HASH per GW, absolute TTL = matchday + 90d
 │   ├── rsvpStoreSchema.ts            # Pure schema constants (key prefix, sentinel, TTL) shared with backfillRedisRsvpFromPrisma (v1.12)
 │   ├── rsvpMerge.ts                  # Pure helpers — mapAvailability + mergeRsvpData merge Redis RSVP into LeagueData
-│   ├── publicData.ts                 # Dispatcher: cached static read + uncached RSVP read merged into LeagueData
+│   ├── publicData.ts                 # Cached static read + uncached RSVP read merged into LeagueData
 │   ├── dbToPublicLeagueData.ts       # Prisma → LeagueData adapter (static fields only post-v1.7.0)
-│   ├── settings.ts                   # `dataSource` / `writeMode` Setting helpers (resolveDataSource defaults to 'db' since v1.12)
+│   ├── settings.ts                   # `Setting` helpers (identity / playerData read-source flags)
 │   ├── linkedPlayers.ts              # /assign-player picker: Prisma `Player.lineId` fetch — filters already-linked
 │   ├── optimisticLink.ts, assignSubmit.ts, assignToast.ts, assignButtonLabel.ts  # /assign-player UX helpers
 │   ├── userTeam.ts                   # pickUserTeam helper for UserTeamBadge (v1.11.0)
 │   ├── admin-data.ts                 # Cached Prisma queries for admin tabs + getOrphanLineLogins
-│   ├── revalidate.ts                 # revalidatePublicData() — bust public-data cache after admin writes
+│   ├── revalidate.ts                 # revalidate({ domain }) — single entry point for cache busts
 │   ├── getLeagueFromHost.ts          # Subdomain extraction for app/page.tsx
 │   ├── prisma.ts                     # Prisma client singleton
-│   ├── version.ts                    # APP_VERSION single-source constant
-│   └── mock-data.ts                  # Fallback data when Sheets credentials absent
+│   └── version.ts                    # APP_VERSION single-source constant
 └── types/
     └── index.ts                      # All TypeScript interfaces
 ```
@@ -458,9 +421,9 @@ npm run lint         # ESLint
 ## Important Notes
 
 - **4 teams, ~53 players, 8 matchdays, 24 matches**, 33-minute match duration
-- FC Torpedo players have no positions in the sheet — store as `null`, display "—"
-- Matchday dates come from `MDScheduleRaw`, not `ScheduleRaw`. Display "TBD" when null.
-- `computeMatchScores`: if a matchday has any goals at all, all 3 matches are treated as played (even if 0-0). This is a simplification — no explicit "match finished" flag exists.
+- FC Torpedo players have no positions stored — display "—"
+- Matchday dates can be null. Display "TBD" when null (per v1.31.0).
+- Match scores derive from `MatchEvent` rows post-v1.42.0; a match's score is computed live from its events (filtered to GOAL types and applied via the `OWN_GOAL` flip).
 - Player pictures: `/stats` reads Redis `player-pic:<slug>` → Vercel Blob URL (mirror of the LINE display picture, written by `/api/assign-player`'s background `uploadAndPersistLinePic`). Other public surfaces use `PlayerAvatar`'s static fallback chain (LINE CDN URL → `/player_pics/{slug}.png` → `default.png`).
 - The `/minato` route redirects to the team's AppSheet data-entry form
 
@@ -477,7 +440,7 @@ npm run lint         # ESLint
 - **`Match`** — PR 1 added `@@unique([gameWeekId, homeTeamId, awayTeamId])` so the upcoming backfill can `prisma.match.upsert` by natural key. Constraint is safe under T9L's 4-team round-robin (each pair plays once per MD); revisit if format ever allows the same pair to play twice in one MD.
 - **`Goal`** + **`Assist`** — `Goal` cascades on `Match` delete; **does not cascade on `Player` delete** (deleting a Player with goals will FK-fail — admin "remove from league" only deletes `PlayerLeagueAssignment`, not `Player`).
 - **`Availability`** *(new in PR 1)* — RSVP per `(playerId, gameWeekId) @@unique`. Two enums: `RsvpStatus { GOING, UNDECIDED, NOT_GOING }` and `ParticipatedStatus { JOINED, NO_SHOWED }`. Cascades on Player and GameWeek delete. Public-site RSVP route will dual-write to this table starting PR 3.
-- **`Setting`** *(new in PR 1)* — `(category, key, leagueId) @@unique` composite. `leagueId IS NULL` rows are global; per-league rows override. Used by upcoming PR 3 to store `(public, dataSource) ∈ {sheets, db}` and `(public, writeMode) ∈ {sheets-only, dual, db-only}` toggles. Cascades on League delete.
+- **`Setting`** *(new in PR 1)* — `(category, key, leagueId) @@unique` composite. `leagueId IS NULL` rows are global; per-league rows override. Originally used to store the `dataSource` / `writeMode` cutover toggles (retired in v1.71.0); current consumers are the `identity.read-source` and `playerData.read-source` flags. Cascades on League delete.
 - **`LineLogin`** *(new in PR 6)* — Tracks every distinct LINE user that has authenticated against the public site, regardless of whether they've been linked to a Player record. Upserted from `lib/auth.ts#trackLineLogin` on every JWT callback that has a `lineId`. `lineId @unique` plus `@@index([lastSeenAt])` for sorted-by-recency orphan queries. Drives the admin "Assign Player" Flow B dropdown — orphan = `LineLogin` row whose `lineId` is not currently set on any `Player.lineId`. Powers `lib/admin-data.ts#getOrphanLineLogins()`.
 
 The `directUrl` connection in `datasource db { ... }` reads from `DATABASE_URL_UNPOOLED` (matches the Neon-Vercel integration's canonical var name). The legacy `DIRECT_URL` var is also still set on production and Preview (dev) for backwards compatibility but no longer referenced by the schema.
@@ -507,7 +470,7 @@ What to add per change-type:
 - **Pure-function or library change** (e.g. `lib/data.ts`, `lib/stats.ts`, parsers, mappers) → Vitest unit test with explicit input/output. Example: `tests/unit/slugify.test.ts`.
 - **API route or server action change** → Vitest test that calls the handler directly (mock `next-auth` session if auth-gated); assert response status + body shape.
 - **Public UI flow change** (anything visible at apex `/`, `/schedule`, `/stats`, `/admin`) → Playwright e2e covering the user-visible behavior. Run against the PR's preview URL (`BASE_URL=<preview>`) before requesting merge.
-- **Backfill / migration script change** → Vitest unit tests for row mappers (Sheets row → Prisma create input). Integration test that runs the full backfill against the per-PR Neon branch DB and asserts row counts + spot-check fields.
+- **Backfill / migration script change** → Vitest unit tests for row mappers + decision helpers. Integration test that runs the full backfill against the per-PR Neon branch DB and asserts row counts + spot-check fields.
 - **Schema change** → No new test required for the migration itself (Prisma's `migrate deploy` covers correctness), but any code that reads new fields needs a unit or e2e test.
 
 ## Backups & rollback runbook
@@ -530,10 +493,8 @@ Every PR that ships ≥ PR 2 has four parallel rollback paths. Sequencing of *wh
 - The connection URI for a snapshot branch (read-only inspection) is fetchable via `neonctl connection-string <branch-id> --project-id young-lake-57212861`.
 - Project ID: `young-lake-57212861`. Default branch on Neon is named `production` (not `main`). Org: `org-floral-feather-76166317`.
 
-### Layer 4 — Sheets snapshot (when public-site Sheets data needs reverting)
-- Before PR 2 (the first PR after which dual-write or backfill could touch any data adjacent to Sheets), make a date-stamped duplicate of the source spreadsheet via Drive: File → Make a copy → name `T9L Roster Snapshot YYYY-MM-DD pre-pr-N`. Record the snapshot file ID below.
-- Restore by copying values back from the snapshot to the live sheet (same tabs, same ranges).
-- Source Sheet ID: `1BLTV9v518fEi3DXRA-qcYY3bLDm_qftNoY_5SNzjKSc`. Snapshots: *(none yet — PR 1 didn't touch Sheets; first snapshot will be cut before PR 2 merges).*
+### Layer 4 — Sheets snapshot (retired in v1.71.0)
+- The Google Sheets surface was retired entirely in v1.71.0 — no public read path or RSVP write path touches the spreadsheet anymore. This layer no longer applies. Historical snapshots taken during the cutover (file ID `1BLTV9v518fEi3DXRA-qcYY3bLDm_qftNoY_5SNzjKSc`) are kept for archival reference only.
 
 ### Layer 5 — Redis player-mapping store rebuild (PR 16 / v1.5.0)
 - The lineId→Player auth lookup is now Redis-canonical (`src/lib/playerMappingStore.ts`, namespace `t9l:auth:map:`, 24h sliding TTL). If Upstash ever loses data — accidental wipe, namespace cleared, region failover with stale state, etc. — every authenticated session degrades to "orphan" until the store is rebuilt. Prisma `Player.lineId` is the durable secondary that the rebuild reads from.
@@ -587,6 +548,7 @@ Every PR that ships ≥ PR 2 has four parallel rollback paths. Sequencing of *wh
 | 56 (invite-page inline auth: `JoinInlineAuth` component — v1.40.0) | `e6cf759` | `v-pre-pr-57-next` | https://t9l-website-mrb2wzrxa-t9l-app.vercel.app | Code-only. |
 | 57 (admin Players tab edit-mode redesign + `adminUpdatePlayerPosition` — v1.41.0) | TBD | `v-pre-pr-58-next` | TBD | Code-only. |
 | 58 (per-league `allowSelfLink` toggle — v1.60.0) | TBD | `v-pre-pr-59-next` | TBD | Additive: 1 column on League with default true. Rollback: drop column + revert. |
+| v1.71.0 (Sheets surface retirement) | TBD | `v-pre-v1.72-next` | TBD | Code-only: deletes Sheets client + parsers + admin toggles + `googleapis` dep. No schema delta. Rollback: revert. |
 
 Keep this table append-only; future PRs add a row.
 
@@ -594,7 +556,7 @@ Keep this table append-only; future PRs add a row.
 
 ### Operational events
 
-One-shot ops on shared systems (Redis cleanup, Sheets edits, manual DB writes outside a migration) get a dated line here. Most-recent-5 retained; older entries live in git history.
+One-shot ops on shared systems (Redis cleanup, manual DB writes outside a migration) get a dated line here. Most-recent-5 retained; older entries live in git history.
 
 - **2026-04-30** — v1.25.0 deploy (renderer convergence): apex + subdomain unified onto `Dashboard`; `LeaguePublicView` deleted. Vercel preview hit Neon-Vercel race; admin-merged. Prod confirmed via `data-version-footer`.
 - **2026-04-30** — v1.21.x deploys (schedule tab visual taxonomy + time-only kickoff picker). Both admin-merged through Neon-Vercel race fallback.
@@ -705,34 +667,9 @@ The cutover sequence that minimizes downtime:
 7. Layer 2 — remove old domain from Vercel.
 
 
-## Sheets→DB migration
+## Sheets→DB migration (complete; surface retired in v1.71.0)
 
-**Status: complete.** Multi-PR cutover replaced Google Sheets with Neon Postgres as the public-site source of truth. Operational `dataSource='db'` flip executed 2026-04-27 16:48 UTC; `writeMode='dual'` retained so Sheets keeps receiving redundant RSVP writes.
-
-The migration shipped as PRs 1–4 (schema additions / backfill+adapter+dispatcher / toggle UI + RSVP dual-write / operational flip). Subsequent PRs progressively retired the Sheets dependency:
-- PR 16 / v1.5.0 — Redis-canonical lineId→Player (auth path)
-- PR 19 / v1.7.0 — Redis-canonical RSVP reads
-- PR 20 / v1.8.0 — Redis-canonical public writes (Prisma deferred via `waitUntil`)
-
-**Remaining Sheets dependency** is the legacy parser path used only when `dataSource='sheets'` (currently inactive). A future PR will retire `writeMode='sheets-only'`/`'dual'` and delete the parser entirely.
-
-### How to run the legacy backfill (operator reference)
-
-```bash
-# Pull production env (or per-branch preview env via vercel env pull)
-vercel env pull .env.production --environment=production --yes
-grep -E '^(DATABASE_URL|DATABASE_URL_UNPOOLED|GOOGLE_)' .env.production > /tmp/bf.env
-set -a; source /tmp/bf.env; set +a; rm /tmp/bf.env
-
-# Always preview first
-npx ts-node --project tsconfig.scripts.json scripts/sheetsToDbBackfill.ts --dry-run --verbose-diff
-
-# Then run for real (defaults are safe: no goal overwrites)
-npx ts-node --project tsconfig.scripts.json scripts/sheetsToDbBackfill.ts
-
-# Destructive: recreate goals (only if Sheets is the trusted source AND a Neon snapshot exists):
-# npx ts-node --project tsconfig.scripts.json scripts/sheetsToDbBackfill.ts --allow-overwrite-goals
-```
+The Sheets→DB cutover was operationally complete on 2026-04-27 16:48 UTC (`dataSource='db'` flip). v1.71.0 deleted the dormant Sheets surface entirely — `src/lib/sheets.ts`, `src/lib/mock-data.ts`, `scripts/importFromSheets.ts`, the `googleapis` dependency, the `dataSource` / `writeMode` Setting toggles + admin UI, and the related test mocks. The legacy backfill scripts ([`scripts/_archive/sheetsToDbBackfill.ts`](scripts/_archive/sheetsToDbBackfill.ts), [`scripts/_archive/backfillMatchEventsFromSheet.ts`](scripts/_archive/backfillMatchEventsFromSheet.ts)) are archived for historical reference but no longer typecheck against the live tree (excluded via `tsconfig.scripts.json`'s `exclude: ["scripts/_archive"]`). Both scripts hard-code the legacy Sheet ID and would need significant work to be revived; if a fresh Sheets export is ever needed, expect to rewrite from scratch against the post-v1.71.0 schema.
 
 The PR 6 Redis→Prisma migration that populated `Player.lineId` and `LineLogin` from the legacy `line-player-map` hash completed 2026-04-28 (34 scanned / 31 linked / 1 conflict / 1 missing). The script lives at [`scripts/_archive/backfillRedisLineMap.ts`](scripts/_archive/backfillRedisLineMap.ts) for historical record only.
 
