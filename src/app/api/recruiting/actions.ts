@@ -1,9 +1,11 @@
 'use server'
 
 import { getServerSession } from 'next-auth'
+import { redirect } from 'next/navigation'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { revalidate } from '@/lib/revalidate'
+import { DEFAULT_LEAGUE_SLUG } from '@/lib/leagueSlug'
 
 /**
  * v1.64.0 / v1.65.1 — Application/recruiting workflow.
@@ -291,7 +293,7 @@ export async function registerToLeague(
 
   const league = await prisma.league.findUnique({
     where: { id: input.leagueId },
-    select: { id: true, recruiting: true, name: true },
+    select: { id: true, recruiting: true, name: true, subdomain: true },
   })
   if (!league) return { ok: false, error: 'League not found' }
   if (!league.recruiting) {
@@ -355,6 +357,11 @@ export async function registerToLeague(
   })
   revalidate({ domain: 'public' })
 
+  // v1.77.1 — redirect server-side so the NEXT_REDIRECT signal propagates
+  // through useTransition even when iOS Safari backgrounds the tab mid-flight.
+  // `redirect()` throws and is never returned from; the line below is unreachable.
+  redirect(`/id/${league.subdomain ?? DEFAULT_LEAGUE_SLUG}`)
+  // unreachable — satisfies TypeScript's return-type check:
   return { ok: true, playerId: player.id, mode: 'fresh' }
 }
 

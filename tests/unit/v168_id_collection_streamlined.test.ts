@@ -239,9 +239,14 @@ describe('v1.68.0 completeOnboardingWithId server action', () => {
 describe('v1.68.0 atomicity invariants', () => {
   const RECRUIT = read('src/app/api/recruiting/actions.ts')
 
-  it('registerToLeague returns ApplyToLeagueResult shape (mode: fresh on success)', () => {
+  it('registerToLeague calls redirect() server-side on success (v1.77.1 — was mode: fresh return)', () => {
     const fn = RECRUIT.split('export async function registerToLeague')[1].split('export ')[0]
-    expect(fn).toMatch(/mode:\s*'fresh'/)
+    // v1.77.1 — success path calls redirect() rather than returning { ok: true, mode: 'fresh' }.
+    // The unreachable return below the redirect() still carries mode: 'fresh' for type compat.
+    expect(fn).toMatch(/redirect\(`\/id\//)
+    // Regression target: returning { ok: true } WITHOUT a preceding redirect would
+    // re-introduce the iOS Safari background-suspend navigation race.
+    expect(fn).toMatch(/redirect\(/)
   })
 })
 
