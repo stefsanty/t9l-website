@@ -1,3 +1,4 @@
+import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import Dashboard from '@/components/Dashboard'
 import { findNextMatchday } from '@/lib/stats'
@@ -11,11 +12,20 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 
-export const metadata = {
-  title: 'League | T9L',
-}
-
 type Props = { params: Promise<{ slug: string }> }
+
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
+  const { slug } = await params
+  const leagueId = await getLeagueIdBySlug(slug)
+  if (!leagueId) return { title: 'League | T9L' }
+  const league = await prisma.league.findUnique({
+    where: { id: leagueId },
+    select: { name: true, abbreviation: true },
+  })
+  if (!league) return { title: 'League | T9L' }
+  const short = league.abbreviation ?? league.name
+  return { title: `${short} | ${league.name}` }
+}
 
 /**
  * v1.54.0 — canonical per-league route under the security-namespaced form
@@ -67,7 +77,7 @@ export default async function LeagueByIdPage({ params }: Props) {
       getRecruitingViewerState(leagueId),
       prisma.league.findUnique({
         where: { id: leagueId },
-        select: { id: true, name: true },
+        select: { id: true, name: true, abbreviation: true },
       }),
       // v1.66.0 — unpaid-fee banner data; null when banner stays hidden.
       getUnpaidFeeBannerData(leagueId),

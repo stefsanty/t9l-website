@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { findNextMatchday } from "@/lib/stats";
 import Dashboard from "@/components/Dashboard";
 import { getPublicLeagueData } from "@/lib/publicData";
@@ -9,6 +10,18 @@ import { getPlannedRosterStats } from "@/lib/plannedRosterStats";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+
+export async function generateMetadata(): Promise<Metadata> {
+  const leagueId = await getDefaultLeagueId();
+  if (!leagueId) return { title: "T9L | Tennozu 9-Aside League" };
+  const league = await prisma.league.findUnique({
+    where: { id: leagueId },
+    select: { name: true, abbreviation: true },
+  });
+  if (!league) return { title: "T9L | Tennozu 9-Aside League" };
+  const short = league.abbreviation ?? league.name;
+  return { title: `${short} | ${league.name}` };
+}
 
 /**
  * Public landing page — apex `/` always renders the default league.
@@ -83,7 +96,7 @@ export default async function Home() {
       getRecruitingViewerState(leagueId),
       prisma.league.findUnique({
         where: { id: leagueId },
-        select: { id: true, name: true },
+        select: { id: true, name: true, abbreviation: true },
       }),
       // v1.66.0 — unpaid-fee banner data; null when banner stays hidden.
       getUnpaidFeeBannerData(leagueId),

@@ -162,6 +162,24 @@ export async function deleteLeague(id: string) {
 }
 
 /**
+ * v1.73.0 — sets League.abbreviation, the short display label shown in the
+ * header home button and page <title>. Null clears the field; the header
+ * then falls back to League.name.
+ */
+export async function updateLeagueAbbreviation(leagueId: string, abbreviation: string | null) {
+  await assertAdmin()
+  const trimmed = abbreviation?.trim() || null
+  await prisma.league.update({
+    where: { id: leagueId },
+    data: { abbreviation: trimmed },
+  })
+  revalidate({
+    domain: 'admin',
+    paths: [`/admin/leagues/${leagueId}/settings`, `/admin/leagues/${leagueId}`, '/admin'],
+  })
+}
+
+/**
  * v1.60.0 — per-league self-link toggle. Sets `League.allowSelfLink` to
  * the supplied boolean. Default for a new League is `true` (backward
  * compat); admins flip to `false` to disable the legacy `/assign-player`

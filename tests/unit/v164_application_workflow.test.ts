@@ -414,7 +414,8 @@ describe('v1.64.0 — ApplyToLeagueModal', () => {
 describe('v1.64.0 — page-level wiring threads recruitingState + league', () => {
   it('Dashboard accepts recruitingState + league props', () => {
     expect(DASHBOARD_SRC).toMatch(/recruitingState\?:\s*RecruitingViewerState/)
-    expect(DASHBOARD_SRC).toMatch(/league\?:\s*\{\s*id:\s*string;\s*name:\s*string\s*\}/)
+    // v1.73.0 extended the shape to include optional abbreviation; relaxed to prefix-match
+    expect(DASHBOARD_SRC).toMatch(/league\?:\s*\{\s*id:\s*string;\s*name:\s*string/)
   })
 
   it('apex `/` fetches getRecruitingViewerState + league row in Promise.all and threads them', () => {

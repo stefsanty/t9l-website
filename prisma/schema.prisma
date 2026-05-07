@@ -153,6 +153,9 @@ model League {
   isDefault    Boolean   @default(false)
   primaryColor String?
   accentColor  String?
+  // v1.73.0 — short display label for the header home button and page title.
+  // Null means fall back to League.name. Backfilled for the default league.
+  abbreviation String?
 
   // v1.60.0 — per-league toggle controlling whether the legacy open
   // `/assign-player` self-link picker is available for THIS league.
