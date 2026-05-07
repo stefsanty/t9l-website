@@ -57,7 +57,14 @@
       "Bash(env:*)",
       "Bash(pwd:*)",
       "Bash(test:*)",
-      "Bash(date:*)"
+      "Bash(date:*)",
+      "Bash(npm:*)",
+      "Bash(npx:*)",
+      "Bash(prisma:*)",
+      "Bash(vercel:*)",
+      "Bash(tsc:*)",
+      "Bash(vitest:*)",
+      "Bash(jest:*)"
     ],
     "deny": [
       "Bash(git push --force*)",
