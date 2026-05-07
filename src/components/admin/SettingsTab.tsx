@@ -14,8 +14,6 @@ import {
   setLeagueRecruiting,
 } from '@/app/admin/leagues/actions'
 import { formatJstDate } from '@/lib/jst'
-import LeagueFeesEditor from './LeagueFeesEditor'
-import LeaguePlannedRosterEditor from './LeaguePlannedRosterEditor'
 import LeagueDetailsEditor from './LeagueDetailsEditor'
 
 interface League {
@@ -545,30 +543,12 @@ export default function SettingsTab({ league }: SettingsTabProps) {
         )}
       </section>
 
-      {/* v1.66.0 — Player Fees section. Replaces the league's defaultFee
-          + positionFees set atomically; the resolver in lib/playerFee.ts
-          looks up positions case-sensitively against PLM.position. */}
-      <LeagueFeesEditor
-        leagueId={league.id}
-        initialDefaultFee={league.defaultFee}
-        initialPositionFees={league.positionFees}
-      />
-
-      {/* v1.67.0 — Planned roster targets (number of teams / players per team
-          / registration deadline). Surfaced via the public preseason stats
-          panel between the recruiting banner and the planned schedule. */}
-      <LeaguePlannedRosterEditor
-        leagueId={league.id}
-        initialPlannedPlayersPerTeam={league.plannedPlayersPerTeam}
-        initialPlannedNumberOfTeams={league.plannedNumberOfTeams}
-        initialRegistrationDeadline={league.registrationDeadline}
-      />
-
-      {/* v1.75.0 — League details (ball / goal / restart / offside /
-          backpass / match duration / player format / subs / organizer
-          message). Surfaced via the public LeagueDetailsPanel on the
-          preseason homepage when both `preseasonMode` and
-          `showLeagueDetails` are true. */}
+      {/* v1.75.5 — Combined "League details" section: absorbs player fees +
+          planned roster + league rules into a single form per the v1.75.5
+          consolidation. The standalone LeagueFeesEditor /
+          LeaguePlannedRosterEditor components remain in the codebase
+          (referenced by their own dedicated tests + dark-mode pin) but
+          are no longer mounted on the admin settings page. */}
       <LeagueDetailsEditor
         leagueId={league.id}
         initialBallType={league.ballType}
@@ -581,6 +561,11 @@ export default function SettingsTab({ league }: SettingsTabProps) {
         initialUnlimitedSubstitutions={league.unlimitedSubstitutions}
         initialOrganizerMessage={league.organizerMessage}
         initialShowLeagueDetails={league.showLeagueDetails}
+        initialDefaultFee={league.defaultFee}
+        initialPositionFees={league.positionFees}
+        initialPlannedPlayersPerTeam={league.plannedPlayersPerTeam}
+        initialPlannedNumberOfTeams={league.plannedNumberOfTeams}
+        initialRegistrationDeadline={league.registrationDeadline}
       />
 
       {/* Quick actions */}

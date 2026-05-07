@@ -54,14 +54,19 @@ export default function LeagueDetailsPanel({
   const showMessage =
     data.organizerMessage != null && data.organizerMessage.trim() !== ''
 
-  // Planned-roster visibility (mirrors PlannedRosterStats component logic)
+  // Planned-roster visibility (mirrors PlannedRosterStats component logic).
+  // v1.75.5 — current/spots-left rows are gated on BOTH planned targets
+  // being non-zero. With the relaxed gate (plannedRosterStats threads
+  // unconditionally) we'd otherwise show "Spots left: 0" on non-recruiting
+  // leagues, which is meaningless.
   const showPlannedTeams = !!plannedRosterStats && plannedRosterStats.plannedNumberOfTeams > 0
   const showPlannedPerTeam = !!plannedRosterStats && plannedRosterStats.plannedPlayersPerTeam > 0
+  const showCurrentAndSpots = showPlannedTeams && showPlannedPerTeam
   const showDeadline = !!plannedRosterStats && plannedRosterStats.registrationDeadline !== null
   const showFee =
     !!plannedRosterStats &&
     (plannedRosterStats.defaultFee > 0 || plannedRosterStats.positionFees.length > 0)
-  const showRosterSection = !!plannedRosterStats
+  const showRosterSection = showFee || showPlannedTeams || showPlannedPerTeam || showCurrentAndSpots || showDeadline
 
   return (
     <section
@@ -179,22 +184,26 @@ export default function LeagueDetailsPanel({
                     </dd>
                   </div>
                 )}
-                <div className="flex justify-between items-baseline" data-testid="current-players-row">
-                  <dt className="text-fg-mid text-xs uppercase tracking-wider font-bold">
-                    Current players
-                  </dt>
-                  <dd className="font-display font-black text-fg-high tabular-nums">
-                    {plannedRosterStats.currentPlayers}
-                  </dd>
-                </div>
-                <div className="flex justify-between items-baseline" data-testid="spots-left-row">
-                  <dt className="text-fg-mid text-xs uppercase tracking-wider font-bold">
-                    Spots left
-                  </dt>
-                  <dd className="font-display font-black text-vibrant-pink tabular-nums">
-                    {plannedRosterStats.spotsLeft}
-                  </dd>
-                </div>
+                {showCurrentAndSpots && (
+                  <>
+                    <div className="flex justify-between items-baseline" data-testid="current-players-row">
+                      <dt className="text-fg-mid text-xs uppercase tracking-wider font-bold">
+                        Current players
+                      </dt>
+                      <dd className="font-display font-black text-fg-high tabular-nums">
+                        {plannedRosterStats.currentPlayers}
+                      </dd>
+                    </div>
+                    <div className="flex justify-between items-baseline" data-testid="spots-left-row">
+                      <dt className="text-fg-mid text-xs uppercase tracking-wider font-bold">
+                        Spots left
+                      </dt>
+                      <dd className="font-display font-black text-vibrant-pink tabular-nums">
+                        {plannedRosterStats.spotsLeft}
+                      </dd>
+                    </div>
+                  </>
+                )}
               </>
             )}
 

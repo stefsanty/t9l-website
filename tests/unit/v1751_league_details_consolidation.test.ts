@@ -201,9 +201,14 @@ describe('v1.75.1 preseasonMode decoupled from LeagueDetailsPanel visibility', (
     expect(read(rel)).not.toMatch(/flags\.preseasonMode\s*&&\s*flags\.recruiting/)
   })
 
-  it.each(sources)('%s still gates plannedRosterStats on userId + flags.recruiting', (rel) => {
-    // The recruiting gate stays — roster stats only when recruiting.
-    expect(read(rel)).toMatch(/userId\s*&&\s*flags\.recruiting/)
+  // v1.75.5 — the userId + flags.recruiting gate was fully relaxed so the
+  // public LeagueDetailsPanel can render the fee + planned teams + per-team +
+  // spots-left mini-section regardless of recruiting flag. Per-row hides in
+  // the panel ensure rows with unset/zero values stay hidden. The gate
+  // assertion that previously pinned `userId && flags.recruiting` is now a
+  // regression target in the OPPOSITE direction.
+  it.each(sources)('%s does NOT gate plannedRosterStats on userId + flags.recruiting (v1.75.5 relaxation)', (rel) => {
+    expect(read(rel)).not.toMatch(/userId\s*&&\s*flags\.recruiting\s*\?\s*_plannedRosterStats/)
   })
 })
 
@@ -295,8 +300,8 @@ describe('v1.75.4 LeagueDetailsPanel positioned between banner and availability 
     expect(dash).toMatch(/preseasonMode &&\s*\(leagueDetails \?/)
   })
 
-  it('stash-pop: version is 1.75.4', () => {
+  it('stash-pop: version is 1.75.4 or later', () => {
     const v = read('src/lib/version.ts')
-    expect(v).toMatch(/APP_VERSION\s*=\s*'1\.75\.4'/)
+    expect(v).toMatch(/APP_VERSION\s*=\s*'1\.75\.[4-9]'/)
   })
 })

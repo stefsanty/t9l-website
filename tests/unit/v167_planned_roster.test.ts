@@ -138,23 +138,21 @@ describe('v1.67.0 Dashboard threading', () => {
   })
 })
 
-describe('v1.67.0 page-level auth + flag gate', () => {
-  // v1.67.0 — apex (page.tsx), /id/[slug], and /id/[slug]/md/[id]
-  // each thread a userId-aware getServerSession alongside the
-  // planned-roster fetch so the panel only renders when authenticated
-  // AND both flags are on.
+describe('v1.67.0 page-level plannedRosterStats wiring (post v1.75.5 unconditional threading)', () => {
+  // v1.67.0 originally added `getPlannedRosterStats` + `getServerSession`
+  // calls in parallel to gate the panel on userId + recruiting.
+  // v1.75.5 fully relaxed the gate so the panel renders unconditionally
+  // (per-row hides handle visibility). The session call was removed in
+  // the same PR since it had no other consumer. Pin the post-v1.75.5
+  // shape: helper still called, threaded directly to Dashboard.
   for (const path of [
     'src/app/page.tsx',
     'src/app/id/[slug]/page.tsx',
     'src/app/id/[slug]/md/[id]/page.tsx',
   ]) {
-    it(`${path} fetches plannedRosterStats + session and gates on userId + flags`, () => {
+    it(`${path} fetches plannedRosterStats and threads it through Dashboard`, () => {
       const src = read(path)
       expect(src).toMatch(/getPlannedRosterStats\(leagueId\)/)
-      expect(src).toMatch(/getServerSession\(authOptions\)/)
-      // Auth-gate AND recruiting flag gate.
-      // v1.75.1 — preseasonMode gate removed; now only userId + recruiting required.
-      expect(src).toMatch(/userId\s*&&\s*flags\.recruiting/)
       expect(src).toMatch(/plannedRosterStats=\{plannedRosterStats\s*\?\?\s*null\}/)
     })
   }
@@ -172,15 +170,15 @@ describe('v1.67.0 CompressedMatchdaySchedule label rename', () => {
   })
 })
 
-describe('v1.67.0 admin SettingsTab integration', () => {
+describe('v1.67.0 admin SettingsTab integration (post v1.75.5 consolidation)', () => {
   const tab = read('src/components/admin/SettingsTab.tsx')
 
-  it('imports LeaguePlannedRosterEditor', () => {
-    expect(tab).toMatch(/import\s+LeaguePlannedRosterEditor/)
-  })
-
-  it('renders LeaguePlannedRosterEditor with the three init fields', () => {
-    expect(tab).toMatch(/<LeaguePlannedRosterEditor[\s\S]*initialPlannedPlayersPerTeam[\s\S]*initialPlannedNumberOfTeams[\s\S]*initialRegistrationDeadline/)
+  // v1.75.5 — planned-roster fields absorbed into the unified
+  // LeagueDetailsEditor. SettingsTab no longer mounts a standalone
+  // LeaguePlannedRosterEditor; the three init props now thread through
+  // LeagueDetailsEditor.
+  it('passes the three planned-roster init props to LeagueDetailsEditor', () => {
+    expect(tab).toMatch(/<LeagueDetailsEditor[\s\S]*initialPlannedPlayersPerTeam[\s\S]*initialPlannedNumberOfTeams[\s\S]*initialRegistrationDeadline/)
   })
 
   it('declares the three new fields on the League type', () => {

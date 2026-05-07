@@ -352,8 +352,11 @@ describe('v1.66.0 — admin League Settings (LeagueFeesEditor)', () => {
     expect(FEES_EDITOR_SRC).toMatch(/updateLeagueFeeSettings/)
   })
 
-  it('SettingsTab mounts LeagueFeesEditor with leagueId + initialDefaultFee + initialPositionFees', () => {
-    expect(SETTINGS_TAB_SRC).toMatch(/<LeagueFeesEditor/)
+  // v1.75.5 — fee fields absorbed into the unified LeagueDetailsEditor;
+  // SettingsTab no longer mounts a standalone LeagueFeesEditor. The fee
+  // initial props now thread through LeagueDetailsEditor in the same SettingsTab.
+  it('SettingsTab passes fee initial props to LeagueDetailsEditor (post v1.75.5 consolidation)', () => {
+    expect(SETTINGS_TAB_SRC).toMatch(/<LeagueDetailsEditor/)
     expect(SETTINGS_TAB_SRC).toMatch(/leagueId=\{league\.id\}/)
     expect(SETTINGS_TAB_SRC).toMatch(/initialDefaultFee=\{league\.defaultFee\}/)
     expect(SETTINGS_TAB_SRC).toMatch(/initialPositionFees=\{league\.positionFees\}/)

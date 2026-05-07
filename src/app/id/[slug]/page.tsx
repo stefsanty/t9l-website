@@ -9,8 +9,6 @@ import { getRecruitingViewerState } from '@/lib/recruitingViewerState'
 import { getUnpaidFeeBannerData } from '@/lib/unpaidFeeBanner'
 import { getPlannedRosterStats } from '@/lib/plannedRosterStats'
 import { getLeagueDetails } from '@/lib/leagueDetails'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 
 type Props = { params: Promise<{ slug: string }> }
@@ -73,7 +71,6 @@ export default async function LeagueByIdPage({ params }: Props) {
       _unpaidFee,
       _plannedRosterStats,
       _leagueDetails,
-      session,
     ] = await Promise.all([
       getPublicLeagueData(leagueId),
       getLeagueFlags(leagueId),
@@ -84,23 +81,21 @@ export default async function LeagueByIdPage({ params }: Props) {
       }),
       // v1.66.0 — unpaid-fee banner data; null when banner stays hidden.
       getUnpaidFeeBannerData(leagueId),
-      // v1.67.0 — planned-roster panel; auth + flag gates resolved below.
+      // v1.67.0 — planned-roster panel data. v1.75.5 — threaded
+      // unconditionally so the public details panel can render the
+      // fee + planned teams + per-team + spots-left mini-section.
+      // The panel hides individual rows when value is unset/zero.
       getPlannedRosterStats(leagueId),
-      // v1.75.0 — league details panel; preseasonMode gate resolved below.
+      // v1.75.0 — league details panel; v1.75.1 — preseasonMode gate
+      // removed; renders on both classic and preseason homepages.
       getLeagueDetails(leagueId),
-      getServerSession(authOptions),
     ])
     data = _data
     flags = _flags
     recruitingState = _recruitingState
     leagueRow = _leagueRow
     unpaidFee = _unpaidFee
-    const userId = (session as { userId?: string | null } | null)?.userId ?? null
-    // v1.75.1 — preseasonMode gate removed; leagueDetails renders on
-    // both classic and preseason homepages when showLeagueDetails=true.
-    // plannedRosterStats gate relaxed to userId + recruiting only.
-    plannedRosterStats =
-      userId && flags.recruiting ? _plannedRosterStats : null
+    plannedRosterStats = _plannedRosterStats
     leagueDetails = _leagueDetails
   } catch {
     return (

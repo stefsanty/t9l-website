@@ -1,26 +1,48 @@
 'use client'
 
 import { useState, useTransition } from 'react'
-import { Loader2 } from 'lucide-react'
+import { Loader2, Plus, X } from 'lucide-react'
 import { useToast } from './ToastProvider'
-import { updateLeagueDetails } from '@/app/admin/leagues/actions'
+import {
+  updateLeagueDetails,
+  updateLeagueFeeSettings,
+  updateLeaguePlannedRoster,
+} from '@/app/admin/leagues/actions'
 import { cn } from '@/lib/utils'
+import { formatJpyFee } from '@/lib/playerFee'
+import { formatJstDate } from '@/lib/jst'
 
 /**
  * v1.75.0 — Admin League Settings: "League details" section.
- * v1.75.1 — Fields reordered by player-perspective importance to match
- *   the public LeagueDetailsPanel display order.
+ * v1.75.1 — Fields reordered by player-perspective importance.
+ * v1.75.5 — Combined editor: absorbs fee + planned-roster fields so the
+ *   admin sees ONE consolidated "League details" form. Save calls all three
+ *   server actions in parallel. Standalone LeagueFeesEditor /
+ *   LeaguePlannedRosterEditor components remain as files (referenced by
+ *   their own dedicated tests + dark-mode contrast pin) but are no longer
+ *   mounted on the admin page.
  *
- * Field order:
- *   1. Player format   2. Match duration   3. Ball type   4. Goal size
- *   5. Offside rule    6. Backpass rule (futsal-only)
- *   7. Throw-in/kick-in   8. Unlimited subs   9. Organizer message
- *  10. Show on homepage toggle
+ * Field order (player-importance — mirrors public LeagueDetailsPanel):
+ *   1. Player format        2. Match duration
+ *   3. Ball type            4. Goal size
+ *   5. Default fee + per-position fee rows
+ *   6. Planned teams        7. Planned per-team
+ *   8. Registration deadline
+ *   9. Offside rule         10. Throw-in vs kick-in
+ *  11. Backpass rule (futsal-only)
+ *  12. Unlimited subs
+ *  13. Show on homepage toggle
+ *  14. Organizer message (long text, last)
  */
 
 type BallType = 'SOCCER' | 'FUTSAL'
 type GoalSize = 'FUTSAL' | 'YOUTH_SOCCER' | 'FULL_SIZE_SOCCER'
 type ThrowInType = 'THROW_IN' | 'KICK_IN'
+
+interface FeeRow {
+  position: string
+  fee: number
+}
 
 interface Props {
   leagueId: string
@@ -34,6 +56,18 @@ interface Props {
   initialUnlimitedSubstitutions: boolean
   initialOrganizerMessage: string | null
   initialShowLeagueDetails: boolean
+  // v1.75.5 — Fee fields (absorbed from LeagueFeesEditor).
+  initialDefaultFee: number
+  initialPositionFees: ReadonlyArray<FeeRow>
+  // v1.75.5 — Planned-roster fields (absorbed from LeaguePlannedRosterEditor).
+  initialPlannedPlayersPerTeam: number
+  initialPlannedNumberOfTeams: number
+  initialRegistrationDeadline: Date | null
+}
+
+function fmtDateInput(d: Date | null): string {
+  if (!d) return ''
+  return formatJstDate(d)
 }
 
 export default function LeagueDetailsEditor({
@@ -48,10 +82,16 @@ export default function LeagueDetailsEditor({
   initialUnlimitedSubstitutions,
   initialOrganizerMessage,
   initialShowLeagueDetails,
+  initialDefaultFee,
+  initialPositionFees,
+  initialPlannedPlayersPerTeam,
+  initialPlannedNumberOfTeams,
+  initialRegistrationDeadline,
 }: Props) {
   const { toast } = useToast()
   const [pending, startTransition] = useTransition()
 
+  // Details fields
   const [ballType, setBallType] = useState<BallType>(initialBallType)
   const [goalSize, setGoalSize] = useState<GoalSize>(initialGoalSize)
   const [throwInType, setThrowInType] = useState<ThrowInType>(initialThrowInType)
@@ -73,6 +113,31 @@ export default function LeagueDetailsEditor({
     initialShowLeagueDetails,
   )
 
+  // Fee fields (absorbed from LeagueFeesEditor)
+  const [defaultFee, setDefaultFee] = useState<number>(initialDefaultFee)
+  const [feeRows, setFeeRows] = useState<FeeRow[]>([...initialPositionFees])
+
+  function addFeeRow() {
+    setFeeRows([...feeRows, { position: '', fee: 0 }])
+  }
+  function removeFeeRow(idx: number) {
+    setFeeRows(feeRows.filter((_, i) => i !== idx))
+  }
+  function updateFeeRow(idx: number, patch: Partial<FeeRow>) {
+    setFeeRows(feeRows.map((r, i) => (i === idx ? { ...r, ...patch } : r)))
+  }
+
+  // Planned-roster fields (absorbed from LeaguePlannedRosterEditor)
+  const [plannedPlayersPerTeam, setPlannedPlayersPerTeam] = useState<number>(
+    initialPlannedPlayersPerTeam,
+  )
+  const [plannedNumberOfTeams, setPlannedNumberOfTeams] = useState<number>(
+    initialPlannedNumberOfTeams,
+  )
+  const [registrationDeadline, setRegistrationDeadline] = useState<string>(
+    fmtDateInput(initialRegistrationDeadline),
+  )
+
   function handleSave() {
     const durationParsed = matchDurationMinutes.trim() === ''
       ? null
@@ -88,22 +153,37 @@ export default function LeagueDetailsEditor({
 
     startTransition(async () => {
       try {
-        await updateLeagueDetails({
-          leagueId,
-          ballType,
-          goalSize,
-          throwInType,
-          offsideRule,
-          // Only persist backpassRule when it's relevant. Sending the
-          // current value when the field is hidden would silently
-          // overwrite a previously-set value the admin can't see.
-          backpassRule: ballType === 'FUTSAL' ? backpassRule : undefined,
-          matchDurationMinutes: durationParsed,
-          playerFormat: formatParsed,
-          unlimitedSubstitutions,
-          organizerMessage: organizerMessage.trim() === '' ? null : organizerMessage,
-          showLeagueDetails,
-        })
+        await Promise.all([
+          updateLeagueDetails({
+            leagueId,
+            ballType,
+            goalSize,
+            throwInType,
+            offsideRule,
+            // Only persist backpassRule when relevant. Sending the value
+            // when the field is hidden would silently overwrite a
+            // previously-set value the admin can't see.
+            backpassRule: ballType === 'FUTSAL' ? backpassRule : undefined,
+            matchDurationMinutes: durationParsed,
+            playerFormat: formatParsed,
+            unlimitedSubstitutions,
+            organizerMessage: organizerMessage.trim() === '' ? null : organizerMessage,
+            showLeagueDetails,
+          }),
+          updateLeagueFeeSettings({
+            leagueId,
+            defaultFee,
+            positionFees: feeRows
+              .map((r) => ({ position: r.position.trim(), fee: Math.max(0, Math.floor(r.fee || 0)) }))
+              .filter((r) => r.position),
+          }),
+          updateLeaguePlannedRoster({
+            leagueId,
+            plannedPlayersPerTeam: Math.max(0, Math.floor(plannedPlayersPerTeam || 0)),
+            plannedNumberOfTeams: Math.max(0, Math.floor(plannedNumberOfTeams || 0)),
+            registrationDeadline: registrationDeadline.trim() === '' ? null : registrationDeadline,
+          }),
+        ])
         toast('League details saved', 'success')
       } catch (err) {
         toast(err instanceof Error ? err.message : 'Failed to save', 'error')
@@ -119,8 +199,8 @@ export default function LeagueDetailsEditor({
       <div>
         <h2 className="font-condensed font-bold text-admin-text text-lg">League details</h2>
         <p className="text-xs text-admin-text3 mt-1 leading-relaxed">
-          Match-format details surfaced on the public homepage when &ldquo;Show on homepage&rdquo; is on.
-          Toggle off to hide the panel without losing the values.
+          Match-format details, player fees, and planned-roster targets. Surfaced on the
+          public homepage when &ldquo;Show on homepage&rdquo; is on.
         </p>
       </div>
 
@@ -195,8 +275,158 @@ export default function LeagueDetailsEditor({
         </select>
       </div>
 
-      {/* 5 — Offside rule */}
-      <div className="flex items-center justify-between gap-3" data-testid="league-details-offside-toggle">
+      {/* 5 — Default fee + per-position fee rows */}
+      <div
+        className="pt-4 border-t border-admin-border space-y-4"
+        data-testid="league-fees-editor"
+      >
+        <div>
+          <h3 className="text-sm font-bold text-admin-text mb-1">Player fees</h3>
+          <p className="text-xs text-admin-text2 leading-relaxed">
+            Default fee applies to every player whose position has no override below.
+            Per-position rows match
+            <code className="mx-1 px-1 bg-admin-surface2 rounded text-[11px] font-mono text-admin-text">PlayerLeagueMembership.position</code>
+            via case-sensitive exact match (e.g. <code>GK</code> = 5,000 + default = 4,000).
+          </p>
+        </div>
+
+        <label className="block">
+          <span className="block text-xs uppercase tracking-widest font-bold text-admin-text2 mb-1.5">
+            Default fee (JPY)
+          </span>
+          <input
+            type="number"
+            min={0}
+            step={100}
+            value={defaultFee}
+            onChange={(e) => setDefaultFee(parseInt(e.target.value, 10) || 0)}
+            className="w-32 bg-admin-surface2 border border-admin-border rounded px-2 py-1 text-sm font-mono text-admin-text"
+            data-testid="default-fee-input"
+          />
+          <p className="text-[11px] text-admin-text3 mt-1">
+            {formatJpyFee(defaultFee)} per matchday (or season — your call)
+          </p>
+        </label>
+
+        <div className="space-y-2">
+          <p className="text-xs uppercase tracking-widest font-bold text-admin-text2">Per-position overrides</p>
+          {feeRows.length === 0 && (
+            <p className="text-xs text-admin-text3 italic">No per-position overrides — every player pays the default fee.</p>
+          )}
+          {feeRows.map((row, idx) => (
+            <div
+              key={idx}
+              className="flex items-center gap-2"
+              data-testid={`fee-row-${idx}`}
+            >
+              <input
+                type="text"
+                value={row.position}
+                onChange={(e) => updateFeeRow(idx, { position: e.target.value })}
+                placeholder="GK"
+                maxLength={32}
+                className="w-20 bg-admin-surface2 border border-admin-border rounded px-2 py-1 text-sm font-mono uppercase text-admin-text placeholder:text-admin-text3"
+                data-testid={`fee-position-${idx}`}
+              />
+              <input
+                type="number"
+                min={0}
+                step={100}
+                value={row.fee}
+                onChange={(e) => updateFeeRow(idx, { fee: parseInt(e.target.value, 10) || 0 })}
+                className="w-32 bg-admin-surface2 border border-admin-border rounded px-2 py-1 text-sm font-mono text-admin-text"
+                data-testid={`fee-amount-${idx}`}
+              />
+              <span className="text-[11px] text-admin-text3">{formatJpyFee(row.fee)}</span>
+              <button
+                type="button"
+                onClick={() => removeFeeRow(idx)}
+                aria-label="Remove fee row"
+                className="ml-auto w-7 h-7 flex items-center justify-center rounded text-admin-text3 hover:text-admin-text hover:bg-admin-surface2 transition-colors"
+                data-testid={`fee-remove-${idx}`}
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          ))}
+          <button
+            type="button"
+            onClick={addFeeRow}
+            className="inline-flex items-center gap-1.5 text-xs font-bold text-admin-text2 hover:text-admin-text px-2 py-1 rounded border border-dashed border-admin-border hover:border-admin-border2 transition-colors"
+            data-testid="fee-add-row"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            Add position fee
+          </button>
+        </div>
+      </div>
+
+      {/* 6 — Planned teams + 7 — Planned per-team + 8 — Registration deadline */}
+      <div
+        className="pt-4 border-t border-admin-border space-y-4"
+        data-testid="league-planned-roster-editor"
+      >
+        <div>
+          <h3 className="text-sm font-bold text-admin-text mb-1">Planned roster</h3>
+          <p className="text-xs text-admin-text2 leading-relaxed">
+            Targets surfaced on the public homepage. Set to 0 to hide a row from the public panel.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <label className="block">
+            <span className="block text-xs uppercase tracking-widest font-bold text-admin-text2 mb-1.5">
+              Planned teams
+            </span>
+            <input
+              type="number"
+              min={0}
+              step={1}
+              value={plannedNumberOfTeams}
+              onChange={(e) => setPlannedNumberOfTeams(parseInt(e.target.value, 10) || 0)}
+              className="w-full bg-admin-surface2 border border-admin-border rounded px-2 py-1 text-sm font-mono text-admin-text"
+              data-testid="planned-number-of-teams-input"
+            />
+          </label>
+
+          <label className="block">
+            <span className="block text-xs uppercase tracking-widest font-bold text-admin-text2 mb-1.5">
+              Planned players / team
+            </span>
+            <input
+              type="number"
+              min={0}
+              step={1}
+              value={plannedPlayersPerTeam}
+              onChange={(e) => setPlannedPlayersPerTeam(parseInt(e.target.value, 10) || 0)}
+              className="w-full bg-admin-surface2 border border-admin-border rounded px-2 py-1 text-sm font-mono text-admin-text"
+              data-testid="planned-players-per-team-input"
+            />
+          </label>
+        </div>
+
+        <label className="block">
+          <span className="block text-xs uppercase tracking-widest font-bold text-admin-text2 mb-1.5">
+            Registration deadline
+          </span>
+          <input
+            type="date"
+            value={registrationDeadline}
+            onChange={(e) => setRegistrationDeadline(e.target.value)}
+            className="bg-admin-surface2 border border-admin-border rounded px-2 py-1 text-sm font-mono text-admin-text"
+            data-testid="registration-deadline-input"
+          />
+          <p className="text-[11px] text-admin-text3 mt-1">
+            JST calendar date. Leave empty to hide the deadline row from the public panel.
+          </p>
+        </label>
+      </div>
+
+      {/* 9 — Offside rule */}
+      <div
+        className="flex items-center justify-between gap-3 pt-4 border-t border-admin-border"
+        data-testid="league-details-offside-toggle"
+      >
         <div>
           <p className="text-sm font-medium text-admin-text">Offside rule</p>
           <p className="text-xs text-admin-text3">When off, attackers can stay behind the last defender.</p>
@@ -216,30 +446,7 @@ export default function LeagueDetailsEditor({
         </button>
       </div>
 
-      {/* 6 — Backpass (futsal-only) */}
-      {ballType === 'FUTSAL' && (
-        <div className="flex items-center justify-between gap-3" data-testid="league-details-backpass-toggle">
-          <div>
-            <p className="text-sm font-medium text-admin-text">Backpass rule</p>
-            <p className="text-xs text-admin-text3">Futsal: keeper can&apos;t handle a deliberate teammate pass.</p>
-          </div>
-          <button
-            type="button"
-            aria-pressed={backpassRule}
-            onClick={() => setBackpassRule(!backpassRule)}
-            className={cn(
-              'rounded-full px-4 py-1.5 text-xs font-bold uppercase tracking-widest border transition-colors',
-              backpassRule
-                ? 'border-admin-green bg-admin-green/15 text-admin-text'
-                : 'border-admin-border bg-admin-surface2 text-admin-text3',
-            )}
-          >
-            {backpassRule ? 'On' : 'Off'}
-          </button>
-        </div>
-      )}
-
-      {/* 7 — Throw-in vs kick-in */}
+      {/* 10 — Throw-in vs kick-in */}
       <div className="space-y-1.5">
         <label className="text-xs font-medium text-admin-text2 uppercase tracking-wide">Restart from sideline</label>
         <div className="grid grid-cols-2 gap-3">
@@ -262,7 +469,30 @@ export default function LeagueDetailsEditor({
         </div>
       </div>
 
-      {/* 8 — Unlimited subs */}
+      {/* 11 — Backpass (futsal-only) */}
+      {ballType === 'FUTSAL' && (
+        <div className="flex items-center justify-between gap-3" data-testid="league-details-backpass-toggle">
+          <div>
+            <p className="text-sm font-medium text-admin-text">Backpass rule</p>
+            <p className="text-xs text-admin-text3">Futsal: keeper can&apos;t handle a deliberate teammate pass.</p>
+          </div>
+          <button
+            type="button"
+            aria-pressed={backpassRule}
+            onClick={() => setBackpassRule(!backpassRule)}
+            className={cn(
+              'rounded-full px-4 py-1.5 text-xs font-bold uppercase tracking-widest border transition-colors',
+              backpassRule
+                ? 'border-admin-green bg-admin-green/15 text-admin-text'
+                : 'border-admin-border bg-admin-surface2 text-admin-text3',
+            )}
+          >
+            {backpassRule ? 'On' : 'Off'}
+          </button>
+        </div>
+      )}
+
+      {/* 12 — Unlimited subs */}
       <div className="flex items-center justify-between gap-3" data-testid="league-details-unlimited-subs-toggle">
         <div>
           <p className="text-sm font-medium text-admin-text">Unlimited substitutions</p>
@@ -283,21 +513,11 @@ export default function LeagueDetailsEditor({
         </button>
       </div>
 
-      {/* 9 — Organizer message */}
-      <div className="space-y-1.5">
-        <label className="text-xs font-medium text-admin-text2 uppercase tracking-wide">Organizer message</label>
-        <textarea
-          value={organizerMessage}
-          onChange={(e) => setOrganizerMessage(e.target.value)}
-          rows={6}
-          placeholder="Welcome message, league rules, contact info, etc. Newlines are preserved."
-          className="w-full bg-admin-surface2 border border-admin-border rounded-lg px-3 py-2 text-sm text-admin-text placeholder:text-admin-text3 focus:outline-none focus:border-admin-border2 resize-y min-h-[8rem]"
-          data-testid="league-details-organizer-message"
-        />
-      </div>
-
-      {/* 10 — Show on homepage toggle */}
-      <div className="flex items-center justify-between gap-3 pt-2 border-t border-admin-border" data-testid="league-details-show-toggle">
+      {/* 13 — Show on homepage toggle */}
+      <div
+        className="flex items-center justify-between gap-3 pt-2 border-t border-admin-border"
+        data-testid="league-details-show-toggle"
+      >
         <div>
           <p className="text-sm font-medium text-admin-text">Show on homepage</p>
           <p className="text-xs text-admin-text3">When off, the public details panel is hidden but values are kept.</p>
@@ -315,6 +535,19 @@ export default function LeagueDetailsEditor({
         >
           {showLeagueDetails ? 'Visible' : 'Hidden'}
         </button>
+      </div>
+
+      {/* 14 — Organizer message (long text, last) */}
+      <div className="space-y-1.5">
+        <label className="text-xs font-medium text-admin-text2 uppercase tracking-wide">Organizer message</label>
+        <textarea
+          value={organizerMessage}
+          onChange={(e) => setOrganizerMessage(e.target.value)}
+          rows={6}
+          placeholder="Welcome message, league rules, contact info, etc. Newlines are preserved."
+          className="w-full bg-admin-surface2 border border-admin-border rounded-lg px-3 py-2 text-sm text-admin-text placeholder:text-admin-text3 focus:outline-none focus:border-admin-border2 resize-y min-h-[8rem]"
+          data-testid="league-details-organizer-message"
+        />
       </div>
 
       <div className="flex justify-end pt-2">

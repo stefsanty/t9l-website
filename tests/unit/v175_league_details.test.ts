@@ -201,7 +201,11 @@ describe('v1.75.0 LeagueDetailsEditor admin UI', () => {
   })
 
   it('imports updateLeagueDetails server action', () => {
-    expect(src).toMatch(/import \{ updateLeagueDetails \} from '@\/app\/admin\/leagues\/actions'/)
+    // v1.75.5 — broadened to multi-import shape since the editor now also
+    // imports updateLeagueFeeSettings + updateLeaguePlannedRoster from the
+    // same module. The original single-line shape is gone.
+    expect(src).toMatch(/updateLeagueDetails/)
+    expect(src).toMatch(/from '@\/app\/admin\/leagues\/actions'/)
   })
 
   it('conditionally renders backpass toggle only when ballType is FUTSAL', () => {
