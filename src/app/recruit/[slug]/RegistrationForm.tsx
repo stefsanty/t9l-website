@@ -37,7 +37,13 @@ export default function RegistrationForm({
   const router = useRouter()
 
   async function handleSubmit(input: RegistrationFieldsSubmit) {
-    const result = await registerToLeague({
+    // v1.77.1 — registerToLeague calls `redirect()` server-side on the
+    // success path; the NEXT_REDIRECT signal propagates through
+    // useTransition and triggers navigation even when iOS Safari has
+    // backgrounded the tab mid-upload.  The router.push below is an
+    // unreachable defensive fallback in case the action is ever reverted
+    // to a return-shape.
+    await registerToLeague({
       leagueId,
       name: input.name,
       position: input.position === '' ? null : input.position,
@@ -45,9 +51,6 @@ export default function RegistrationForm({
       idBackUrl: input.idBackUrl,
       profilePictureUrl: input.profilePictureUrl,
     })
-    if (!result.ok) {
-      throw new Error(result.error)
-    }
     router.push(`/id/${leagueSlug}`)
   }
 
