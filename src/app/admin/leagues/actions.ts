@@ -6,7 +6,6 @@ import { getServerSession } from 'next-auth'
 import { waitUntil } from '@vercel/functions'
 import { authOptions, getPlayerMappingFromDb } from '@/lib/auth'
 import { revalidate } from '@/lib/revalidate'
-import { SETTING_IDS, type DataSource, type WriteMode } from '@/lib/settings'
 import {
   setMapping,
   deleteMapping,
@@ -1600,60 +1599,6 @@ export async function adminGenerateInvitesBulk(input: {
   const csv = buildInviteCsv(csvRows)
 
   return { results, csv }
-}
-
-// ── Settings (data source / write mode toggles) ──────────────────────────────
-
-const VALID_DATA_SOURCES: DataSource[] = ['sheets', 'db']
-const VALID_WRITE_MODES: WriteMode[] = ['sheets-only', 'dual', 'db-only']
-
-/**
- * Flip the apex public site's source-of-truth between Google Sheets and DB.
- *
- * The `settings` domain busts both the settings cache (which `getDataSource`
- * sits behind) and the public-data cache (so the next render serves the new
- * source). See `lib/revalidate.ts`.
- */
-export async function setDataSource(value: DataSource) {
-  await assertAdmin()
-  if (!VALID_DATA_SOURCES.includes(value)) {
-    throw new Error(`Invalid data source: ${value}`)
-  }
-  await prisma.setting.upsert({
-    where: { id: SETTING_IDS.publicDataSource },
-    create: {
-      id: SETTING_IDS.publicDataSource,
-      category: 'public',
-      key: 'dataSource',
-      leagueId: null,
-      value,
-    },
-    update: { value },
-  })
-  revalidate({ domain: 'settings', paths: ['/admin'] })
-}
-
-/**
- * Flip the RSVP write mode. `dual` is the safe default during cutover.
- * `db-only` retires the Sheets write entirely.
- */
-export async function setWriteMode(value: WriteMode) {
-  await assertAdmin()
-  if (!VALID_WRITE_MODES.includes(value)) {
-    throw new Error(`Invalid write mode: ${value}`)
-  }
-  await prisma.setting.upsert({
-    where: { id: SETTING_IDS.publicWriteMode },
-    create: {
-      id: SETTING_IDS.publicWriteMode,
-      category: 'public',
-      key: 'writeMode',
-      leagueId: null,
-      value,
-    },
-    update: { value },
-  })
-  revalidate({ domain: 'settings', paths: ['/admin'] })
 }
 
 // ── MatchEvent CRUD (PR γ / v1.43.0) ───────────────────────────────────────

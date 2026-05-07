@@ -8,5 +8,6 @@
     "esModuleInterop": true,
     "resolveJsonModule": true
   },
-  "include": ["scripts/**/*.ts", "src/lib/prisma.ts"]
+  "include": ["scripts/**/*.ts", "src/lib/prisma.ts"],
+  "exclude": ["scripts/_archive"]
 }

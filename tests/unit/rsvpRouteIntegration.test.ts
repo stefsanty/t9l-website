@@ -3,8 +3,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 /**
  * Integration test for the RSVP write path. v1.8.0 inverts the order:
  * Redis (`setRsvpOrThrow`) is canonical and written synchronously, and the
- * Prisma upsert is deferred via `waitUntil`. The Sheets dual-write rides
- * along inside the same waitUntil callback in `dual` mode.
+ * Prisma upsert is deferred via `waitUntil`.
+ *
+ * v1.71.0 — Sheets dual-write retired with the rest of the Sheets surface;
+ * the only durable secondary now is Postgres.
  *
  * Contracts pinned (post-v1.8.0):
  *   1. The Redis store (`setRsvpOrThrow`) is written on the synchronous
@@ -44,16 +46,6 @@ vi.mock('@/lib/prisma', () => ({
       upsert: vi.fn().mockResolvedValue({}),
     },
   },
-}))
-
-vi.mock('@/lib/sheets', () => ({
-  writeRosterAvailability: vi.fn().mockResolvedValue(undefined),
-}))
-
-vi.mock('@/lib/settings', () => ({
-  // dual mode → Prisma write deferred; Sheets best-effort inside the same
-  // waitUntil callback. Redis write sync.
-  getWriteMode: vi.fn().mockResolvedValue('dual'),
 }))
 
 vi.mock('next-auth', () => ({

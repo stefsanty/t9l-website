@@ -5,8 +5,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
  *
  * Pre-v1.8.0 the RSVP route awaited `prisma.availability.upsert` on the
  * response critical path. v1.8.0 inverts: Redis (`setRsvpOrThrow`) is the
- * canonical store written synchronously, and the Prisma upsert + Sheets
- * dual-write run in `waitUntil`.
+ * canonical store written synchronously, and the Prisma upsert runs in
+ * `waitUntil`.
+ *
+ * v1.71.0 — Sheets dual-write paths retired. `writeMode` setting + the
+ * `sheets-only` legacy branch are gone; this test no longer asserts on
+ * them.
  *
  * Contracts pinned:
  *   - gameWeek.findUnique stays synchronous (Redis key + TTL need it)
@@ -15,7 +19,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
  *   - Response returns 200 BEFORE the Prisma upsert resolves
  *   - Prisma rejection emits a [v1.8.0 DRIFT] log; response stays 200
  *   - Redis throw → 500 (don't 200 with no durable write anywhere)
- *   - sheets-only mode keeps the legacy synchronous path (no waitUntil)
  */
 
 const {
@@ -24,8 +27,6 @@ const {
   getServerSessionMock,
   waitUntilMock,
   setRsvpOrThrowMock,
-  getWriteModeMock,
-  writeRosterAvailabilityMock,
   getDefaultLeagueIdMock,
 } = vi.hoisted(() => ({
   gameWeekFindUniqueMock: vi.fn(),
@@ -33,8 +34,6 @@ const {
   getServerSessionMock: vi.fn(),
   waitUntilMock: vi.fn(),
   setRsvpOrThrowMock: vi.fn(),
-  getWriteModeMock: vi.fn(),
-  writeRosterAvailabilityMock: vi.fn(),
   getDefaultLeagueIdMock: vi.fn(),
 }))
 
@@ -47,14 +46,6 @@ vi.mock('@/lib/prisma', () => ({
     gameWeek: { findUnique: gameWeekFindUniqueMock },
     availability: { upsert: availabilityUpsertMock },
   },
-}))
-
-vi.mock('@/lib/sheets', () => ({
-  writeRosterAvailability: writeRosterAvailabilityMock,
-}))
-
-vi.mock('@/lib/settings', () => ({
-  getWriteMode: getWriteModeMock,
 }))
 
 vi.mock('next-auth', () => ({
@@ -87,8 +78,6 @@ beforeEach(() => {
   })
   availabilityUpsertMock.mockResolvedValue({})
   setRsvpOrThrowMock.mockResolvedValue(undefined)
-  writeRosterAvailabilityMock.mockResolvedValue(undefined)
-  getWriteModeMock.mockResolvedValue('dual')
   getDefaultLeagueIdMock.mockResolvedValue('l-minato-2025')
   waitUntilMock.mockImplementation(() => {
     // capture-only by default; tests override to control execution
@@ -155,18 +144,6 @@ describe('POST /api/rsvp — Redis-canonical sync, Prisma deferred (v1.8.0)', ()
     setRsvpOrThrowMock.mockRejectedValueOnce(new Error('Upstash unreachable'))
     const res = await POST(makeRequest('md3', 'GOING'))
     expect(res.status).toBe(500)
-    expect(waitUntilMock).not.toHaveBeenCalled()
-  })
-
-  it('does NOT defer in sheets-only mode — keeps the synchronous Sheets-canonical path', async () => {
-    getWriteModeMock.mockResolvedValueOnce('sheets-only')
-
-    const res = await POST(makeRequest('md3', 'GOING'))
-    expect(res.status).toBe(200)
-    expect(writeRosterAvailabilityMock).toHaveBeenCalledTimes(1)
-    // No Redis or Prisma writes in sheets-only mode.
-    expect(setRsvpOrThrowMock).not.toHaveBeenCalled()
-    expect(availabilityUpsertMock).not.toHaveBeenCalled()
     expect(waitUntilMock).not.toHaveBeenCalled()
   })
 
