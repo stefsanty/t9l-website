@@ -1,11 +1,11 @@
 'use client'
 
 import { useState } from 'react'
-import { signIn } from 'next-auth/react'
-import { toast } from 'sonner'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import ApplyToLeagueModal from './ApplyToLeagueModal'
+import SignInLightbox from './SignInLightbox'
+import { getCurrentCallbackUrl } from '@/lib/signInCallbackUrl'
 import type { RecruitingViewerState } from '@/lib/recruitingViewerState'
 import { DEFAULT_LEAGUE_SLUG } from '@/lib/leagueSlug'
 
@@ -29,10 +29,11 @@ import { DEFAULT_LEAGUE_SLUG } from '@/lib/leagueSlug'
  *                              carries through). v1.65.1 closes the
  *                              State D bug where this previously
  *                              just toasted "contact admin".
- * State E ('unauthenticated'):"RECRUITING NOW" CTA — click toasts
- *                              "Sign in to apply" with a sign-in
- *                              action button (v1.65.1 — previously
- *                              hard-redirected to /auth/signin).
+ * State E ('unauthenticated'):"RECRUITING NOW" CTA — click opens
+ *                              `<SignInLightbox>` with the current URL
+ *                              as callbackUrl (v1.76.0 — v1.65.1 used
+ *                              a toast+signIn; v1.64.0 hard-redirected
+ *                              to /auth/signin).
  *
  * The viewer state is computed server-side via
  * `getRecruitingViewerState(leagueId)` and threaded through Dashboard
@@ -58,6 +59,8 @@ export default function RecruitingBanner({
   leagueSlug = DEFAULT_LEAGUE_SLUG,
 }: Props) {
   const [applyOpen, setApplyOpen] = useState(false)
+  const [signInOpen, setSignInOpen] = useState(false)
+  const [callbackUrl, setCallbackUrl] = useState('/')
   const router = useRouter()
 
   // ── State A — approved member of this league ─────────────────────────
@@ -127,17 +130,11 @@ export default function RecruitingBanner({
   function handleClick() {
     switch (viewer.kind) {
       case 'unauthenticated':
-        // State E (v1.65.1) — toast nudge with a sign-in action button.
-        // v1.64.0 hard-redirected to /auth/signin; the v1.65.1 brief
-        // says "stay on page", so we toast with an action that the
-        // user explicitly opts into.
-        toast.message('Sign in to apply', {
-          description: `Sign in first, then submit your application to ${league.name}.`,
-          action: {
-            label: 'Sign in',
-            onClick: () => signIn(undefined, { callbackUrl: window.location.href }),
-          },
-        })
+        // v1.76.0 — open the SignInLightbox inline (matching
+        // GuestLoginBanner / LineLoginButton). Captures the current URL
+        // at click time so the OAuth round-trip returns here.
+        setCallbackUrl(getCurrentCallbackUrl())
+        setSignInOpen(true)
         return
       case 'no_player':
         // v1.67.2 — State C navigates to the new `/recruit/<slug>` route
@@ -205,6 +202,13 @@ export default function RecruitingBanner({
           mode="existing"
         />
       )}
+
+      {/* v1.76.0 — State E lightbox (matches GuestLoginBanner pattern) */}
+      <SignInLightbox
+        open={signInOpen}
+        onClose={() => setSignInOpen(false)}
+        callbackUrl={callbackUrl}
+      />
     </>
   )
 }
