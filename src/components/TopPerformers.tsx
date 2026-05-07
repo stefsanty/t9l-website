@@ -128,7 +128,7 @@ export default function TopPerformers({
                           </span>
                         )}
                         <div className="flex items-center gap-1.5 mt-1">
-                          <div className="relative w-3 h-3 shrink-0">
+                          <div className="relative w-3 h-3 shrink-0 rounded-sm overflow-hidden">
                             {stat.teamLogo ? (
                               <Image
                                 src={stat.teamLogo}
@@ -137,7 +137,7 @@ export default function TopPerformers({
                                 className="object-contain"
                               />
                             ) : (
-                              <div className="w-full h-full rounded-full" style={{ backgroundColor: stat.teamColor }} />
+                              <div className="w-full h-full rounded-sm" style={{ backgroundColor: stat.teamColor }} />
                             )}
                           </div>
                           <span className="text-[9px] font-black text-fg-mid uppercase tracking-widest leading-none truncate" translate="no">{stat.teamName}</span>
