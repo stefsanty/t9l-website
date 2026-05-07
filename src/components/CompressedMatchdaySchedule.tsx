@@ -38,7 +38,7 @@ function TeamLogo({ team, teamId }: { team: Team | null; teamId: string }) {
         alt=""
         aria-hidden
         data-testid={`team-logo-${team.id}`}
-        className="w-4 h-4 rounded-sm object-cover shrink-0"
+        className="w-4 h-4 rounded-sm object-contain shrink-0"
       />
     )
   }
