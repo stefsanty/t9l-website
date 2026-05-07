@@ -429,75 +429,66 @@ function extOf(filename: string): string {
  * v1.68.0 — single-page onboarding with name + position + ID + optional
  * profile picture in one submit.
  *
- * Replaces the v1.35.0 split flow (`submitOnboarding` form → `/id-upload`
- * page → `submitIdUpload`) with one consolidated server action. The
- * old actions remain in the module for backward compatibility (no
- * caller deletion in this PR), but the new `/join/[code]/onboarding`
- * form points here.
+ * v1.71.1 — files now upload client-direct to Vercel Blob via
+ * `@vercel/blob/client#upload`; this action receives the resulting
+ * URLs (a few KB) instead of FormData multipart. The Vercel platform
+ * 4.5MB body cap rejected oversize multipart uploads at the edge with
+ * HTTP 413 BEFORE the function ran — see the upload-token route at
+ * `src/app/api/blob/upload-token/route.ts` for the full rationale.
  *
- * FormData fields:
- *   code, playerId, name, position, idFront (File), idBack (File),
- *   profilePicture (optional File)
+ * Defense in depth: the upload-token route gates on session.userId +
+ * pathname prefix, and this action re-validates the URLs land under
+ * `/player-id/<playerId>/` (ID) and `/player-profile/<playerId>/`
+ * (picture) on Vercel Blob via `isOwnedBlobUrl`.
  *
  * Validation gates:
  *   - Sign in required + bound user (admin sessions rejected)
  *   - Caller User must be linked to the supplied playerId (defense
  *     in depth — the route only renders the form for the bound user)
  *   - Trimmed name required (≤100 chars)
- *   - idFront + idBack files required (server-side authoritative
- *     mirror of the client gate)
- *   - BLOB_READ_WRITE_TOKEN present
- *
- * Side effects in one transaction:
- *   - Player.name + Player.profilePictureUrl (if picture supplied)
- *   - User.idFrontUrl + idBackUrl + idUploadedAt (v1.70.0 — moved
- *     from Player; per-person identity proof, not per-league)
- *   - PLM.position (active assignments only) + PLM.onboardingStatus
- *     = COMPLETED
- *
- * Redirects to `/join/[code]/welcome` on success.
+ *   - All three URLs (when present) must hostname under
+ *     `*.public.blob.vercel-storage.com` AND pathname under the
+ *     player-keyed prefix
  */
-export async function completeOnboardingWithId(formData: FormData): Promise<void> {
+export interface CompleteOnboardingWithIdInput {
+  code: string
+  playerId: string
+  name: string
+  position?: 'GK' | 'DF' | 'MF' | 'FW' | null
+  idFrontUrl: string
+  idBackUrl: string
+  profilePictureUrl?: string | null
+}
+
+export async function completeOnboardingWithId(
+  input: CompleteOnboardingWithIdInput,
+): Promise<void> {
   const session = await getServerSession(authOptions)
   if (!session) throw new Error('Sign in required')
   const userId = (session as { userId?: string | null }).userId ?? null
   if (!userId) throw new Error('Admin sessions cannot submit onboarding')
   const lineId = session.lineId ?? null
 
-  const code = formData.get('code')
-  const playerId = formData.get('playerId')
-  if (typeof code !== 'string' || !code) throw new Error('Missing invite code')
-  if (typeof playerId !== 'string' || !playerId) throw new Error('Missing playerId')
-
-  const rawName = formData.get('name')
-  if (typeof rawName !== 'string') throw new Error('Your name is required')
-  const trimmedName = rawName.trim()
+  if (!input.code) throw new Error('Missing invite code')
+  if (!input.playerId) throw new Error('Missing playerId')
+  const trimmedName = input.name.trim()
   if (!trimmedName) throw new Error('Your name is required')
   if (trimmedName.length > 100) throw new Error('Name must be 100 characters or fewer')
 
-  const rawPosition = formData.get('position')
-  const position = normalizeOnboardingPosition(typeof rawPosition === 'string' ? rawPosition : null)
-
-  const idFront = formData.get('idFront')
-  const idBack = formData.get('idBack')
-  if (!(idFront instanceof File) || idFront.size === 0) {
+  const idPrefix = `/player-id/${input.playerId}/`
+  const picPrefix = `/player-profile/${input.playerId}/`
+  if (!isOwnedBlobUrl(input.idFrontUrl, idPrefix)) {
     throw new Error('Front of ID is required')
   }
-  if (!(idBack instanceof File) || idBack.size === 0) {
+  if (!isOwnedBlobUrl(input.idBackUrl, idPrefix)) {
     throw new Error('Back of ID is required')
   }
-  const profilePicture = formData.get('profilePicture')
-  const hasProfilePicture =
-    profilePicture instanceof File && profilePicture.size > 0
-      ? (profilePicture as File)
-      : null
-
-  if (!process.env.BLOB_READ_WRITE_TOKEN) {
-    throw new Error('ID upload is currently unavailable. Use the Skip option to continue.')
+  if (input.profilePictureUrl && !isOwnedBlobUrl(input.profilePictureUrl, picPrefix)) {
+    throw new Error('profilePictureUrl is not for this player')
   }
 
   const player = await prisma.player.findUnique({
-    where: { id: playerId },
+    where: { id: input.playerId },
     select: { id: true, userId: true },
   })
   if (!player) throw new Error('Player not found')
@@ -506,65 +497,39 @@ export async function completeOnboardingWithId(formData: FormData): Promise<void
   }
 
   const invite = await prisma.leagueInvite.findUnique({
-    where: { code },
+    where: { code: input.code },
     select: { leagueId: true },
   })
   if (!invite) throw new Error('Invite not found')
-
-  const { put } = await import('@vercel/blob')
-  const ts = Date.now()
-  const uploads: Promise<{ url: string }>[] = [
-    put(`player-id/${playerId}/front-${ts}.${extOf(idFront.name)}`, idFront, {
-      access: 'public',
-      addRandomSuffix: false,
-      contentType: idFront.type || 'application/octet-stream',
-    }),
-    put(`player-id/${playerId}/back-${ts}.${extOf(idBack.name)}`, idBack, {
-      access: 'public',
-      addRandomSuffix: false,
-      contentType: idBack.type || 'application/octet-stream',
-    }),
-  ]
-  if (hasProfilePicture) {
-    uploads.push(
-      put(`player-profile/${playerId}/${ts}.${extOf(hasProfilePicture.name)}`, hasProfilePicture, {
-        access: 'public',
-        addRandomSuffix: false,
-        contentType: hasProfilePicture.type || 'application/octet-stream',
-      }),
-    )
-  }
-  const results = await Promise.all(uploads)
-  const frontResult = results[0]
-  const backResult = results[1]
-  const picResult = hasProfilePicture ? results[2] : null
 
   await prisma.$transaction(async (tx) => {
     // v1.70.0 — Player.name + profilePictureUrl stay on Player; ID
     // images move to User (per-person identity proof). Caller is the
     // bound User; write directly.
     await tx.player.update({
-      where: { id: playerId },
+      where: { id: input.playerId },
       data: {
         name: trimmedName,
-        ...(picResult ? { profilePictureUrl: picResult.url } : {}),
+        ...(input.profilePictureUrl
+          ? { profilePictureUrl: input.profilePictureUrl }
+          : {}),
       },
     })
     await tx.user.update({
       where: { id: userId },
       data: {
-        idFrontUrl: frontResult.url,
-        idBackUrl: backResult.url,
+        idFrontUrl: input.idFrontUrl,
+        idBackUrl: input.idBackUrl,
         idUploadedAt: new Date(),
       },
     })
     await tx.playerLeagueMembership.updateMany({
-      where: { playerId, toGameWeek: null },
-      data: { position },
+      where: { playerId: input.playerId, toGameWeek: null },
+      data: { position: input.position ?? null },
     })
     await tx.playerLeagueMembership.updateMany({
       where: {
-        playerId,
+        playerId: input.playerId,
         leagueTeam: { leagueId: invite.leagueId },
       },
       data: { onboardingStatus: 'COMPLETED' },
@@ -583,12 +548,17 @@ export async function completeOnboardingWithId(formData: FormData): Promise<void
 
   revalidate({ domain: 'admin', paths: [`/admin/leagues/${invite.leagueId}/players`] })
   revalidate({ domain: 'public' })
-  redirect(`/join/${code}/welcome`)
+  redirect(`/join/${input.code}/welcome`)
 }
 
-function normalizeOnboardingPosition(raw: string | null): 'GK' | 'DF' | 'MF' | 'FW' | null {
-  if (raw === 'GK' || raw === 'DF' || raw === 'MF' || raw === 'FW') return raw
-  return null
+function isOwnedBlobUrl(url: string, expectedPrefix: string): boolean {
+  try {
+    const u = new URL(url)
+    if (!u.hostname.endsWith('.public.blob.vercel-storage.com')) return false
+    return u.pathname.includes(expectedPrefix)
+  } catch {
+    return false
+  }
 }
 
 /**

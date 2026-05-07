@@ -1,20 +1,23 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // v1.62.0 — raise the server-action body limit. Default is 1MB; uploads
-  // above the limit hit the framework's body-limit error and surface as
-  // "An unexpected response was received from the server" before our own
-  // validation can run.
+  // v1.71.1 — `bodySizeLimit` no longer drives ID-upload behavior.
+  // Pre-v1.71.1 the /recruit/[slug] + /join/[code]/onboarding forms
+  // shipped FormData multipart bodies up to 21MB through the server
+  // action; the v1.62.0 → v1.69.1 chain bumped this limit (1mb → 6mb
+  // → 25mb) trying to fit them. The Next.js setting was ineffective:
+  // Vercel's edge layer caps serverless function request bodies at
+  // ~4.5MB and rejects oversize requests with HTTP 413
+  // (FUNCTION_PAYLOAD_TOO_LARGE) BEFORE the function runs.
   //
-  // v1.69.1 — raised again from 6MB → 25MB. The v1.68.0 /recruit/[slug]
-  // and /join/[code]/onboarding forms upload up to 8MB ID front + 8MB ID
-  // back + 5MB optional profile picture = 21MB per submission. Any single
-  // file above 6MB (or two files together) blew through the v1.62.0 limit
-  // and surfaced the same "unexpected response" error users saw before.
-  // 25MB covers the 21MB payload plus multipart/FormData overhead.
+  // v1.71.1 routes the bytes around the function: files upload
+  // client-direct to Vercel Blob via `@vercel/blob/client#upload`; the
+  // server actions now receive only the resulting URLs (a few KB).
+  // The Next.js framework limit still gates JSON-shaped server-action
+  // payloads, but those are tiny — 2mb is plenty.
   experimental: {
     serverActions: {
-      bodySizeLimit: '25mb',
+      bodySizeLimit: '2mb',
     },
   },
   images: {

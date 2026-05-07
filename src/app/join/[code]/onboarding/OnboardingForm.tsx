@@ -1,22 +1,17 @@
 'use client'
 
-import RegistrationFields from '@/components/registration/RegistrationFields'
+import RegistrationFields, {
+  type RegistrationFieldsSubmit,
+} from '@/components/registration/RegistrationFields'
 import { completeOnboardingWithId } from '../actions'
 
 /**
  * v1.34.0 (PR ζ) — admin-invite onboarding form.
  *
  * v1.68.0 — collapsed to single-page using shared `RegistrationFields`.
- * Captures name + position + ID front + ID back + optional profile
- * picture in one submit. Submit hits `completeOnboardingWithId`
- * (FormData) which atomically updates Player + PLM + flips
- * onboardingStatus to COMPLETED, then redirects to /welcome.
- *
- * Pre-v1.68.0 the flow was: this form (name + position) → /id-upload
- * (ID front + back) → /welcome. Three round-trips, three render cycles.
- * Post-v1.68.0: one form, one submit, /welcome. The /id-upload route
- * stays as a defensive fallback — see id-upload/page.tsx for the
- * pre-v1.68.0 partial-state handling.
+ * v1.71.1 — files now upload client-direct to Vercel Blob; the action
+ * receives URLs instead of FormData (see RegistrationFields docstring
+ * for the platform 4.5MB body-cap rationale).
  */
 
 interface Props {
@@ -32,10 +27,16 @@ export default function OnboardingForm({
   initialName,
   initialPosition,
 }: Props) {
-  async function handleSubmit(formData: FormData) {
-    formData.append('code', code)
-    formData.append('playerId', playerId)
-    await completeOnboardingWithId(formData)
+  async function handleSubmit(input: RegistrationFieldsSubmit) {
+    await completeOnboardingWithId({
+      code,
+      playerId,
+      name: input.name,
+      position: input.position === '' ? null : input.position,
+      idFrontUrl: input.idFrontUrl,
+      idBackUrl: input.idBackUrl,
+      profilePictureUrl: input.profilePictureUrl,
+    })
     // completeOnboardingWithId redirects on success — anything past
     // here only runs if the action returns instead of throwing/redirecting.
   }
@@ -46,6 +47,8 @@ export default function OnboardingForm({
         initialName={initialName}
         initialPosition={initialPosition}
         submitLabel="Save and finish"
+        uploadPathPrefix={`player-id/${playerId}`}
+        picturePathPrefix={`player-profile/${playerId}`}
         onSubmit={handleSubmit}
       />
     </div>

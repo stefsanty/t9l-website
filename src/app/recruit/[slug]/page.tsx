@@ -97,6 +97,7 @@ export default async function RecruitPage({ params }: Props) {
           leagueId={league.id}
           leagueSlug={slug}
           leagueName={league.name}
+          userId={userId}
         />
       </div>
     </main>
