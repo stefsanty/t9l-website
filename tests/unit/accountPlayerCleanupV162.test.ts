@@ -264,58 +264,39 @@ describe('v1.62.0 — name-propagation fix on AccountPlayerForm', () => {
   })
 })
 
-describe('v1.62.0 — server-action body limit raised to fix upload error', () => {
+describe('v1.62.0 — server-action body limit configured (relaxed in v1.71.1)', () => {
   const NEXT_CONFIG = 'next.config.ts'
 
-  it('next.config.ts sets experimental.serverActions.bodySizeLimit', () => {
+  // v1.71.1 — `bodySizeLimit` no longer drives ID-upload behavior. ID
+  // and profile-picture files now upload client-direct to Vercel Blob
+  // via `@vercel/blob/client#upload`; the server actions receive only
+  // URLs (a few KB). The Next.js framework limit still gates JSON-
+  // shaped server-action payloads, but those are tiny — any digit-mb
+  // value is fine. See `v1711_blob_client_upload.test.ts` for the
+  // contracts that govern the upload path now.
+
+  it('next.config.ts sets experimental.serverActions.bodySizeLimit (any value)', () => {
     const src = stripComments(read(NEXT_CONFIG))
     expect(src).toMatch(/experimental:\s*\{/)
     expect(src).toMatch(/serverActions:\s*\{/)
     expect(src).toMatch(/bodySizeLimit:\s*['"]\d+mb['"]/)
   })
-
-  it('the limit is at least 5MB so the form-claimed 5MB max can actually upload', () => {
-    const src = read(NEXT_CONFIG)
-    const match = src.match(/bodySizeLimit:\s*['"](\d+)mb['"]/i)
-    expect(match).toBeTruthy()
-    if (match) {
-      const mb = parseInt(match[1], 10)
-      expect(mb).toBeGreaterThanOrEqual(5)
-    }
-  })
 })
 
-describe('v1.69.1 — body limit raised again for /recruit/[slug] multi-file upload', () => {
-  const NEXT_CONFIG = 'next.config.ts'
+describe('v1.71.1 — RegistrationFields file-size guards retained (client-side affordance)', () => {
+  // The client-side size caps still matter as user-experience guards:
+  // they reject hilariously oversized files BEFORE the upload begins
+  // and surface a friendly inline error. The Vercel Blob upload-token
+  // route enforces the same limits server-side as the load-bearing
+  // gate. The 21MB-total math is no longer relevant since files don't
+  // travel through the server action.
 
-  // v1.68.0's /recruit/[slug] + /join/[code]/onboarding forms upload up to
-  // 8MB ID front + 8MB ID back + 5MB optional profile picture = 21MB max.
-  // The v1.62.0 6MB limit was set when only the 5MB /account/player picture
-  // was uploaded; v1.68.0 changed the workload without bumping the limit,
-  // so any single ID file above 6MB blew through and surfaced as
-  // "An unexpected response was received from the server" — exactly the
-  // bug v1.62.0's docstring described.
-  it('limit is at least 21MB so 8MB+8MB ID + 5MB profile picture can upload together', () => {
-    const src = read(NEXT_CONFIG)
-    const match = src.match(/bodySizeLimit:\s*['"](\d+)mb['"]/i)
-    expect(match).toBeTruthy()
-    if (match) {
-      const mb = parseInt(match[1], 10)
-      expect(mb).toBeGreaterThanOrEqual(21)
-    }
-  })
-
-  it('regression target — limit is NOT at the pre-v1.69.1 6MB value', () => {
-    const src = read(NEXT_CONFIG)
-    expect(src).not.toMatch(/bodySizeLimit:\s*['"]6mb['"]/)
-  })
-
-  it('RegistrationFields ID_MAX_BYTES stays at 8MB so the 21MB total is the right floor', () => {
+  it('RegistrationFields ID_MAX_BYTES stays at 8MB (matches token route)', () => {
     const src = read('src/components/registration/RegistrationFields.tsx')
     expect(src).toMatch(/ID_MAX_BYTES\s*=\s*8\s*\*\s*1024\s*\*\s*1024/)
   })
 
-  it('RegistrationFields PIC_MAX_BYTES stays at 5MB so the 21MB total is the right floor', () => {
+  it('RegistrationFields PIC_MAX_BYTES stays at 5MB (matches token route)', () => {
     const src = read('src/components/registration/RegistrationFields.tsx')
     expect(src).toMatch(/PIC_MAX_BYTES\s*=\s*5\s*\*\s*1024\s*\*\s*1024/)
   })

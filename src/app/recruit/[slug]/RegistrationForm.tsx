@@ -1,18 +1,20 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import RegistrationFields from '@/components/registration/RegistrationFields'
+import RegistrationFields, {
+  type RegistrationFieldsSubmit,
+} from '@/components/registration/RegistrationFields'
 import { registerToLeague } from '@/app/api/recruiting/actions'
 
 /**
  * v1.68.0 — `/recruit/[slug]` form, single-page name + position + ID
  * front + ID back + (optional) profile picture.
  *
- * Pre-v1.68.0 the form collected only name + position via
- * `applyToLeague`. ID upload was missing entirely — users couldn't
- * complete registration as a non-invited recruit. v1.68.0 routes
- * through `registerToLeague` (FormData) which handles every Blob
- * upload and the atomic Player + PLM creation in one shot.
+ * v1.71.1 — files now upload client-direct to Vercel Blob via the
+ * shared `RegistrationFields` component (see that file's docstring for
+ * the why). `registerToLeague` now takes a typed input object with the
+ * resulting Blob URLs instead of a FormData multipart payload, so the
+ * Vercel platform 4.5MB body cap no longer applies.
  *
  * On success: router.push(`/id/<slug>`) where the apex
  * RecruitingBanner shows State B ("Application submitted").
@@ -22,14 +24,27 @@ interface Props {
   leagueId: string
   leagueSlug: string
   leagueName: string
+  /** The signed-in user's id; threaded into the upload pathname prefix. */
+  userId: string
 }
 
-export default function RegistrationForm({ leagueId, leagueSlug, leagueName }: Props) {
+export default function RegistrationForm({
+  leagueId,
+  leagueSlug,
+  leagueName,
+  userId,
+}: Props) {
   const router = useRouter()
 
-  async function handleSubmit(formData: FormData) {
-    formData.append('leagueId', leagueId)
-    const result = await registerToLeague(formData)
+  async function handleSubmit(input: RegistrationFieldsSubmit) {
+    const result = await registerToLeague({
+      leagueId,
+      name: input.name,
+      position: input.position === '' ? null : input.position,
+      idFrontUrl: input.idFrontUrl,
+      idBackUrl: input.idBackUrl,
+      profilePictureUrl: input.profilePictureUrl,
+    })
     if (!result.ok) {
       throw new Error(result.error)
     }
@@ -40,6 +55,7 @@ export default function RegistrationForm({ leagueId, leagueSlug, leagueName }: P
     <div data-testid="recruit-registration-form">
       <RegistrationFields
         submitLabel={`Apply to ${leagueName}`}
+        uploadPathPrefix={`register-pending/${userId}`}
         onSubmit={handleSubmit}
       />
     </div>

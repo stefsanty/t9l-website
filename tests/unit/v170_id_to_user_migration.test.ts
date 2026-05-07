@@ -160,12 +160,14 @@ describe('v1.70.0 — write paths: recruit + onboarding write to User, not Playe
     expect(playerCreateBody).not.toMatch(/idFrontUrl:/)
     expect(playerCreateBody).not.toMatch(/idBackUrl:/)
     expect(playerCreateBody).not.toMatch(/idUploadedAt:/)
-    // The User.update block carries them.
+    // The User.update block carries them. v1.71.1 moves to client-direct
+    // upload, so the URL source is `input.idFrontUrl` (typed input)
+    // rather than `frontResult.url` (server-side put result).
     expect(RECRUIT_ACTIONS).toMatch(
-      /tx\.user\.update\(\{[\s\S]*?idFrontUrl:\s*frontResult\.url[\s\S]*?\}/,
+      /tx\.user\.update\(\{[\s\S]*?idFrontUrl:\s*(?:input\.idFrontUrl|frontResult\.url)[\s\S]*?\}/,
     )
     expect(RECRUIT_ACTIONS).toMatch(
-      /tx\.user\.update\(\{[\s\S]*?idBackUrl:\s*backResult\.url[\s\S]*?\}/,
+      /tx\.user\.update\(\{[\s\S]*?idBackUrl:\s*(?:input\.idBackUrl|backResult\.url)[\s\S]*?\}/,
     )
     expect(RECRUIT_ACTIONS).toMatch(
       /tx\.user\.update\(\{[\s\S]*?idUploadedAt:\s*new Date\(\)[\s\S]*?\}/,
@@ -186,9 +188,11 @@ describe('v1.70.0 — write paths: recruit + onboarding write to User, not Playe
     expect(playerUpdateMatch![0]).not.toMatch(/idFrontUrl:/)
     expect(playerUpdateMatch![0]).not.toMatch(/idBackUrl:/)
     expect(playerUpdateMatch![0]).not.toMatch(/idUploadedAt:/)
-    // tx.user.update DOES carry them.
-    expect(fn).toMatch(/tx\.user\.update\(\{[\s\S]*?idFrontUrl:\s*frontResult\.url/)
-    expect(fn).toMatch(/tx\.user\.update\(\{[\s\S]*?idBackUrl:\s*backResult\.url/)
+    // tx.user.update DOES carry them. v1.71.1 sources URLs from the
+    // typed input (`input.idFrontUrl`) instead of the v1.68.0 server-
+    // side put result (`frontResult.url`).
+    expect(fn).toMatch(/tx\.user\.update\(\{[\s\S]*?idFrontUrl:\s*(?:input\.idFrontUrl|frontResult\.url)/)
+    expect(fn).toMatch(/tx\.user\.update\(\{[\s\S]*?idBackUrl:\s*(?:input\.idBackUrl|backResult\.url)/)
     expect(fn).toMatch(/tx\.user\.update\(\{[\s\S]*?idUploadedAt:\s*new Date\(\)/)
   })
 

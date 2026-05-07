@@ -280,19 +280,22 @@ describe('v1.67.2 /recruit/[slug] route + form', () => {
     expect(src).toMatch(/<RegistrationForm/)
   })
 
-  it('RegistrationForm uses registerToLeague (v1.68.0 — atomic Player + PLM + ID upload)', () => {
+  it('RegistrationForm uses registerToLeague (v1.68.0 — atomic Player + PLM + ID upload; v1.71.1 — typed input not FormData)', () => {
     const src = read('src/app/recruit/[slug]/RegistrationForm.tsx')
     expect(src).toMatch(/'use client'/)
-    // v1.68.0 — flipped to registerToLeague (FormData with files).
     expect(src).toMatch(/import\s*\{\s*registerToLeague\s*\}\s*from/)
-    expect(src).toMatch(/registerToLeague\(formData\)/)
+    // v1.71.1 — call shape is a typed object with URLs, not FormData.
+    // Regression target: re-introducing `registerToLeague(formData)` would
+    // re-introduce the Vercel 4.5MB body-cap cliff.
+    expect(src).toMatch(/registerToLeague\(\s*\{[\s\S]+idFrontUrl:\s*input\.idFrontUrl/)
+    expect(src).not.toMatch(/registerToLeague\(formData\)/)
     // No reference to the dropped legacy action.
     expect(src).not.toMatch(/recruitToLeagueWithOnboarding/)
     // Lands on /id/<slug> on success so the banner shows State B.
     expect(src).toMatch(/router\.push\(`\/id\/\$\{leagueSlug\}`\)/)
     // Wrapper testid preserved.
     expect(src).toMatch(/data-testid="recruit-registration-form"/)
-    // v1.68.0 — field testids live in the shared component.
+    // Field testids live in the shared component.
     expect(src).toMatch(/<RegistrationFields/)
   })
 

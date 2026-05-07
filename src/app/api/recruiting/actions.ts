@@ -215,36 +215,44 @@ export async function applyToLeague(
 /**
  * v1.68.0 — single-page registration with ID + optional profile picture.
  *
- * `registerToLeague(formData)` is the FormData equivalent of
- * `applyToLeague` for the State C path on `/recruit/[slug]`. It
- * collects name + position + idFront + idBack + (optional) profile
- * picture in one shot, uploads ID images (and the picture if present)
- * to Vercel Blob, and creates Player + PLM(PENDING) atomically with
- * every URL already populated. No multi-step wizard, no orphan rows
- * on click-and-bounce.
+ * v1.71.1 — files now upload client-direct to Vercel Blob via
+ * `@vercel/blob/client#upload`; this action receives the resulting
+ * URLs (a few KB) instead of FormData multipart. Pre-v1.71.1 the
+ * action ran `put` server-side after receiving the binary, but the
+ * Vercel platform itself caps serverless function request bodies at
+ * ~4.5MB and rejected oversize uploads at the edge with HTTP 413
+ * (FUNCTION_PAYLOAD_TOO_LARGE) BEFORE the function ran — making the
+ * v1.62.0 → v1.69.1 `bodySizeLimit` chain ineffective for any
+ * iPhone-camera ID image.
  *
- * Validation gates (reject before any Blob write):
+ * Defense in depth: the upload-token route at
+ * `/api/blob/upload-token` gates on session.userId + pathname prefix,
+ * and this action re-validates the URLs land under the user's own
+ * `register-pending/<userId>/` Blob prefix via `isOwnedBlobUrl`.
+ *
+ * Validation gates (all run before the DB transaction):
  *   - Sign in required (rejects no-session)
  *   - Admin-credentials sessions rejected (no userId on session)
+ *   - leagueId required + League must exist + recruiting
+ *   - Trimmed name required (≤100 chars)
+ *   - All three URLs (when present) must hostname under
+ *     `*.public.blob.vercel-storage.com` AND pathname under
+ *     `/register-pending/<userId>/`
  *   - User must NOT already have a Player binding (recruit is the
  *     fresh-Player path; State D users redirect at the route layer)
- *   - League must exist + recruiting
- *   - Trimmed name required (≤100 chars)
- *   - idFront + idBack files required (server-side authoritative
- *     mirror of the client gate)
- *   - BLOB_READ_WRITE_TOKEN present — without it ID upload cannot
- *     proceed (no skip path; user-initiated registration treats ID
- *     as load-bearing per v1.68.0's brief)
- *
- * On any Blob upload failure mid-way: the upload promise rejects and
- * the action returns ok=false. Any prior successful uploads orphan
- * in Blob (no Player exists to track them); operator can sweep
- * unreferenced `register-pending/<userId>/...` paths periodically.
- * In practice retries will either succeed (re-uploading at a fresh
- * timestamped path) or land at the same orphan-Blob outcome — neither
- * corrupts the database state.
  */
-export async function registerToLeague(formData: FormData): Promise<ApplyToLeagueResult> {
+export interface RegisterToLeagueInput {
+  leagueId: string
+  name: string
+  position?: 'GK' | 'DF' | 'MF' | 'FW' | null
+  idFrontUrl: string
+  idBackUrl: string
+  profilePictureUrl?: string | null
+}
+
+export async function registerToLeague(
+  input: RegisterToLeagueInput,
+): Promise<ApplyToLeagueResult> {
   const session = await getServerSession(authOptions)
   if (!session) {
     return { ok: false, error: 'Sign in required' }
@@ -254,47 +262,34 @@ export async function registerToLeague(formData: FormData): Promise<ApplyToLeagu
     return { ok: false, error: 'Admin sessions cannot submit applications' }
   }
 
-  const leagueId = formData.get('leagueId')
-  if (typeof leagueId !== 'string' || !leagueId) {
+  if (!input.leagueId) {
     return { ok: false, error: 'Missing leagueId' }
   }
-  const rawName = formData.get('name')
-  if (typeof rawName !== 'string') {
-    return { ok: false, error: 'Your name is required' }
-  }
-  const trimmedName = rawName.trim()
+  const trimmedName = input.name.trim()
   if (!trimmedName) {
     return { ok: false, error: 'Your name is required' }
   }
   if (trimmedName.length > 100) {
     return { ok: false, error: 'Name must be 100 characters or fewer' }
   }
-  const rawPosition = formData.get('position')
-  const position = normalizePosition(typeof rawPosition === 'string' ? rawPosition : null)
 
-  const idFront = formData.get('idFront')
-  const idBack = formData.get('idBack')
-  if (!(idFront instanceof File) || idFront.size === 0) {
+  // Defense in depth: the URLs must live under the user's own
+  // register-pending prefix on Vercel Blob. The token route already
+  // gated the PUT, but a forged URL on submit would land here without
+  // the gate having run.
+  const expectedPrefix = `/register-pending/${userId}/`
+  if (!isOwnedBlobUrl(input.idFrontUrl, expectedPrefix)) {
     return { ok: false, error: 'Front of ID is required' }
   }
-  if (!(idBack instanceof File) || idBack.size === 0) {
+  if (!isOwnedBlobUrl(input.idBackUrl, expectedPrefix)) {
     return { ok: false, error: 'Back of ID is required' }
   }
-  const profilePicture = formData.get('profilePicture')
-  const hasProfilePicture =
-    profilePicture instanceof File && profilePicture.size > 0
-      ? (profilePicture as File)
-      : null
-
-  if (!process.env.BLOB_READ_WRITE_TOKEN) {
-    return {
-      ok: false,
-      error: 'ID upload is currently unavailable. Contact the league admin.',
-    }
+  if (input.profilePictureUrl && !isOwnedBlobUrl(input.profilePictureUrl, expectedPrefix)) {
+    return { ok: false, error: 'profilePictureUrl is not yours' }
   }
 
   const league = await prisma.league.findUnique({
-    where: { id: leagueId },
+    where: { id: input.leagueId },
     select: { id: true, recruiting: true, name: true },
   })
   if (!league) return { ok: false, error: 'League not found' }
@@ -308,54 +303,9 @@ export async function registerToLeague(formData: FormData): Promise<ApplyToLeagu
   })
   if (!user) return { ok: false, error: 'User not found' }
   if (user.playerId) {
-    // State D — recruit page redirects these users away. If they POST
-    // here directly, route them to the no-files `applyToLeague` path
-    // by responding with a clear error. (Don't silently re-key the
-    // request; State D never needs to upload ID via this surface.)
     return {
       ok: false,
       error: 'You already have a player. Use the apply button on the league page.',
-    }
-  }
-
-  // Upload ID + (optional) profile picture in parallel BEFORE the
-  // transaction. Any Blob failure short-circuits before DB writes —
-  // partial uploads orphan but no Player rows leak.
-  const { put } = await import('@vercel/blob')
-  const ts = Date.now()
-  const uploads: Promise<{ url: string }>[] = [
-    put(`register-pending/${user.id}/id-front-${ts}.${extOf(idFront.name)}`, idFront, {
-      access: 'public',
-      addRandomSuffix: false,
-      contentType: idFront.type || 'application/octet-stream',
-    }),
-    put(`register-pending/${user.id}/id-back-${ts}.${extOf(idBack.name)}`, idBack, {
-      access: 'public',
-      addRandomSuffix: false,
-      contentType: idBack.type || 'application/octet-stream',
-    }),
-  ]
-  if (hasProfilePicture) {
-    uploads.push(
-      put(`register-pending/${user.id}/profile-${ts}.${extOf(hasProfilePicture.name)}`, hasProfilePicture, {
-        access: 'public',
-        addRandomSuffix: false,
-        contentType: hasProfilePicture.type || 'application/octet-stream',
-      }),
-    )
-  }
-  let frontResult: { url: string }
-  let backResult: { url: string }
-  let picResult: { url: string } | null = null
-  try {
-    const results = await Promise.all(uploads)
-    frontResult = results[0]
-    backResult = results[1]
-    picResult = hasProfilePicture ? results[2] : null
-  } catch (err) {
-    return {
-      ok: false,
-      error: err instanceof Error ? err.message : 'Upload failed',
     }
   }
 
@@ -369,15 +319,15 @@ export async function registerToLeague(formData: FormData): Promise<ApplyToLeagu
         name: trimmedName,
         userId: user.id,
         lineId: user.lineId ?? null,
-        profilePictureUrl: picResult?.url ?? null,
+        profilePictureUrl: input.profilePictureUrl ?? null,
       },
     })
     await tx.user.update({
       where: { id: user.id },
       data: {
         playerId: created.id,
-        idFrontUrl: frontResult.url,
-        idBackUrl: backResult.url,
+        idFrontUrl: input.idFrontUrl,
+        idBackUrl: input.idBackUrl,
         idUploadedAt: new Date(),
       },
     })
@@ -388,12 +338,8 @@ export async function registerToLeague(formData: FormData): Promise<ApplyToLeagu
         leagueId: league.id,
         fromGameWeek: 1,
         applicationStatus: 'PENDING',
-        position,
+        position: input.position ?? null,
         joinSource: 'SELF_SERVE',
-        // v1.68.0 — onboarding is COMPLETED at registration time
-        // because every required field (name + ID front + back) is
-        // captured in the same submit. No follow-up /onboarding or
-        // /id-upload step needed.
         onboardingStatus: 'COMPLETED',
       },
     })
@@ -409,13 +355,15 @@ export async function registerToLeague(formData: FormData): Promise<ApplyToLeagu
   return { ok: true, playerId: player.id, mode: 'fresh' }
 }
 
-function normalizePosition(raw: string | null): 'GK' | 'DF' | 'MF' | 'FW' | null {
-  if (raw === 'GK' || raw === 'DF' || raw === 'MF' || raw === 'FW') return raw
-  return null
-}
-
-function extOf(filename: string): string {
-  const i = filename.lastIndexOf('.')
-  if (i < 0) return 'bin'
-  return filename.slice(i + 1).toLowerCase().replace(/[^a-z0-9]/g, '') || 'bin'
+function isOwnedBlobUrl(url: string, expectedPrefix: string): boolean {
+  // Vercel Blob URLs are of the form
+  //   https://<storeId>.public.blob.vercel-storage.com/<pathname>
+  // The pathname must include the user's expected prefix.
+  try {
+    const u = new URL(url)
+    if (!u.hostname.endsWith('.public.blob.vercel-storage.com')) return false
+    return u.pathname.includes(expectedPrefix)
+  } catch {
+    return false
+  }
 }

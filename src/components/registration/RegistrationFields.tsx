@@ -1,6 +1,7 @@
 'use client'
 
 import { useRef, useState, useTransition } from 'react'
+import { upload } from '@vercel/blob/client'
 
 /**
  * v1.68.0 — shared registration fields component.
@@ -8,26 +9,18 @@ import { useRef, useState, useTransition } from 'react'
  * Single-page form rendering name + position + ID front + ID back +
  * (optional) profile picture. Used by both `/recruit/[slug]` (user-
  * initiated registration) and `/join/[code]/onboarding` (admin-invite
- * onboarding) so the two surfaces share one source of truth for the
- * field layout, validation messages, file-input UX, and previews.
+ * onboarding).
  *
- * The parent owns the actual submit logic — this component only
- * collects the values and calls `onSubmit(formData)` with the
- * FormData ready to ship to a server action. It returns the URLs
- * after Blob upload server-side, so the parent doesn't need to
- * thread playerId through.
- *
- * Field validity gates: submit is blocked until name is non-empty,
- * idFront is selected, and idBack is selected. Profile picture is
- * optional — match with admin-invite onboarding pre-v1.68.0 (which
- * collected no picture at all). Required client-side guards are
- * mirrored server-side; client UI is the affordance, not the contract.
- *
- * File-size guard mirrors the v1.35.0 IdUploadForm: 8MB per ID side,
- * 5MB for the profile picture (matches v1.37.0 AccountPlayerForm).
- *
- * Files travel through FormData to the parent's onSubmit. The parent's
- * server action handles Blob upload + DB write atomically.
+ * v1.71.1 — files now upload CLIENT-SIDE direct to Vercel Blob via
+ * `@vercel/blob/client#upload`. Pre-v1.71.1 the form built FormData
+ * and the server action ran `put` server-side. Vercel's edge layer
+ * enforces a ~4.5MB request-body cap on serverless functions and
+ * rejected any large submission with HTTP 413 BEFORE the function
+ * could run, regardless of `experimental.serverActions.bodySizeLimit`.
+ * v1.71.1 routes the bytes around the function entirely: the browser
+ * PUTs each file straight to Blob storage; only the resulting URLs
+ * (a few KB) reach the parent's `onSubmit`. Field validity gates,
+ * file-size guards, and the previews are unchanged.
  */
 
 const POSITIONS: ReadonlyArray<{ value: '' | 'GK' | 'DF' | 'MF' | 'FW'; label: string }> = [
@@ -43,6 +36,16 @@ const ID_MAX_BYTES = 8 * 1024 * 1024
 const PIC_ACCEPT = 'image/jpeg,image/png,image/webp'
 const PIC_MAX_BYTES = 5 * 1024 * 1024
 
+const UPLOAD_TOKEN_URL = '/api/blob/upload-token'
+
+export interface RegistrationFieldsSubmit {
+  name: string
+  position: '' | 'GK' | 'DF' | 'MF' | 'FW'
+  idFrontUrl: string
+  idBackUrl: string
+  profilePictureUrl: string | null
+}
+
 export interface RegistrationFieldsProps {
   /** Initial name — for invite mode the bound Player's name; for recruit mode empty. */
   initialName?: string
@@ -50,18 +53,33 @@ export interface RegistrationFieldsProps {
   /** Submit button label, e.g. "Apply to T9L" or "Save and finish". */
   submitLabel: string
   /**
-   * Async submit handler. Receives FormData with fields:
-   *   name, position, idFront, idBack, profilePicture? (omitted when blank).
-   * Should throw on failure (component surfaces err.message); on success
-   * the parent typically navigates away.
+   * Pathname prefix for ID uploads (and for the picture if no
+   * `picturePathPrefix` override). Examples:
+   *   register-pending/<userId>   (for /recruit/[slug])
+   *   player-id/<playerId>        (for /join/[code]/onboarding ID files)
    */
-  onSubmit: (formData: FormData) => Promise<void>
+  uploadPathPrefix: string
+  /**
+   * Optional override for the profile-picture upload prefix. Used by
+   * the join flow to land the picture at `player-profile/<playerId>`
+   * (the route handler accepts that as a valid PIC pathname).
+   */
+  picturePathPrefix?: string
+  /**
+   * Async submit handler. Receives the URLs produced by the client-
+   * direct Blob uploads + the form fields. Should throw on failure
+   * (component surfaces err.message); on success the parent typically
+   * navigates away.
+   */
+  onSubmit: (input: RegistrationFieldsSubmit) => Promise<void>
 }
 
 export default function RegistrationFields({
   initialName = '',
   initialPosition = null,
   submitLabel,
+  uploadPathPrefix,
+  picturePathPrefix,
   onSubmit,
 }: RegistrationFieldsProps) {
   const [pending, startTransition] = useTransition()
@@ -129,18 +147,42 @@ export default function RegistrationFields({
       return
     }
 
-    const formData = new FormData()
-    formData.append('name', trimmed)
-    formData.append('position', position)
-    formData.append('idFront', idFrontFile)
-    formData.append('idBack', idBackFile)
-    if (picFile) {
-      formData.append('profilePicture', picFile)
-    }
-
     startTransition(async () => {
       try {
-        await onSubmit(formData)
+        const ts = Date.now()
+        const idFrontPath = `${uploadPathPrefix}/id-front-${ts}.${extOf(idFrontFile.name)}`
+        const idBackPath = `${uploadPathPrefix}/id-back-${ts}.${extOf(idBackFile.name)}`
+        const picPath = picFile
+          ? `${picturePathPrefix ?? uploadPathPrefix}/profile-${ts}.${extOf(picFile.name)}`
+          : null
+
+        const [front, back, pic] = await Promise.all([
+          upload(idFrontPath, idFrontFile, {
+            access: 'public',
+            handleUploadUrl: UPLOAD_TOKEN_URL,
+            contentType: idFrontFile.type || undefined,
+          }),
+          upload(idBackPath, idBackFile, {
+            access: 'public',
+            handleUploadUrl: UPLOAD_TOKEN_URL,
+            contentType: idBackFile.type || undefined,
+          }),
+          picFile && picPath
+            ? upload(picPath, picFile, {
+                access: 'public',
+                handleUploadUrl: UPLOAD_TOKEN_URL,
+                contentType: picFile.type || undefined,
+              })
+            : Promise.resolve(null),
+        ])
+
+        await onSubmit({
+          name: trimmed,
+          position,
+          idFrontUrl: front.url,
+          idBackUrl: back.url,
+          profilePictureUrl: pic?.url ?? null,
+        })
       } catch (err) {
         if (err && typeof err === 'object' && 'digest' in err) {
           // Next.js redirect — let the framework handle it.
@@ -250,6 +292,12 @@ export default function RegistrationFields({
       )}
     </form>
   )
+}
+
+function extOf(filename: string): string {
+  const i = filename.lastIndexOf('.')
+  if (i < 0) return 'bin'
+  return filename.slice(i + 1).toLowerCase().replace(/[^a-z0-9]/g, '') || 'bin'
 }
 
 function FileField({
