@@ -7,6 +7,7 @@ import ConfirmDialog from './ConfirmDialog'
 import { useToast } from './ToastProvider'
 import {
   updateLeagueInfo,
+  updateLeagueAbbreviation,
   deleteLeague,
   setLeagueAllowSelfLink,
   setLeaguePreseasonMode,
@@ -40,6 +41,8 @@ interface League {
   plannedPlayersPerTeam: number
   plannedNumberOfTeams: number
   registrationDeadline: Date | null
+  // v1.73.0 — short display label for header + page title.
+  abbreviation: string | null
 }
 
 // JST calendar date as YYYY-MM-DD for `<input type="date">`. See lib/jst.ts.
@@ -73,6 +76,7 @@ export default function SettingsTab({ league }: SettingsTabProps) {
   const [location, setLocation]     = useState(league.location)
   const [startDate, setStartDate]   = useState(fmtDate(league.startDate))
   const [endDate, setEndDate]       = useState(fmtDate(league.endDate))
+  const [abbreviation, setAbbreviation] = useState(league.abbreviation ?? '')
   const [subStatus, setSubStatus]   = useState<SubdomainStatus>('idle')
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -111,14 +115,17 @@ export default function SettingsTab({ league }: SettingsTabProps) {
   function handleSave() {
     startTransition(async () => {
       try {
-        await updateLeagueInfo(league.id, {
-          name:        name.trim(),
-          description: description.trim() || null,
-          subdomain:   subdomain.trim().toLowerCase() || null,
-          location:    location.trim(),
-          startDate:   startDate || undefined,
-          endDate:     endDate || null,
-        })
+        await Promise.all([
+          updateLeagueInfo(league.id, {
+            name:        name.trim(),
+            description: description.trim() || null,
+            subdomain:   subdomain.trim().toLowerCase() || null,
+            location:    location.trim(),
+            startDate:   startDate || undefined,
+            endDate:     endDate || null,
+          }),
+          updateLeagueAbbreviation(league.id, abbreviation.trim() || null),
+        ])
         toast('Settings saved')
       } catch (err: unknown) {
         toast(err instanceof Error ? err.message : 'Failed to save settings')
@@ -227,6 +234,23 @@ export default function SettingsTab({ league }: SettingsTabProps) {
             className="w-full bg-admin-surface2 border border-admin-border rounded-lg px-3 py-2 text-sm text-admin-text placeholder:text-admin-text3 focus:outline-none focus:border-admin-border2 resize-none"
             placeholder="Optional description"
           />
+        </div>
+
+        {/* Abbreviation — v1.73.0: short display label used in the header
+            home button and page <title>. When empty, the header falls back
+            to League.name. */}
+        <div className="space-y-1.5">
+          <label className="text-xs font-medium text-admin-text2 uppercase tracking-wide">League Abbreviation</label>
+          <input
+            type="text"
+            value={abbreviation}
+            onChange={(e) => setAbbreviation(e.target.value)}
+            className="w-full bg-admin-surface2 border border-admin-border rounded-lg px-3 py-2 text-sm text-admin-text placeholder:text-admin-text3 focus:outline-none focus:border-admin-border2"
+            placeholder="e.g. T9L '26 春"
+            maxLength={40}
+            data-testid="settings-tab-abbreviation-input"
+          />
+          <p className="text-xs text-admin-text3">Used in the page title and header home button.</p>
         </div>
 
         {/* URL slug — v1.55.0 (PR 2 of admin-UI-compat-audit chain): label

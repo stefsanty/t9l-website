@@ -295,8 +295,11 @@ describe('v1.72.0 regression targets', () => {
     expect(block).toMatch(/name:\s*user\.authAccountName/)
   })
 
-  it('version is 1.72.0', () => {
+  it('version is 1.72.0 or later', () => {
     const ver = readSrc('src', 'lib', 'version.ts')
-    expect(ver).toMatch(/APP_VERSION\s*=\s*'1\.72\.0'/)
+    // Relaxed from literal '1.72.0' to any version >= 1.72.x per CLAUDE.md
+    // pinned-literal policy: patch/minor bumps should not require touching
+    // all prior-version test files.
+    expect(ver).toMatch(/APP_VERSION\s*=\s*'1\.(7[2-9]|[89]\d|\d{3,})\.\d+'/)
   })
 })

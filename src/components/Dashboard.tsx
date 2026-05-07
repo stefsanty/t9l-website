@@ -77,7 +77,7 @@ interface DashboardProps {
    * action passes leagueId + leagueName for display). Threaded as a
    * single prop so a future per-league rebrand only touches one site.
    */
-  league?: { id: string; name: string };
+  league?: { id: string; name: string; abbreviation?: string | null };
   /**
    * v1.66.0 — unpaid league-fee banner data, computed server-side via
    * `getUnpaidFeeBannerData(leagueId)`. Null = banner stays hidden
@@ -213,7 +213,7 @@ export default function Dashboard({
 
   return (
     <div className="flex flex-col min-h-dvh pb-0 max-w-lg mx-auto bg-background selection:bg-vibrant-pink selection:text-white">
-      <Header hideStatsLink={preseasonMode} />
+      <Header hideStatsLink={preseasonMode} leagueTitle={league?.abbreviation ?? league?.name ?? null} />
 
       <main className={`flex-1 px-4 relative z-10 pt-12 ${showRsvpBar ? 'pb-32' : 'pb-2'}`}>
         <div className="animate-in pt-2">

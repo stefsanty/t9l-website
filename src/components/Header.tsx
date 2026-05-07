@@ -16,9 +16,16 @@ interface HeaderProps {
    * (admin, /assign-player, etc.) keep the existing behavior.
    */
   hideStatsLink?: boolean;
+  /**
+   * v1.73.0 — short label for the home button. Set to
+   * `league.abbreviation ?? league.name` by the page RSC; falls back to
+   * the legacy hardcoded text when not provided (pages that mount Header
+   * without a league context, e.g. /assign-player, /stats, /schedule).
+   */
+  leagueTitle?: string | null;
 }
 
-export default function Header({ hideStatsLink = false }: HeaderProps) {
+export default function Header({ hideStatsLink = false, leagueTitle }: HeaderProps) {
   const pathname = usePathname();
 
   // v1.41.2 — mobile sizing trim. Pre-fix the header wrapped to two rows
@@ -31,9 +38,10 @@ export default function Header({ hideStatsLink = false }: HeaderProps) {
   return (
     <header className="fixed top-0 left-1/2 -translate-x-1/2 w-full max-w-lg z-50 bg-header-bg backdrop-blur-md border-b border-border-default">
       <div className="flex items-center gap-2 px-3 md:px-4 h-12">
-        <Link href="/" className="font-display font-black uppercase tracking-tight leading-none flex items-baseline gap-1.5 shrink-0 hover:opacity-80 transition-opacity">
-          <span className="text-xl text-fg-high">T9L &apos;26</span>
-          <span className="text-xl text-primary">春</span>
+        <Link href="/" className="font-display font-black uppercase tracking-tight leading-none flex items-baseline gap-1.5 shrink-0 hover:opacity-80 transition-opacity" data-testid="header-home-link">
+          <span className="text-xl text-fg-high" data-testid="header-league-title">
+            {leagueTitle ?? "T9L '26 春"}
+          </span>
         </Link>
 
         {/* v1.52.0 — league switcher chevron next to the brand. Hidden when
