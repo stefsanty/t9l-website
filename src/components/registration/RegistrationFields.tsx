@@ -235,6 +235,18 @@ export default function RegistrationFields({
         </select>
       </label>
 
+      <div
+        className="rounded-lg border border-warning/40 bg-warning/10 px-4 py-3 text-sm text-fg-high leading-relaxed"
+        data-testid="registration-id-callout"
+      >
+        <p className="font-bold mb-1.5 text-fg-high">Why we need your ID</p>
+        <p className="text-fg-mid">
+          We need these IDs to be able to book more courts. We will only ever use your ID
+          to book courts in order to host more games. We require all league members to
+          acknowledge this and submit their ID to join the league.
+        </p>
+      </div>
+
       <FileField
         label="Front of ID"
         required
@@ -270,11 +282,6 @@ export default function RegistrationFields({
         }
         testid="registration-profile-picture"
       />
-
-      <p className="text-fg-low text-xs">
-        We will only ever use your ID for the sole purpose of booking more courts
-        for the league.
-      </p>
 
       <button
         type="submit"
