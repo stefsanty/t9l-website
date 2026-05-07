@@ -135,6 +135,11 @@ export async function updatePlayerSelf(input: UpdatePlayerSelfInput): Promise<vo
         name: trimmedName,
       },
     })
+    // v1.72.0 — sync User.name = Player.name for the linked User.
+    await tx.user.updateMany({
+      where: { playerId },
+      data: { name: trimmedName },
+    })
     await tx.playerLeagueMembership.updateMany({
       where: { playerId, toGameWeek: null },
       data: { position: input.position ?? null },

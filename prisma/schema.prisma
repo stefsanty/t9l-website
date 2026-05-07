@@ -14,10 +14,16 @@ enum Role {
 }
 
 model User {
-  id         String   @id @default(cuid())
-  lineId     String?  @unique
-  name       String?
-  pictureUrl String?
+  id              String   @id @default(cuid())
+  lineId          String?  @unique
+  // v1.72.0 — `name` is now the linked Player's name when a Player is
+  // bound (User.playerId non-null). When unlinked it falls back to
+  // `authAccountName`. `authAccountName` permanently records whatever
+  // the auth provider (LINE display name, Google name, email address)
+  // returned at sign-in time and is never overwritten by Player edits.
+  name            String?
+  authAccountName String?
+  pictureUrl      String?
   // v1.28.0 (stage α.5) — NextAuth PrismaAdapter writes the OAuth profile
   // image to `User.image` by convention. Existing code reads `pictureUrl`
   // (LINE-specific from PR 6 trackLineLogin); the adapter writes `image`.

@@ -81,13 +81,18 @@ beforeEach(() => {
 
 describe('adminUnlinkUserFromPlayer', () => {
   it('happy path — clears User.playerId and Player.userId in a transaction', async () => {
-    userFindUniqueMock.mockResolvedValue({ id: 'u-stefan', playerId: 'p-stefan' })
+    userFindUniqueMock.mockResolvedValue({
+      id: 'u-stefan',
+      playerId: 'p-stefan',
+      authAccountName: 'Stefan LINE',
+    })
 
     await adminUnlinkUserFromPlayer({ userId: 'u-stefan' })
 
+    // v1.72.0 — User.name is restored to authAccountName on unlink
     expect(userUpdateMock).toHaveBeenCalledWith({
       where: { id: 'u-stefan' },
-      data: { playerId: null },
+      data: { playerId: null, name: 'Stefan LINE' },
     })
     expect(playerUpdateManyMock).toHaveBeenCalledWith({
       where: { userId: 'u-stefan' },
@@ -100,7 +105,7 @@ describe('adminUnlinkUserFromPlayer', () => {
   })
 
   it('idempotent — no-op when User.playerId is already null', async () => {
-    userFindUniqueMock.mockResolvedValue({ id: 'u-stefan', playerId: null })
+    userFindUniqueMock.mockResolvedValue({ id: 'u-stefan', playerId: null, authAccountName: null })
 
     await adminUnlinkUserFromPlayer({ userId: 'u-stefan' })
 

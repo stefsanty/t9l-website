@@ -1,36 +1,37 @@
 /**
  * v1.20.0 — adminUpdatePlayerName server action contract.
+ * v1.72.0 — updated: action now wraps in $transaction + syncs User.name.
  *
  * The action is the canonical write path for editing `Player.name` from
  * the admin Players tab. Validation: name required, trimmed, ≤100 chars.
- * Cache invalidation: `revalidate({ domain: 'admin' })` busts both the
- * admin path and the public-data tag set (player names are reachable
- * from `dbToPublicLeagueData`, so the public dashboard re-derives on
- * next render).
- *
- * Mocking shape mirrors the existing `tests/unit/adminLineActions.test.ts`
- * — Prisma + revalidate + next-auth + the lib/auth re-exports are all
- * mocked so the action runs in isolation and we can assert its
- * dispatch shape without standing up a real DB.
+ * Cache invalidation: `revalidate({ domain: 'admin' })` busts the admin path.
+ * v1.72.0: runs inside a $transaction; also issues tx.user.updateMany to
+ * sync the linked User's name.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-const { updateMock } = vi.hoisted(() => ({
-  updateMock: vi.fn().mockResolvedValue({}),
-}))
-
-const { revalidateMock } = vi.hoisted(() => ({
-  revalidateMock: vi.fn(),
-}))
+const { txPlayerUpdate, txUserUpdateMany, txMock, revalidateMock } = vi.hoisted(() => {
+  const txPlayerUpdate = vi.fn().mockResolvedValue({})
+  const txUserUpdateMany = vi.fn().mockResolvedValue({ count: 0 })
+  const txMock = vi.fn(async (cb: (tx: unknown) => Promise<unknown>) => {
+    const tx = {
+      player: { update: txPlayerUpdate },
+      user: { updateMany: txUserUpdateMany },
+    }
+    return cb(tx)
+  })
+  return { txPlayerUpdate, txUserUpdateMany, txMock, revalidateMock: vi.fn() }
+})
 
 vi.mock('@/lib/prisma', () => ({
   prisma: {
     player: {
-      update: updateMock,
+      update: vi.fn().mockResolvedValue({}),
       findUnique: vi.fn().mockResolvedValue(null),
       updateMany: vi.fn().mockResolvedValue({ count: 0 }),
     },
-    $transaction: vi.fn().mockResolvedValue([]),
+    user: { updateMany: txUserUpdateMany },
+    $transaction: txMock,
   },
 }))
 
@@ -68,7 +69,9 @@ vi.mock('@vercel/functions', () => ({
 const { adminUpdatePlayerName } = await import('@/app/admin/leagues/actions')
 
 beforeEach(() => {
-  updateMock.mockClear()
+  txPlayerUpdate.mockClear()
+  txUserUpdateMany.mockClear()
+  txMock.mockClear()
   revalidateMock.mockClear()
 })
 
@@ -79,10 +82,31 @@ describe('v1.20.0 — adminUpdatePlayerName', () => {
       leagueId: 'league-1',
       name: '  Ian N. Noseda  ',
     })
-    expect(updateMock).toHaveBeenCalledWith({
+    expect(txPlayerUpdate).toHaveBeenCalledWith({
       where: { id: 'p-ian-noseda' },
       data: { name: 'Ian N. Noseda' },
     })
+  })
+
+  it('v1.72.0 — also syncs User.name = Player.name via tx.user.updateMany', async () => {
+    await adminUpdatePlayerName({
+      playerId: 'p-ian-noseda',
+      leagueId: 'league-1',
+      name: 'Ian Noseda',
+    })
+    expect(txUserUpdateMany).toHaveBeenCalledWith({
+      where: { playerId: 'p-ian-noseda' },
+      data: { name: 'Ian Noseda' },
+    })
+  })
+
+  it('runs inside a $transaction (atomic — player + user update together)', async () => {
+    await adminUpdatePlayerName({
+      playerId: 'p-ian-noseda',
+      leagueId: 'league-1',
+      name: 'Ian Noseda',
+    })
+    expect(txMock).toHaveBeenCalledTimes(1)
   })
 
   it('busts the admin path so the Players tab re-renders with the new name', async () => {
@@ -105,7 +129,7 @@ describe('v1.20.0 — adminUpdatePlayerName', () => {
         name: '   ',
       }),
     ).rejects.toThrow(/Player name is required/)
-    expect(updateMock).not.toHaveBeenCalled()
+    expect(txPlayerUpdate).not.toHaveBeenCalled()
     expect(revalidateMock).not.toHaveBeenCalled()
   })
 
@@ -128,7 +152,7 @@ describe('v1.20.0 — adminUpdatePlayerName', () => {
         name: long,
       }),
     ).rejects.toThrow(/100 characters or fewer/)
-    expect(updateMock).not.toHaveBeenCalled()
+    expect(txPlayerUpdate).not.toHaveBeenCalled()
   })
 
   it('accepts exactly 100 characters at the boundary', async () => {
@@ -138,7 +162,7 @@ describe('v1.20.0 — adminUpdatePlayerName', () => {
       leagueId: 'league-1',
       name: max,
     })
-    expect(updateMock).toHaveBeenCalledWith({
+    expect(txPlayerUpdate).toHaveBeenCalledWith({
       where: { id: 'p-ian-noseda' },
       data: { name: max },
     })
@@ -152,7 +176,7 @@ describe('v1.20.0 — adminUpdatePlayerName', () => {
         name: 'Ian Noseda',
       }),
     ).rejects.toThrow(/playerId is required/)
-    expect(updateMock).not.toHaveBeenCalled()
+    expect(txPlayerUpdate).not.toHaveBeenCalled()
   })
 
   it('does not bust the cache on validation failure (no Prisma write happened)', async () => {
@@ -163,8 +187,6 @@ describe('v1.20.0 — adminUpdatePlayerName', () => {
         name: '   ',
       }),
     ).rejects.toThrow()
-    // If we revalidated despite no write, every failed-validation click
-    // would burn the public-data cache for nothing.
     expect(revalidateMock).not.toHaveBeenCalled()
   })
 })
