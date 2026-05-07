@@ -87,7 +87,9 @@ describe('v1.73.4 — unchanged surfaces retain rounded-square styling', () => {
 describe('v1.73.4 — version bump', () => {
   it('APP_VERSION is 1.73.4 or later', () => {
     const ver = readSrc('src/lib/version.ts')
-    // Relaxed to "1.73.x" — patch bumps within the minor don't force this file to change.
-    expect(ver).toMatch(/1\.73\.\d+/)
+    // Relaxed to "1.73.x or any later minor/major" — patch bumps within
+    // the minor (or follow-on minor bumps like v1.74.0) don't force this
+    // file to change.
+    expect(ver).toMatch(/APP_VERSION\s*=\s*['"](?:1\.(?:7[3-9]|[89]\d)|[2-9]\d?)\./)
   })
 })

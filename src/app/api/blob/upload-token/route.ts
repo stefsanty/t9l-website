@@ -23,19 +23,24 @@ import { authOptions } from '@/lib/auth'
  * resulting URLs (a few KB) reach the server action. This route issues
  * the short-lived presigned token the client needs.
  *
+ * v1.74.0 — added the `team-logo/<teamId>/...` prefix for the redesigned
+ * `/admin/teams-all` surface. Admin-only (admin sessions are gated by
+ * `session.isAdmin`, NOT `userId` — admin-credentials sessions have no
+ * User row); SVG is allowed in addition to JPEG/PNG/WEBP for vector logos.
+ *
  * Authorization model:
- *   - Session must carry `userId` (LINE / Google / email; NOT admin
- *     credentials, which have no User row).
- *   - Pathname must be one of:
- *       register-pending/<userId>/...       (user-initiated registration)
- *       player-id/<playerId>/(front|back)-* (admin-invite onboarding ID)
- *       player-profile/<playerId>/...        (admin-invite onboarding picture)
- *   - We do NOT authoritatively validate playerId ownership at token-
- *     issue time — that's a Prisma round-trip and would slow the
+ *   - For `register-pending/`, `player-id/`, `player-profile/` paths:
+ *       session must carry `userId` (LINE / Google / email; NOT admin
+ *       credentials, which have no User row).
+ *   - For `team-logo/` paths:
+ *       session must carry `isAdmin: true`.
+ *   - We do NOT authoritatively validate playerId/teamId ownership at
+ *     token-issue time — that's a Prisma round-trip and would slow the
  *     critical path. The server action that consumes the URL re-
- *     validates the bound Player ↔ User pairing before writing to DB,
- *     and refuses URLs whose pathname doesn't match the expected
- *     prefix (defense in depth via `isOwnedBlobUrl`).
+ *     validates the bound Player ↔ User pairing (or admin role) before
+ *     writing to DB, and refuses URLs whose pathname doesn't match the
+ *     expected prefix (defense in depth via `isOwnedBlobUrl` /
+ *     `isOwnedTeamLogoUrl`).
  *   - Content-type and size limits are enforced via
  *     `allowedContentTypes` + `maximumSizeInBytes`; Vercel Blob rejects
  *     oversize uploads at the storage layer.
@@ -50,13 +55,17 @@ const ID_CONTENT_TYPES = [
   'application/pdf',
 ]
 const PIC_CONTENT_TYPES = ['image/jpeg', 'image/png', 'image/webp']
+const TEAM_LOGO_CONTENT_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/svg+xml']
 const ID_MAX_BYTES = 8 * 1024 * 1024
 const PIC_MAX_BYTES = 5 * 1024 * 1024
+const TEAM_LOGO_MAX_BYTES = 5 * 1024 * 1024
 
 export async function POST(request: Request): Promise<NextResponse> {
   const session = await getServerSession(authOptions)
   const userId = (session as { userId?: string | null } | null)?.userId ?? null
-  if (!userId) {
+  const isAdmin = (session as { isAdmin?: boolean } | null)?.isAdmin ?? false
+
+  if (!userId && !isAdmin) {
     return NextResponse.json({ error: 'Sign in required' }, { status: 401 })
   }
 
@@ -67,6 +76,23 @@ export async function POST(request: Request): Promise<NextResponse> {
       body,
       request,
       onBeforeGenerateToken: async (pathname) => {
+        const isTeamLogo = /^team-logo\/[^/]+\//.test(pathname)
+        if (isTeamLogo) {
+          if (!isAdmin) {
+            throw new Error('Admin role required for team-logo uploads')
+          }
+          return {
+            allowedContentTypes: TEAM_LOGO_CONTENT_TYPES,
+            maximumSizeInBytes: TEAM_LOGO_MAX_BYTES,
+            addRandomSuffix: false,
+            allowOverwrite: true,
+          }
+        }
+
+        if (!userId) {
+          throw new Error('Sign in required')
+        }
+
         const isRegisterPending = pathname.startsWith(`register-pending/${userId}/`)
         const isPlayerId = /^player-id\/[^/]+\/(front|back)-\d+\./.test(pathname)
         const isPlayerProfile = /^player-profile\/[^/]+\/\d+\./.test(pathname)
