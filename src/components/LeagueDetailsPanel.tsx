@@ -86,7 +86,7 @@ export default function LeagueDetailsPanel({
       </button>
 
       {expanded && (
-        <div className="px-4 pb-3" data-testid="league-details-panel-body">
+        <div className="px-4 pt-4 pb-3" data-testid="league-details-panel-body">
           <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-sm">
             {/* 1 — Player format */}
             {showFormat && (
