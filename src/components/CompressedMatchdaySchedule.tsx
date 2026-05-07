@@ -30,6 +30,29 @@ import { formatJstFriendly } from '@/lib/jst'
  * usual position above this component without needing special handling.
  */
 
+function TeamLogo({ team, teamId }: { team: Team | null; teamId: string }) {
+  if (team?.logo) {
+    return (
+      <img
+        src={team.logo}
+        alt=""
+        aria-hidden
+        data-testid={`team-logo-${team.id}`}
+        className="w-4 h-4 rounded-full object-cover shrink-0"
+      />
+    )
+  }
+  const initials = (team?.name ?? teamId).slice(0, 1).toUpperCase()
+  return (
+    <span
+      data-testid={`team-logo-placeholder-${team?.id ?? teamId}`}
+      className="w-4 h-4 rounded-full bg-fg-low/30 flex items-center justify-center shrink-0 text-[8px] font-black text-fg-mid"
+    >
+      {initials}
+    </span>
+  )
+}
+
 interface CompressedMatchdayScheduleProps {
   matchdays: Matchday[]
   teams: Team[]
@@ -121,18 +144,20 @@ export default function CompressedMatchdaySchedule({
                         {match.kickoff || '—'}
                       </span>
                       <span
-                        className="font-display font-black uppercase tracking-tight text-fg-high truncate"
+                        className="flex items-center gap-1 font-display font-black uppercase tracking-tight text-fg-high truncate"
                         translate="no"
                       >
+                        <TeamLogo team={home ?? null} teamId={match.homeTeamId} />
                         {home?.name ?? match.homeTeamId}
                       </span>
                       <span className="text-fg-low font-bold text-[10px] uppercase tracking-widest shrink-0">
                         vs
                       </span>
                       <span
-                        className="font-display font-black uppercase tracking-tight text-fg-high truncate"
+                        className="flex items-center gap-1 font-display font-black uppercase tracking-tight text-fg-high truncate"
                         translate="no"
                       >
+                        <TeamLogo team={away ?? null} teamId={match.awayTeamId} />
                         {away?.name ?? match.awayTeamId}
                       </span>
                     </div>
