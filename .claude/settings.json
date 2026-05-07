@@ -35,6 +35,11 @@
       "Bash(git push:*)",
       "Bash(git tag:*)",
       "Bash(git stash:*)",
+      "Bash(git rev-parse:*)",
+      "Bash(git show:*)",
+      "Bash(git merge:*)",
+      "Bash(git worktree:*)",
+      "Bash(git ls-files:*)",
       "Bash(gh pr:*)",
       "Bash(gh run:*)",
       "Bash(gh issue:*)",
@@ -64,7 +69,13 @@
       "Bash(echo:*)",
       "Bash(mkdir:*)",
       "Bash(cp:*)",
-      "Bash(mv:*)"
+      "Bash(mv:*)",
+      "Bash(rm:*)",
+      "Bash(touch:*)",
+      "Bash(env:*)",
+      "Bash(pwd:*)",
+      "Bash(test:*)",
+      "Bash(date:*)"
     ],
     "deny": [
       "Bash(git push --force*)",
