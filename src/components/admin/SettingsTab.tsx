@@ -49,6 +49,7 @@ interface League {
   ballType: 'SOCCER' | 'FUTSAL'
   goalSize: 'FUTSAL' | 'YOUTH_SOCCER' | 'FULL_SIZE_SOCCER'
   throwInType: 'THROW_IN' | 'KICK_IN'
+  goalKickType: 'THROW' | 'KICK'
   offsideRule: boolean
   backpassRule: boolean
   matchDurationMinutes: number | null
@@ -554,6 +555,7 @@ export default function SettingsTab({ league }: SettingsTabProps) {
         initialBallType={league.ballType}
         initialGoalSize={league.goalSize}
         initialThrowInType={league.throwInType}
+        initialGoalKickType={league.goalKickType}
         initialOffsideRule={league.offsideRule}
         initialBackpassRule={league.backpassRule}
         initialMatchDurationMinutes={league.matchDurationMinutes}

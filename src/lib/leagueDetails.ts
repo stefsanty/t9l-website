@@ -26,11 +26,13 @@ import { unstable_cache } from 'next/cache'
 export type BallType = 'SOCCER' | 'FUTSAL'
 export type GoalSize = 'FUTSAL' | 'YOUTH_SOCCER' | 'FULL_SIZE_SOCCER'
 export type ThrowInType = 'THROW_IN' | 'KICK_IN'
+export type GoalKickType = 'THROW' | 'KICK'
 
 export interface LeagueDetails {
   ballType: BallType
   goalSize: GoalSize
   throwInType: ThrowInType
+  goalKickType: GoalKickType
   offsideRule: boolean
   backpassRule: boolean
   matchDurationMinutes: number | null
@@ -49,6 +51,7 @@ async function readLeagueDetails(
         ballType: true,
         goalSize: true,
         throwInType: true,
+        goalKickType: true,
         offsideRule: true,
         backpassRule: true,
         matchDurationMinutes: true,
@@ -64,6 +67,7 @@ async function readLeagueDetails(
       ballType: row.ballType,
       goalSize: row.goalSize,
       throwInType: row.throwInType,
+      goalKickType: row.goalKickType,
       offsideRule: row.offsideRule,
       backpassRule: row.backpassRule,
       matchDurationMinutes: row.matchDurationMinutes,
@@ -103,6 +107,11 @@ export const GOAL_SIZE_LABELS: Record<GoalSize, string> = {
 export const THROW_IN_TYPE_LABELS: Record<ThrowInType, string> = {
   THROW_IN: 'Throw-in',
   KICK_IN: 'Kick-in',
+}
+
+export const GOAL_KICK_TYPE_LABELS: Record<GoalKickType, string> = {
+  THROW: 'Throw',
+  KICK: 'Kick',
 }
 
 export function formatPlayerFormat(n: number): string {

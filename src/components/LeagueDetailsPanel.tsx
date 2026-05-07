@@ -6,6 +6,7 @@ import {
   BALL_TYPE_LABELS,
   GOAL_SIZE_LABELS,
   THROW_IN_TYPE_LABELS,
+  GOAL_KICK_TYPE_LABELS,
   formatPlayerFormat,
   type LeagueDetails,
 } from '@/lib/leagueDetails'
@@ -22,6 +23,9 @@ import { formatJpyFee } from '@/lib/playerFee'
  * v1.75.6 — Stats moved to a dedicated bottom subsection separated from
  *   the rule rows. Labels renamed; "Current Players" row removed;
  *   "Matchdays" row added. Season Fee + Register By combined onto one line.
+ * v1.75.7 — Rules section text-xs; "Goal size" → "Goal"; "Sideline restart"
+ *   → "Sideline"; Goal kick row added (between Sideline and Backpass);
+ *   Season Fee/Register By row no longer wraps on iPhone-width viewports.
  *
  * Rules section order:
  *   1. Player format
@@ -29,10 +33,11 @@ import { formatJpyFee } from '@/lib/playerFee'
  *   3. Ball type
  *   4. Goal size
  *   5. Offside rule
- *   6. Throw-in / kick-in
- *   7. Backpass rule (futsal-only)
- *   8. Unlimited substitutions
- *   9. Organizer message (long text)
+ *   6. Throw-in / kick-in (Sideline)
+ *   7. Goal kick
+ *   8. Backpass rule (futsal-only)
+ *   9. Unlimited substitutions
+ *  10. Organizer message (long text)
  *
  * Season info subsection (bottom, separated by divider):
  *   1. Season Fee + Register By (combined line)
@@ -97,7 +102,7 @@ export default function LeagueDetailsPanel({
       {expanded && (
         <div className="px-4 pt-4 pb-3" data-testid="league-details-panel-body">
           {/* Rules section */}
-          <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-sm" data-testid="league-details-rules-section">
+          <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs" data-testid="league-details-rules-section">
             {/* 1 — Player format */}
             {showFormat && (
               <Row
@@ -125,7 +130,7 @@ export default function LeagueDetailsPanel({
 
             {/* 4 — Goal size */}
             <Row
-              label="Goal size"
+              label="Goal"
               value={GOAL_SIZE_LABELS[data.goalSize]}
               testid="league-details-goal-row"
             />
@@ -139,12 +144,19 @@ export default function LeagueDetailsPanel({
 
             {/* 6 — Throw-in vs kick-in */}
             <Row
-              label="Sideline restart"
+              label="Sideline"
               value={THROW_IN_TYPE_LABELS[data.throwInType]}
               testid="league-details-throw-in-row"
             />
 
-            {/* 7 — Backpass (futsal-only) */}
+            {/* 7 — Goal kick */}
+            <Row
+              label="Goal kick"
+              value={GOAL_KICK_TYPE_LABELS[data.goalKickType]}
+              testid="league-details-goal-kick-row"
+            />
+
+            {/* 8 — Backpass (futsal-only) */}
             {showBackpass && (
               <Row
                 label="Backpass rule"
@@ -153,7 +165,7 @@ export default function LeagueDetailsPanel({
               />
             )}
 
-            {/* 8 — Substitutions */}
+            {/* 9 — Substitutions */}
             <Row
               label="Subs"
               value={data.unlimitedSubstitutions ? 'Unlimited' : 'Limited'}
@@ -182,11 +194,11 @@ export default function LeagueDetailsPanel({
               className="mt-3 pt-3 border-t border-border-subtle"
               data-testid="league-stats-section"
             >
-              <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-sm">
+              <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
                 {/* Season Fee + Register By — combined first line */}
                 {(showFee || showDeadline) && (
                   <div className="col-span-2" data-testid="season-fee-row">
-                    <div className="flex items-baseline justify-between gap-4 flex-wrap">
+                    <div className="flex items-baseline justify-between gap-3">
                       {showFee && (
                         <div className="flex items-baseline gap-1.5 min-w-0">
                           <dt className="text-fg-mid text-xs uppercase tracking-wider font-bold shrink-0">
