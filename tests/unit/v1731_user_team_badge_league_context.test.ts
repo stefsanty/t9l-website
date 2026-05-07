@@ -48,8 +48,8 @@ describe('v1.73.1 — UserTeamBadge cross-league context fix', () => {
 
   describe('pickUserTeam — behavioral cross-league scenario', () => {
     const teams = [
-      { id: 'mariners-fc', name: 'Mariners FC', logo: null, color: null },
-      { id: 'storm-united', name: 'Storm United', logo: null, color: null },
+      { id: 'mariners-fc', name: 'Mariners FC', shortName: 'MAR', color: '#000000', logo: null },
+      { id: 'storm-united', name: 'Storm United', shortName: 'STO', color: '#000000', logo: null },
     ]
 
     it('returns the override teamId team when teamIdProp is set', () => {
