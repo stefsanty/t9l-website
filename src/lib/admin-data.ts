@@ -867,6 +867,7 @@ export async function getLinkablePlayersForLeague(leagueId: string): Promise<
 export interface TeamsAllRow {
   id: string
   name: string
+  color: string | null
   logoUrl: string | null
   leagues: { id: string; name: string; leagueTeamId: string }[]
   playerCount: number
@@ -908,6 +909,7 @@ export async function getAllTeamsForAdmin(): Promise<TeamsAllRow[]> {
     return {
       id: t.id,
       name: t.name,
+      color: t.color,
       logoUrl: t.logoUrl,
       leagues,
       playerCount,

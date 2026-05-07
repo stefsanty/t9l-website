@@ -110,6 +110,21 @@ function isOwnedTeamLogoUrl(url: string, teamId: string): boolean {
   }
 }
 
+export async function adminUpdateTeamColor(input: { id: string; color: string | null }) {
+  await assertAdmin()
+  if (!input.id) throw new Error('Team id required')
+  if (input.color !== null) {
+    const trimmed = input.color.trim()
+    if (trimmed && !/^#[0-9a-fA-F]{6}$/.test(trimmed)) {
+      throw new Error('Color must be a 6-digit hex value (e.g. #1a2b3c)')
+    }
+    await prisma.team.update({ where: { id: input.id }, data: { color: trimmed || null } })
+  } else {
+    await prisma.team.update({ where: { id: input.id }, data: { color: null } })
+  }
+  revalidate({ domain: 'admin', paths: ['/admin/teams-all', '/admin'] })
+}
+
 export async function adminDeleteTeam(input: { id: string }) {
   await assertAdmin()
   if (!input.id) throw new Error('Team id required')

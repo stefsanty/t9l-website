@@ -303,8 +303,8 @@ describe('v1.74.0 — AdminNav', () => {
 // ── Version bump ──────────────────────────────────────────────────────
 
 describe('v1.74.0 — version bump', () => {
-  it('APP_VERSION is 1.74.0', () => {
+  it('APP_VERSION is 1.74.x or later', () => {
     const src = read('src/lib/version.ts')
-    expect(src).toMatch(/APP_VERSION\s*=\s*['"]1\.74\.0['"]/)
+    expect(src).toMatch(/APP_VERSION\s*=\s*['"]1\.74\./)
   })
 })

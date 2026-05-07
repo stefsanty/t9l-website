@@ -25,6 +25,7 @@ import {
   adminCreateTeam,
   adminUpdateTeam,
   adminUpdateTeamLogo,
+  adminUpdateTeamColor,
   adminDeleteTeam,
 } from '@/app/admin/teams-all/actions'
 
@@ -35,6 +36,7 @@ const MAX_BYTES = 5 * 1024 * 1024
 interface TeamRow {
   id: string
   name: string
+  color: string | null
   logoUrl: string | null
   leagues: { id: string; name: string; leagueTeamId: string }[]
   playerCount: number
@@ -140,6 +142,9 @@ export default function AllTeamsList({ teams, leagues }: AllTeamsListProps) {
                 <th className="text-left font-condensed font-semibold uppercase tracking-[2px] text-[11px] px-3 py-2 w-12">
                   Logo
                 </th>
+                <th className="text-left font-condensed font-semibold uppercase tracking-[2px] text-[11px] px-3 py-2 w-14">
+                  Color
+                </th>
                 <th className="text-left font-condensed font-semibold uppercase tracking-[2px] text-[11px] px-3 py-2">
                   Team
                 </th>
@@ -183,6 +188,48 @@ export default function AllTeamsList({ teams, leagues }: AllTeamsListProps) {
 }
 
 // ── Row view ──────────────────────────────────────────────────────────
+
+function ColorSwatch({ team }: { team: TeamRow }) {
+  const { toast } = useToast()
+  const colorRef = useRef<HTMLInputElement>(null)
+
+  async function handleColorChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const color = e.target.value
+    try {
+      await adminUpdateTeamColor({ id: team.id, color })
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Failed to update color')
+    }
+  }
+
+  return (
+    <div className="relative w-7 h-7" title={team.color ?? 'No color set'}>
+      <button
+        type="button"
+        onClick={() => colorRef.current?.click()}
+        data-testid={`all-teams-color-swatch-${team.id}`}
+        className="w-7 h-7 rounded border border-admin-border focus:outline-none focus:ring-2 focus:ring-admin-green/50 overflow-hidden"
+        style={{ backgroundColor: team.color ?? undefined }}
+        aria-label={`Set color for ${team.name}`}
+      >
+        {!team.color && (
+          <span className="flex items-center justify-center w-full h-full text-admin-text3 text-[10px]">
+            —
+          </span>
+        )}
+      </button>
+      <input
+        ref={colorRef}
+        type="color"
+        value={team.color ?? '#ffffff'}
+        onChange={handleColorChange}
+        data-testid={`all-teams-color-input-${team.id}`}
+        className="absolute inset-0 opacity-0 w-0 h-0 pointer-events-none"
+        aria-hidden="true"
+      />
+    </div>
+  )
+}
 
 function TeamRowView({ team, onEdit }: { team: TeamRow; onEdit: () => void }) {
   const { toast } = useToast()
@@ -228,6 +275,9 @@ function TeamRowView({ team, onEdit }: { team: TeamRow; onEdit: () => void }) {
             {team.name.slice(0, 2)}
           </div>
         )}
+      </td>
+      <td className="px-3 py-2">
+        <ColorSwatch team={team} />
       </td>
       <td className="px-3 py-2 text-admin-text font-medium">{team.name}</td>
       <td className="px-3 py-2 text-xs">
@@ -386,10 +436,31 @@ function EditTeamDialog({
 }) {
   const { toast } = useToast()
   const [name, setName] = useState(team.name)
+  const [color, setColor] = useState<string>(team.color ?? '#ffffff')
   const [logoUrl, setLogoUrl] = useState<string | null>(team.logoUrl)
   const [uploading, setUploading] = useState(false)
   const [pending, startTransition] = useTransition()
   const fileRef = useRef<HTMLInputElement>(null)
+
+  async function handleColorChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const newColor = e.target.value
+    setColor(newColor)
+    try {
+      await adminUpdateTeamColor({ id: team.id, color: newColor })
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Failed to update color')
+    }
+  }
+
+  async function handleColorClear() {
+    setColor('#ffffff')
+    try {
+      await adminUpdateTeamColor({ id: team.id, color: null })
+      toast('Color cleared')
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Failed to clear color')
+    }
+  }
 
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
@@ -521,6 +592,36 @@ function EditTeamDialog({
               className="bg-admin-surface2 border border-admin-border2 text-admin-text text-sm rounded-md px-3 py-2 outline-none focus:border-admin-green"
             />
           </label>
+
+          <div className="flex flex-col gap-1">
+            <span className="text-[11px] uppercase tracking-[2px] text-admin-text3">
+              Team color
+            </span>
+            <div className="flex items-center gap-2">
+              <input
+                type="color"
+                value={color}
+                onChange={handleColorChange}
+                data-testid="all-teams-edit-color"
+                className="w-9 h-9 rounded border border-admin-border2 cursor-pointer bg-admin-surface2 p-0.5"
+                title="Pick team color"
+              />
+              <span className="font-mono text-xs text-admin-text2">{color}</span>
+              {team.color && (
+                <button
+                  type="button"
+                  onClick={handleColorClear}
+                  className="text-[11px] text-admin-text3 hover:text-admin-red"
+                  data-testid="all-teams-edit-color-clear"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+            <p className="text-[10px] text-admin-text3">
+              Used for team styling (e.g. accordion dot, stat highlights).
+            </p>
+          </div>
 
           {team.leagues.length > 0 && (
             <div className="text-[11px] text-admin-text3">
