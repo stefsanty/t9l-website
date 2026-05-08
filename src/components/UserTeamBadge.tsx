@@ -73,6 +73,7 @@ function TeamLogoOrInitial({ team }: { team: Team }) {
           src={team.logo}
           alt={team.name}
           fill
+          sizes="24px"
           className="object-contain p-0.5"
           data-testid="user-team-logo-img"
         />

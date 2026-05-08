@@ -54,6 +54,7 @@ export default function LeagueTable({ rows }: LeagueTableProps) {
                             src={row.team.logo}
                             alt={row.team.name}
                             fill
+                            sizes="28px"
                             className="object-contain p-0.5"
                           />
                         ) : (
