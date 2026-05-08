@@ -134,6 +134,8 @@ function makeFile(name: string, type: string, size: number): File {
 describe('v1.35.0 (PR η) — submitIdUpload (v1.70.0 writes to User)', () => {
   beforeEach(() => {
     sessionMock.mockResolvedValue({ userId: 'u-1' })
+    // v1.80.11 — User row resolved by userId before the player check.
+    userFindUniqueMock.mockResolvedValue({ id: 'u-1' })
     playerFindUniqueMock.mockResolvedValue({ id: 'p-1', userId: 'u-1' })
     inviteFindUniqueMock.mockResolvedValue({ leagueId: 'l-1' })
     putMock.mockImplementation(async (path: string) => ({
@@ -191,10 +193,23 @@ describe('v1.35.0 (PR η) — submitIdUpload (v1.70.0 writes to User)', () => {
     delete process.env.BLOB_READ_WRITE_TOKEN
   })
 
-  it('rejects when admin-credentials session (no userId)', async () => {
+  it('rejects when admin-credentials session (no userId, no lineId)', async () => {
+    // v1.80.11 — admin-orthogonal-UX: only sessions with NEITHER
+    // identifier are rejected, with neutral copy.
     sessionMock.mockResolvedValue({ isAdmin: true })
     process.env.BLOB_READ_WRITE_TOKEN = 'fake-token'
-    await expect(submitIdUpload(makeFormData())).rejects.toThrow(/admin sessions/i)
+    await expect(submitIdUpload(makeFormData())).rejects.toThrow(
+      /sign in with a player account/i,
+    )
+    delete process.env.BLOB_READ_WRITE_TOKEN
+  })
+
+  it('v1.80.11 — accepts LINE-auth admin (lineId only) via lineId fallback', async () => {
+    sessionMock.mockResolvedValue({ isAdmin: true, lineId: 'U_LINEID' })
+    userFindUniqueMock.mockResolvedValueOnce({ id: 'u-1' })
+    process.env.BLOB_READ_WRITE_TOKEN = 'fake-token'
+    await expect(submitIdUpload(makeFormData())).rejects.toThrow('NEXT_REDIRECT')
+    expect(redirectMock).toHaveBeenCalledWith('/join/CODE12345678/welcome')
     delete process.env.BLOB_READ_WRITE_TOKEN
   })
 
@@ -237,6 +252,8 @@ describe('v1.35.0 (PR η) — submitIdUpload (v1.70.0 writes to User)', () => {
 describe('v1.35.0 (PR η) — skipIdUpload', () => {
   beforeEach(() => {
     sessionMock.mockResolvedValue({ userId: 'u-1' })
+    // v1.80.11 — User row resolved by userId before the player check.
+    userFindUniqueMock.mockResolvedValue({ id: 'u-1' })
     playerFindUniqueMock.mockResolvedValue({ id: 'p-1', userId: 'u-1' })
     inviteFindUniqueMock.mockResolvedValue({ leagueId: 'l-1' })
   })
@@ -275,6 +292,8 @@ describe('v1.35.0 (PR η) — skipIdUpload', () => {
 describe('v1.35.0 (PR η) — submitOnboarding routing change', () => {
   beforeEach(() => {
     sessionMock.mockResolvedValue({ userId: 'u-1' })
+    // v1.80.11 — User row resolved by userId before the player check.
+    userFindUniqueMock.mockResolvedValue({ id: 'u-1', lineId: null })
     playerFindUniqueMock.mockResolvedValue({ id: 'p-1', userId: 'u-1' })
     inviteFindUniqueMock.mockResolvedValue({ leagueId: 'l-1' })
   })
