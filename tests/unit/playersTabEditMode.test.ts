@@ -104,26 +104,24 @@ describe('v1.41.0 — EditPlayerPanel component', () => {
     expect(PLAYERS_TAB).toMatch(/useState<string>\(player\.name \?\? ''\)/)
   })
 
-  it('initializes the position field from player.position when it is one of the 4 enum literals', () => {
-    // Defensive narrowing — the PlayerRow type carries position as
-    // `string | null` (DB-shape-agnostic), but the form must store
-    // only the four valid values + ''. Pin the narrowing.
+  it('v1.82.0 — initializes the positions[] field from player.positions (with legacy fallback)', () => {
+    // Defensive shape — PlayerRow.positions is the canonical source;
+    // PlayerRow.position remains for backward-compat fallback.
     expect(PLAYERS_TAB).toMatch(
-      /player\.position === 'GK' \|\| player\.position === 'DF' \|\| player\.position === 'MF' \|\| player\.position === 'FW'/,
+      /if \(player\.positions && player\.positions\.length > 0\) return \[\.\.\.player\.positions\]/,
     )
+    expect(PLAYERS_TAB).toMatch(/return player\.position \? \[player\.position\] : \[\]/)
   })
 
   it('Save fires only adminUpdatePlayerName when only the name changed', () => {
-    // The handleSave guard skips position writes when positionChanged
+    // The handleSave guard skips position writes when positionsChanged
     // is false. Pin the conditional shape.
     expect(PLAYERS_TAB).toMatch(/if \(nameChanged\) \{[\s\S]+?adminUpdatePlayerName/)
-    expect(PLAYERS_TAB).toMatch(/if \(positionChanged\) \{[\s\S]+?adminUpdatePlayerPosition/)
+    expect(PLAYERS_TAB).toMatch(/if \(positionsChanged\) \{[\s\S]+?adminUpdatePlayerPosition/)
   })
 
-  it("Save passes position: '' as null to the server", () => {
-    // PlayerPosition is `String?` — '' is not a valid enum literal, so
-    // the form coerces to null at the boundary.
-    expect(PLAYERS_TAB).toMatch(/position: position === '' \? null : position/)
+  it('v1.82.0 — Save passes positions[] (new contract) to adminUpdatePlayerPosition', () => {
+    expect(PLAYERS_TAB).toMatch(/adminUpdatePlayerPosition\(\{[\s\S]+?positions,/)
   })
 
   it('Save is disabled when the form is not dirty OR the name is invalid', () => {
@@ -140,14 +138,10 @@ describe('v1.41.0 — EditPlayerPanel component', () => {
     expect(panelBody).toMatch(/onClick=\{onClose\}/)
   })
 
-  it('exposes the four POSITION_OPTIONS plus an explicit "none" option', () => {
-    // The select includes the 4 enum literals + a '' fallback for
-    // "no position". Pin the option set.
-    expect(PLAYERS_TAB).toMatch(/value: 'GK'/)
-    expect(PLAYERS_TAB).toMatch(/value: 'DF'/)
-    expect(PLAYERS_TAB).toMatch(/value: 'MF'/)
-    expect(PLAYERS_TAB).toMatch(/value: 'FW'/)
-    expect(PLAYERS_TAB).toMatch(/value: ''[\s\S]*?— None —/)
+  it('v1.82.0 — uses PositionMultiSelect chip picker (vocabulary keys off ballType)', () => {
+    expect(PLAYERS_TAB).toMatch(/import PositionMultiSelect from '@\/components\/PositionMultiSelect'/)
+    // EditPlayerPanel renders the multi-select with the league's ballType.
+    expect(PLAYERS_TAB).toMatch(/<PositionMultiSelect[\s\S]+?ballType=\{ballType\}/)
   })
 
   it('exposes data-testids for the name input + position select + save button', () => {
@@ -163,19 +157,19 @@ describe('v1.41.0 — adminUpdatePlayerPosition server action', () => {
     expect(LEAGUES_ACTIONS).toMatch(/export\s+async\s+function\s+adminUpdatePlayerPosition/)
   })
 
-  it("accepts the four enum literals + null as the `position` input value", () => {
+  it('v1.82.0 — accepts a positions[] array (per-format vocabulary)', () => {
     expect(LEAGUES_ACTIONS).toMatch(
-      /adminUpdatePlayerPosition\(input: \{[\s\S]+?position:\s*'GK' \| 'DF' \| 'MF' \| 'FW' \| null/,
+      /adminUpdatePlayerPosition\(input: \{[\s\S]+?positions:\s*ReadonlyArray<string>/,
     )
   })
 
-  it('coerces unknown strings to null defensively', () => {
-    // Mirrors `adminCreatePlayer`'s position-coercion. The action
-    // builds an `allowed` Set + checks membership before writing.
-    expect(LEAGUES_ACTIONS).toMatch(/new Set\(\['GK', 'DF', 'MF', 'FW'\]\)/)
-    // The result of the membership check is then used as the column
-    // value or null — pin the ternary shape.
-    expect(LEAGUES_ACTIONS).toMatch(/allowed\.has\(input\.position\) \? input\.position : null/)
+  it('v1.82.0 — validates positions through normalizePositions + dual-writes legacy enum', () => {
+    expect(LEAGUES_ACTIONS).toMatch(
+      /const validatedPositions = normalizePositions\(\s*input\.positions,/,
+    )
+    expect(LEAGUES_ACTIONS).toMatch(
+      /const legacyPosition = legacyPositionFromArray\(validatedPositions\)/,
+    )
   })
 
   it('uses the canonical revalidate helper rather than direct revalidatePath / revalidateTag', () => {
@@ -201,6 +195,9 @@ describe('v1.41.0 — adminUpdatePlayerPosition server action', () => {
     const updateIdx = fnBody.indexOf('prisma.playerLeagueMembership.updateMany')
     expect(idGuardIdx).toBeGreaterThan(0)
     expect(updateIdx).toBeGreaterThan(idGuardIdx)
+    // v1.82.0 — the updateMany payload now dual-writes positions[] +
+    // the legacy enum bucketed via legacyPositionFromArray().
+    expect(fnBody).toMatch(/data:\s*\{\s*positions:\s*validatedPositions,\s*position:\s*legacyPosition/)
   })
 
   it('PlayersTab imports the new action alongside adminUpdatePlayerName', () => {

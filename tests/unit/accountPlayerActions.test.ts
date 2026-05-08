@@ -30,6 +30,8 @@ const {
   playerFindUniqueMock,
   playerUpdateMock,
   plmUpdateManyMock,
+  plmFindManyMock,
+  plmUpdateMock,
   userUpdateManyMock,
   transactionMock,
   revalidateMock,
@@ -41,9 +43,16 @@ const {
   const playerFindUniqueMock = vi.fn()
   const playerUpdateMock = vi.fn().mockResolvedValue({})
   const plmUpdateManyMock = vi.fn().mockResolvedValue({ count: 1 })
+  // v1.82.0 — updatePlayerSelf now (a) reads active memberships
+  // outside the transaction via plm.findMany (to validate positions
+  // per-league) and (b) writes per-membership via plm.update.
+  const plmFindManyMock = vi.fn().mockResolvedValue([
+    { id: 'plm-1', leagueTeam: { league: { ballType: 'SOCCER' } }, league: null },
+  ])
+  const plmUpdateMock = vi.fn().mockResolvedValue({})
   const userUpdateManyMock = vi.fn().mockResolvedValue({ count: 0 })
   // v1.65.4 — updatePlayerSelf now uses prisma.$transaction with an inner
-  // callback that calls tx.player.update + tx.playerLeagueMembership.updateMany.
+  // callback that calls tx.player.update + tx.playerLeagueMembership.update.
   // v1.72.0 — also calls tx.user.updateMany to sync User.name = Player.name.
   // The transaction mock invokes the callback with a tx delegating to the
   // per-method mocks so existing assertions on playerUpdateMock still fire.
@@ -51,7 +60,10 @@ const {
     if (typeof arg === 'function') {
       const tx = {
         player: { update: playerUpdateMock, findUnique: playerFindUniqueMock },
-        playerLeagueMembership: { updateMany: plmUpdateManyMock },
+        playerLeagueMembership: {
+          updateMany: plmUpdateManyMock,
+          update: plmUpdateMock,
+        },
         user: { updateMany: userUpdateManyMock },
       }
       return arg(tx)
@@ -62,6 +74,8 @@ const {
     playerFindUniqueMock,
     playerUpdateMock,
     plmUpdateManyMock,
+    plmFindManyMock,
+    plmUpdateMock,
     userUpdateManyMock,
     transactionMock,
     revalidateMock: vi.fn(),
@@ -75,7 +89,11 @@ const {
 vi.mock('@/lib/prisma', () => ({
   prisma: {
     player: { findUnique: playerFindUniqueMock, update: playerUpdateMock },
-    playerLeagueMembership: { updateMany: plmUpdateManyMock },
+    playerLeagueMembership: {
+      updateMany: plmUpdateManyMock,
+      findMany: plmFindManyMock,
+      update: plmUpdateMock,
+    },
     $transaction: transactionMock,
   },
 }))
@@ -201,21 +219,21 @@ describe('updatePlayerSelf — validation', () => {
     expect(playerUpdateMock).not.toHaveBeenCalled()
   })
 
-  it('trims name and writes Prisma update (v1.65.4 — position split to PLM)', async () => {
-    await updatePlayerSelf({ name: '  Stefan S  ', position: 'MF' })
-    // v1.65.4 — Player.update receives only identity fields (name); the
-    // position update is dispatched to playerLeagueMembership.updateMany.
+  it('trims name and writes Prisma update (v1.82.0 — multi-position dual-write to PLM)', async () => {
+    // v1.82.0 — single-string `position: 'MF'` replaced with
+    // `positions: ['CM']`. Server validates per-membership against
+    // each league's ballType and writes positions[] + legacy enum.
+    await updatePlayerSelf({ name: '  Stefan S  ', positions: ['CM'] })
     expect(playerUpdateMock).toHaveBeenCalledWith({
       where: { id: 'p-stefan-s' },
       data: expect.objectContaining({ name: 'Stefan S' }),
     })
-    // Position is no longer on the Player.update payload.
     const call = playerUpdateMock.mock.calls[0][0]
     expect(call.data.position).toBeUndefined()
-    // The PLM updateMany carries the position.
-    expect(plmUpdateManyMock).toHaveBeenCalledWith({
-      where: { playerId: 'p-stefan-s', toGameWeek: null },
-      data: { position: 'MF' },
+    // v1.82.0 — per-membership update carries positions[] + legacy.
+    expect(plmUpdateMock).toHaveBeenCalledWith({
+      where: { id: 'plm-1' },
+      data: { positions: ['CM'], position: 'MF' },
     })
   })
 
@@ -223,7 +241,7 @@ describe('updatePlayerSelf — validation', () => {
   // longer writes `Player.onboardingPreferences` (the column stays in
   // the schema for compat).
   it('v1.62.0 — does NOT write onboardingPreferences (field removed)', async () => {
-    await updatePlayerSelf({ name: 'Stefan', position: 'MF' })
+    await updatePlayerSelf({ name: 'Stefan', positions: ['CM'] })
     const call = playerUpdateMock.mock.calls[0][0]
     expect(call.data.onboardingPreferences).toBeUndefined()
   })
@@ -250,15 +268,13 @@ describe('updatePlayerSelf — validation', () => {
     expect(playerUpdateMock).toHaveBeenCalled()
   })
 
-  it('treats empty position string as null (v1.65.4 — position writes to PLM)', async () => {
-    await updatePlayerSelf({ name: 'Stefan', position: null })
-    // v1.65.4 — position lives on PLM. The Player.update payload no
-    // longer carries position; the PLM.updateMany payload does.
+  it('v1.82.0 — empty positions[] clears PLM positions (writes empty array + null legacy)', async () => {
+    await updatePlayerSelf({ name: 'Stefan', positions: [] })
     const playerCall = playerUpdateMock.mock.calls[0][0]
     expect(playerCall.data.position).toBeUndefined()
-    expect(plmUpdateManyMock).toHaveBeenCalledWith({
-      where: { playerId: 'p-stefan-s', toGameWeek: null },
-      data: { position: null },
+    expect(plmUpdateMock).toHaveBeenCalledWith({
+      where: { id: 'plm-1' },
+      data: { positions: [], position: null },
     })
   })
 

@@ -6,6 +6,11 @@ import { prisma } from '@/lib/prisma'
 import { revalidate } from '@/lib/revalidate'
 import { deleteMapping } from '@/lib/playerMappingStore'
 import { PROFILE_PIC_ALLOWED_TYPES, PROFILE_PIC_MAX_BYTES } from './validation'
+import {
+  legacyPositionFromArray,
+  normalizePositions,
+  type BallType,
+} from '@/lib/positions'
 
 /**
  * v1.37.0 (PR ι) — user self-service "Change player details".
@@ -112,7 +117,13 @@ async function resolveOwnedPlayerId(session: AuthedSession): Promise<string> {
 
 export interface UpdatePlayerSelfInput {
   name: string
-  position?: 'GK' | 'DF' | 'MF' | 'FW' | null
+  /**
+   * v1.82.0 — multi-position. Codes are validated PER-LEAGUE against
+   * each active membership's `league.ballType` so a soccer-league
+   * membership can't be saved with a futsal-only code (or vice versa).
+   * Empty array clears the player's positions in every active league.
+   */
+  positions?: ReadonlyArray<string>
 }
 
 export async function updatePlayerSelf(input: UpdatePlayerSelfInput): Promise<void> {
@@ -123,11 +134,49 @@ export async function updatePlayerSelf(input: UpdatePlayerSelfInput): Promise<vo
   if (!trimmedName) throw new Error('Name is required')
   if (trimmedName.length > 100) throw new Error('Name must be 100 characters or fewer')
 
+  // v1.82.0 — pull active memberships UP-FRONT so we can validate the
+  // submitted positions against EACH league's vocabulary. A user in
+  // both a SOCCER and a FUTSAL league sees one chip set in the form
+  // (driven by the active league's ballType) — but if they ever
+  // straddle formats, this loop catches the mismatch and surfaces a
+  // friendly error rather than corrupting one of the rows.
+  const rawPositions = input.positions ?? []
+  const activeMemberships = await prisma.playerLeagueMembership.findMany({
+    where: { playerId, toGameWeek: null },
+    select: {
+      id: true,
+      leagueTeam: { select: { league: { select: { ballType: true } } } },
+      league: { select: { ballType: true } },
+    },
+  })
+  // Build per-membership write payloads so we can validate against
+  // each membership's format BEFORE entering the transaction.
+  type WritePayload = {
+    id: string
+    positions: string[]
+    legacyPosition: 'GK' | 'DF' | 'MF' | 'FW' | null
+  }
+  const writes: WritePayload[] = []
+  for (const m of activeMemberships) {
+    const ballType: BallType | null =
+      (m.leagueTeam?.league.ballType as BallType | undefined) ??
+      (m.league?.ballType as BallType | undefined) ??
+      null
+    const validated = normalizePositions(rawPositions, ballType)
+    writes.push({
+      id: m.id,
+      positions: validated,
+      legacyPosition: legacyPositionFromArray(validated),
+    })
+  }
+
   // v1.62.0 — `Player.onboardingPreferences` is no longer written here.
   // The column stays in the schema for compatibility (existing JSON data
   // is preserved). The form no longer captures preference fields.
   // v1.65.4 — position lives on PlayerLeagueMembership, not Player.
-  // Update Player's identity (name) + PLM(s)' position in one transaction.
+  // v1.82.0 — dual-write `positions[]` (canonical) + `position` (legacy
+  // backward-compat scalar). Per-membership writes so the legacy column
+  // gets a sensible value bucketed from each row's vocabulary.
   await prisma.$transaction(async (tx) => {
     await tx.player.update({
       where: { id: playerId },
@@ -140,10 +189,15 @@ export async function updatePlayerSelf(input: UpdatePlayerSelfInput): Promise<vo
       where: { playerId },
       data: { name: trimmedName },
     })
-    await tx.playerLeagueMembership.updateMany({
-      where: { playerId, toGameWeek: null },
-      data: { position: input.position ?? null },
-    })
+    for (const w of writes) {
+      await tx.playerLeagueMembership.update({
+        where: { id: w.id },
+        data: {
+          positions: w.positions,
+          position: w.legacyPosition,
+        },
+      })
+    }
   })
 
   // v1.62.0 — invalidate the per-league Redis mapping store (v1.5.0

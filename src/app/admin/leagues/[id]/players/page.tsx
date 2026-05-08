@@ -62,7 +62,12 @@ export default async function PlayersPage({ params }: Props) {
     name: string | null
     // v1.33.0 — `Player.position` is now `PlayerPosition?` enum; surfaced
     // here as `string | null` so the client component is DB-shape-agnostic.
+    // v1.82.0 — DEPRECATED in favour of `positions[]`; still surfaced
+    // for backward-compat with read sites that haven't been updated.
     position: string | null
+    // v1.82.0 — multi-position canonical field. Empty array == "no
+    // position recorded".
+    positions: string[]
     // v1.37.0 (PR ι) — user-uploaded profile picture (Vercel Blob URL).
     profilePictureUrl: string | null
     // Legacy LINE-CDN mirror written on /assign-player link.
@@ -130,7 +135,9 @@ export default async function PlayersPage({ params }: Props) {
         name: a.player.name,
         // v1.65.4 — position now lives on PLM, not Player. Read from the
         // PLM row (a.position) directly.
+        // v1.82.0 — also propagate the canonical positions[] array.
         position: a.position ?? null,
+        positions: a.positions ?? [],
         profilePictureUrl: a.player.profilePictureUrl ?? null,
         pictureUrl: a.player.pictureUrl ?? null,
         userId: a.player.userId ?? null,
@@ -188,6 +195,8 @@ export default async function PlayersPage({ params }: Props) {
       id: p.id,
       name: p.name,
       position: p.position ?? null,
+      // v1.82.0 — multi-position from the PLM row.
+      positions: p.positions ?? [],
       profilePictureUrl: p.profilePictureUrl ?? null,
       pictureUrl: p.pictureUrl ?? null,
       userId: p.userId ?? null,
@@ -242,6 +251,7 @@ export default async function PlayersPage({ params }: Props) {
       orphans={orphans}
       allLineLogins={allLineLogins}
       linkableCandidates={linkableCandidates}
+      ballType={leagueSettings?.ballType ?? null}
     />
   )
 }

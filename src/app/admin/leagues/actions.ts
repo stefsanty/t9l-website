@@ -23,10 +23,15 @@ import {
   type InviteCsvRow,
 } from '@/lib/inviteCodes'
 import { headers } from 'next/headers'
-import type { PlayerPosition, GoalType } from '@prisma/client'
+import type { GoalType } from '@prisma/client'
 import { recomputeMatchScore } from '@/lib/matchScore'
 import { sendMail } from '@/lib/email'
 import { applicationApprovedEmail } from '@/lib/emailTemplates'
+import {
+  legacyPositionFromArray,
+  normalizePositions,
+  type BallType,
+} from '@/lib/positions'
 
 /**
  * v1.13.0 — defer the Redis pre-warm off the admin response critical path.
@@ -901,14 +906,30 @@ export async function adminUpdatePlayerName(input: {
 export async function adminUpdatePlayerPosition(input: {
   playerId: string
   leagueId: string
-  position: 'GK' | 'DF' | 'MF' | 'FW' | null
+  /**
+   * v1.82.0 — multi-position. Validated against the league's
+   * `ballType` vocabulary. Empty array clears the player's positions
+   * for every membership of theirs in this league.
+   */
+  positions: ReadonlyArray<string>
 }): Promise<void> {
   await assertAdmin()
   const { playerId, leagueId } = input
   if (!playerId) throw new Error('playerId is required')
 
-  const allowed = new Set(['GK', 'DF', 'MF', 'FW'])
-  const next = input.position && allowed.has(input.position) ? input.position : null
+  // v1.82.0 — fetch the league's ballType so we can validate the
+  // submitted codes against the right vocabulary.
+  const league = await prisma.league.findUnique({
+    where: { id: leagueId },
+    select: { ballType: true },
+  })
+  if (!league) throw new Error('League not found')
+
+  const validatedPositions = normalizePositions(
+    input.positions,
+    league.ballType as BallType | null,
+  )
+  const legacyPosition = legacyPositionFromArray(validatedPositions)
 
   // v1.65.4 — position now lives on PlayerLeagueMembership, not on
   // Player. Update every PLM for this player in this league (typically
@@ -916,7 +937,10 @@ export async function adminUpdatePlayerPosition(input: {
   // the same league at once).
   await prisma.playerLeagueMembership.updateMany({
     where: { playerId, leagueId },
-    data: { position: next },
+    data: {
+      positions: validatedPositions,
+      position: legacyPosition,
+    },
   })
 
   revalidate({ domain: 'admin', paths: [`/admin/leagues/${leagueId}/players`] })
@@ -1258,15 +1282,9 @@ export async function adminRejectApplication(input: {
 
 // ── Invite generation (PR ε / v1.33.0) ──────────────────────────────────────
 
-const VALID_POSITIONS: readonly PlayerPosition[] = ['GK', 'DF', 'MF', 'FW']
-
-function normalizePosition(input: string | null | undefined): PlayerPosition | null {
-  if (!input) return null
-  const upper = input.trim().toUpperCase()
-  return (VALID_POSITIONS as readonly string[]).includes(upper)
-    ? (upper as PlayerPosition)
-    : null
-}
+// v1.82.0 — `normalizePosition()` removed. Position normalisation
+// flows through `@/lib/positions#normalizePositions` (per-format
+// validation) + `legacyPositionFromArray` (legacy-enum dual-write).
 
 /**
  * v1.33.0 (PR ε) — admin pre-stages a Player row inside a league. All three
@@ -1293,7 +1311,13 @@ function normalizePosition(input: string | null | undefined): PlayerPosition | n
 export async function adminCreatePlayer(input: {
   leagueId: string
   name?: string | null
-  position?: string | null
+  /**
+   * v1.82.0 — multi-position. Validated against the league's
+   * `ballType` vocabulary. Empty array means "no position recorded".
+   * Legacy `position?: string | null` callers are still accepted via
+   * the single-string normalisation in the helper.
+   */
+  positions?: ReadonlyArray<string> | null
   leagueTeamId?: string | null
   fromGameWeek?: number | null
 }): Promise<{ id: string }> {
@@ -1306,11 +1330,23 @@ export async function adminCreatePlayer(input: {
   if (name && name.length > 100) {
     throw new Error('Player name must be 100 characters or fewer')
   }
-  const position = normalizePosition(input.position)
   const leagueTeamId = input.leagueTeamId?.trim() || null
   const fromGameWeek = input.fromGameWeek && input.fromGameWeek > 0
     ? Math.floor(input.fromGameWeek)
     : 1
+
+  // v1.82.0 — fetch ballType so we can validate the submitted codes.
+  const leagueRow = await prisma.league.findUnique({
+    where: { id: leagueId },
+    select: { ballType: true },
+  })
+  if (!leagueRow) throw new Error('League not found')
+
+  const validatedPositions = normalizePositions(
+    input.positions ?? [],
+    leagueRow.ballType as BallType | null,
+  )
+  const legacyPosition = legacyPositionFromArray(validatedPositions)
 
   // If an assignment is requested, the leagueTeam must belong to this league
   // (else admin in League A could pre-stage a player on a team in League B).
@@ -1344,7 +1380,9 @@ export async function adminCreatePlayer(input: {
           leagueId,
           fromGameWeek,
           joinSource: 'ADMIN',
-          position,
+          // v1.82.0 — dual-write positions[] + legacy enum.
+          positions: validatedPositions,
+          position: legacyPosition,
         },
       })
     }

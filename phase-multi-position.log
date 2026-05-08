@@ -1,0 +1,116 @@
+# phase-multi-position.log — v1.82.0 multi-position + futsal vocabulary
+
+## M1 — Schema audit + migration drafted
+
+### Where position lives today
+
+- **`PlayerLeagueMembership.position`** (`PlayerPosition?` enum: `GK | DF | MF | FW`). Per-league. The canonical source of truth.
+- v1.65.4 explicitly DROPPED `Player.position` — Player is identity-only (name + lineId/userId + profilePictureUrl).
+- `LeaguePositionFee.position` is `String` (not the enum) — fee resolver matches case-sensitively against `PLM.position`.
+- Soccer enum codes used in code: `GK`, `DF`, `MF`, `FW`.
+- `SquadList.tsx` / `MatchdayAvailability.tsx` ALSO recognise legacy strings `DF/MF`, `MF/FWD`, `FWD` (probably from an old Sheets-imported source that pre-dated the enum). They're not produced by any current write path, but the readers still color/sort them.
+
+### League format fields
+
+- `League.ballType BallType @default(SOCCER)` — enum `SOCCER | FUTSAL`.
+- `League.playerFormat Int?` — 5/6/7/9/11. Independent.
+- The position vocabulary in this PR keys off `ballType`, not `playerFormat`.
+
+### Migration plan (additive, dual-write)
+
+1. Add `positions String[] @default([])` to `PlayerLeagueMembership`.
+2. Backfill on migration: `UPDATE "PlayerLeagueAssignment" SET positions = ARRAY[position::text] WHERE position IS NOT NULL`. Other rows stay `'{}'`.
+3. KEEP legacy `position PlayerPosition?` for one cycle (cleanup PR after v1.82.0). Dual-write rule:
+   - Always write `positions[]` (full array of String codes).
+   - Also write `position` to the FIRST entry of the array IF that entry matches the soccer enum (`GK`/`DF`/`MF`/`FW`); otherwise write `null` (futsal-only codes can't fit the legacy enum).
+4. Read fallback: prefer `positions[]`. If empty, fall back to `[position]` (or `[]` when null).
+
+### Storage shape decision
+
+- `String[]` (Postgres native array) — simpler than a join table for read paths and Prisma supports it. No FK / referential pressure since the vocabulary is a code list, not a row set.
+- Stored as canonical UPPERCASE codes only (`GK`, `FIXO`, `ALA`, `PIVOT`, `DF`, `MF`, `FW`). Display labels in a separate map.
+
+### Format vocabulary
+
+- **Soccer** (`ballType = SOCCER`): `GK` (Goalkeeper), `DF` (Defender), `MF` (Midfielder), `FW` (Forward) — same as today.
+- **Futsal** (`ballType = FUTSAL`): exactly four — `GK` (Goleiro), `FIXO` (Defender), `ALA` (Winger/Midfield), `PIVOT` (Striker).
+
+## SPEC UPDATE (mid-implementation)
+
+User updated soccer vocabulary from `GK/DF/MF/FW` to a 12-code positional set:
+`GK, LB, CB, RB, LM, DM, CM, CAM, RM, LW, ST, RW`. Futsal stayed `GK/FIXO/ALA/PIVOT`.
+
+Migration impact: existing `PlayerLeagueMembership.position` values (the
+legacy 4-code enum) get mapped on backfill:
+  - `GK` → `GK`
+  - `DF` → `CB` (Center Back as the generalist default)
+  - `MF` → `CM` (Center Midfielder)
+  - `FW` → `ST` (Striker)
+
+Bucket layer added (`getPositionBucket`) maps every code (legacy and new,
+soccer and futsal) into the GK/DF/MF/FW band so colour/sort/formation
+renderers stay simple and the legacy `PlayerLeagueMembership.position`
+column keeps a sensible value via `legacyPositionFromArray`.
+
+## M2 — Format vocabulary module + per-league wiring
+
+- `src/lib/positions.ts` ships the canonical vocabulary, vocab/codes/labels lookup, the `normalizePositions()` validator, the `legacyPositionFromArray()` dual-write helper, and the `readPositions()` fallback.
+- Soccer: GK / DF / MF / FW (unchanged).
+- Futsal: GK (Goleiro) / FIXO (Defender) / ALA (Winger/Midfield) / PIVOT (Striker).
+- Validation throws `Invalid position "FW" for FUTSAL …` on cross-format codes (verified by test).
+- 24 unit tests in `tests/unit/positionsModule.test.ts` pin the vocabulary, validation, dedup, legacy fallback, and dual-write helper. All pass.
+
+## M3 — UI + server-action wiring
+
+### Server actions updated (positions[] in / dual-write out)
+- `src/app/api/recruiting/actions.ts` — `applyToLeague`, `registerToLeague`. Validates against `league.ballType`, returns `{ ok: false, error }` on cross-format codes; dual-writes `positions[]` + bucketed legacy enum.
+- `src/app/join/[code]/actions.ts` — `submitOnboarding`, `completeOnboardingWithId`. Same per-league validation + dual-write.
+- `src/app/account/player/actions.ts` — `updatePlayerSelf`. Per-membership validation against each PLM's league.ballType so a user in mixed-format leagues isn't corrupted by a single submission.
+- `src/app/admin/leagues/actions.ts` — `adminCreatePlayer`, `adminUpdatePlayerPosition`. Both pulled the league's ballType + validate. Removed the obsolete `normalizePosition` helper (legacy 4-code enum coercion).
+
+### UI surfaces updated (chip multi-select)
+- `src/components/PositionMultiSelect.tsx` — NEW. Shared chip picker; `variant: 'public' | 'admin'` for theming; canonical-vocab order on selection; per-chip aria-pressed + testid.
+- `src/components/registration/RegistrationFields.tsx` — public registration form (recruit + onboarding).
+- `src/app/recruit/[slug]/RegistrationForm.tsx` + `page.tsx` — fetches `league.ballType` and threads it through.
+- `src/app/join/[code]/onboarding/OnboardingForm.tsx` + `page.tsx` — fetches `league.ballType` (via the invite's `league.ballType` select) and pre-fills `initialPositions[]`.
+- `src/components/ApplyToLeagueModal.tsx` — multi-select.
+- `src/components/RecruitingBanner.tsx` — passes `league.ballType` down.
+- `src/components/Dashboard.tsx` + `src/app/page.tsx` + `src/app/id/[slug]/page.tsx` — added `ballType` to the `league` prop shape and per-league fetch.
+- `src/app/account/player/AccountPlayerForm.tsx` + `page.tsx` — multi-select, picks ballType from the active membership.
+- `src/components/admin/AddPlayerDialog.tsx` — admin-variant multi-select.
+- `src/components/admin/PlayersTab.tsx` — `EditPlayerPanel` multi-select; `PlayerRow.positions[]` field; chip joining for compact display.
+- `src/app/admin/leagues/[id]/players/page.tsx` — propagates `positions[]` into `PlayerRow`, threads `ballType` into `<PlayersTab>`.
+
+### Read sites updated
+- `src/lib/dbToPublicLeagueData.ts` — emits `Player.position` as `positions.join('/')` (preferred) with legacy single-string fallback.
+- `src/components/SquadList.tsx` — colour + sort by role bucket (first code drives the band); preserves the joined-string display.
+- `src/components/MatchdayAvailability.tsx` — `getPositionPillColor` + sort + formation grouping all bucket-driven; recognises both new 12-code and legacy single-letter shapes.
+- `src/lib/admin-data.ts` — `getLinkablePlayersForLeague` returns `positions[]`; `mergedPendingApplications` carries `positions[]` from the PLM.
+- `src/components/admin/LinkExistingPlayerDialog.tsx` — chip-joined display with legacy fallback.
+
+## M4 — Server validation + tests
+
+### New tests
+- `tests/unit/positionsModule.test.ts` (29 tests) — pins the 12-soccer + 4-futsal vocabulary, validation, dedup, normalisation, bucket helper, dual-write helper, read fallback.
+- `tests/unit/v182_multi_position_validation.test.ts` (6 tests) — pins server-side enforcement: SOCCER accepts `CB/CM`, REJECTS `FIXO`/`DF`; FUTSAL accepts `FIXO/PIVOT`, REJECTS `CB`/`ST`/`FW`; empty `positions[]` accepted (matches legacy "no position recorded").
+
+### Stash-pop verification
+Temporarily replaced `applyToLeague`'s `normalizePositions(input.positions, league.ballType)` with a hardcoded `'SOCCER'` second arg. Re-ran `tests/unit/v182_multi_position_validation.test.ts`:
+- 2/6 tests failed (the FUTSAL accept-FIXO/PIVOT case + the FUTSAL reject-soccer-codes case), confirming both load-bearing tests catch the per-format-vocabulary regression.
+- File restored from `/tmp/recruiting_actions_backup.ts`; tests back to 6/6 passing.
+
+### Updated tests (shape pin to new contracts)
+- `tests/unit/accountPlayerActions.test.ts` — switched to `positions[]` input, per-membership update mocks (`plmFindMany` + `plmUpdate` instead of `plmUpdateMany`).
+- `tests/unit/adminCreatePlayer.test.ts` — added `League.findUnique` mock; assertions updated to dual-write shape; rejects-unknown-position test now expects a thrown error (was: silent null coercion).
+- `tests/unit/idUploadActions.test.ts` — `submitOnboarding` test updated for `positions: ['CM']` input + dual-write payload assertion; invite mock includes `league.ballType`.
+- `tests/unit/playersTabAddInvite.test.ts`, `playersTabEditMode.test.ts`, `v164_application_workflow.test.ts`, `v167_planned_roster.test.ts`, `v168_id_collection_streamlined.test.ts`, `v169_availability_toggle.test.ts`, `v178_email_field.test.ts`, `v179_applicant_received_email.test.ts` — file-content regex tests updated to match `<PositionMultiSelect>` + `testIdPrefix=` shapes and the bucket-driven colour map.
+
+### Suite status
+- Total: 160 test files pass (1 skipped pre-existing); 2,868 tests pass (2 skipped pre-existing).
+- `npx tsc --noEmit` clean (after installing the pre-existing missing `@next/bundle-analyzer` dep via `npm install --no-save`).
+
+### Out of scope (queued for follow-ups)
+
+- Formation viz (item 1a) — `MatchdayAvailability.tsx`'s `pickFormation` can survive this PR by reading the JOINED positions string (e.g. `"DF/MF"`) which the public-data mapper produces from `positions.join('/')`. The hybrid switch already handles that shape.
+- Wholesale "edit-details" page redesign (item 2).
+- Per-position fee resolver — `LeaguePositionFee` stays single-string-keyed; resolver picks the FIRST positions[] entry as the "primary" for fee matching. Documented but not enabled for futsal codes (no real futsal league has fees set today).

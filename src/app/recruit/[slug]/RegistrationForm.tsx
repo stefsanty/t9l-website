@@ -5,6 +5,7 @@ import RegistrationFields, {
   type RegistrationFieldsSubmit,
 } from '@/components/registration/RegistrationFields'
 import { registerToLeague } from '@/app/api/recruiting/actions'
+import type { BallType } from '@/lib/positions'
 
 /**
  * v1.81.0 — origin-path for the post-submit success popup. The
@@ -42,6 +43,12 @@ interface Props {
    * or email-magic-link). Empty string for LINE-only users.
    */
   initialEmail?: string
+  /**
+   * v1.82.0 — league format. Threaded from the page server-component
+   * so the position chip vocabulary matches the league's format
+   * (SOCCER → 12 codes; FUTSAL → GK/FIXO/ALA/PIVOT).
+   */
+  ballType?: BallType | null
 }
 
 export default function RegistrationForm({
@@ -50,6 +57,7 @@ export default function RegistrationForm({
   leagueName,
   userId,
   initialEmail = '',
+  ballType = null,
 }: Props) {
   const router = useRouter()
 
@@ -64,7 +72,7 @@ export default function RegistrationForm({
       leagueId,
       name: input.name,
       email: input.email,
-      position: input.position === '' ? null : input.position,
+      positions: input.positions,
       idFrontUrl: input.idFrontUrl,
       idBackUrl: input.idBackUrl,
       profilePictureUrl: input.profilePictureUrl,
@@ -80,6 +88,7 @@ export default function RegistrationForm({
     <div data-testid="recruit-registration-form">
       <RegistrationFields
         initialEmail={initialEmail}
+        ballType={ballType}
         submitLabel={`Apply to ${leagueName}`}
         uploadPathPrefix={`register-pending/${userId}`}
         onSubmit={handleSubmit}

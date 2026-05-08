@@ -11,6 +11,11 @@ import { linkUserToPlayer } from '@/lib/identityLink'
 import { deleteMapping } from '@/lib/playerMappingStore'
 import { sendMail } from '@/lib/email'
 import { applicationReceivedEmail } from '@/lib/emailTemplates'
+import {
+  legacyPositionFromArray,
+  normalizePositions,
+  type BallType,
+} from '@/lib/positions'
 
 /**
  * v1.34.0 (PR ζ) — public redemption endpoint.
@@ -282,7 +287,12 @@ export interface SubmitOnboardingInput {
   code: string
   playerId: string
   name: string
-  position?: 'GK' | 'DF' | 'MF' | 'FW' | null
+  /**
+   * v1.82.0 — multi-position. Validated server-side against the
+   * league's `ballType` vocabulary. Empty array clears positions for
+   * this player's active membership(s) in the league.
+   */
+  positions?: ReadonlyArray<string>
 }
 
 export async function submitOnboarding(input: SubmitOnboardingInput): Promise<void> {
@@ -331,11 +341,21 @@ export async function submitOnboarding(input: SubmitOnboardingInput): Promise<vo
   }
 
   // Verify the invite resolves to a league we can update the assignment for.
+  // v1.82.0 — also pull `ballType` for position-vocabulary validation.
   const invite = await prisma.leagueInvite.findUnique({
     where: { code: input.code },
-    select: { leagueId: true },
+    select: { leagueId: true, league: { select: { ballType: true } } },
   })
   if (!invite) throw new Error('Invite not found')
+
+  // v1.82.0 — validate positions against the league's vocabulary.
+  // `normalizePositions` throws on cross-format codes; let the error
+  // propagate (consistent with the rest of this action's error shape).
+  const validatedPositions = normalizePositions(
+    input.positions,
+    invite.league?.ballType as BallType | null,
+  )
+  const legacyPosition = legacyPositionFromArray(validatedPositions)
 
   // v1.35.0 (PR η) — onboarding form completion no longer flips
   // `onboardingStatus` to COMPLETED. The ID-upload step does that. Form
@@ -344,8 +364,7 @@ export async function submitOnboarding(input: SubmitOnboardingInput): Promise<vo
   // column stays in the schema for compatibility but the form no longer
   // captures preference fields.
   // v1.65.4 — position lives on PlayerLeagueMembership, not Player.
-  // Update the active PLM(s) for this player; Player gets only the
-  // identity field (name).
+  // v1.82.0 — dual-write positions[] + legacy enum.
   await prisma.$transaction(async (tx) => {
     await tx.player.update({
       where: { id: input.playerId },
@@ -355,7 +374,10 @@ export async function submitOnboarding(input: SubmitOnboardingInput): Promise<vo
     })
     await tx.playerLeagueMembership.updateMany({
       where: { playerId: input.playerId, toGameWeek: null },
-      data: { position: input.position ?? null },
+      data: {
+        positions: validatedPositions,
+        position: legacyPosition,
+      },
     })
     // No onboardingStatus update — that flips in submitIdUpload (or
     // skipIdUpload when BLOB is unconfigured). The form-completed state
@@ -546,7 +568,11 @@ export interface CompleteOnboardingWithIdInput {
    * friendly error.
    */
   email: string
-  position?: 'GK' | 'DF' | 'MF' | 'FW' | null
+  /**
+   * v1.82.0 — multi-position. Validated server-side against the
+   * league's `ballType` vocabulary.
+   */
+  positions?: ReadonlyArray<string>
   idFrontUrl: string
   idBackUrl: string
   profilePictureUrl?: string | null
@@ -626,9 +652,20 @@ export async function completeOnboardingWithId(
     where: { code: input.code },
     // v1.79.0 — `league.name` is needed for the application-received
     // email queued below. Cheap join (LeagueInvite → League is 1:1).
-    select: { leagueId: true, league: { select: { name: true } } },
+    // v1.82.0 — also pull `ballType` for position-vocabulary validation.
+    select: {
+      leagueId: true,
+      league: { select: { name: true, ballType: true } },
+    },
   })
   if (!invite) throw new Error('Invite not found')
+
+  // v1.82.0 — validate positions against the league's vocabulary.
+  const validatedPositions = normalizePositions(
+    input.positions,
+    invite.league?.ballType as BallType | null,
+  )
+  const legacyPosition = legacyPositionFromArray(validatedPositions)
 
   // v1.78.0 — only WRITE the submitted email if `User.email` is currently
   // null. Mirrors `registerToLeague` — verified pre-existing addresses
@@ -662,9 +699,13 @@ export async function completeOnboardingWithId(
           ...(shouldWriteEmail ? { email: trimmedEmail } : {}),
         },
       })
+      // v1.82.0 — dual-write positions[] + legacy enum.
       await tx.playerLeagueMembership.updateMany({
         where: { playerId: input.playerId, toGameWeek: null },
-        data: { position: input.position ?? null },
+        data: {
+          positions: validatedPositions,
+          position: legacyPosition,
+        },
       })
       await tx.playerLeagueMembership.updateMany({
         where: {

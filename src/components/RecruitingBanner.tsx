@@ -52,7 +52,12 @@ const SignInLightbox = dynamic(() => import('./SignInLightbox'), {
  */
 
 interface Props {
-  league: { id: string; name: string }
+  // v1.82.0 — `ballType` is now part of the league shape so the State D
+  // ApplyToLeagueModal can render the right position vocabulary
+  // (SOCCER → 12 codes, FUTSAL → GK/FIXO/ALA/PIVOT). Optional for
+  // callers that pass a partial shape — it defaults to SOCCER which
+  // matches existing behaviour.
+  league: { id: string; name: string; ballType?: 'SOCCER' | 'FUTSAL' | null }
   viewer: RecruitingViewerState
   /**
    * v1.67.2 — league slug threaded so the State C CTA can navigate
@@ -211,6 +216,7 @@ export default function RecruitingBanner({
           leagueId={league.id}
           leagueName={league.name}
           mode="existing"
+          ballType={league.ballType ?? null}
         />
       )}
 

@@ -302,14 +302,13 @@ describe('v1.67.2 /recruit/[slug] route + form', () => {
     expect(src).toMatch(/<RegistrationFields/)
   })
 
-  it('RegistrationFields mirrors OnboardingForm position-enum shape (v1.68.0 — moved to shared component)', () => {
+  it('v1.82.0 — RegistrationFields renders the PositionMultiSelect chip picker (vocabulary off ballType)', () => {
     const src = read('src/components/registration/RegistrationFields.tsx')
-    // Same five options shared by /recruit and /join/[code]/onboarding.
-    expect(src).toMatch(/Prefer not to say/)
-    expect(src).toMatch(/GK\s*—\s*Goalkeeper/)
-    expect(src).toMatch(/DF\s*—\s*Defender/)
-    expect(src).toMatch(/MF\s*—\s*Midfielder/)
-    expect(src).toMatch(/FW\s*—\s*Forward/)
+    // Position dropdown collapsed into the shared multi-select chip
+    // component; vocabulary lives in src/lib/positions.ts and keys
+    // off the league's ballType (SOCCER → 12 codes, FUTSAL → 4 codes).
+    expect(src).toMatch(/import PositionMultiSelect from '@\/components\/PositionMultiSelect'/)
+    expect(src).toMatch(/<PositionMultiSelect[\s\S]+?ballType=\{ballType\}/)
   })
 })
 

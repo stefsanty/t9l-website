@@ -56,7 +56,9 @@ export default async function RecruitPage({ params }: Props) {
 
   const league = await prisma.league.findUnique({
     where: { id: leagueId },
-    select: { id: true, name: true, recruiting: true, subdomain: true },
+    // v1.82.0 — `ballType` drives the position chip vocabulary in
+    // RegistrationFields (SOCCER → 12 codes; FUTSAL → GK/FIXO/ALA/PIVOT).
+    select: { id: true, name: true, recruiting: true, subdomain: true, ballType: true },
   })
   if (!league) notFound()
 
@@ -126,6 +128,7 @@ export default async function RecruitPage({ params }: Props) {
           leagueName={league.name}
           userId={user.id}
           initialEmail={initialEmail}
+          ballType={league.ballType}
         />
       </div>
     </main>

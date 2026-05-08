@@ -78,7 +78,9 @@ export default async function LeagueByIdPage({ params }: Props) {
       getRecruitingViewerState(leagueId),
       prisma.league.findUnique({
         where: { id: leagueId },
-        select: { id: true, name: true, abbreviation: true },
+        // v1.82.0 — `ballType` flows into RecruitingBanner so the State D
+        // ApplyToLeagueModal renders the right position vocabulary.
+        select: { id: true, name: true, abbreviation: true, ballType: true },
       }),
       // v1.66.0 — unpaid-fee banner data; null when banner stays hidden.
       getUnpaidFeeBannerData(leagueId),

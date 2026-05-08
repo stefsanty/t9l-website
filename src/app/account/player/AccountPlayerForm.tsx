@@ -12,6 +12,8 @@ import {
   PROFILE_PIC_ALLOWED_TYPES,
   PROFILE_PIC_MAX_BYTES,
 } from './validation'
+import PositionMultiSelect from '@/components/PositionMultiSelect'
+import type { BallType } from '@/lib/positions'
 
 /**
  * v1.37.0 (PR ι) — client form for "Change player details".
@@ -34,17 +36,22 @@ import {
  *   - ID front/back ("ask admin to reset onboarding to re-upload")
  */
 
-const POSITIONS: ReadonlyArray<{ value: '' | 'GK' | 'DF' | 'MF' | 'FW'; label: string }> = [
-  { value: '',   label: 'Prefer not to say' },
-  { value: 'GK', label: 'GK — Goalkeeper' },
-  { value: 'DF', label: 'DF — Defender' },
-  { value: 'MF', label: 'MF — Midfielder' },
-  { value: 'FW', label: 'FW — Forward' },
-]
-
 export interface AccountPlayerFormProps {
   initialName: string
-  initialPosition: 'GK' | 'DF' | 'MF' | 'FW' | null
+  /**
+   * v1.82.0 — multi-position pre-fill. Read from the active
+   * PlayerLeagueMembership.positions[] (with fallback to the legacy
+   * single column). Codes are validated against the active league's
+   * vocabulary on submit.
+   */
+  initialPositions: ReadonlyArray<string>
+  /**
+   * v1.82.0 — league format for the position chip vocabulary. Pulled
+   * from the active membership's league.ballType. Defaults to SOCCER
+   * when the user has no active membership (the form still renders
+   * the soccer chip set so a user can save positions speculatively).
+   */
+  ballType: BallType | null
   profilePictureUrl: string | null
   pictureUrl: string | null
   /**
@@ -68,9 +75,7 @@ export default function AccountPlayerForm(props: AccountPlayerFormProps) {
   const { update: updateSession } = useSession()
   const [pending, startTransition] = useTransition()
   const [name, setName] = useState(props.initialName)
-  const [position, setPosition] = useState<'' | 'GK' | 'DF' | 'MF' | 'FW'>(
-    props.initialPosition ?? '',
-  )
+  const [positions, setPositions] = useState<string[]>([...props.initialPositions])
   const [error, setError] = useState<string | null>(null)
   const [successAt, setSuccessAt] = useState<number | null>(null)
 
@@ -93,7 +98,7 @@ export default function AccountPlayerForm(props: AccountPlayerFormProps) {
       try {
         await updatePlayerSelf({
           name: name.trim(),
-          position: position === '' ? null : position,
+          positions,
         })
         setSuccessAt(Date.now())
         // v1.62.0 — force a JWT refresh so session.playerName picks up
@@ -266,23 +271,21 @@ export default function AccountPlayerForm(props: AccountPlayerFormProps) {
           />
         </label>
 
-        <label className="block">
+        <div className="block">
           <span className="block text-fg-mid text-xs uppercase tracking-widest font-bold mb-1.5">
-            Position
+            Position(s)
           </span>
-          <select
-            value={position}
-            onChange={(e) => setPosition(e.target.value as typeof position)}
-            className="w-full bg-background border border-border-default rounded-lg px-3 py-2 text-sm text-fg-high"
-            data-testid="account-player-position"
-          >
-            {POSITIONS.map((p) => (
-              <option key={p.value} value={p.value}>
-                {p.label}
-              </option>
-            ))}
-          </select>
-        </label>
+          <PositionMultiSelect
+            selected={positions}
+            onChange={setPositions}
+            ballType={props.ballType}
+            disabled={pending}
+            testIdPrefix="account-player-position"
+          />
+          <span className="block text-fg-low text-xs mt-1.5">
+            Tap to pick one or more. You can leave this blank.
+          </span>
+        </div>
 
         <div className="flex items-center justify-between pt-2 border-t border-border-subtle">
           <div className="text-xs">

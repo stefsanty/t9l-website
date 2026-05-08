@@ -10,6 +10,11 @@ import { DEFAULT_LEAGUE_SLUG } from '@/lib/leagueSlug'
 import { sendMail } from '@/lib/email'
 import { applicationReceivedEmail } from '@/lib/emailTemplates'
 import { buildSuccessRedirect } from '@/lib/successRedirect'
+import {
+  legacyPositionFromArray,
+  normalizePositions,
+  type BallType,
+} from '@/lib/positions'
 
 /**
  * v1.64.0 / v1.65.1 — Application/recruiting workflow.
@@ -63,7 +68,12 @@ export interface ApplyToLeagueInput {
   // Player's name persists). The component sends an empty string when
   // it knows the user is in State D.
   name: string
-  position?: 'GK' | 'DF' | 'MF' | 'FW' | null
+  /**
+   * v1.82.0 — multi-position. Validated server-side against the
+   * league's `ballType` vocabulary. Empty array == "no position
+   * recorded" (matches the legacy null behaviour).
+   */
+  positions?: ReadonlyArray<string>
   /**
    * v1.81.0 — origin-path tracking for the success popup. Captured at
    * form-mount time on the originating page (e.g. `/id/<slug>`) and
@@ -104,9 +114,10 @@ export async function applyToLeague(
   // Verify the league exists and accepts applications.
   // v1.81.0 — also pulls `subdomain` for the success-redirect fallback
   // when `originPath` is missing/invalid.
+  // v1.82.0 — also pulls `ballType` for position-vocabulary validation.
   const league = await prisma.league.findUnique({
     where: { id: input.leagueId },
-    select: { id: true, recruiting: true, name: true, subdomain: true },
+    select: { id: true, recruiting: true, name: true, subdomain: true, ballType: true },
   })
   if (!league) {
     return { ok: false, error: 'League not found' }
@@ -118,6 +129,24 @@ export async function applyToLeague(
   // the natural landing for the success popup when the caller didn't
   // capture `originPath` (or when validation rejected it).
   const fallbackPath = `/id/${league.subdomain ?? DEFAULT_LEAGUE_SLUG}`
+
+  // v1.82.0 — validate positions against the league's vocabulary.
+  // `normalizePositions` throws on cross-format codes (e.g. FW in a
+  // FUTSAL league); surface that as an `ok: false` error so the modal
+  // shows the message rather than a generic 500.
+  let validatedPositions: string[]
+  try {
+    validatedPositions = normalizePositions(
+      input.positions,
+      league.ballType as BallType | null,
+    )
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : 'Invalid position(s)',
+    }
+  }
+  const legacyPosition = legacyPositionFromArray(validatedPositions)
 
   // v1.80.10 — resolve the calling User row by `userId` first (canonical
   // post-α.5 / v1.27.0 binding), falling back to `lineId` (legacy
@@ -173,7 +202,9 @@ export async function applyToLeague(
         leagueId: league.id,
         fromGameWeek: 1,
         applicationStatus: 'PENDING',
-        position: input.position ?? null,
+        // v1.82.0 — dual-write positions[] + legacy enum.
+        positions: validatedPositions,
+        position: legacyPosition,
         joinSource: 'SELF_SERVE',
         onboardingStatus: 'NOT_YET',
       },
@@ -228,7 +259,9 @@ export async function applyToLeague(
         leagueId: league.id,
         fromGameWeek: 1,
         applicationStatus: 'PENDING',
-        position: input.position ?? null,
+        // v1.82.0 — dual-write positions[] + legacy enum.
+        positions: validatedPositions,
+        position: legacyPosition,
         joinSource: 'SELF_SERVE',
         onboardingStatus: 'NOT_YET',
       },
@@ -323,7 +356,11 @@ export interface RegisterToLeagueInput {
    * different User; that surfaces as a friendly error.
    */
   email: string
-  position?: 'GK' | 'DF' | 'MF' | 'FW' | null
+  /**
+   * v1.82.0 — multi-position. Validated server-side against the
+   * league's `ballType` vocabulary.
+   */
+  positions?: ReadonlyArray<string>
   idFrontUrl: string
   idBackUrl: string
   profilePictureUrl?: string | null
@@ -384,12 +421,28 @@ export async function registerToLeague(
 
   const league = await prisma.league.findUnique({
     where: { id: input.leagueId },
-    select: { id: true, recruiting: true, name: true, subdomain: true },
+    // v1.82.0 — also pulls `ballType` for position-vocabulary validation.
+    select: { id: true, recruiting: true, name: true, subdomain: true, ballType: true },
   })
   if (!league) return { ok: false, error: 'League not found' }
   if (!league.recruiting) {
     return { ok: false, error: 'This league is not currently recruiting' }
   }
+
+  // v1.82.0 — validate positions against the league's vocabulary.
+  let validatedPositions: string[]
+  try {
+    validatedPositions = normalizePositions(
+      input.positions,
+      league.ballType as BallType | null,
+    )
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : 'Invalid position(s)',
+    }
+  }
+  const legacyPosition = legacyPositionFromArray(validatedPositions)
 
   // v1.80.10 — resolve User row by `userId` first, falling back to
   // `lineId` (User.lineId @unique). Mirrors the v1.59.1 pattern in
@@ -474,7 +527,9 @@ export async function registerToLeague(
           leagueId: league.id,
           fromGameWeek: 1,
           applicationStatus: 'PENDING',
-          position: input.position ?? null,
+          // v1.82.0 — dual-write positions[] + legacy enum.
+          positions: validatedPositions,
+          position: legacyPosition,
           joinSource: 'SELF_SERVE',
           onboardingStatus: 'COMPLETED',
           // v1.80.0 — persist trimmed comments; null when blank/omitted.

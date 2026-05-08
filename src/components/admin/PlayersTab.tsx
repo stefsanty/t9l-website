@@ -25,8 +25,23 @@ import {
   updateMembershipPaidStatus,
 } from '@/app/admin/leagues/actions'
 import { formatJpyFee } from '@/lib/playerFee'
+import PositionMultiSelect from '@/components/PositionMultiSelect'
 
 // ── Types ────────────────────────────────────────────────────────────────────
+
+/**
+ * v1.82.0 — shallow equality on string arrays. Used by EditPlayerPanel
+ * to detect whether the position selection has actually changed
+ * (set-equality is fine — order is canonical via the vocabulary so two
+ * arrays containing the same codes always have the same order).
+ */
+function sameStringArray(a: ReadonlyArray<string>, b: ReadonlyArray<string>): boolean {
+  if (a.length !== b.length) return false
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false
+  }
+  return true
+}
 
 interface LeagueTeamRef {
   id: string
@@ -51,7 +66,16 @@ interface PlayerRow {
   name: string | null
   // v1.33.0 — `Player.position` is now a `PlayerPosition` enum at the DB
   // layer; surfaced as a string so this component remains DB-shape-agnostic.
+  // v1.82.0 — DEPRECATED in favour of `positions[]`. Still surfaced for
+  // backward-compat with read sites that haven't been updated.
   position: string | null
+  /**
+   * v1.82.0 — multi-position. Canonical uppercase codes from the
+   * league's vocabulary. Empty array == "no position recorded".
+   * Falls back to `[position]` when missing (memberships that
+   * haven't been re-saved since the migration).
+   */
+  positions: string[]
   // v1.37.0 (PR ι) — user-uploaded profile picture; preferred over
   // pictureUrl + linePictureUrl in the avatar fallback chain.
   profilePictureUrl: string | null
@@ -125,6 +149,12 @@ interface PlayersTabProps {
   // leagues each one is in. Drives the LinkExistingPlayerDialog.
   // Empty array when there's no global pool to attach from.
   linkableCandidates?: LinkablePlayerRow[]
+  /**
+   * v1.82.0 — league format. Threaded down to AddPlayerDialog +
+   * EditPlayerPanel so the position chip vocabulary matches the
+   * league's format (SOCCER → 12 codes; FUTSAL → GK/FIXO/ALA/PIVOT).
+   */
+  ballType?: 'SOCCER' | 'FUTSAL' | null
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -172,6 +202,7 @@ export default function PlayersTab({
   orphans,
   allLineLogins,
   linkableCandidates = [],
+  ballType = null,
 }: PlayersTabProps) {
   const { toast } = useToast()
   const [transferPanelId, setTransferPanelId] = useState<string | null>(null)
@@ -338,7 +369,7 @@ export default function PlayersTab({
               </button>
             </>
           )}
-          <AddPlayerDialog leagueId={leagueId} leagueTeams={leagueTeams} />
+          <AddPlayerDialog leagueId={leagueId} leagueTeams={leagueTeams} ballType={ballType} />
           {/* v1.56.0 (PR 3 of route-shortening chain) — sibling to
               AddPlayerDialog. Surfaces global Players (not yet on this
               league's roster) so admins can attach an existing human to
@@ -426,14 +457,25 @@ export default function PlayersTab({
                     <span className="text-admin-text2">
                       {current?.leagueTeam.team.name ?? '—'}
                     </span>
-                    {player.position && (
-                      <span
-                        className="text-admin-text3 font-mono uppercase"
-                        data-testid={`player-position-mobile-${player.id}`}
-                      >
-                        · {player.position}
-                      </span>
-                    )}
+                    {(() => {
+                      // v1.82.0 — multi-position display. Prefer the
+                      // canonical positions[]; fall through to the
+                      // legacy single column for memberships not yet
+                      // re-saved since the migration.
+                      const codes = player.positions.length > 0
+                        ? player.positions
+                        : player.position
+                          ? [player.position]
+                          : []
+                      return codes.length > 0 ? (
+                        <span
+                          className="text-admin-text3 font-mono uppercase"
+                          data-testid={`player-position-mobile-${player.id}`}
+                        >
+                          · {codes.join('/')}
+                        </span>
+                      ) : null
+                    })()}
                   </div>
                   <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
                     <SignInStatusBadge
@@ -524,6 +566,7 @@ export default function PlayersTab({
                   <EditPlayerPanel
                     player={player}
                     leagueId={leagueId}
+                    ballType={ballType}
                     onClose={() => setEditPanelId(null)}
                   />
                 </div>
@@ -681,7 +724,15 @@ export default function PlayersTab({
                   className="text-admin-text2 text-xs font-mono uppercase"
                   data-testid={`player-position-${player.id}`}
                 >
-                  {player.position ?? <span className="text-admin-text3">—</span>}
+                  {(() => {
+                    // v1.82.0 — multi-position display.
+                    const codes = player.positions.length > 0
+                      ? player.positions
+                      : player.position
+                        ? [player.position]
+                        : []
+                    return codes.length > 0 ? codes.join('/') : <span className="text-admin-text3">—</span>
+                  })()}
                 </span>
 
                 <span className="flex items-center gap-1.5 flex-wrap">
@@ -747,6 +798,7 @@ export default function PlayersTab({
                 <EditPlayerPanel
                   player={player}
                   leagueId={leagueId}
+                  ballType={ballType}
                   onClose={() => setEditPanelId(null)}
                 />
               )}
@@ -997,16 +1049,9 @@ function buildPlayerMenuItems(args: BuildPlayerMenuArgs) {
 interface EditPlayerPanelProps {
   player: PlayerRow
   leagueId: string
+  ballType: 'SOCCER' | 'FUTSAL' | null
   onClose: () => void
 }
-
-const POSITION_OPTIONS: Array<{ value: 'GK' | 'DF' | 'MF' | 'FW' | ''; label: string }> = [
-  { value: '', label: '— None —' },
-  { value: 'GK', label: 'GK — Goalkeeper' },
-  { value: 'DF', label: 'DF — Defender' },
-  { value: 'MF', label: 'MF — Midfielder' },
-  { value: 'FW', label: 'FW — Forward' },
-]
 
 /**
  * v1.41.0 — per-row edit panel toggled by the pencil button.
@@ -1035,23 +1080,24 @@ const POSITION_OPTIONS: Array<{ value: 'GK' | 'DF' | 'MF' | 'FW' | ''; label: st
  * `editPanelId` / `transferPanelId` state — the row toggles whichever
  * was last clicked.
  */
-function EditPlayerPanel({ player, leagueId, onClose }: EditPlayerPanelProps) {
+function EditPlayerPanel({ player, leagueId, ballType, onClose }: EditPlayerPanelProps) {
   const { toast } = useToast()
   const [name, setName] = useState<string>(player.name ?? '')
-  const initialPosition = useMemo<'GK' | 'DF' | 'MF' | 'FW' | ''>(() => {
-    if (player.position === 'GK' || player.position === 'DF' || player.position === 'MF' || player.position === 'FW') {
-      return player.position
-    }
-    return ''
-  }, [player.position])
-  const [position, setPosition] = useState<'GK' | 'DF' | 'MF' | 'FW' | ''>(initialPosition)
+  // v1.82.0 — multi-position. Initial selection prefers `positions[]`
+  // and falls back to the legacy single-string column for memberships
+  // that haven't been re-saved since the migration.
+  const initialPositions = useMemo<string[]>(() => {
+    if (player.positions && player.positions.length > 0) return [...player.positions]
+    return player.position ? [player.position] : []
+  }, [player.positions, player.position])
+  const [positions, setPositions] = useState<string[]>(initialPositions)
   const [pending, startTransition] = useTransition()
 
   const initialName = player.name ?? ''
   const trimmedName = name.trim()
   const nameChanged = trimmedName !== initialName.trim()
-  const positionChanged = position !== initialPosition
-  const dirty = nameChanged || positionChanged
+  const positionsChanged = !sameStringArray(positions, initialPositions)
+  const dirty = nameChanged || positionsChanged
   const nameInvalid = nameChanged && trimmedName.length === 0
 
   function handleSave() {
@@ -1061,11 +1107,11 @@ function EditPlayerPanel({ player, leagueId, onClose }: EditPlayerPanelProps) {
         if (nameChanged) {
           await adminUpdatePlayerName({ playerId: player.id, leagueId, name: trimmedName })
         }
-        if (positionChanged) {
+        if (positionsChanged) {
           await adminUpdatePlayerPosition({
             playerId: player.id,
             leagueId,
-            position: position === '' ? null : position,
+            positions,
           })
         }
         toast(`${nameOrPlaceholder(trimmedName || initialName)} updated`)
@@ -1123,29 +1169,23 @@ function EditPlayerPanel({ player, leagueId, onClose }: EditPlayerPanelProps) {
         </div>
 
         {/* Position */}
-        <div className="w-full md:w-56 flex flex-col gap-1.5">
-          <label
-            htmlFor={`edit-position-${player.id}`}
+        <div className="w-full md:flex-1 flex flex-col gap-1.5">
+          <span
             className="text-[11px] font-semibold uppercase tracking-[1.5px] text-admin-text3"
-          >
-            Position
-          </label>
-          <select
             id={`edit-position-${player.id}`}
-            value={position}
-            onChange={(e) =>
-              setPosition(e.target.value as 'GK' | 'DF' | 'MF' | 'FW' | '')
-            }
-            disabled={pending}
-            className="w-full bg-admin-surface2 border border-admin-border2 text-admin-text text-sm rounded-md px-3 py-[9px] outline-none focus:border-admin-green"
-            data-testid={`player-edit-position-select-${player.id}`}
           >
-            {POSITION_OPTIONS.map((opt) => (
-              <option key={opt.value || 'none'} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
+            Position(s)
+          </span>
+          <div data-testid={`player-edit-position-select-${player.id}`}>
+            <PositionMultiSelect
+              selected={positions}
+              onChange={setPositions}
+              ballType={ballType}
+              disabled={pending}
+              variant="admin"
+              testIdPrefix={`player-edit-position-${player.id}`}
+            />
+          </div>
         </div>
 
         {/* Buttons */}

@@ -408,13 +408,15 @@ describe('v1.64.0 — ApplyToLeagueModal', () => {
 
   it('exposes form testids (name + position + submit + error)', () => {
     expect(APPLY_MODAL_SRC).toMatch(/data-testid="apply-name"/)
-    expect(APPLY_MODAL_SRC).toMatch(/data-testid="apply-position"/)
+    // v1.82.0 — Position dropdown replaced with the chip
+    // PositionMultiSelect component using `testIdPrefix="apply-position"`.
+    expect(APPLY_MODAL_SRC).toMatch(/testIdPrefix="apply-position"/)
     expect(APPLY_MODAL_SRC).toMatch(/data-testid="apply-submit"/)
     expect(APPLY_MODAL_SRC).toMatch(/data-testid="apply-error"/)
   })
 
-  it('calls applyToLeague with leagueId + name + position', () => {
-    expect(APPLY_MODAL_SRC).toMatch(/applyToLeague\(\{[\s\S]*?leagueId[\s\S]*?name[\s\S]*?position/)
+  it('v1.82.0 — calls applyToLeague with leagueId + name + positions[]', () => {
+    expect(APPLY_MODAL_SRC).toMatch(/applyToLeague\(\{[\s\S]*?leagueId[\s\S]*?name[\s\S]*?positions/)
   })
 
   // v1.81.0 — `applyToLeague` now redirects server-side to

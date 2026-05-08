@@ -4,6 +4,7 @@ import { useState } from 'react';
 import Image from 'next/image';
 import PlayerAvatar from './PlayerAvatar';
 import type { Team, Player, Availability, AvailabilityStatuses } from '@/types';
+import { getPositionBucket } from '@/lib/positions';
 
 interface SquadListProps {
   teams: Team[];
@@ -15,16 +16,21 @@ interface SquadListProps {
   playerPictures: Record<string, string>;
 }
 
+// v1.82.0 — colour-by-bucket. Since `Player.position` is now a joined
+// string like "CB/CM", we colour by the FIRST code's role bucket so
+// every soccer/futsal code lights up consistently.
+const BUCKET_COLORS: Record<'GK' | 'DF' | 'MF' | 'FW', string> = {
+  GK: 'bg-zinc-950 text-white border-white/20',
+  DF: 'bg-blue-600 text-white border-blue-400/30',
+  MF: 'bg-emerald-600 text-white border-emerald-400/30',
+  FW: 'bg-red-600 text-white border-red-400/30',
+};
+
 const getPositionColor = (pos: string | null) => {
-  switch (pos?.toUpperCase()) {
-    case 'GK': return 'bg-zinc-950 text-white border-white/20';
-    case 'DF': return 'bg-blue-600 text-white border-blue-400/30';
-    case 'DF/MF': return 'bg-teal-600 text-white border-teal-400/30';
-    case 'MF': return 'bg-emerald-600 text-white border-emerald-400/30';
-    case 'MF/FWD': return 'bg-orange-600 text-white border-orange-400/30';
-    case 'FWD': return 'bg-red-600 text-white border-red-400/30';
-    default: return 'bg-surface-md text-fg-mid border-border-subtle';
-  }
+  if (!pos) return 'bg-surface-md text-fg-mid border-border-subtle';
+  const first = pos.split('/')[0]?.toUpperCase();
+  if (!first) return 'bg-surface-md text-fg-mid border-border-subtle';
+  return BUCKET_COLORS[getPositionBucket(first)];
 };
 
 export default function SquadList({
@@ -39,21 +45,24 @@ export default function SquadList({
     const [expandedTeamId, setExpandedTeamId] = useState<string | null>(null);
 
   const getTeamPlayers = (teamId: string) => {
-    const positionOrder: Record<string, number> = {
-      'GK': 1,
-      'DF': 2,
-      'DF/MF': 3,
-      'MF': 4,
-      'MF/FWD': 5,
-      'FWD': 6,
+    // v1.82.0 — sort by primary-position bucket. Players keep the
+    // canonical GK → DF → MF → FW ordering even when the joined
+    // position string contains multiple codes (the first code drives
+    // the bucket pick).
+    const bucketOrder: Record<'GK' | 'DF' | 'MF' | 'FW', number> = {
+      GK: 1, DF: 2, MF: 3, FW: 4,
     };
-
+    const sortKey = (pos: string | null) => {
+      if (!pos) return 99;
+      const first = pos.split('/')[0]?.toUpperCase();
+      if (!first) return 99;
+      return bucketOrder[getPositionBucket(first)] ?? 99;
+    };
     return players
       .filter((p) => p.teamId === teamId)
       .sort((a, b) => {
-        const posA = positionOrder[a.position || ''] || 99;
-        const posB = positionOrder[b.position || ''] || 99;
-
+        const posA = sortKey(a.position);
+        const posB = sortKey(b.position);
         if (posA !== posB) return posA - posB;
         return a.name.localeCompare(b.name);
       });

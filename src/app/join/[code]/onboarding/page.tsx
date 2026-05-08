@@ -54,7 +54,8 @@ export default async function OnboardingPage({ params }: Props) {
   const [league, currentBinding, userRow] = await Promise.all([
     prisma.league.findUnique({
       where: { id: invite.leagueId },
-      select: { id: true, name: true, subdomain: true },
+      // v1.82.0 — `ballType` drives the position chip vocabulary.
+      select: { id: true, name: true, subdomain: true, ballType: true },
     }),
     prisma.playerLeagueMembership.findFirst({
       where: {
@@ -107,9 +108,17 @@ export default async function OnboardingPage({ params }: Props) {
           playerId={currentBinding.player.id}
           initialName={currentBinding.player.name ?? ''}
           initialEmail={initialEmail}
-          // v1.65.4 — position lives on PLM, not Player. Read from the
-          // current PLM (currentBinding) directly.
-          initialPosition={(currentBinding.position as 'GK' | 'DF' | 'MF' | 'FW' | null) ?? null}
+          // v1.82.0 — multi-position. Prefer the new `positions[]`
+          // array; fall through to the legacy single `position` for
+          // memberships that haven't been re-saved since the migration.
+          initialPositions={
+            currentBinding.positions && currentBinding.positions.length > 0
+              ? currentBinding.positions
+              : currentBinding.position
+                ? [currentBinding.position]
+                : []
+          }
+          ballType={league.ballType}
         />
       </div>
     </main>

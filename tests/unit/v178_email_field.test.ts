@@ -109,7 +109,9 @@ describe('v1.78.0 — RegistrationFields component', () => {
 
   it('email field renders BEFORE the position field (order check)', () => {
     const emailIdx = REG_FIELDS.indexOf('data-testid="registration-email"')
-    const positionIdx = REG_FIELDS.indexOf('data-testid="registration-position"')
+    // v1.82.0 — Position dropdown replaced with the chip
+    // PositionMultiSelect using `testIdPrefix="registration-position"`.
+    const positionIdx = REG_FIELDS.indexOf('testIdPrefix="registration-position"')
     expect(emailIdx).toBeGreaterThan(-1)
     expect(positionIdx).toBeGreaterThan(-1)
     expect(emailIdx).toBeLessThan(positionIdx)

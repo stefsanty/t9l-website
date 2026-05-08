@@ -239,6 +239,8 @@ export const getLeaguePlayers = unstable_cache(
       // builder; PlayerRow consumers read `player.position` post-v1.65.4
       // expecting the per-league position.
       position: plm.position,
+      // v1.82.0 — multi-position from the PLM row.
+      positions: plm.positions,
       // v1.80.0 — applicant comments from the PLM.
       comments: plm.comments,
     }))
@@ -794,6 +796,8 @@ export async function getLinkablePlayersForLeague(leagueId: string): Promise<
     id: string
     name: string | null
     position: string | null
+    /** v1.82.0 — multi-position from the source assignment. */
+    positions: string[]
     profilePictureUrl: string | null
     pictureUrl: string | null
     userId: string | null
@@ -822,6 +826,8 @@ export async function getLinkablePlayersForLeague(leagueId: string): Promise<
         leagueAssignments: {
           select: {
             position: true,
+            // v1.82.0 — pull positions[] for the linkable-player surface.
+            positions: true,
             toGameWeek: true,
             leagueTeam: { select: { league: { select: { id: true, name: true } } } },
           },
@@ -840,17 +846,27 @@ export async function getLinkablePlayersForLeague(leagueId: string): Promise<
   const inThisLeague = new Set(currentLeagueAssignments.map((a) => a.playerId))
   return players
     .filter((p) => !inThisLeague.has(p.id))
-    .map((p) => ({
+    .map((p) => {
+      const sourceAssignment =
+        p.leagueAssignments.find((a) => a.toGameWeek === null) ??
+        p.leagueAssignments[0] ??
+        null
+      // v1.82.0 — multi-position. Prefer positions[]; fall back to
+      // legacy single-string for memberships that haven't been re-saved.
+      const positions = sourceAssignment?.positions?.length
+        ? [...sourceAssignment.positions]
+        : sourceAssignment?.position
+          ? [sourceAssignment.position]
+          : []
+      return {
       id: p.id,
       name: p.name,
       // v1.65.4 — position lives on PLM. Pick the position from the
       // most-recent active assignment; null when no assignments. This
       // is the "linkable existing player" surface so showing their
       // last-known position is the useful signal.
-      position:
-        p.leagueAssignments.find((a) => a.toGameWeek === null)?.position ??
-        p.leagueAssignments[0]?.position ??
-        null,
+      position: sourceAssignment?.position ?? null,
+      positions,
       profilePictureUrl: p.profilePictureUrl,
       pictureUrl: p.pictureUrl,
       userId: p.userId,
@@ -859,7 +875,8 @@ export async function getLinkablePlayersForLeague(leagueId: string): Promise<
         // v1.65.0 — defensive null-filter for nullable leagueTeam.
         .map((a) => a.leagueTeam?.league.name ?? null)
         .filter((name): name is string => !!name),
-    }))
+      }
+    })
 }
 
 /**

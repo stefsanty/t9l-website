@@ -166,15 +166,26 @@ export default async function AccountPlayerPage() {
     (session.user as { image?: string | null } | undefined)?.image ||
     null
 
+  // v1.82.0 — multi-position. Prefer the new positions[] array; fall
+  // through to the legacy single column for memberships that haven't
+  // been re-saved since the migration.
+  const sourceAssignment = activeAssignment ?? realAssignments[0] ?? null
+  const initialPositions: string[] = (() => {
+    if (!sourceAssignment) return []
+    if (sourceAssignment.positions && sourceAssignment.positions.length > 0) {
+      return [...sourceAssignment.positions]
+    }
+    return sourceAssignment.position ? [sourceAssignment.position] : []
+  })()
+  // v1.82.0 — ballType drives the chip vocabulary. Read from the
+  // active assignment's league; fall back to SOCCER for users with no
+  // active membership.
+  const ballType = sourceAssignment?.leagueTeam?.league.ballType ?? null
+
   const formProps: AccountPlayerFormProps = {
     initialName: player.name ?? '',
-    // v1.65.4 — position lives on PlayerLeagueMembership, not Player.
-    // Surface the position from the active membership in the default
-    // league (or the most recent assignment as a fallback).
-    initialPosition:
-      activeAssignment?.position ??
-      realAssignments[0]?.position ??
-      null,
+    initialPositions,
+    ballType,
     profilePictureUrl: player.profilePictureUrl ?? null,
     pictureUrl: player.pictureUrl ?? null,
     sessionPictureUrl,
