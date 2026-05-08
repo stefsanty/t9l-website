@@ -358,6 +358,10 @@ const ALLOWED_GOAL_SIZES = ['FUTSAL', 'YOUTH_SOCCER', 'FULL_SIZE_SOCCER'] as con
 const ALLOWED_THROW_IN_TYPES = ['THROW_IN', 'KICK_IN'] as const
 const ALLOWED_GOAL_KICK_TYPES = ['THROW', 'KICK'] as const
 const ALLOWED_PLAYER_FORMATS = [5, 6, 7, 9, 11] as const
+// v1.81.0 — League details extras.
+const ALLOWED_SKILL_LEVELS = ['BEGINNER', 'MIXED', 'INTERMEDIATE', 'ADVANCED'] as const
+const ALLOWED_SHOE_TYPES_ACTION = ['TF', 'AG', 'FG', 'SG'] as const
+const ALLOWED_SHINGUARD_POLICIES = ['MANDATORY', 'VOLUNTARY'] as const
 
 export async function updateLeagueDetails(input: {
   leagueId: string
@@ -372,6 +376,10 @@ export async function updateLeagueDetails(input: {
   unlimitedSubstitutions?: boolean
   organizerMessage?: string | null
   showLeagueDetails?: boolean
+  skillLevel?: 'BEGINNER' | 'MIXED' | 'INTERMEDIATE' | 'ADVANCED' | null
+  shoeTypes?: ReadonlyArray<'TF' | 'AG' | 'FG' | 'SG'>
+  shinguardPolicy?: 'MANDATORY' | 'VOLUNTARY' | null
+  totalMatches?: number | null
 }): Promise<void> {
   await assertAdmin()
   if (!input.leagueId) throw new Error('leagueId is required')
@@ -457,6 +465,54 @@ export async function updateLeagueDetails(input: {
       throw new Error('showLeagueDetails must be a boolean')
     }
     data.showLeagueDetails = input.showLeagueDetails
+  }
+  // v1.81.0 — Extras.
+  if (input.skillLevel !== undefined) {
+    if (input.skillLevel === null) {
+      data.skillLevel = null
+    } else if (!ALLOWED_SKILL_LEVELS.includes(input.skillLevel)) {
+      throw new Error(`skillLevel must be one of ${ALLOWED_SKILL_LEVELS.join(', ')} or null`)
+    } else {
+      data.skillLevel = input.skillLevel
+    }
+  }
+  if (input.shoeTypes !== undefined) {
+    if (!Array.isArray(input.shoeTypes)) {
+      throw new Error('shoeTypes must be an array')
+    }
+    const seen = new Set<string>()
+    const cleaned: string[] = []
+    for (const v of input.shoeTypes) {
+      if (!ALLOWED_SHOE_TYPES_ACTION.includes(v)) {
+        throw new Error(`shoeTypes entries must be among ${ALLOWED_SHOE_TYPES_ACTION.join(', ')}`)
+      }
+      if (!seen.has(v)) {
+        seen.add(v)
+        cleaned.push(v)
+      }
+    }
+    data.shoeTypes = cleaned
+  }
+  if (input.shinguardPolicy !== undefined) {
+    if (input.shinguardPolicy === null) {
+      data.shinguardPolicy = null
+    } else if (!ALLOWED_SHINGUARD_POLICIES.includes(input.shinguardPolicy)) {
+      throw new Error(`shinguardPolicy must be one of ${ALLOWED_SHINGUARD_POLICIES.join(', ')} or null`)
+    } else {
+      data.shinguardPolicy = input.shinguardPolicy
+    }
+  }
+  if (input.totalMatches !== undefined) {
+    if (input.totalMatches === null) {
+      data.totalMatches = null
+    } else if (
+      !Number.isInteger(input.totalMatches) ||
+      input.totalMatches < 0
+    ) {
+      throw new Error('totalMatches must be a non-negative integer or null')
+    } else {
+      data.totalMatches = input.totalMatches
+    }
   }
 
   await prisma.league.update({

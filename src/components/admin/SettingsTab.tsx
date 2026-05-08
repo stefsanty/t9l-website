@@ -57,6 +57,13 @@ interface League {
   unlimitedSubstitutions: boolean
   organizerMessage: string | null
   showLeagueDetails: boolean
+  // v1.81.0 — League details extras.
+  // shoeTypes is the raw TEXT[] from Prisma; SettingsTab narrows to the
+  // allowed set on the way into the editor.
+  skillLevel: 'BEGINNER' | 'MIXED' | 'INTERMEDIATE' | 'ADVANCED' | null
+  shoeTypes: ReadonlyArray<string>
+  shinguardPolicy: 'MANDATORY' | 'VOLUNTARY' | null
+  totalMatches: number | null
 }
 
 // JST calendar date as YYYY-MM-DD for `<input type="date">`. See lib/jst.ts.
@@ -568,6 +575,13 @@ export default function SettingsTab({ league }: SettingsTabProps) {
         initialPlannedPlayersPerTeam={league.plannedPlayersPerTeam}
         initialPlannedNumberOfTeams={league.plannedNumberOfTeams}
         initialRegistrationDeadline={league.registrationDeadline}
+        initialSkillLevel={league.skillLevel}
+        initialShoeTypes={league.shoeTypes.filter(
+          (s): s is 'TF' | 'AG' | 'FG' | 'SG' =>
+            s === 'TF' || s === 'AG' || s === 'FG' || s === 'SG',
+        )}
+        initialShinguardPolicy={league.shinguardPolicy}
+        initialTotalMatches={league.totalMatches}
       />
 
       {/* Quick actions */}

@@ -27,6 +27,12 @@ export type BallType = 'SOCCER' | 'FUTSAL'
 export type GoalSize = 'FUTSAL' | 'YOUTH_SOCCER' | 'FULL_SIZE_SOCCER'
 export type ThrowInType = 'THROW_IN' | 'KICK_IN'
 export type GoalKickType = 'THROW' | 'KICK'
+// v1.81.0 — League details extras.
+export type SkillLevel = 'BEGINNER' | 'MIXED' | 'INTERMEDIATE' | 'ADVANCED'
+export type ShoeType = 'TF' | 'AG' | 'FG' | 'SG'
+export type ShinguardPolicy = 'MANDATORY' | 'VOLUNTARY'
+
+export const ALLOWED_SHOE_TYPES: ReadonlyArray<ShoeType> = ['TF', 'AG', 'FG', 'SG']
 
 export interface LeagueDetails {
   ballType: BallType
@@ -39,6 +45,12 @@ export interface LeagueDetails {
   playerFormat: number | null
   unlimitedSubstitutions: boolean
   organizerMessage: string | null
+  // v1.81.0 — Extras. Each is null/empty for unset → public panel
+  // renders "TBD" rather than a misleading default.
+  skillLevel: SkillLevel | null
+  shoeTypes: ReadonlyArray<ShoeType>
+  shinguardPolicy: ShinguardPolicy | null
+  totalMatches: number | null
 }
 
 async function readLeagueDetails(
@@ -59,6 +71,10 @@ async function readLeagueDetails(
         unlimitedSubstitutions: true,
         organizerMessage: true,
         showLeagueDetails: true,
+        skillLevel: true,
+        shoeTypes: true,
+        shinguardPolicy: true,
+        totalMatches: true,
       },
     })
     if (!row) return null
@@ -74,6 +90,14 @@ async function readLeagueDetails(
       playerFormat: row.playerFormat,
       unlimitedSubstitutions: row.unlimitedSubstitutions,
       organizerMessage: row.organizerMessage,
+      skillLevel: row.skillLevel,
+      // Filter to known values defensively — DB column is TEXT[] so a
+      // bad write upstream wouldn't be caught at the schema boundary.
+      shoeTypes: (row.shoeTypes ?? []).filter((s): s is ShoeType =>
+        (ALLOWED_SHOE_TYPES as ReadonlyArray<string>).includes(s),
+      ),
+      shinguardPolicy: row.shinguardPolicy,
+      totalMatches: row.totalMatches,
     }
   } catch (err) {
     console.warn('[leagueDetails] read failed:', err)
@@ -112,6 +136,21 @@ export const THROW_IN_TYPE_LABELS: Record<ThrowInType, string> = {
 export const GOAL_KICK_TYPE_LABELS: Record<GoalKickType, string> = {
   THROW: 'Throw',
   KICK: 'Kick',
+}
+
+// v1.81.0 — Labels for the four extras. Used by the public panel and
+// the admin editor. Mixed-case here matches the spec (e.g. "Mixed",
+// "Mandatory") so the public panel can render the value verbatim.
+export const SKILL_LEVEL_LABELS: Record<SkillLevel, string> = {
+  BEGINNER: 'Beginner',
+  MIXED: 'Mixed',
+  INTERMEDIATE: 'Intermediate',
+  ADVANCED: 'Advanced',
+}
+
+export const SHINGUARD_POLICY_LABELS: Record<ShinguardPolicy, string> = {
+  MANDATORY: 'Mandatory',
+  VOLUNTARY: 'Voluntary',
 }
 
 export function formatPlayerFormat(n: number): string {

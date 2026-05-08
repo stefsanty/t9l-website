@@ -225,6 +225,23 @@ model League {
   organizerMessage       String?      @db.Text
   showLeagueDetails      Boolean      @default(true)
 
+  // v1.81.0 — League details extras. All four fields default to
+  // null / [] so existing leagues backfill to a "TBD" state in the
+  // public panel rather than a misleading default. The public panel
+  // renders "TBD" when a field is unset.
+  //
+  //   skillLevel       — Beginner / Mixed / Intermediate / Advanced
+  //   shoeTypes        — multi-select among TF / AG / FG / SG
+  //                      (validated as a string set; DB column is TEXT[])
+  //   shinguardPolicy  — Mandatory / Voluntary
+  //   totalMatches     — sum of all matches across the season
+  //                      (distinct from `matchdays` count — a matchday
+  //                      can host multiple matches)
+  skillLevel       SkillLevel?
+  shoeTypes        String[]         @default([])
+  shinguardPolicy  ShinguardPolicy?
+  totalMatches     Int?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -624,6 +641,24 @@ enum ThrowInType {
 enum GoalKickType {
   THROW
   KICK
+}
+
+// v1.81.0 — Player-skill bracket the league is targeting. MIXED is the
+// catch-all for "open to any level". Nullable on League so unset rows
+// render as "TBD" in the public panel rather than picking a default.
+enum SkillLevel {
+  BEGINNER
+  MIXED
+  INTERMEDIATE
+  ADVANCED
+}
+
+// v1.81.0 — Whether shinguards are required (MANDATORY) or merely
+// recommended (VOLUNTARY). Nullable on League so unset rows render as
+// "TBD" in the public panel.
+enum ShinguardPolicy {
+  MANDATORY
+  VOLUNTARY
 }
 
 model GameWeek {

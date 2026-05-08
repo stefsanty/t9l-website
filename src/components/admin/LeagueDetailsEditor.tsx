@@ -39,6 +39,18 @@ type BallType = 'SOCCER' | 'FUTSAL'
 type GoalSize = 'FUTSAL' | 'YOUTH_SOCCER' | 'FULL_SIZE_SOCCER'
 type ThrowInType = 'THROW_IN' | 'KICK_IN'
 type GoalKickType = 'THROW' | 'KICK'
+// v1.81.0 — League details extras.
+type SkillLevel = 'BEGINNER' | 'MIXED' | 'INTERMEDIATE' | 'ADVANCED'
+type ShoeType = 'TF' | 'AG' | 'FG' | 'SG'
+type ShinguardPolicy = 'MANDATORY' | 'VOLUNTARY'
+
+const SKILL_LEVEL_OPTIONS: ReadonlyArray<{ value: SkillLevel; label: string }> = [
+  { value: 'BEGINNER', label: 'Beginner' },
+  { value: 'MIXED', label: 'Mixed' },
+  { value: 'INTERMEDIATE', label: 'Intermediate' },
+  { value: 'ADVANCED', label: 'Advanced' },
+]
+const SHOE_TYPE_OPTIONS: ReadonlyArray<ShoeType> = ['TF', 'AG', 'FG', 'SG']
 
 interface FeeRow {
   position: string
@@ -65,6 +77,11 @@ interface Props {
   initialPlannedPlayersPerTeam: number
   initialPlannedNumberOfTeams: number
   initialRegistrationDeadline: Date | null
+  // v1.81.0 — League details extras.
+  initialSkillLevel: SkillLevel | null
+  initialShoeTypes: ReadonlyArray<ShoeType>
+  initialShinguardPolicy: ShinguardPolicy | null
+  initialTotalMatches: number | null
 }
 
 function fmtDateInput(d: Date | null): string {
@@ -90,6 +107,10 @@ export default function LeagueDetailsEditor({
   initialPlannedPlayersPerTeam,
   initialPlannedNumberOfTeams,
   initialRegistrationDeadline,
+  initialSkillLevel,
+  initialShoeTypes,
+  initialShinguardPolicy,
+  initialTotalMatches,
 }: Props) {
   const { toast } = useToast()
   const [pending, startTransition] = useTransition()
@@ -142,6 +163,22 @@ export default function LeagueDetailsEditor({
     fmtDateInput(initialRegistrationDeadline),
   )
 
+  // v1.81.0 — Extras state.
+  const [skillLevel, setSkillLevel] = useState<SkillLevel | ''>(initialSkillLevel ?? '')
+  const [shoeTypes, setShoeTypes] = useState<ShoeType[]>([...initialShoeTypes])
+  const [shinguardPolicy, setShinguardPolicy] = useState<ShinguardPolicy | ''>(
+    initialShinguardPolicy ?? '',
+  )
+  const [totalMatches, setTotalMatches] = useState<string>(
+    initialTotalMatches != null ? String(initialTotalMatches) : '',
+  )
+
+  function toggleShoeType(opt: ShoeType) {
+    setShoeTypes((prev) =>
+      prev.includes(opt) ? prev.filter((s) => s !== opt) : [...prev, opt],
+    )
+  }
+
   function handleSave() {
     const durationParsed = matchDurationMinutes.trim() === ''
       ? null
@@ -152,6 +189,17 @@ export default function LeagueDetailsEditor({
 
     if (durationParsed !== null && (Number.isNaN(durationParsed) || durationParsed <= 0)) {
       toast('Match duration must be a positive number', 'error')
+      return
+    }
+
+    const totalMatchesParsed = totalMatches.trim() === ''
+      ? null
+      : parseInt(totalMatches, 10)
+    if (
+      totalMatchesParsed !== null &&
+      (Number.isNaN(totalMatchesParsed) || totalMatchesParsed < 0)
+    ) {
+      toast('Total matches must be a non-negative integer', 'error')
       return
     }
 
@@ -174,6 +222,10 @@ export default function LeagueDetailsEditor({
             unlimitedSubstitutions,
             organizerMessage: organizerMessage.trim() === '' ? null : organizerMessage,
             showLeagueDetails,
+            skillLevel: skillLevel === '' ? null : skillLevel,
+            shoeTypes,
+            shinguardPolicy: shinguardPolicy === '' ? null : shinguardPolicy,
+            totalMatches: totalMatchesParsed,
           }),
           updateLeagueFeeSettings({
             leagueId,
@@ -278,6 +330,79 @@ export default function LeagueDetailsEditor({
           <option value="YOUTH_SOCCER">Youth soccer</option>
           <option value="FULL_SIZE_SOCCER">Full size soccer</option>
         </select>
+      </div>
+
+      {/* v1.81.0 — Skill level (player-facing metadata, sits with Format/Ball/Goal) */}
+      <div className="space-y-1.5">
+        <label className="text-xs font-medium text-admin-text2 uppercase tracking-wide">Skill level</label>
+        <select
+          value={skillLevel}
+          onChange={(e) => setSkillLevel(e.target.value as SkillLevel | '')}
+          className="w-full bg-admin-surface2 border border-admin-border rounded-lg px-3 py-2 text-sm text-admin-text focus:outline-none focus:border-admin-border2"
+          data-testid="league-details-skill-level"
+        >
+          <option value="">— TBD —</option>
+          {SKILL_LEVEL_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value}>{opt.label}</option>
+          ))}
+        </select>
+      </div>
+
+      {/* v1.81.0 — Shoes (multi-select chips) */}
+      <div className="space-y-1.5" data-testid="league-details-shoe-types">
+        <label className="text-xs font-medium text-admin-text2 uppercase tracking-wide">Shoes</label>
+        <div className="grid grid-cols-4 gap-2">
+          {SHOE_TYPE_OPTIONS.map((opt) => {
+            const active = shoeTypes.includes(opt)
+            return (
+              <button
+                key={opt}
+                type="button"
+                aria-pressed={active}
+                onClick={() => toggleShoeType(opt)}
+                data-testid={`league-details-shoe-type-${opt.toLowerCase()}`}
+                className={cn(
+                  'rounded-lg border px-3 py-2 text-sm font-mono font-medium transition-colors',
+                  active
+                    ? 'border-admin-green bg-admin-green/10 text-admin-text'
+                    : 'border-admin-border bg-admin-surface2 text-admin-text2 hover:border-admin-border2 hover:text-admin-text',
+                )}
+              >
+                {opt}
+              </button>
+            )
+          })}
+        </div>
+        <p className="text-[11px] text-admin-text3">
+          Pick all shoe types allowed on the playing surface. Empty = TBD on the public panel.
+        </p>
+      </div>
+
+      {/* v1.81.0 — Shinguard policy */}
+      <div className="space-y-1.5">
+        <label className="text-xs font-medium text-admin-text2 uppercase tracking-wide">Shinguards</label>
+        <div className="grid grid-cols-3 gap-3">
+          {([
+            { value: '' as const, label: 'TBD' },
+            { value: 'MANDATORY' as const, label: 'Mandatory' },
+            { value: 'VOLUNTARY' as const, label: 'Voluntary' },
+          ]).map((opt) => (
+            <button
+              key={opt.value || 'tbd'}
+              type="button"
+              data-testid={`league-details-shinguard-${opt.value === '' ? 'tbd' : opt.value.toLowerCase()}`}
+              onClick={() => setShinguardPolicy(opt.value)}
+              className={cn(
+                'rounded-lg border px-3 py-2 text-sm font-medium transition-colors',
+                shinguardPolicy === opt.value
+                  ? 'border-admin-green bg-admin-green/10 text-admin-text'
+                  : 'border-admin-border bg-admin-surface2 text-admin-text2 hover:border-admin-border2 hover:text-admin-text',
+              )}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* 5 — Default fee + per-position fee rows */}
@@ -423,6 +548,27 @@ export default function LeagueDetailsEditor({
           />
           <p className="text-[11px] text-admin-text3 mt-1">
             JST calendar date. Leave empty to hide the deadline row from the public panel.
+          </p>
+        </label>
+
+        {/* v1.81.0 — Total matches (sum of all matches across the season,
+            distinct from the matchday count). */}
+        <label className="block">
+          <span className="block text-xs uppercase tracking-widest font-bold text-admin-text2 mb-1.5">
+            Total matches
+          </span>
+          <input
+            type="number"
+            min={0}
+            step={1}
+            value={totalMatches}
+            onChange={(e) => setTotalMatches(e.target.value)}
+            placeholder="e.g. 45"
+            className="w-32 bg-admin-surface2 border border-admin-border rounded px-2 py-1 text-sm font-mono text-admin-text placeholder:text-admin-text3"
+            data-testid="league-details-total-matches"
+          />
+          <p className="text-[11px] text-admin-text3 mt-1">
+            Sum of every match across the season (NOT matchday count — a matchday can host multiple matches). Empty = TBD on the public panel.
           </p>
         </label>
       </div>
