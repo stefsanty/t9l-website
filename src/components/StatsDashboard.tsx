@@ -1,15 +1,47 @@
 'use client';
 
+import dynamic from 'next/dynamic';
 import type {
   Team, Player, Availability, AvailabilityStatuses,
   LeagueTableRow, PlayerStats,
 } from '@/types';
 import LeagueTable from './LeagueTable';
-import TopPerformers from './TopPerformers';
-import SquadList from './SquadList';
 import Header from './Header';
 import UnpaidFeeBanner from './UnpaidFeeBanner';
 import type { UnpaidFeeBannerData } from '@/lib/unpaidFeeBanner';
+
+// v1.80.3 — phase 2 H4: lazy-load /stats below-fold sections. LeagueTable
+// stays static (above-fold). TopPerformers ships its own avatar/sort-icon
+// rendering subtree; SquadList is the largest section (an accordion of
+// per-team rosters). Skeletons reserve enough vertical space to keep
+// scroll position stable while the chunks arrive — the user's scroll past
+// the standings shouldn't snap when content lands.
+const TopPerformers = dynamic(() => import('./TopPerformers'), {
+  loading: () => (
+    <div
+      data-testid="top-performers-skeleton"
+      aria-hidden
+      className="pl-card pl-card-violet rounded-2xl mb-10 h-[360px] animate-pulse"
+    />
+  ),
+});
+
+const SquadList = dynamic(() => import('./SquadList'), {
+  loading: () => (
+    <div
+      data-testid="squad-list-skeleton"
+      aria-hidden
+      className="space-y-4 animate-pulse"
+    >
+      {Array.from({ length: 4 }).map((_, i) => (
+        <div
+          key={i}
+          className="pl-card pl-card-violet rounded-2xl h-[88px]"
+        />
+      ))}
+    </div>
+  ),
+});
 
 interface StatsDashboardProps {
   teams: Team[];

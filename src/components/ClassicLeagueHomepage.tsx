@@ -1,6 +1,7 @@
 'use client'
 
 import type { ReactNode } from 'react'
+import dynamic from 'next/dynamic'
 import type {
   Team,
   Player,
@@ -11,7 +12,36 @@ import type {
   PlayedStatus,
 } from '@/types'
 import NextMatchdayBanner from './NextMatchdayBanner'
-import MatchdayAvailability from './MatchdayAvailability'
+
+// v1.80.3 — phase 2 H3: lazy-load the below-fold "Who else is coming?"
+// availability section. NextMatchdayBanner stays in the initial bundle as
+// the LCP candidate; MatchdayAvailability (522 lines, the largest single
+// below-fold widget on the homepage) ships as a separate chunk and only
+// hydrates after the banner. The skeleton reserves vertical space to
+// approximate the typical 4-team collapsed view (~52px per row + header)
+// so scroll position stays stable while the chunk arrives.
+const MatchdayAvailability = dynamic(() => import('./MatchdayAvailability'), {
+  loading: () => (
+    <section
+      data-testid="matchday-availability-skeleton"
+      aria-hidden
+      className="mt-4 mb-12 animate-pulse"
+    >
+      <div className="flex items-center gap-3 mb-3">
+        <div className="h-3 w-32 rounded bg-surface-md" />
+        <div className="h-[1px] flex-1 bg-border-subtle" />
+      </div>
+      <div className="grid gap-3">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <div
+            key={i}
+            className="h-[52px] rounded-xl bg-surface border border-border-subtle"
+          />
+        ))}
+      </div>
+    </section>
+  ),
+})
 
 /**
  * v1.63.0 — Classic League Homepage wrapper.
