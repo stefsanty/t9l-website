@@ -163,3 +163,76 @@ describe('perf phase 4 — bundle analyzer wired (opt-in)', () => {
     expect(config).toMatch(/withBundleAnalyzer\(nextConfig\)/)
   })
 })
+
+describe('perf phase 4b (v1.80.7) — server-only DB lookups split out of mixed lib modules', () => {
+  // Bundle analyzer surfaced ~47 KB (parsed) / ~17 KB (gzip) of
+  // `@prisma/client/runtime/index-browser.js` shipped to EVERY public
+  // route. Root cause: two lib modules (`leagueSlug.ts`,
+  // `leagueDetails.ts`) co-located pure exports (`DEFAULT_LEAGUE_SLUG`,
+  // `validateLeagueSlug`, `BALL_TYPE_LABELS`, `formatPlayerFormat`, etc.)
+  // with `unstable_cache(...)` Prisma readers. Client components like
+  // `CopyMatchdayLink`, `RecruitingBanner`, `CreateLeagueModal`, and
+  // `LeagueDetailsPanel` legitimately imported the pure helpers, and
+  // Webpack's module-evaluation rules then dragged the whole module —
+  // including the side-effect `import { prisma }` — into the public
+  // bundle. The fix splits each file into pure + server modules.
+  //
+  // These assertions pin the split: pure modules MUST stay free of
+  // prisma + next/cache imports, and server callers MUST import the DB
+  // lookups from the new server modules. A regression that re-co-located
+  // the cached reader back into the pure module would re-introduce the
+  // ~17 KB gzip leak per route.
+
+  it('leagueSlug.ts (pure) imports neither prisma nor next/cache', () => {
+    const src = read('src/lib/leagueSlug.ts')
+    expect(src).not.toMatch(/from\s+['"]@\/lib\/prisma['"]/)
+    expect(src).not.toMatch(/from\s+['"]\.\/prisma['"]/)
+    expect(src).not.toMatch(/from\s+['"]next\/cache['"]/)
+  })
+
+  it('leagueSlugServer.ts owns getLeagueIdBySlug + getDefaultLeagueId', () => {
+    const src = read('src/lib/leagueSlugServer.ts')
+    expect(src).toMatch(/export async function getLeagueIdBySlug/)
+    expect(src).toMatch(/export async function getDefaultLeagueId/)
+    expect(src).toMatch(/from\s+['"]\.\/prisma['"]/)
+    expect(src).toMatch(/from\s+['"]next\/cache['"]/)
+  })
+
+  it('leagueDetails.ts (pure) imports neither prisma nor next/cache', () => {
+    const src = read('src/lib/leagueDetails.ts')
+    expect(src).not.toMatch(/from\s+['"]@\/lib\/prisma['"]/)
+    expect(src).not.toMatch(/from\s+['"]next\/cache['"]/)
+  })
+
+  it('leagueDetailsServer.ts owns the cached getLeagueDetails reader', () => {
+    const src = read('src/lib/leagueDetailsServer.ts')
+    expect(src).toMatch(/export const getLeagueDetails = unstable_cache/)
+    expect(src).toMatch(/from\s+['"]@\/lib\/prisma['"]/)
+    expect(src).toMatch(/from\s+['"]next\/cache['"]/)
+  })
+
+  it('client components that import from leagueSlug.ts only pull pure exports', () => {
+    // Pre-v1.80.7, these client components transitively pulled in prisma
+    // because their pure imports lived in a module that also imported
+    // prisma at top-level. Pin: the client surface keeps using
+    // `@/lib/leagueSlug` (the pure module) for these specific symbols.
+    expect(read('src/components/CopyMatchdayLink.tsx')).toMatch(
+      /import\s+\{\s*DEFAULT_LEAGUE_SLUG\s*\}\s+from\s+['"]@\/lib\/leagueSlug['"]/,
+    )
+    expect(read('src/components/RecruitingBanner.tsx')).toMatch(
+      /import\s+\{\s*DEFAULT_LEAGUE_SLUG\s*\}\s+from\s+['"]@\/lib\/leagueSlug['"]/,
+    )
+    expect(read('src/components/admin/CreateLeagueModal.tsx')).toMatch(
+      /import\s+\{\s*validateLeagueSlug\s*\}\s+from\s+['"]@\/lib\/leagueSlug['"]/,
+    )
+  })
+
+  it('LeagueDetailsPanel imports only pure values from leagueDetails.ts', () => {
+    // The label maps + formatPlayerFormat helper live in the pure file;
+    // the panel never needs the DB reader. Re-introducing a server
+    // import here would re-leak prisma into the lazy panel chunk.
+    const src = read('src/components/LeagueDetailsPanel.tsx')
+    expect(src).toMatch(/from\s+['"]@\/lib\/leagueDetails['"]/)
+    expect(src).not.toMatch(/from\s+['"]@\/lib\/leagueDetailsServer['"]/)
+  })
+})

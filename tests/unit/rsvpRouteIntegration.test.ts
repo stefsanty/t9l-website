@@ -70,7 +70,7 @@ vi.mock('@vercel/functions', () => ({
   waitUntil: waitUntilMock,
 }))
 
-vi.mock('@/lib/leagueSlug', () => ({
+vi.mock('@/lib/leagueSlugServer', () => ({
   getDefaultLeagueId: getDefaultLeagueIdMock,
 }))
 

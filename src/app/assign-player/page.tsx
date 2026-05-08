@@ -6,7 +6,7 @@ import AssignPlayerClient from '@/components/AssignPlayerClient';
 import { authOptions } from '@/lib/auth';
 import { getPublicLeagueData } from '@/lib/publicData';
 import { getLinkedPlayerIds } from '@/lib/linkedPlayers';
-import { getDefaultLeagueId } from '@/lib/leagueSlug';
+import { getDefaultLeagueId } from '@/lib/leagueSlugServer';
 import { getLeagueAllowSelfLink } from '@/lib/leagueSelfLink';
 
 export default async function AssignPlayerPage() {

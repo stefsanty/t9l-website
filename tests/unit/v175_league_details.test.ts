@@ -154,42 +154,57 @@ describe('v1.75.0 updateLeagueDetails server action', () => {
 })
 
 describe('v1.75.0 leagueDetails helper', () => {
-  const src = read('src/lib/leagueDetails.ts')
+  // v1.80.7 — server-only DB read split into `leagueDetailsServer.ts`;
+  // pure label maps + types stay in `leagueDetails.ts`. Each assertion
+  // reads from whichever file the moved/staying export lives in.
+  const serverSrc = read('src/lib/leagueDetailsServer.ts')
+  const pureSrc = read('src/lib/leagueDetails.ts')
 
   it('exports the cached getLeagueDetails reader', () => {
-    expect(src).toMatch(/export const getLeagueDetails = unstable_cache/)
+    expect(serverSrc).toMatch(/export const getLeagueDetails = unstable_cache/)
   })
 
   it('returns null when the league has showLeagueDetails === false', () => {
-    expect(src).toMatch(/if \(!row\.showLeagueDetails\) return null/)
+    expect(serverSrc).toMatch(/if \(!row\.showLeagueDetails\) return null/)
   })
 
   it('returns null on Prisma rejection (defensive)', () => {
-    expect(src).toMatch(/leagueDetails.*read failed/)
-    expect(src).toMatch(/return null/)
+    expect(serverSrc).toMatch(/leagueDetails.*read failed/)
+    expect(serverSrc).toMatch(/return null/)
   })
 
   it('selects all ten new columns', () => {
-    expect(src).toMatch(/ballType:\s*true/)
-    expect(src).toMatch(/goalSize:\s*true/)
-    expect(src).toMatch(/throwInType:\s*true/)
-    expect(src).toMatch(/offsideRule:\s*true/)
-    expect(src).toMatch(/backpassRule:\s*true/)
-    expect(src).toMatch(/matchDurationMinutes:\s*true/)
-    expect(src).toMatch(/playerFormat:\s*true/)
-    expect(src).toMatch(/unlimitedSubstitutions:\s*true/)
-    expect(src).toMatch(/organizerMessage:\s*true/)
-    expect(src).toMatch(/showLeagueDetails:\s*true/)
+    expect(serverSrc).toMatch(/ballType:\s*true/)
+    expect(serverSrc).toMatch(/goalSize:\s*true/)
+    expect(serverSrc).toMatch(/throwInType:\s*true/)
+    expect(serverSrc).toMatch(/offsideRule:\s*true/)
+    expect(serverSrc).toMatch(/backpassRule:\s*true/)
+    expect(serverSrc).toMatch(/matchDurationMinutes:\s*true/)
+    expect(serverSrc).toMatch(/playerFormat:\s*true/)
+    expect(serverSrc).toMatch(/unlimitedSubstitutions:\s*true/)
+    expect(serverSrc).toMatch(/organizerMessage:\s*true/)
+    expect(serverSrc).toMatch(/showLeagueDetails:\s*true/)
   })
 
   it('uses the canonical leagues cache tag', () => {
-    expect(src).toMatch(/tags:\s*\['leagues'\]/)
+    expect(serverSrc).toMatch(/tags:\s*\['leagues'\]/)
   })
 
-  it('exports human-readable label maps for each enum', () => {
-    expect(src).toMatch(/BALL_TYPE_LABELS/)
-    expect(src).toMatch(/GOAL_SIZE_LABELS/)
-    expect(src).toMatch(/THROW_IN_TYPE_LABELS/)
+  it('exports human-readable label maps for each enum (in the pure module)', () => {
+    expect(pureSrc).toMatch(/BALL_TYPE_LABELS/)
+    expect(pureSrc).toMatch(/GOAL_SIZE_LABELS/)
+    expect(pureSrc).toMatch(/THROW_IN_TYPE_LABELS/)
+  })
+
+  it('pure module imports nothing prisma- or next/cache-related (perf phase 4b)', () => {
+    // Regression target: `leagueDetails.ts` is imported by the
+    // client-side `LeagueDetailsPanel` (lazy via next/dynamic). Re-adding
+    // a `prisma` or `next/cache` import here would re-introduce the
+    // ~47 KB Prisma browser-runtime leak into the LeagueDetailsPanel
+    // chunk that v1.80.7 fixed by splitting DB reads into
+    // `leagueDetailsServer.ts`.
+    expect(pureSrc).not.toMatch(/from\s+['"]@\/lib\/prisma['"]/)
+    expect(pureSrc).not.toMatch(/from\s+['"]next\/cache['"]/)
   })
 })
 
@@ -330,9 +345,9 @@ describe('v1.75.0 page-level wiring (apex + /id/<slug> + /id/<slug>/md/<id>)', (
     'src/app/id/[slug]/md/[id]/page.tsx',
   ]
 
-  it.each(sources)('%s imports getLeagueDetails', (rel) => {
+  it.each(sources)('%s imports getLeagueDetails from leagueDetailsServer (v1.80.7 split)', (rel) => {
     // Apex page.tsx uses double quotes; /id pages use single quotes — both valid.
-    expect(read(rel)).toMatch(/import \{ getLeagueDetails \} from ["']@\/lib\/leagueDetails["']/)
+    expect(read(rel)).toMatch(/import \{ getLeagueDetails \} from ["']@\/lib\/leagueDetailsServer["']/)
   })
 
   it.each(sources)('%s threads leagueDetails to Dashboard', (rel) => {

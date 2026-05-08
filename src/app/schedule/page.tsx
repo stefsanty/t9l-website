@@ -5,7 +5,7 @@ import Link from "next/link";
 import MatchdayCard from "@/components/MatchdayCard";
 import Header from "@/components/Header";
 import { getPublicLeagueData } from "@/lib/publicData";
-import { getDefaultLeagueId } from "@/lib/leagueSlug";
+import { getDefaultLeagueId } from "@/lib/leagueSlugServer";
 import { getUnpaidFeeBannerData } from "@/lib/unpaidFeeBanner";
 import UnpaidFeeBanner from "@/components/UnpaidFeeBanner";
 

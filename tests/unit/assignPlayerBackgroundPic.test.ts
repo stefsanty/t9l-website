@@ -112,7 +112,7 @@ vi.mock('next/cache', () => ({
   unstable_cache: <T extends (...args: unknown[]) => unknown>(fn: T) => fn,
 }))
 
-vi.mock('@/lib/leagueSlug', () => ({
+vi.mock('@/lib/leagueSlugServer', () => ({
   getDefaultLeagueId: vi.fn().mockResolvedValue('l-minato-2025'),
 }))
 

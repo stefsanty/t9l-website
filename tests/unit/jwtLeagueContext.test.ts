@@ -56,7 +56,7 @@ vi.mock('@/lib/prisma', () => ({
   },
 }))
 
-vi.mock('@/lib/leagueSlug', () => ({
+vi.mock('@/lib/leagueSlugServer', () => ({
   getDefaultLeagueId: getDefaultLeagueIdMock,
 }))
 

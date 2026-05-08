@@ -1,17 +1,20 @@
 /**
  * v1.75.0 — League details surface (data layer).
  *
- * Reads the ten new `League` columns introduced in v1.75.0 and returns
- * a typed shape consumed by the public `LeagueDetailsPanel` component.
+ * v1.80.7 (perf phase 4b) — server-only DB read (`readLeagueDetails`,
+ * `getLeagueDetails`) moved to `leagueDetailsServer.ts`. This file now
+ * contains ONLY pure types + label maps + format helpers so the
+ * client-side `LeagueDetailsPanel` (lazy-loaded via `next/dynamic`) can
+ * import them without dragging `@prisma/client` and `next/cache` into the
+ * public bundle. Server callers that need the cached DB read now
+ * `import { getLeagueDetails } from '@/lib/leagueDetailsServer'`.
  *
- * Auth/visibility:
- *   - Returns `null` when the league row is missing OR when
- *     `showLeagueDetails === false`. The panel never renders without a
- *     non-null value here. The caller (page.tsx) gates additionally on
+ * Auth/visibility (server side, see leagueDetailsServer.ts):
+ *   - `getLeagueDetails` returns `null` when the league row is missing OR
+ *     when `showLeagueDetails === false`. The panel never renders without
+ *     a non-null value here. The caller (page.tsx) gates additionally on
  *     `preseasonMode === true` to keep the panel scoped to the preseason
  *     homepage.
- *   - Defensive `null` on Prisma rejection — a transient blip should
- *     hide the panel rather than crash the homepage.
  *
  * Why a separate helper:
  *   - Keeps `getPublicLeagueData`'s shape stable (LeagueData covers
@@ -20,8 +23,6 @@
  *     writes (which always bust this tag via
  *     `revalidate({ domain: 'admin' })`) propagate on the next render.
  */
-import { prisma } from '@/lib/prisma'
-import { unstable_cache } from 'next/cache'
 
 export type BallType = 'SOCCER' | 'FUTSAL'
 export type GoalSize = 'FUTSAL' | 'YOUTH_SOCCER' | 'FULL_SIZE_SOCCER'
@@ -40,54 +41,6 @@ export interface LeagueDetails {
   unlimitedSubstitutions: boolean
   organizerMessage: string | null
 }
-
-async function readLeagueDetails(
-  leagueId: string,
-): Promise<LeagueDetails | null> {
-  try {
-    const row = await prisma.league.findUnique({
-      where: { id: leagueId },
-      select: {
-        ballType: true,
-        goalSize: true,
-        throwInType: true,
-        goalKickType: true,
-        offsideRule: true,
-        backpassRule: true,
-        matchDurationMinutes: true,
-        playerFormat: true,
-        unlimitedSubstitutions: true,
-        organizerMessage: true,
-        showLeagueDetails: true,
-      },
-    })
-    if (!row) return null
-    if (!row.showLeagueDetails) return null
-    return {
-      ballType: row.ballType,
-      goalSize: row.goalSize,
-      throwInType: row.throwInType,
-      goalKickType: row.goalKickType,
-      offsideRule: row.offsideRule,
-      backpassRule: row.backpassRule,
-      matchDurationMinutes: row.matchDurationMinutes,
-      playerFormat: row.playerFormat,
-      unlimitedSubstitutions: row.unlimitedSubstitutions,
-      organizerMessage: row.organizerMessage,
-    }
-  } catch (err) {
-    console.warn('[leagueDetails] read failed:', err)
-    return null
-  }
-}
-
-export const getLeagueDetails = unstable_cache(
-  readLeagueDetails,
-  ['league-details'],
-  { revalidate: 30, tags: ['leagues'] },
-)
-
-export const __readLeagueDetails_for_testing = readLeagueDetails
 
 /**
  * Human-readable labels for the enum fields. Used by both the public

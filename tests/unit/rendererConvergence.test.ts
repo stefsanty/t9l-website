@@ -59,14 +59,15 @@ describe('v1.25.0 — app/page.tsx renderer convergence', () => {
   it('v1.53.0 — does NOT use the deleted getLeagueFromHost / getLeagueIdFromRequest helpers (subdomain teardown)', () => {
     // Regression target: PR 4 of the path-routing chain stripped the
     // host-header league resolver. The apex page now uses
-    // `getDefaultLeagueId` from `@/lib/leagueSlug`.
+    // `getDefaultLeagueId` from `@/lib/leagueSlugServer` (post-v1.80.7
+    // split — was `@/lib/leagueSlug` before the perf phase 4b extraction).
     expect(pageSrc).not.toMatch(/getLeagueFromHost/)
     expect(pageSrc).not.toMatch(/getLeagueIdFromRequest/)
   })
 
   it('v1.53.0 — resolves leagueId via getDefaultLeagueId and threads it into getPublicLeagueData', () => {
     expect(pageSrc).toMatch(
-      /import\s+\{[^}]*getDefaultLeagueId[^}]*\}\s+from\s+["']@\/lib\/leagueSlug["']/,
+      /import\s+\{[^}]*getDefaultLeagueId[^}]*\}\s+from\s+["']@\/lib\/leagueSlugServer["']/,
     )
     expect(pageSrc).toMatch(/await\s+getDefaultLeagueId\s*\(\s*\)/)
     expect(pageSrc).toMatch(/getPublicLeagueData\s*\(\s*leagueId\s*\)/)
@@ -104,7 +105,9 @@ describe('v1.25.0 — LeaguePublicView deletion', () => {
   it('v1.53.0 — getLeagueFromHost.ts is DELETED entirely (subdomain teardown)', () => {
     // Regression target: PR 4 of the path-routing chain deletes the
     // file entirely. The default-league resolver lives in
-    // src/lib/leagueSlug.ts now.
+    // src/lib/leagueSlugServer.ts now (post-v1.80.7 split; the pure
+    // helpers `DEFAULT_LEAGUE_SLUG`, `validateLeagueSlug`,
+    // `normalizeLeagueSlug` still live in src/lib/leagueSlug.ts).
     const fs = require('node:fs') as typeof import('node:fs')
     const helperPath = join(repoRoot, 'src/lib/getLeagueFromHost.ts')
     expect(fs.existsSync(helperPath)).toBe(false)

@@ -2,12 +2,13 @@ import type { Metadata } from "next";
 import { findNextMatchday } from "@/lib/stats";
 import Dashboard from "@/components/Dashboard";
 import { getPublicLeagueData } from "@/lib/publicData";
-import { DEFAULT_LEAGUE_SLUG, getDefaultLeagueId } from "@/lib/leagueSlug";
+import { DEFAULT_LEAGUE_SLUG } from "@/lib/leagueSlug";
+import { getDefaultLeagueId } from "@/lib/leagueSlugServer";
 import { getLeagueFlags } from "@/lib/leagueFlags";
 import { getRecruitingViewerState } from "@/lib/recruitingViewerState";
 import { getUnpaidFeeBannerData } from "@/lib/unpaidFeeBanner";
 import { getPlannedRosterStats } from "@/lib/plannedRosterStats";
-import { getLeagueDetails } from "@/lib/leagueDetails";
+import { getLeagueDetails } from "@/lib/leagueDetailsServer";
 import { prisma } from "@/lib/prisma";
 
 export async function generateMetadata(): Promise<Metadata> {

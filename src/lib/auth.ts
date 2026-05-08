@@ -12,7 +12,7 @@ import {
 } from "@/lib/playerMappingStore";
 import { playerIdToSlug, teamIdToSlug } from "@/lib/ids";
 import { getIdentityReadSource } from "@/lib/settings";
-import { getDefaultLeagueId } from "@/lib/leagueSlug";
+import { getDefaultLeagueId } from "@/lib/leagueSlugServer";
 import { getLeagueAllowSelfLink } from "@/lib/leagueSelfLink";
 
 /**

@@ -6,7 +6,7 @@ import {
 } from "@/lib/stats";
 import StatsDashboard from "@/components/StatsDashboard";
 import { getPublicLeagueData } from "@/lib/publicData";
-import { getDefaultLeagueId } from "@/lib/leagueSlug";
+import { getDefaultLeagueId } from "@/lib/leagueSlugServer";
 import { getLeagueFlags } from "@/lib/leagueFlags";
 import { getUnpaidFeeBannerData } from "@/lib/unpaidFeeBanner";
 

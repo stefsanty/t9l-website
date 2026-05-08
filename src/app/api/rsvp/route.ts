@@ -4,7 +4,7 @@ import { waitUntil } from '@vercel/functions'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { setRsvpOrThrow } from '@/lib/rsvpStore'
-import { getDefaultLeagueId } from '@/lib/leagueSlug'
+import { getDefaultLeagueId } from '@/lib/leagueSlugServer'
 import type { RsvpStatus } from '@prisma/client'
 
 type IncomingStatus = 'GOING' | 'UNDECIDED' | ''

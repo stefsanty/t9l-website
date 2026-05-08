@@ -40,7 +40,7 @@ describe('v1.54.0 — /id/[slug] canonical render', () => {
 
   it('resolves the slug via getLeagueIdBySlug', () => {
     const src = stripComments(read(routePath))
-    expect(src).toMatch(/import.*getLeagueIdBySlug.*from\s+['"]@\/lib\/leagueSlug['"]/)
+    expect(src).toMatch(/import.*getLeagueIdBySlug.*from\s+['"]@\/lib\/leagueSlugServer['"]/)
     expect(src).toMatch(/getLeagueIdBySlug\(\s*slug\s*\)/)
   })
 
