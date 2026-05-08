@@ -97,6 +97,15 @@ const CompressedMatchdaySchedule = dynamic(
   }
 );
 
+// v1.81.0 — post-submit confirmation popup. Lazy-loaded because it only
+// fires when the URL carries `?submitted=<descriptor>` (after a recruiting
+// or onboarding redirect); the gate component reads useSearchParams and
+// returns null otherwise, so the chunk only fetches on the success path.
+const SuccessConfirmationGate = dynamic(
+  () => import('./SuccessConfirmationGate'),
+  { loading: () => null },
+);
+
 interface DashboardProps {
   teams: Team[];
   players: Player[];
@@ -405,6 +414,12 @@ export default function Dashboard({
           isCompleted={isCompleted}
         />
       )}
+
+      {/* v1.81.0 — fires after a recruiting / onboarding submit redirect
+          (e.g. `/id/<slug>?submitted=applyToLeague`). The gate stays mounted
+          but only renders content when ?submitted= matches a known
+          descriptor. */}
+      <SuccessConfirmationGate />
     </div>
   );
 }

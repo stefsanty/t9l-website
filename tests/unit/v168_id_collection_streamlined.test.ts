@@ -247,12 +247,15 @@ describe('v1.68.0 atomicity invariants', () => {
 
   it('registerToLeague calls redirect() server-side on success (v1.77.1 — was mode: fresh return)', () => {
     const fn = RECRUIT.split('export async function registerToLeague')[1].split('export ')[0]
-    // v1.77.1 — success path calls redirect() rather than returning { ok: true, mode: 'fresh' }.
-    // The unreachable return below the redirect() still carries mode: 'fresh' for type compat.
-    expect(fn).toMatch(/redirect\(`\/id\//)
-    // Regression target: returning { ok: true } WITHOUT a preceding redirect would
-    // re-introduce the iOS Safari background-suspend navigation race.
-    expect(fn).toMatch(/redirect\(/)
+    // v1.81.0 — the redirect target now goes through buildSuccessRedirect
+    // (`<originPath>?submitted=registerToLeague`); the literal
+    // `redirect(\`/id/...\`)` template moved into a `fallbackPath` local
+    // that's passed as the third arg. The contract is: a server-side
+    // redirect happens before any return — without it the iOS Safari
+    // background-suspend race re-emerges (the v1.77.1 fix).
+    expect(fn).toMatch(/redirect\(buildSuccessRedirect\(/)
+    expect(fn).toMatch(/fallbackPath\s*=\s*`\/id\//)
+    expect(fn).toMatch(/['"]registerToLeague['"]/)
   })
 })
 

@@ -205,6 +205,7 @@ describe('v1.80.0 — version bump', () => {
   const version = readSrc('src/lib/version.ts')
 
   it('APP_VERSION is 1.80.0 or later', () => {
-    expect(version).toMatch(/APP_VERSION\s*=\s*'1\.80\.[0-9]+'/)
+    // v1.81.0 — broaden the regex to include 1.81.x and beyond.
+    expect(version).toMatch(/APP_VERSION\s*=\s*'1\.(8[0-9]|9[0-9])\.[0-9]+'/)
   })
 })
