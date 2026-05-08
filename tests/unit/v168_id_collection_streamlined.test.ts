@@ -149,9 +149,15 @@ describe('v1.68.0 registerToLeague server action', () => {
     expect(fn).toMatch(/Sign in required/)
   })
 
-  it('rejects admin-credentials sessions (no userId)', () => {
+  it('admin-orthogonal-UX (v1.80.10): no admin-shaming gate; identifier resolution accepts userId OR lineId fallback', () => {
     const fn = src.split('export async function registerToLeague')[1].split('export ')[0]
-    expect(fn).toMatch(/Admin sessions cannot submit applications/)
+    // Regression target: re-introducing the "Admin sessions cannot submit
+    // applications" message would reinstate the docs/admin-orthogonal-ux.md
+    // violation. The new gate is symmetric with the v1.59.1 fallback in
+    // account/player/actions.ts:requireSelfPlayerSession.
+    expect(fn).not.toMatch(/Admin sessions cannot submit applications/)
+    expect(fn).toMatch(/Sign in with a player account to apply/)
+    expect(fn).toMatch(/!userId\s*&&\s*!lineId/)
   })
 
   it('requires a valid idFront URL (server-side authoritative — regression target if client gate is bypassed)', () => {

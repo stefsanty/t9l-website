@@ -74,7 +74,11 @@ describe('v1.71.1 — /api/blob/upload-token route', () => {
   })
 
   it('rejects pathname that does not start with one of the three allowed prefixes', () => {
-    expect(src).toMatch(/register-pending\/\$\{userId\}/)
+    // v1.80.10 — pathname now keys on `resolvedUserId` (canonical User.id
+    // resolved by `userId` first, then `lineId` fallback) so legacy LINE
+    // sessions whose JWT predates v1.28.0 still match the prefix issued
+    // by their own upload-token call.
+    expect(src).toMatch(/register-pending\/\$\{resolvedUserId\}/)
     expect(src).toMatch(/player-id\\\/\[\^\/\]\+\\\/\(front\|back\)/)
     expect(src).toMatch(/player-profile\\\/\[\^\/\]\+/)
     expect(src).toMatch(/Pathname not allowed for this user/)
@@ -177,8 +181,12 @@ describe('v1.71.1 — registerToLeague action contract', () => {
     expect(src).toMatch(/\.public\.blob\.vercel-storage\.com/)
   })
 
-  it('expected URL prefix is /register-pending/<userId>/', () => {
-    expect(src).toMatch(/expectedPrefix\s*=\s*`\/register-pending\/\$\{userId\}\//)
+  it('expected URL prefix is /register-pending/<resolved user.id>/', () => {
+    // v1.80.10 — keyed on the resolved User row's id rather than raw
+    // session.userId, so legacy LINE sessions (lineId only, userId null
+    // on JWT) still match the prefix the upload-token route issued
+    // against their canonical User.id.
+    expect(src).toMatch(/expectedPrefix\s*=\s*`\/register-pending\/\$\{user\.id\}\//)
   })
 })
 
@@ -249,8 +257,12 @@ describe('v1.71.1 — recruit page threads userId through', () => {
   const PATH = 'src/app/recruit/[slug]/page.tsx'
   const src = read(PATH)
 
-  it('passes userId to <RegistrationForm/>', () => {
-    expect(src).toMatch(/<RegistrationForm[\s\S]*userId=\{userId\}/)
+  it('passes the resolved user.id to <RegistrationForm/>', () => {
+    // v1.80.10 — the page resolves the User row by userId OR lineId
+    // fallback and threads the canonical User.id to the form. Pre-fix
+    // this was raw `session.userId` which could be null for legacy LINE
+    // sessions.
+    expect(src).toMatch(/<RegistrationForm[\s\S]*userId=\{user\.id\}/)
   })
 })
 

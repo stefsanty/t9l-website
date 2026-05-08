@@ -1,0 +1,80 @@
+# Admin-orthogonal-UX fix — milestone log
+
+## M1: Offending code located ✓
+
+**File:** [src/app/api/recruiting/actions.ts](src/app/api/recruiting/actions.ts)
+**Line:** 73-75 (applyToLeague), 282-284 (registerToLeague)
+**Check:**
+```ts
+if (!userId) {
+  return { ok: false, error: 'Admin sessions cannot submit applications' }
+}
+```
+**Git blame:** Both gates introduced in commit `7176712` (v1.64.0 — Application/recruiting workflow + context-aware banner) on 2026-05-06.
+
+Same pattern duplicated in:
+- src/app/recruit/[slug]/page.tsx:67-70 (AdminSessionSurface)
+- src/app/join/[code]/actions.ts:74-78 (redeemInvite, "Admin sessions cannot redeem player invites")
+- src/app/join/[code]/actions.ts:259-260 (submitOnboarding)
+- src/app/join/[code]/actions.ts:348-349 (submitIdUpload)
+- src/app/join/[code]/actions.ts:485-486 (completeOnboardingWithId)
+- src/app/join/[code]/actions.ts:657-658 (skipIdUpload)
+
+Already fixed (v1.59.1 precedent):
+- src/app/account/player/actions.ts:requireSelfPlayerSession — accepts lineId fallback.
+
+## M2: Root cause understood ✓
+
+The gate `if (!userId)` is intended to reject admin-credentials shared-password sessions (which legitimately have no User row). But it ALSO rejects:
+
+1. **Grandfathered LINE sessions** — pre-v1.28.0 (stage α.5) JWT cookies have `lineId` set but no `userId`. The JWT callback only writes `userId` on initial sign-in via the `account` object (line 765-789 in src/lib/auth.ts); on token refresh, `account` is null and `userId` stays at whatever it was last set to. Legacy LINE-only tokens carry through with `userId === null`.
+
+2. **LINE-auth admins with stale tokens** — Stefan's lineId is in `ADMIN_LINE_IDS`, so his token gets `isAdmin = true` (recomputed line 945-946 every refresh), but if his cookie predates v1.28.0 he has no `userId`. He'd hit this gate even though his admin role is orthogonal to player binding.
+
+The gate's error message — "Admin sessions cannot submit applications" — conflates "no User row" with "is admin", violating the standing rule (docs/admin-orthogonal-ux.md): admin role must NEVER gate user-facing UX.
+
+**Precedent:** v1.59.1 fixed the identical pattern in `account/player/actions.ts:requireSelfPlayerSession` by accepting a `lineId` fallback and resolving the canonical record by either identifier. Same fix applies here.
+
+## M3: Fix drafted ✓
+
+### Primary fix — src/app/api/recruiting/actions.ts
+
+For both `applyToLeague` and `registerToLeague`:
+1. Pull `userId` AND `lineId` from session.
+2. If both are null → return `{ ok: false, error: 'Sign in with a player account to apply' }` (no admin-shaming).
+3. Resolve User row by `userId` first, falling back to `lineId` (User.lineId @unique exists per prisma/schema.prisma:18).
+4. Use resolved `user.id` for downstream Player.create / User.update / PLM.create.
+
+### Secondary fix — src/app/recruit/[slug]/page.tsx
+
+Same pattern at the route level: accept `lineId` fallback, resolve User, pass the canonical `user.id` into RegistrationForm (which threads it into the upload-token pathname).
+
+### Audit findings — other admin-shaming gates
+
+These have the same anti-pattern and would benefit from the same fix, but are OUT OF SCOPE for this PR (they relate to invite redemption / onboarding, not the State D apply flow the user reported):
+
+- `redeemInvite` (src/app/join/[code]/actions.ts:74-78)
+- `submitOnboarding` (line 259-260)
+- `submitIdUpload` (line 348-349)
+- `completeOnboardingWithId` (line 485-486)
+- `skipIdUpload` (line 657-658)
+- `upload-token` route (src/app/api/blob/upload-token/route.ts:92-94 — inside onBeforeGenerateToken)
+
+These are flagged for a follow-up PR.
+
+## M4: Fix applied + tests passing ✓
+
+**Files modified:**
+- src/app/api/recruiting/actions.ts — applyToLeague + registerToLeague gates accept lineId fallback; resolve User by either identifier; upload-prefix keyed on resolved user.id.
+- src/app/recruit/[slug]/page.tsx — same fallback pattern at the route level; `AdminSessionSurface` replaced with neutral `NoPlayerAccountSurface` (testid `recruit-no-player-account`).
+- src/app/api/blob/upload-token/route.ts — new `resolvedUserId` (lineId fallback via Prisma); pathname check keys on resolved id rather than raw session.userId.
+- src/lib/version.ts — APP_VERSION → 1.80.10.
+- CLAUDE.md — current release + ledger entry + dropped v1.75.7 (kept top-20).
+
+**Tests:**
+- New: tests/unit/v18010_admin_orthogonal_apply.test.ts — 14 regression-target tests; stash-pop sanity-checked (12/14 fail on broken state, 2 pass for orthogonal reasons — version-bump check + always-present team-logo error string).
+- Updated: 6 existing tests rewritten to match new shape (v164, v167, v168, v174, v178, v1771).
+- Suite: 2755 passed, 2 skipped, 0 failed.
+- tsc: pre-existing `@next/bundle-analyzer` import error in next.config.ts, unrelated to this PR (verified by stash-baseline).
+
+## M5: PR pushed — pending

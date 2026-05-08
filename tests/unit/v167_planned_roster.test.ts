@@ -273,8 +273,9 @@ describe('v1.67.2 /recruit/[slug] route + form', () => {
     expect(src).toMatch(/data-testid="recruit-not-recruiting"/)
     // Sign-in surface
     expect(src).toMatch(/data-testid="recruit-sign-in"/)
-    // Admin session surface
-    expect(src).toMatch(/data-testid="recruit-admin-session"/)
+    // v1.80.10 — replaced the v1.67.2 admin-session surface with a
+    // neutral "no player account" surface per docs/admin-orthogonal-ux.md.
+    expect(src).toMatch(/data-testid="recruit-no-player-account"/)
     // User has playerId → redirect to /id/<slug>
     expect(src).toMatch(/redirect\(`\/id\/\$\{slug\}`\)/)
     // Default render — registration form

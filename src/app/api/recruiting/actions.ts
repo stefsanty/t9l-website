@@ -40,7 +40,14 @@ import { applicationReceivedEmail } from '@/lib/emailTemplates'
  * Validation gates:
  *   - Sign in required (no anonymous applications). State E in the
  *     banner now toasts "Sign in to apply" rather than redirecting.
- *   - Admin-credentials sessions (no `userId`) cannot apply.
+ *   - v1.80.10 — admin-orthogonal-UX rule. The gate now resolves the
+ *     User row by `userId` OR `lineId` (User.lineId @unique). Admin role
+ *     is NOT a gate; LINE-auth admins (Stefan-type) and grandfathered
+ *     LINE sessions whose JWT predates v1.28.0 stage α.5 (no `userId`
+ *     set) flow through identically. Mirrors the v1.59.1 fix in
+ *     `account/player/actions.ts:requireSelfPlayerSession`. Sessions
+ *     with neither identifier (admin-credentials shared-password)
+ *     surface a neutral "sign in with a player account" message.
  *   - For State C: trimmed name required (≤ 100 chars). For State D:
  *     name is unused — the existing Player's name carries through.
  *   - Position is the v1.33.0 `PlayerPosition` enum or null.
@@ -70,8 +77,13 @@ export async function applyToLeague(
     return { ok: false, error: 'Sign in required' }
   }
   const userId = (session as { userId?: string | null }).userId ?? null
-  if (!userId) {
-    return { ok: false, error: 'Admin sessions cannot submit applications' }
+  // session.lineId is typed `string` (empty string for admin-credentials).
+  const lineId = session.lineId || null
+  if (!userId && !lineId) {
+    // Neither identifier resolves to a User row (admin-credentials
+    // shared-password sessions, transient pre-adapter state). Neutral
+    // copy — admin role is orthogonal to user-facing apply.
+    return { ok: false, error: 'Sign in with a player account to apply' }
   }
 
   // Verify the league exists and accepts applications.
@@ -86,11 +98,25 @@ export async function applyToLeague(
     return { ok: false, error: 'This league is not currently recruiting' }
   }
 
-  // Check whether the user already has a Player binding.
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    select: { id: true, playerId: true, lineId: true },
-  })
+  // v1.80.10 — resolve the calling User row by `userId` first (canonical
+  // post-α.5 / v1.27.0 binding), falling back to `lineId` (legacy
+  // pre-v1.28.0 LINE sessions; LINE-auth admins whose role is orthogonal
+  // to player binding). Both identifiers are minted by the auth server,
+  // so either is a safe lookup key. Mirrors the v1.59.1 pattern in
+  // `account/player/actions.ts`.
+  let user: { id: string; playerId: string | null; lineId: string | null } | null = null
+  if (userId) {
+    user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, playerId: true, lineId: true },
+    })
+  }
+  if (!user && lineId) {
+    user = await prisma.user.findUnique({
+      where: { lineId },
+      select: { id: true, playerId: true, lineId: true },
+    })
+  }
   if (!user) {
     return { ok: false, error: 'User not found' }
   }
@@ -238,7 +264,10 @@ export async function applyToLeague(
  *
  * Validation gates (all run before the DB transaction):
  *   - Sign in required (rejects no-session)
- *   - Admin-credentials sessions rejected (no userId on session)
+ *   - v1.80.10 — admin-orthogonal-UX rule: gate accepts userId OR
+ *     lineId fallback (User.lineId @unique). Admin role is NOT a gate.
+ *     Sessions with neither identifier (admin-credentials shared-
+ *     password) get a neutral message.
  *   - leagueId required + League must exist + recruiting
  *   - Trimmed name required (≤100 chars)
  *   - All three URLs (when present) must hostname under
@@ -279,8 +308,12 @@ export async function registerToLeague(
     return { ok: false, error: 'Sign in required' }
   }
   const userId = (session as { userId?: string | null }).userId ?? null
-  if (!userId) {
-    return { ok: false, error: 'Admin sessions cannot submit applications' }
+  // session.lineId is typed `string` (empty string for admin-credentials).
+  const lineId = session.lineId || null
+  if (!userId && !lineId) {
+    // Neither identifier resolves to a User row. Neutral copy — admin
+    // role is orthogonal to user-facing apply per the standing rule.
+    return { ok: false, error: 'Sign in with a player account to apply' }
   }
 
   if (!input.leagueId) {
@@ -307,21 +340,6 @@ export async function registerToLeague(
     return { ok: false, error: 'Please enter a valid email address' }
   }
 
-  // Defense in depth: the URLs must live under the user's own
-  // register-pending prefix on Vercel Blob. The token route already
-  // gated the PUT, but a forged URL on submit would land here without
-  // the gate having run.
-  const expectedPrefix = `/register-pending/${userId}/`
-  if (!isOwnedBlobUrl(input.idFrontUrl, expectedPrefix)) {
-    return { ok: false, error: 'Front of ID is required' }
-  }
-  if (!isOwnedBlobUrl(input.idBackUrl, expectedPrefix)) {
-    return { ok: false, error: 'Back of ID is required' }
-  }
-  if (input.profilePictureUrl && !isOwnedBlobUrl(input.profilePictureUrl, expectedPrefix)) {
-    return { ok: false, error: 'profilePictureUrl is not yours' }
-  }
-
   const league = await prisma.league.findUnique({
     where: { id: input.leagueId },
     select: { id: true, recruiting: true, name: true, subdomain: true },
@@ -331,16 +349,43 @@ export async function registerToLeague(
     return { ok: false, error: 'This league is not currently recruiting' }
   }
 
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    select: { id: true, playerId: true, lineId: true, email: true },
-  })
+  // v1.80.10 — resolve User row by `userId` first, falling back to
+  // `lineId` (User.lineId @unique). Mirrors the v1.59.1 pattern in
+  // `account/player/actions.ts` so legacy LINE sessions and LINE-auth
+  // admins flow through identically.
+  let user: { id: string; playerId: string | null; lineId: string | null; email: string | null } | null = null
+  if (userId) {
+    user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, playerId: true, lineId: true, email: true },
+    })
+  }
+  if (!user && lineId) {
+    user = await prisma.user.findUnique({
+      where: { lineId },
+      select: { id: true, playerId: true, lineId: true, email: true },
+    })
+  }
   if (!user) return { ok: false, error: 'User not found' }
   if (user.playerId) {
     return {
       ok: false,
       error: 'You already have a player. Use the apply button on the league page.',
     }
+  }
+
+  // Defense in depth: the URLs must live under the user's own
+  // register-pending prefix on Vercel Blob. The token route gated the
+  // PUT keyed on the SAME canonical User.id we just resolved here.
+  const expectedPrefix = `/register-pending/${user.id}/`
+  if (!isOwnedBlobUrl(input.idFrontUrl, expectedPrefix)) {
+    return { ok: false, error: 'Front of ID is required' }
+  }
+  if (!isOwnedBlobUrl(input.idBackUrl, expectedPrefix)) {
+    return { ok: false, error: 'Back of ID is required' }
+  }
+  if (input.profilePictureUrl && !isOwnedBlobUrl(input.profilePictureUrl, expectedPrefix)) {
+    return { ok: false, error: 'profilePictureUrl is not yours' }
   }
 
   // v1.78.0 — only WRITE the submitted email if `User.email` is currently

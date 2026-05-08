@@ -82,13 +82,16 @@ describe('v1.77.1 — RegistrationForm no longer branches on result.ok', () => {
 
 describe('v1.77.1 — page.tsx route-level guard (existing, pinned as regression target)', () => {
   it('redirects users who already have a playerId to /id/<slug>', () => {
-    expect(PAGE).toMatch(/user\?\.playerId/)
+    // v1.80.10 — `user` is non-null past the resolved-or-throw gate, so
+    // optional chaining is no longer needed on this access. The redirect
+    // contract (existing-Player → /id/<slug>) is preserved.
+    expect(PAGE).toMatch(/user\.playerId/)
     expect(PAGE).toMatch(/redirect\(`\/id\/\$\{slug\}`\)/)
   })
 
   it('guard fires before the form is rendered (defense for resume-from-background)', () => {
     const lines = PAGE.split('\n')
-    const guardLine = lines.findIndex((l) => /if\s*\(user\?\.playerId\)/.test(l))
+    const guardLine = lines.findIndex((l) => /if\s*\(user\.playerId\)/.test(l))
     // Find the JSX render of <RegistrationForm (not just the comment or import)
     const formLine = lines.findIndex((l) => /^\s*<RegistrationForm/.test(l))
     expect(guardLine).toBeGreaterThan(-1)
