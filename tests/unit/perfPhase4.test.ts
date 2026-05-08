@@ -236,3 +236,73 @@ describe('perf phase 4b (v1.80.7) — server-only DB lookups split out of mixed 
     expect(src).not.toMatch(/from\s+['"]@\/lib\/leagueDetailsServer['"]/)
   })
 })
+
+describe('perf phase 4c (v1.80.8) — modal chunks deferred via next/dynamic', () => {
+  // Bundle analyzer surfaced two modals (`SignInLightbox`, ~9 KB / ~3 KB
+  // gzip; `ApplyToLeagueModal`, ~5 KB / ~2 KB gzip) statically imported
+  // by three eagerly-loaded callers (`Header → LineLoginButton`, the
+  // landing-page `RecruitingBanner`, and `GuestLoginBanner`). The modals
+  // mount only after a user click — keeping their bytes on the eager
+  // first-load critical path is wasted weight on every visit that
+  // never opens a modal.
+  //
+  // Webpack measurements (parsed bytes, with `ANALYZE=true npx next
+  // build --webpack`):
+  //   - Chunk 1347 (root Header layer): 27,577 → 21,509 (-6,068 / -1,059 gz)
+  //   - Chunk 7206 (Dashboard layer):   33,725 → 26,174 (-7,551 / -2,203 gz)
+  // The modals now ship as their own async chunks (~9 KB + ~5 KB parsed)
+  // that fetch only when a user actually opens them.
+  //
+  // Each assertion below would fail if a static `import SignInLightbox
+  // from './SignInLightbox'` (or the analogous ApplyToLeagueModal import)
+  // crept back in — this is the exact regression target.
+
+  it('LineLoginButton uses next/dynamic for SignInLightbox', () => {
+    const src = read('src/components/LineLoginButton.tsx')
+    // Must NOT contain a static default import of SignInLightbox.
+    expect(src).not.toMatch(
+      /^import\s+SignInLightbox\s+from\s+['"]\.\/SignInLightbox['"]/m,
+    )
+    // Must declare it via next/dynamic with the lazy import callback.
+    expect(src).toMatch(/from\s+['"]next\/dynamic['"]/)
+    expect(src).toMatch(
+      /const\s+SignInLightbox\s*=\s*dynamic\(\s*\(\s*\)\s*=>\s*import\(\s*['"]\.\/SignInLightbox['"]\s*\)/,
+    )
+    // Must gate the JSX so the chunk only fetches when state opens it.
+    expect(src).toMatch(
+      /\{showSignInLightbox\s*&&\s*\(?\s*<SignInLightbox\b/,
+    )
+  })
+
+  it('RecruitingBanner lazy-loads SignInLightbox + ApplyToLeagueModal', () => {
+    const src = read('src/components/RecruitingBanner.tsx')
+    expect(src).not.toMatch(
+      /^import\s+SignInLightbox\s+from\s+['"]\.\/SignInLightbox['"]/m,
+    )
+    expect(src).not.toMatch(
+      /^import\s+ApplyToLeagueModal\s+from\s+['"]\.\/ApplyToLeagueModal['"]/m,
+    )
+    expect(src).toMatch(/from\s+['"]next\/dynamic['"]/)
+    expect(src).toMatch(
+      /const\s+SignInLightbox\s*=\s*dynamic\(\s*\(\s*\)\s*=>\s*import\(\s*['"]\.\/SignInLightbox['"]\s*\)/,
+    )
+    expect(src).toMatch(
+      /const\s+ApplyToLeagueModal\s*=\s*dynamic\(\s*\(\s*\)\s*=>\s*import\(\s*['"]\.\/ApplyToLeagueModal['"]\s*\)/,
+    )
+    // JSX is gated on the open-state booleans so the chunks defer.
+    expect(src).toMatch(/applyOpen\s*&&\s*\(?\s*<ApplyToLeagueModal\b/)
+    expect(src).toMatch(/signInOpen\s*&&\s*\(?\s*<SignInLightbox\b/)
+  })
+
+  it('GuestLoginBanner uses next/dynamic for SignInLightbox', () => {
+    const src = read('src/components/GuestLoginBanner.tsx')
+    expect(src).not.toMatch(
+      /^import\s+SignInLightbox\s+from\s+['"]\.\/SignInLightbox['"]/m,
+    )
+    expect(src).toMatch(/from\s+['"]next\/dynamic['"]/)
+    expect(src).toMatch(
+      /const\s+SignInLightbox\s*=\s*dynamic\(\s*\(\s*\)\s*=>\s*import\(\s*['"]\.\/SignInLightbox['"]\s*\)/,
+    )
+    expect(src).toMatch(/\bopen\s*&&\s*<SignInLightbox\b/)
+  })
+})

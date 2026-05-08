@@ -2,12 +2,23 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import dynamic from 'next/dynamic'
 import Image from 'next/image'
-import ApplyToLeagueModal from './ApplyToLeagueModal'
-import SignInLightbox from './SignInLightbox'
 import { getCurrentCallbackUrl } from '@/lib/signInCallbackUrl'
 import type { RecruitingViewerState } from '@/lib/recruitingViewerState'
 import { DEFAULT_LEAGUE_SLUG } from '@/lib/leagueSlug'
+
+// v1.80.8 — perf phase 4c: defer modals to async chunks. RecruitingBanner
+// renders eagerly on every league/landing page but the modals only mount
+// after a user click in States D / E. Lazy-loading drops their bytes
+// (~9 KB SignInLightbox, ~6 KB ApplyToLeagueModal) out of the public
+// landing-page first-load.
+const ApplyToLeagueModal = dynamic(() => import('./ApplyToLeagueModal'), {
+  loading: () => null,
+})
+const SignInLightbox = dynamic(() => import('./SignInLightbox'), {
+  loading: () => null,
+})
 
 /**
  * v1.64.0 / v1.65.1 — Context-aware recruiting banner.
@@ -193,9 +204,9 @@ export default function RecruitingBanner({
           simplified intake (existing Player just needs a position for the
           new league). State C ('no_player') now navigates to /recruit/<slug>
           where the user fills the form before any DB writes happen. */}
-      {viewer.kind === 'in_other_league' && (
+      {viewer.kind === 'in_other_league' && applyOpen && (
         <ApplyToLeagueModal
-          open={applyOpen}
+          open
           onClose={() => setApplyOpen(false)}
           leagueId={league.id}
           leagueName={league.name}
@@ -204,11 +215,13 @@ export default function RecruitingBanner({
       )}
 
       {/* v1.76.0 — State E lightbox (matches GuestLoginBanner pattern) */}
-      <SignInLightbox
-        open={signInOpen}
-        onClose={() => setSignInOpen(false)}
-        callbackUrl={callbackUrl}
-      />
+      {signInOpen && (
+        <SignInLightbox
+          open
+          onClose={() => setSignInOpen(false)}
+          callbackUrl={callbackUrl}
+        />
+      )}
     </>
   )
 }
