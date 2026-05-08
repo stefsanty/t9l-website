@@ -25,9 +25,9 @@ describe('v1.75.1 LeagueDetailsPanel includes planned-roster sub-section', () =>
     expect(src).toMatch(/plannedRosterStats\?:\s*PlannedRosterStatsData \| null/)
   })
 
-  it('renders season-fee-row when plannedRosterStats is provided and fee or deadline is configured', () => {
-    // v1.75.6 — fee + deadline combined into one row, testid season-fee-row.
-    expect(src).toMatch(/season-fee-row/)
+  it('renders fee/deadline combined row when plannedRosterStats is provided (v1.79.3 testid)', () => {
+    // v1.79.3 — combined row, testid season-fee-register-by-row.
+    expect(src).toMatch(/season-fee-register-by-row/)
   })
 
   it('renders planned-teams row when plannedRosterStats is provided', () => {
@@ -42,8 +42,9 @@ describe('v1.75.1 LeagueDetailsPanel includes planned-roster sub-section', () =>
     expect(src).not.toMatch(/data-testid="current-players-row"/)
   })
 
-  it('renders deadline row from plannedRosterStats when present', () => {
-    expect(src).toMatch(/showDeadline &&[\s\S]*deadline-row/)
+  it('renders deadline inside combined row from plannedRosterStats when present (v1.79.3)', () => {
+    // v1.79.3 — Register By is inside season-fee-register-by-row, gated by showDeadline
+    expect(src).toMatch(/showDeadline[\s\S]*Register By/)
   })
 
   it('imports formatJstFriendly for the deadline row', () => {
@@ -79,12 +80,11 @@ describe('v1.75.1 field render order matches importance list', () => {
     expect(idxGoal).toBeGreaterThan(idxBall)
   })
 
-  it('stats section (season-fee-row) appears AFTER offside row (v1.75.6 — stats moved to bottom)', () => {
-    // v1.75.6 moved the fee + planned roster + matchdays rows into a
-    // bottom subsection below the rule rows. Regression target: moving
-    // them back above offside would re-introduce the old order.
+  it('stats section (combined fee row) appears AFTER offside row (v1.75.6 — stats moved to bottom)', () => {
+    // v1.75.6 moved fee + planned roster + matchdays rows into a bottom
+    // subsection. v1.79.3 testid: season-fee-register-by-row.
     const idxOffside = src.indexOf('league-details-offside-row')
-    const idxFee = src.indexOf('season-fee-row')
+    const idxFee = src.indexOf('"season-fee-register-by-row"')
     expect(idxOffside).toBeGreaterThan(0)
     expect(idxFee).toBeGreaterThan(idxOffside)
   })
