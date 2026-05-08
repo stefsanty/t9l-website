@@ -1,12 +1,12 @@
 import type { Metadata } from "next";
 import { Inter, Barlow_Condensed, Barlow, DM_Mono } from "next/font/google";
-import Script from "next/script";
 import { Toaster } from "sonner";
 import { getServerSession } from "next-auth";
 import AuthProvider from "@/components/AuthProvider";
 import ThemeProvider from "@/components/ThemeProvider";
 import VersionFooter from "@/components/VersionFooter";
 import { MembershipsProvider } from "@/components/MembershipsProvider";
+import GoogleTranslateLoader from "@/components/GoogleTranslateLoader";
 import { authOptions } from "@/lib/auth";
 import { getMembershipsForSession, type Membership } from "@/lib/memberships";
 import "./globals.css";
@@ -109,20 +109,15 @@ export default async function RootLayout({
         `}</style>
         <script dangerouslySetInnerHTML={{ __html: `(function(){try{var l=localStorage.getItem('t9l-lang');if(l==='ja'){document.cookie='googtrans=/en/ja; path=/; SameSite=Lax';}else if(l==='en'){document.cookie='googtrans=/en/en; path=/; SameSite=Lax';}else{var j=(navigator.language||'').toLowerCase().startsWith('ja');localStorage.setItem('t9l-lang',j?'ja':'en');document.cookie=j?'googtrans=/en/ja; path=/; SameSite=Lax':'googtrans=/en/en; path=/; SameSite=Lax';}}catch(e){try{var j2=(navigator.language||'').toLowerCase().startsWith('ja');document.cookie=j2?'googtrans=/en/ja; path=/; SameSite=Lax':'googtrans=/en/en; path=/; SameSite=Lax';}catch(e2){}}})();` }} />
         <div id="google_translate_element" style={{ display: 'none' }}></div>
-        <Script
-          src="https://translate.google.com/translate_a/element.js?cb=googleTranslateElementInit"
-          strategy="afterInteractive"
-        />
-        <Script id="google-translate-init" strategy="afterInteractive">
-          {`
-            function googleTranslateElementInit() {
-              new window.google.translate.TranslateElement({
-                pageLanguage: 'en',
-                autoDisplay: false,
-              }, 'google_translate_element');
-            }
-          `}
-        </Script>
+        {/* v1.80.4 — phase 3 perf: Google Translate is gated behind a
+            client-side locale check (see GoogleTranslateLoader). The
+            inline boot script above already sets the `t9l-lang`
+            localStorage / `googtrans` cookie; the loader reads that on
+            mount and only injects the GT script for `ja` visitors. EN
+            visitors (the vast majority, including PSI lab tests) skip
+            the GT bundle entirely — removes el_main_css from the network
+            critical path and ~118 KiB transferred / 93.5 KiB unused JS. */}
+        <GoogleTranslateLoader />
         <ThemeProvider>
           <AuthProvider session={session}>
             <MembershipsProvider memberships={memberships}>
