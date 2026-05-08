@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { submitOwnMatchEvent } from '@/app/matchday/[id]/actions'
+import { groupPlayersByPrimaryTeam } from '@/lib/playerOrdering'
 import type { Matchday, Player, Team } from '@/types'
 
 type GoalType = 'OPEN_PLAY' | 'SET_PIECE' | 'PENALTY' | 'OWN_GOAL'
@@ -89,6 +90,14 @@ export default function SubmitGoalForm({
  * v1.48.0 — scorer dropdown added. Picking a match restricts the scorer
  * options to the two participating teams; picking a scorer restricts the
  * assister options to the scorer's team minus the scorer.
+ *
+ * v1.82.0 — cross-team scorers/assisters. Casual leagues let players guest
+ * for other teams; the dropdown now lists every league player. Beneficiary
+ * (or opposing-team for OG) players sort first; "Other players" follow.
+ * Beneficiary team is now an explicit selector — pre-v1.82.0 it was
+ * derived from the scorer's team, which breaks once cross-team scorers are
+ * legal. Server validation loosens scorer/assister scope from "on a match
+ * team" to "any active member of this league".
  */
 function SubmitGoalModal({
   matchday,
@@ -116,6 +125,9 @@ function SubmitGoalModal({
   const [error, setError] = useState<string | null>(null)
 
   const [matchPublicId, setMatchPublicId] = useState(matches[0]?.id ?? '')
+  const [beneficiaryTeamId, setBeneficiaryTeamId] = useState(
+    matches[0]?.homeTeamId ?? '',
+  )
   const [scorerSlug, setScorerSlug] = useState('')
   const [goalType, setGoalType] = useState<GoalType>('OPEN_PLAY')
   const [assisterSlug, setAssisterSlug] = useState('')
@@ -127,7 +139,9 @@ function SubmitGoalModal({
   // in the list, reset to the first match in the new matchday's list.
   useEffect(() => {
     if (!matches.find((m) => m.id === matchPublicId)) {
-      setMatchPublicId(matches[0]?.id ?? '')
+      const first = matches[0]
+      setMatchPublicId(first?.id ?? '')
+      setBeneficiaryTeamId(first?.homeTeamId ?? '')
       setScorerSlug('')
       setAssisterSlug('')
     }
@@ -136,8 +150,7 @@ function SubmitGoalModal({
   const [mounted, setMounted] = useState(false)
   const dialogRef = useRef<HTMLDivElement | null>(null)
 
-  // Selected match — drives scorer dropdown grouping (only the two
-  // participating teams' rosters).
+  // Selected match — drives the beneficiary picker bounds.
   const selectedMatch = useMemo(
     () => matches.find((m) => m.id === matchPublicId) ?? matches[0],
     [matches, matchPublicId],
@@ -149,40 +162,94 @@ function SubmitGoalModal({
     return map
   }, [teams])
 
-  // Scorer options grouped by participating team.
-  const scorerGroups = useMemo(() => {
-    if (!selectedMatch) return []
-    return [selectedMatch.homeTeamId, selectedMatch.awayTeamId].map((teamId) => {
-      const team = teamLookup.get(teamId)
-      const teamPlayers = players
-        .filter((p) => p.teamId === teamId)
-        .sort((a, b) => a.name.localeCompare(b.name))
-      return {
-        teamId,
-        teamName: team?.name ?? teamId,
-        players: teamPlayers,
-      }
-    })
-  }, [selectedMatch, players, teamLookup])
+  // v1.82.0 — primary team for scorer ordering: beneficiary for non-OG,
+  // opposing for OG (matches the existing admin convention — for an own
+  // goal, the scorer is the player who put the ball in their own net,
+  // typically a member of the team that CONCEDED the goal).
+  const opposingTeamId = useMemo(() => {
+    if (!selectedMatch) return ''
+    return beneficiaryTeamId === selectedMatch.homeTeamId
+      ? selectedMatch.awayTeamId
+      : selectedMatch.homeTeamId
+  }, [selectedMatch, beneficiaryTeamId])
 
-  // Resolve the scorer's team — drives the assister dropdown.
+  const scorerPrimaryTeamId = goalType === 'OWN_GOAL' ? opposingTeamId : beneficiaryTeamId
+
+  // Scorer options: scorer-primary team first, then "Other players" from the
+  // rest of the league. Cross-team scorers are explicitly allowed.
+  const scorerGroups = useMemo(() => {
+    if (!scorerPrimaryTeamId) return []
+    const team = teamLookup.get(scorerPrimaryTeamId)
+    return groupPlayersByPrimaryTeam(
+      players,
+      scorerPrimaryTeamId,
+      team?.name ?? 'Beneficiary team',
+    )
+  }, [players, scorerPrimaryTeamId, teamLookup])
+
   const scorerPlayer = useMemo(
     () => players.find((p) => p.id === scorerSlug) ?? null,
     [players, scorerSlug],
   )
-  const assisterCandidates = useMemo(() => {
-    if (!scorerPlayer) return []
-    return players
-      .filter((p) => p.teamId === scorerPlayer.teamId && p.id !== scorerPlayer.id)
-      .sort((a, b) => a.name.localeCompare(b.name))
-  }, [players, scorerPlayer])
 
-  // Reset dependent fields when the match changes — the participating
-  // team set differs, so the previous scorer may no longer be eligible.
-  // (Done in the change handler rather than a setState-in-useEffect to
-  // avoid the cascading-render lint rule from react-hooks v5.)
+  // Assister options: beneficiary team first regardless of goal type
+  // (assist credit attaches to the goal's beneficiary side, not the OG
+  // scorer's team), then "Other players". Excludes the scorer.
+  const assisterGroups = useMemo(() => {
+    if (!beneficiaryTeamId) return []
+    const team = teamLookup.get(beneficiaryTeamId)
+    const exclude = scorerSlug ? new Set([scorerSlug]) : undefined
+    return groupPlayersByPrimaryTeam(
+      players,
+      beneficiaryTeamId,
+      team?.name ?? 'Beneficiary team',
+      'Other players',
+      exclude,
+    )
+  }, [players, beneficiaryTeamId, scorerSlug, teamLookup])
+
+  // v1.82.0 — guest hint surfaces when the selected scorer/assister is
+  // not on the team we sorted to the top. Lets the submitter sanity-check
+  // attribution at a glance.
+  const scorerTeamLabel = useMemo(() => {
+    if (!scorerPlayer) return null
+    if (scorerPlayer.teamId === scorerPrimaryTeamId) return null
+    return teamLookup.get(scorerPlayer.teamId)?.name ?? null
+  }, [scorerPlayer, scorerPrimaryTeamId, teamLookup])
+
+  const assisterPlayer = useMemo(
+    () => players.find((p) => p.id === assisterSlug) ?? null,
+    [players, assisterSlug],
+  )
+  const assisterTeamLabel = useMemo(() => {
+    if (!assisterPlayer) return null
+    if (assisterPlayer.teamId === beneficiaryTeamId) return null
+    return teamLookup.get(assisterPlayer.teamId)?.name ?? null
+  }, [assisterPlayer, beneficiaryTeamId, teamLookup])
+
+  // Reset dependent fields when the match changes — different match teams
+  // mean the beneficiary selection no longer applies. (Done in the change
+  // handler rather than a setState-in-useEffect to avoid the cascading-
+  // render lint rule from react-hooks v5.)
   function changeMatch(id: string) {
+    const next = matches.find((m) => m.id === id)
     setMatchPublicId(id)
+    setBeneficiaryTeamId(next?.homeTeamId ?? '')
+    setScorerSlug('')
+    setAssisterSlug('')
+  }
+
+  function changeBeneficiary(id: string) {
+    setBeneficiaryTeamId(id)
+    setScorerSlug('')
+    setAssisterSlug('')
+  }
+
+  function changeGoalType(t: GoalType) {
+    setGoalType(t)
+    // For OG ↔ non-OG, the scorer's primary team flips; the previously
+    // selected scorer may now be in the "Other players" group. Reset to
+    // avoid a stale pick that doesn't match the user's mental model.
     setScorerSlug('')
     setAssisterSlug('')
   }
@@ -225,10 +292,15 @@ function SubmitGoalModal({
       setError('Minute must be 0–200, or empty.')
       return
     }
+    if (!beneficiaryTeamId) {
+      setError('Pick the team this goal counts for.')
+      return
+    }
     startTransition(async () => {
       try {
         await submitOwnMatchEvent({
           matchPublicId,
+          beneficiaryTeamId,
           scorerPlayerSlug: scorerSlug,
           goalType,
           assisterPlayerSlug: assisterSlug || null,
@@ -308,6 +380,42 @@ function SubmitGoalModal({
           </select>
         </label>
 
+        {selectedMatch ? (
+          <label className="block">
+            <span className="text-fg-low text-[10px] uppercase tracking-widest">
+              Goal counts for
+            </span>
+            <select
+              data-testid="submit-goal-beneficiary"
+              value={beneficiaryTeamId}
+              onChange={(e) => changeBeneficiary(e.target.value)}
+              className="mt-1 w-full bg-background border border-border-subtle rounded px-3 py-2 text-sm text-fg-high"
+            >
+              <option value={selectedMatch.homeTeamId}>
+                {selectedMatch.homeTeamName}
+              </option>
+              <option value={selectedMatch.awayTeamId}>
+                {selectedMatch.awayTeamName}
+              </option>
+            </select>
+          </label>
+        ) : null}
+
+        <label className="block">
+          <span className="text-fg-low text-[10px] uppercase tracking-widest">Goal type</span>
+          <select
+            data-testid="submit-goal-type"
+            value={goalType}
+            onChange={(e) => changeGoalType(e.target.value as GoalType)}
+            className="mt-1 w-full bg-background border border-border-subtle rounded px-3 py-2 text-sm text-fg-high"
+          >
+            <option value="OPEN_PLAY">Open play</option>
+            <option value="SET_PIECE">Set piece</option>
+            <option value="PENALTY">Penalty</option>
+            <option value="OWN_GOAL">Own goal</option>
+          </select>
+        </label>
+
         <label className="block">
           <span className="text-fg-low text-[10px] uppercase tracking-widest">Scorer</span>
           <select
@@ -318,7 +426,7 @@ function SubmitGoalModal({
           >
             <option value="">— pick a scorer —</option>
             {scorerGroups.map((g) => (
-              <optgroup key={g.teamId} label={g.teamName}>
+              <optgroup key={g.key} label={g.label}>
                 {g.players.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.name}
@@ -327,21 +435,14 @@ function SubmitGoalModal({
               </optgroup>
             ))}
           </select>
-        </label>
-
-        <label className="block">
-          <span className="text-fg-low text-[10px] uppercase tracking-widest">Goal type</span>
-          <select
-            data-testid="submit-goal-type"
-            value={goalType}
-            onChange={(e) => setGoalType(e.target.value as GoalType)}
-            className="mt-1 w-full bg-background border border-border-subtle rounded px-3 py-2 text-sm text-fg-high"
-          >
-            <option value="OPEN_PLAY">Open play</option>
-            <option value="SET_PIECE">Set piece</option>
-            <option value="PENALTY">Penalty</option>
-            <option value="OWN_GOAL">Own goal</option>
-          </select>
+          {scorerTeamLabel ? (
+            <span
+              data-testid="submit-goal-scorer-guest-hint"
+              className="mt-1 block text-fg-mid text-[11px]"
+            >
+              (guest from {scorerTeamLabel})
+            </span>
+          ) : null}
         </label>
 
         <label className="block">
@@ -354,12 +455,24 @@ function SubmitGoalModal({
             className="mt-1 w-full bg-background border border-border-subtle rounded px-3 py-2 text-sm text-fg-high disabled:opacity-50"
           >
             <option value="">— no assist —</option>
-            {assisterCandidates.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
+            {assisterGroups.map((g) => (
+              <optgroup key={g.key} label={g.label}>
+                {g.players.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </optgroup>
             ))}
           </select>
+          {assisterTeamLabel ? (
+            <span
+              data-testid="submit-goal-assister-guest-hint"
+              className="mt-1 block text-fg-mid text-[11px]"
+            >
+              (guest from {assisterTeamLabel})
+            </span>
+          ) : null}
         </label>
 
         <label className="block">

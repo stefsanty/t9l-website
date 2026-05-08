@@ -9,6 +9,7 @@ import {
   adminUpdateMatchEvent,
   adminDeleteMatchEvent,
 } from '@/app/admin/leagues/actions'
+import { groupPlayersByPrimaryTeam } from '@/lib/playerOrdering'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -227,6 +228,28 @@ export function rosterFor(leagueTeams: EventLeagueTeam[], leagueTeamId: string) 
     .filter((a) => a.player.name)
     .map((a) => ({ id: a.player.id, name: a.player.name as string }))
     .sort((a, b) => a.name.localeCompare(b.name))
+}
+
+/**
+ * v1.82.0 — flatten every league team's roster into `{id, name, teamId}`
+ * tuples. Feeds the cross-team scorer/assister dropdowns. Excludes
+ * pending applicants (no `name` yet) — same filter `rosterFor` uses.
+ */
+export function allLeaguePlayers(
+  leagueTeams: EventLeagueTeam[],
+): Array<{ id: string; name: string; teamId: string }> {
+  const out: Array<{ id: string; name: string; teamId: string }> = []
+  for (const lt of leagueTeams) {
+    for (const a of lt.playerAssignments) {
+      if (!a.player.name) continue
+      // Defensive — `leagueTeamId` on the assignment may be null for
+      // PENDING applicants (no team yet); filter those out so they
+      // can't be picked as scorers.
+      if (a.leagueTeamId === null) continue
+      out.push({ id: a.player.id, name: a.player.name, teamId: lt.id })
+    }
+  }
+  return out
 }
 
 // ── Component ────────────────────────────────────────────────────────────────
@@ -590,10 +613,40 @@ function EventEditor({
   if (!match) return null
 
   const opposingTeamId = beneficiaryTeamId === match.homeTeamId ? match.awayTeamId : match.homeTeamId
-  // OG: scorer picker shows OPPOSING team's roster; non-OG: beneficiary roster.
-  const scorerRosterTeamId = goalType === 'OWN_GOAL' ? opposingTeamId : beneficiaryTeamId
-  const scorerRoster = rosterFor(eventLeagueTeams, scorerRosterTeamId)
-  const assisterRoster = rosterFor(eventLeagueTeams, beneficiaryTeamId).filter((p) => p.id !== scorerId)
+  // v1.82.0 — cross-team scorers/assisters. Scorer dropdown sorts by the
+  // primary team (beneficiary for non-OG, opposing for OG, mirroring the
+  // existing convention) and lists every other league member under
+  // "Other players". Assister sorts by beneficiary team regardless of
+  // goal type — the assist credit attaches to the beneficiary side.
+  const scorerPrimaryTeamId = goalType === 'OWN_GOAL' ? opposingTeamId : beneficiaryTeamId
+  const allPlayers = allLeaguePlayers(eventLeagueTeams)
+  const primaryTeamName = eventLeagueTeams.find((lt) => lt.id === scorerPrimaryTeamId)?.team.name ?? 'Beneficiary team'
+  const beneficiaryTeamName = eventLeagueTeams.find((lt) => lt.id === beneficiaryTeamId)?.team.name ?? 'Beneficiary team'
+  const scorerGroups = groupPlayersByPrimaryTeam(
+    allPlayers,
+    scorerPrimaryTeamId,
+    primaryTeamName,
+  )
+  const assisterGroups = groupPlayersByPrimaryTeam(
+    allPlayers,
+    beneficiaryTeamId,
+    beneficiaryTeamName,
+    'Other players',
+    scorerId ? new Set([scorerId]) : undefined,
+  )
+
+  // v1.82.0 — guest hint surfaces when the selected player is not on the
+  // team we sorted to the top of the dropdown. Lets admins sanity-check.
+  const selectedScorer = scorerId ? allPlayers.find((p) => p.id === scorerId) : undefined
+  const scorerGuestTeamName =
+    selectedScorer && selectedScorer.teamId !== scorerPrimaryTeamId
+      ? eventLeagueTeams.find((lt) => lt.id === selectedScorer.teamId)?.team.name ?? null
+      : null
+  const selectedAssister = assisterId ? allPlayers.find((p) => p.id === assisterId) : undefined
+  const assisterGuestTeamName =
+    selectedAssister && selectedAssister.teamId !== beneficiaryTeamId
+      ? eventLeagueTeams.find((lt) => lt.id === selectedAssister.teamId)?.team.name ?? null
+      : null
 
   function submit() {
     setError(null)
@@ -717,12 +770,24 @@ function EventEditor({
             className="mt-1 w-full bg-admin-surface2 border border-admin-border rounded px-3 py-2 text-sm text-admin-text"
           >
             <option value="">— select —</option>
-            {scorerRoster.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
+            {scorerGroups.map((g) => (
+              <optgroup key={g.key} label={g.label}>
+                {g.players.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </optgroup>
             ))}
           </select>
+          {scorerGuestTeamName ? (
+            <span
+              data-testid="event-editor-scorer-guest-hint"
+              className="mt-1 block text-admin-text3 text-[11px]"
+            >
+              (guest from {scorerGuestTeamName})
+            </span>
+          ) : null}
         </label>
 
         <label className="block">
@@ -734,12 +799,24 @@ function EventEditor({
             className="mt-1 w-full bg-admin-surface2 border border-admin-border rounded px-3 py-2 text-sm text-admin-text"
           >
             <option value="">— no assist —</option>
-            {assisterRoster.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
+            {assisterGroups.map((g) => (
+              <optgroup key={g.key} label={g.label}>
+                {g.players.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </optgroup>
             ))}
           </select>
+          {assisterGuestTeamName ? (
+            <span
+              data-testid="event-editor-assister-guest-hint"
+              className="mt-1 block text-admin-text3 text-[11px]"
+            >
+              (guest from {assisterGuestTeamName})
+            </span>
+          ) : null}
         </label>
 
         <label className="block">

@@ -5,14 +5,17 @@
  * Pins:
  *   1. Auth gate (assertAdmin) at every entry point.
  *   2. Cross-league isolation — match must belong to the supplied leagueId.
- *   3. Smart-picker contract enforced on the SERVER (defense in depth):
- *        - non-OG: scorer must be on beneficiary team
- *        - OG:    scorer must be on OPPOSING team
- *        - assister, when present, must be on beneficiary team
+ *   3. v1.82.0 — scorer/assister scope enforced on SERVER: any active
+ *      member of this league (any team, including non-match teams).
+ *      Pre-v1.82.0 the scorer was constrained to beneficiary (or opposing
+ *      for OG) and assister to beneficiary; that rule blocked cross-team
+ *      guests, which casual leagues actually need.
  *   4. Recompute fires after every mutation (called inside the transaction).
  *   5. setMatchScoreOverride writes only the column; never recomputes.
  *   6. Revalidate hits the right paths.
  *   7. Audit fields populated: createdById = session.userId, kind = GOAL.
+ *   8. v1.82.0 — `beneficiaryTeamId` persisted on the MatchEvent row so
+ *      score recompute attributes cross-team scorers correctly.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
@@ -141,7 +144,7 @@ beforeEach(() => {
 })
 
 describe('adminCreateMatchEvent', () => {
-  it('happy path: inserts event, recomputes, revalidates', async () => {
+  it('happy path: inserts event with beneficiaryTeamId persisted, recomputes, revalidates', async () => {
     plaFindFirstMock.mockResolvedValue({ id: 'pla-1' })
     const result = await adminCreateMatchEvent({
       matchId: MATCH,
@@ -161,6 +164,8 @@ describe('adminCreateMatchEvent', () => {
     expect(args.data.assisterId).toBeNull()
     expect(args.data.minute).toBe(47)
     expect(args.data.createdById).toBe('u-admin')
+    // v1.82.0 — beneficiary persisted on the event row.
+    expect(args.data.beneficiaryTeamId).toBe(HOME)
     expect(recomputeMock).toHaveBeenCalledWith(expect.anything(), MATCH)
     expect(revalidateMock).toHaveBeenCalledTimes(1)
     expect(revalidateMock.mock.calls[0][0].domain).toBe('admin')
@@ -171,6 +176,45 @@ describe('adminCreateMatchEvent', () => {
         `/admin/matches/${MATCH}`,
       ]),
     )
+  })
+
+  it('v1.82.0 regression target: accepts a cross-team scorer (guest player from a third team)', async () => {
+    // Scorer is NOT on the beneficiary or opposing team — they're on
+    // a third league team. Pre-v1.82.0 this rejected; post-v1.82.0 it
+    // succeeds because scope loosens to "any active league member".
+    plaFindFirstMock.mockResolvedValue({ id: 'pla-third-team' })
+    const result = await adminCreateMatchEvent({
+      matchId: MATCH,
+      leagueId: LEAGUE,
+      goalType: 'OPEN_PLAY',
+      beneficiaryTeamId: HOME,
+      scorerId: 'p-guest',
+    })
+    expect(result.id).toBe('me-new')
+    // v1.82.0 — membership query now scopes by leagueId, not by team.
+    const calls = plaFindFirstMock.mock.calls
+    const scorerWhere = calls[0][0].where
+    expect(scorerWhere.leagueId).toBe(LEAGUE)
+    expect(scorerWhere.leagueTeamId).toEqual({ not: null })
+  })
+
+  it('v1.82.0 regression target: accepts a cross-team assister', async () => {
+    plaFindFirstMock
+      .mockResolvedValueOnce({ id: 'pla-scorer' })
+      .mockResolvedValueOnce({ id: 'pla-cross-team-assister' })
+    const result = await adminCreateMatchEvent({
+      matchId: MATCH,
+      leagueId: LEAGUE,
+      goalType: 'OPEN_PLAY',
+      beneficiaryTeamId: HOME,
+      scorerId: 'p-stefan',
+      assisterId: 'p-other-team-friend',
+    })
+    expect(result.id).toBe('me-new')
+    // Both queries scope by leagueId.
+    const assisterCall = plaFindFirstMock.mock.calls[1][0]
+    expect(assisterCall.where.leagueId).toBe(LEAGUE)
+    expect(assisterCall.where.leagueTeamId).toEqual({ not: null })
   })
 
   it('rejects when match is not in the supplied league (cross-league isolation)', async () => {
@@ -205,38 +249,20 @@ describe('adminCreateMatchEvent', () => {
     ).rejects.toThrow(/beneficiaryTeamId is not part of this match/)
   })
 
-  it('rejects when scorer is not on the beneficiary team (non-OG)', async () => {
-    plaFindFirstMock.mockResolvedValue(null) // scorer is NOT on beneficiary team
+  it('v1.82.0 regression target: rejects when scorer is not in this league at all', async () => {
+    plaFindFirstMock.mockResolvedValue(null)
     await expect(
       adminCreateMatchEvent({
         matchId: MATCH,
         leagueId: LEAGUE,
         goalType: 'OPEN_PLAY',
         beneficiaryTeamId: HOME,
-        scorerId: 'p-stefan',
+        scorerId: 'p-out-of-league',
       }),
-    ).rejects.toThrow(/Scorer must be on the beneficiary team/)
+    ).rejects.toThrow(/Scorer is not a member of this league/)
   })
 
-  it('rejects OWN_GOAL when scorer is NOT on the OPPOSING team', async () => {
-    plaFindFirstMock.mockResolvedValue(null)
-    await expect(
-      adminCreateMatchEvent({
-        matchId: MATCH,
-        leagueId: LEAGUE,
-        goalType: 'OWN_GOAL',
-        beneficiaryTeamId: HOME, // OG benefits HOME → scorer must be on AWAY
-        scorerId: 'p-stefan',
-      }),
-    ).rejects.toThrow(/OPPOSING team/)
-    // The query should look for scorer on AWAY (the opposing team).
-    expect(plaFindFirstMock).toHaveBeenCalledWith({
-      where: { playerId: 'p-stefan', leagueTeamId: AWAY },
-      select: { id: true },
-    })
-  })
-
-  it('OWN_GOAL happy path: scorer on opposing team passes', async () => {
+  it('OWN_GOAL with explicit beneficiary persists beneficiaryTeamId from input', async () => {
     plaFindFirstMock.mockResolvedValue({ id: 'pla-og' })
     const result = await adminCreateMatchEvent({
       matchId: MATCH,
@@ -246,16 +272,22 @@ describe('adminCreateMatchEvent', () => {
       scorerId: 'p-og-er',
     })
     expect(result.id).toBe('me-new')
-    expect(plaFindFirstMock).toHaveBeenCalledWith({
-      where: { playerId: 'p-og-er', leagueTeamId: AWAY },
-      select: { id: true },
-    })
+    // v1.82.0 — beneficiary comes from the form, not derived from the
+    // scorer's team. Persisted on the event so recompute can attribute
+    // correctly even when scorer is on a non-match team (guest OGer).
+    const args = matchEventCreateMock.mock.calls[0][0]
+    expect(args.data.goalType).toBe('OWN_GOAL')
+    expect(args.data.beneficiaryTeamId).toBe(HOME)
+    // v1.82.0 — no longer requires scorer on opposing team; query
+    // scopes by leagueId.
+    const scorerCall = plaFindFirstMock.mock.calls[0][0]
+    expect(scorerCall.where.leagueId).toBe(LEAGUE)
   })
 
-  it('rejects when assister is not on the beneficiary team', async () => {
+  it('v1.82.0 regression target: rejects when assister is not in this league at all', async () => {
     plaFindFirstMock
-      .mockResolvedValueOnce({ id: 'pla-1' }) // scorer ✓
-      .mockResolvedValueOnce(null) // assister ✗
+      .mockResolvedValueOnce({ id: 'pla-1' }) // scorer in league
+      .mockResolvedValueOnce(null) // assister not in league
     await expect(
       adminCreateMatchEvent({
         matchId: MATCH,
@@ -265,7 +297,7 @@ describe('adminCreateMatchEvent', () => {
         scorerId: 'p-stefan',
         assisterId: 'p-stranger',
       }),
-    ).rejects.toThrow(/Assister must be on the beneficiary team/)
+    ).rejects.toThrow(/Assister is not a member of this league/)
   })
 
   it('rejects when assister equals scorer', async () => {
@@ -323,7 +355,7 @@ describe('adminUpdateMatchEvent', () => {
     matchEventFindUniqueMock.mockResolvedValue({ id: 'me-1', matchId: MATCH })
   })
 
-  it('updates and recomputes', async () => {
+  it('updates and recomputes, persists beneficiaryTeamId', async () => {
     plaFindFirstMock.mockResolvedValue({ id: 'pla-1' })
     await adminUpdateMatchEvent({
       eventId: 'me-1',
@@ -336,8 +368,24 @@ describe('adminUpdateMatchEvent', () => {
     })
     expect(matchEventUpdateMock).toHaveBeenCalledTimes(1)
     expect(matchEventUpdateMock.mock.calls[0][0].where.id).toBe('me-1')
+    // v1.82.0 — update propagates beneficiaryTeamId from input.
+    expect(matchEventUpdateMock.mock.calls[0][0].data.beneficiaryTeamId).toBe(HOME)
     expect(recomputeMock).toHaveBeenCalledWith(expect.anything(), MATCH)
     expect(revalidateMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('v1.82.0 regression target: update accepts a cross-team scorer', async () => {
+    plaFindFirstMock.mockResolvedValue({ id: 'pla-third-team' })
+    await adminUpdateMatchEvent({
+      eventId: 'me-1',
+      leagueId: LEAGUE,
+      goalType: 'OPEN_PLAY',
+      beneficiaryTeamId: HOME,
+      scorerId: 'p-guest',
+    })
+    const scorerCall = plaFindFirstMock.mock.calls[0][0]
+    expect(scorerCall.where.leagueId).toBe(LEAGUE)
+    expect(scorerCall.where.leagueTeamId).toEqual({ not: null })
   })
 
   it('rejects when event not found', async () => {

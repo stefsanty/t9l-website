@@ -420,7 +420,11 @@ describe('v1.48.1 — Submit-Goal CTA singleton across matchday changes', () => 
 
   it('SubmitGoalModal syncs matchPublicId when the matches list changes', () => {
     expect(FORM).toMatch(/if\s*\(!matches\.find\(\(m\)\s*=>\s*m\.id\s*===\s*matchPublicId\)\)/)
-    expect(FORM).toMatch(/setMatchPublicId\(matches\[0\]\?\.id\s*\?\?\s*''\)/)
+    // v1.81.0 — the assignment shape widened to also reset beneficiary
+    // (cross-team scorer support requires beneficiary to be explicit).
+    // The match-id reset still pulls from `matches[0]`, but via a local
+    // `first` binding so the same value drives multiple resets.
+    expect(FORM).toMatch(/setMatchPublicId\((?:matches\[0\]|first)\?\.id\s*\?\?\s*''\)/)
   })
 
   it('modal shows the matchday label as a bold heading at the top', () => {
