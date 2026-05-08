@@ -49,42 +49,33 @@ const GLOBALS_CSS = readFileSync(
 // Bug A — Sign out button uses explicit callbackUrl (matches AdminNav)
 // ────────────────────────────────────────────────────────────────────────────
 
-describe('v1.63.1 Bug A — sign out button uses explicit callbackUrl', () => {
-  it('account-menu sign-out button passes callbackUrl: "/" to signOut()', () => {
-    // Find the sign-out button (the only one with the Sign out copy in the
-    // dropdown). Match the onClick value.
+describe('v1.63.1 Bug A — sign out button uses explicit callbackUrl (updated v1.80.1)', () => {
+  it('account-menu sign-out button passes a callbackUrl to signOut()', () => {
+    // v1.80.1 upgraded from hardcoded "/" to getCurrentCallbackUrl() so the
+    // user returns to the page they signed out from.
     const idx = LINE_LOGIN_SRC.indexOf('"Sign out"')
     expect(idx).toBeGreaterThan(0)
-    // Look at the 1500 chars BEFORE the copy — the onClick handler is
-    // separated from the copy by the className + SVG markup (~800 chars).
     const before = LINE_LOGIN_SRC.slice(Math.max(0, idx - 1500), idx)
-    expect(before).toMatch(/signOut\(\{\s*callbackUrl:\s*['"]\/['"]\s*\}\)/)
+    expect(before).toMatch(/signOut\(\{\s*callbackUrl:/)
   })
 
   it('account-menu sign-out onClick does NOT call setOpen(false) before signOut (regression target)', () => {
     // Pre-fix shape was `() => { setOpen(false); signOut(); }`. The
-    // setOpen call is redundant because signOut redirects to '/' which
-    // unmounts the dropdown. Including it adds nothing and the parent
-    // component already manages dropdown state via the outside-click
-    // handler + path navigation. Regression: a future edit re-adding
-    // `setOpen(false)` next to a bare `signOut()` would resurrect the
-    // pre-fix shape that didn't always reload the page.
+    // setOpen call is redundant because signOut redirects which
+    // unmounts the dropdown.
     const idx = LINE_LOGIN_SRC.indexOf('"Sign out"')
     const before = LINE_LOGIN_SRC.slice(Math.max(0, idx - 1500), idx)
-    // The bug shape: `setOpen(false); signOut();` (no callbackUrl).
     expect(before).not.toMatch(/setOpen\(false\);\s*signOut\(\);/)
   })
 
-  it('account-menu sign-out matches the proven AdminNav pattern', () => {
-    // AdminNav uses `signOut({ callbackUrl: '/' })` and is reported to work.
-    // The user dropdown should match that shape.
+  it('account-menu sign-out matches the getCurrentCallbackUrl() pattern', () => {
+    // v1.80.1: both AdminNav and LineLoginButton use getCurrentCallbackUrl().
     const adminNavSrc = readFileSync(
       join(REPO_ROOT, 'src/components/admin/AdminNav.tsx'),
       'utf8',
     )
-    expect(adminNavSrc).toMatch(/signOut\(\{\s*callbackUrl:\s*['"]\/['"]\s*\}\)/)
-    // And LineLoginButton uses the same pattern.
-    expect(LINE_LOGIN_SRC).toMatch(/signOut\(\{\s*callbackUrl:\s*['"]\/['"]\s*\}\)/)
+    expect(adminNavSrc).toMatch(/signOut\(\{\s*callbackUrl:\s*getCurrentCallbackUrl\(\)/)
+    expect(LINE_LOGIN_SRC).toMatch(/signOut\(\{\s*callbackUrl:\s*getCurrentCallbackUrl\(\)/)
   })
 })
 
