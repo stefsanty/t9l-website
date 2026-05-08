@@ -2,7 +2,7 @@
 
 T9L.me — mobile-first website for the Tennozu 9-Aside League, a recreational football league in Tokyo. Multi-tenant: a single Vercel deployment serves multiple leagues, each at `/id/<slug>`. Players sign in (LINE / Google / email magic-link), claim a Player record, RSVP availability for matchdays, and view live league data backed by Postgres (Neon) + Upstash Redis.
 
-**Current release:** v1.79.3.
+**Current release:** v1.81.0.
 
 ## Documentation
 
@@ -75,6 +75,7 @@ Keep each line short. Long explanations live in PR descriptions, not chat.
 
 ## Recent ledger (top 20 PRs)
 
+- **v1.81.0** — League details extras: Skill level / Shoes / Shinguards / Total matches + Season Fee caption (TBD-fallback rows)
 - **v1.79.3** — combine Season Fee + Register By onto one dt/dd row in LeagueDetailsPanel
 - **v1.79.2** — fix Register By row alignment (split onto own table-aligned row)
 - **v1.79.1** — send approval email when admin approves application
@@ -94,7 +95,6 @@ Keep each line short. Long explanations live in PR descriptions, not chat.
 - **v1.75.0** — League details settings + preseason public display
 - **v1.74.1** — Team color field + color picker on admin Teams tab
 - **v1.74.0** — Replace legacy 'All Teams' admin link with real `/admin/teams-all` CRUD
-- **v1.73.6** — Fix admin settings dark-text-on-dark-background regression
 
 Older entries condensed in [docs/ledger-archive.md](docs/ledger-archive.md).
 

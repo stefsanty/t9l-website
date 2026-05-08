@@ -205,6 +205,12 @@ describe('v1.80.0 — version bump', () => {
   const version = readSrc('src/lib/version.ts')
 
   it('APP_VERSION is 1.80.0 or later', () => {
-    expect(version).toMatch(/APP_VERSION\s*=\s*'1\.80\.[0-9]+'/)
+    // Pin "1.80.0+". The original regex froze the minor at 1.80.x,
+    // which fails as soon as the next minor bump ships. Parse and
+    // compare numerically instead.
+    const m = version.match(/APP_VERSION\s*=\s*'(\d+)\.(\d+)\.(\d+)'/)
+    expect(m).not.toBeNull()
+    const [major, minor] = m!.slice(1).map((n) => parseInt(n, 10))
+    expect(major > 1 || (major === 1 && minor >= 80)).toBe(true)
   })
 })
