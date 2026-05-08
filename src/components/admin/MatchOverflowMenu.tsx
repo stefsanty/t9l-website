@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { MoreHorizontal } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -15,6 +16,9 @@ import { cn } from '@/lib/utils'
  * Click-outside dismissal mirrors the existing `ConfirmDialog` pattern
  * (simple useState + ref + outside-click listener); deliberately avoids
  * pulling in a new Radix dependency for one menu surface.
+ *
+ * v1.80.11 — Portal-based positioning: menu is rendered to `document.body`
+ * via `createPortal` so it escapes `overflow-hidden` table/card wrappers.
  */
 
 export interface OverflowMenuItem {
@@ -33,13 +37,15 @@ interface MatchOverflowMenuProps {
 
 export default function MatchOverflowMenu({ items, ariaLabel = 'More actions' }: MatchOverflowMenuProps) {
   const [open, setOpen] = useState(false)
-  const wrapperRef = useRef<HTMLDivElement | null>(null)
+  const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(null)
+  const buttonRef = useRef<HTMLButtonElement | null>(null)
+  const menuRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     if (!open) return
     function handleClick(e: MouseEvent) {
-      if (!wrapperRef.current) return
-      if (e.target instanceof Node && wrapperRef.current.contains(e.target)) return
+      if (buttonRef.current?.contains(e.target as Node)) return
+      if (menuRef.current?.contains(e.target as Node)) return
       setOpen(false)
     }
     function handleKey(e: KeyboardEvent) {
@@ -53,11 +59,62 @@ export default function MatchOverflowMenu({ items, ariaLabel = 'More actions' }:
     }
   }, [open])
 
+  function handleToggle() {
+    if (open) {
+      setOpen(false)
+      return
+    }
+    if (!buttonRef.current) return
+    const rect = buttonRef.current.getBoundingClientRect()
+    setMenuPos({
+      top: rect.bottom + 4,
+      right: window.innerWidth - rect.right,
+    })
+    setOpen(true)
+  }
+
+  const menu =
+    open && menuPos
+      ? createPortal(
+          <div
+            ref={menuRef}
+            role="menu"
+            style={{ top: menuPos.top, right: menuPos.right }}
+            className="fixed z-50 min-w-[160px] rounded-lg border border-admin-border bg-admin-surface shadow-xl overflow-hidden"
+          >
+            {items.map((item, idx) => (
+              <button
+                key={idx}
+                type="button"
+                role="menuitem"
+                disabled={item.disabled}
+                onClick={async () => {
+                  if (item.disabled) return
+                  setOpen(false)
+                  await item.onSelect()
+                }}
+                className={cn(
+                  'w-full text-left px-3 py-2 text-sm transition-colors',
+                  'disabled:opacity-50 disabled:cursor-not-allowed',
+                  item.tone === 'danger'
+                    ? 'text-admin-red hover:bg-admin-red-dim'
+                    : 'text-admin-text2 hover:bg-admin-surface2 hover:text-admin-text',
+                )}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>,
+          document.body,
+        )
+      : null
+
   return (
-    <div ref={wrapperRef} className="relative inline-flex" data-overflow-menu>
+    <div className="relative inline-flex" data-overflow-menu>
       <button
+        ref={buttonRef}
         type="button"
-        onClick={() => setOpen((o) => !o)}
+        onClick={handleToggle}
         aria-label={ariaLabel}
         aria-haspopup="menu"
         aria-expanded={open}
@@ -65,35 +122,7 @@ export default function MatchOverflowMenu({ items, ariaLabel = 'More actions' }:
       >
         <MoreHorizontal className="w-4 h-4" />
       </button>
-      {open && (
-        <div
-          role="menu"
-          className="absolute right-0 top-full mt-1 z-30 min-w-[160px] rounded-lg border border-admin-border bg-admin-surface shadow-xl overflow-hidden"
-        >
-          {items.map((item, idx) => (
-            <button
-              key={idx}
-              type="button"
-              role="menuitem"
-              disabled={item.disabled}
-              onClick={async () => {
-                if (item.disabled) return
-                setOpen(false)
-                await item.onSelect()
-              }}
-              className={cn(
-                'w-full text-left px-3 py-2 text-sm transition-colors',
-                'disabled:opacity-50 disabled:cursor-not-allowed',
-                item.tone === 'danger'
-                  ? 'text-admin-red hover:bg-admin-red-dim'
-                  : 'text-admin-text2 hover:bg-admin-surface2 hover:text-admin-text',
-              )}
-            >
-              {item.label}
-            </button>
-          ))}
-        </div>
-      )}
+      {menu}
     </div>
   )
 }
