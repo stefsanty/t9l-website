@@ -25,9 +25,9 @@ describe('v1.75.1 LeagueDetailsPanel includes planned-roster sub-section', () =>
     expect(src).toMatch(/plannedRosterStats\?:\s*PlannedRosterStatsData \| null/)
   })
 
-  it('renders fee/deadline combined row when plannedRosterStats is provided (v1.79.3 testid)', () => {
-    // v1.79.3 — combined row, testid season-fee-register-by-row.
-    expect(src).toMatch(/season-fee-register-by-row/)
+  it('renders season-fee-row when plannedRosterStats is provided (v1.79.4 separate rows)', () => {
+    // v1.79.4 — separate rows: season-fee-row and register-by-row.
+    expect(src).toMatch(/season-fee-row/)
   })
 
   it('renders planned-teams row when plannedRosterStats is provided', () => {
@@ -42,8 +42,8 @@ describe('v1.75.1 LeagueDetailsPanel includes planned-roster sub-section', () =>
     expect(src).not.toMatch(/data-testid="current-players-row"/)
   })
 
-  it('renders deadline inside combined row from plannedRosterStats when present (v1.79.3)', () => {
-    // v1.79.3 — Register By is inside season-fee-register-by-row, gated by showDeadline
+  it('renders deadline inside register-by-row from plannedRosterStats when present (v1.79.4)', () => {
+    // v1.79.4 — Register By is in its own register-by-row, gated by showDeadline
     expect(src).toMatch(/showDeadline[\s\S]*Register By/)
   })
 
@@ -80,11 +80,11 @@ describe('v1.75.1 field render order matches importance list', () => {
     expect(idxGoal).toBeGreaterThan(idxBall)
   })
 
-  it('stats section (combined fee row) appears AFTER offside row (v1.75.6 — stats moved to bottom)', () => {
+  it('stats section (fee row) appears AFTER offside row (v1.75.6 — stats moved to bottom)', () => {
     // v1.75.6 moved fee + planned roster + matchdays rows into a bottom
-    // subsection. v1.79.3 testid: season-fee-register-by-row.
+    // subsection. v1.79.4 testid: season-fee-row.
     const idxOffside = src.indexOf('league-details-offside-row')
-    const idxFee = src.indexOf('"season-fee-register-by-row"')
+    const idxFee = src.indexOf('"season-fee-row"')
     expect(idxOffside).toBeGreaterThan(0)
     expect(idxFee).toBeGreaterThan(idxOffside)
   })

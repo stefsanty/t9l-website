@@ -26,10 +26,11 @@ import { formatJpyFee } from '@/lib/playerFee'
  * v1.75.7 — Rules section text-xs; "Goal size" → "Goal"; "Sideline restart"
  *   → "Sideline"; Goal kick row added (between Sideline and Backpass);
  *   Season Fee/Register By row no longer wraps on iPhone-width viewports.
- * v1.79.3 — Combined Season Fee + Register By back onto ONE row using
- *   proper dual dt/dd pairs inside a single flex justify-between container
- *   (season-fee-register-by-row). Falls back to single pair when only one
- *   value is present.
+ * v1.79.4 — Season Fee and Register By as TWO separate rows, each its own
+ *   flex justify-between items-baseline div with one dt/dd pair, matching
+ *   the same pattern as Teams / Roster Size / Matchdays / Spots Left.
+ *   season-fee-row only renders when fee > 0; register-by-row only when
+ *   deadline is set.
  *
  * Rules section order:
  *   1. Player format
@@ -44,11 +45,12 @@ import { formatJpyFee } from '@/lib/playerFee'
  *  10. Organizer message (long text)
  *
  * Season info subsection (bottom, separated by divider):
- *   1. Season Fee + Register By (combined line)
- *   2. Teams
- *   3. Roster Size
- *   4. Matchdays
- *   5. Spots left
+ *   1. Season Fee (own row)
+ *   2. Register By (own row)
+ *   3. Teams
+ *   4. Roster Size
+ *   5. Matchdays
+ *   6. Spots left
  */
 interface Props {
   data: LeagueDetails
@@ -199,32 +201,33 @@ export default function LeagueDetailsPanel({
               data-testid="league-stats-section"
             >
               <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
-                {/* Season Fee + Register By — combined onto one row when both present */}
-                {(showFee || showDeadline) && (
+                {/* Season Fee */}
+                {showFee && (
                   <div
-                    className="col-span-2 flex justify-between items-baseline"
-                    data-testid="season-fee-register-by-row"
+                    className="flex justify-between items-baseline"
+                    data-testid="season-fee-row"
                   >
-                    {showFee && (
-                      <>
-                        <dt className="text-fg-mid text-xs uppercase tracking-wider font-bold">
-                          Season Fee
-                        </dt>
-                        <dd className="font-display font-black text-fg-high tabular-nums">
-                          {formatJpyFee(plannedRosterStats.defaultFee)}
-                        </dd>
-                      </>
-                    )}
-                    {showDeadline && plannedRosterStats.registrationDeadline && (
-                      <>
-                        <dt className="text-fg-mid text-xs uppercase tracking-wider font-bold">
-                          Register By
-                        </dt>
-                        <dd className="font-display font-black text-fg-high">
-                          {formatJstFriendly(plannedRosterStats.registrationDeadline, 'en')}
-                        </dd>
-                      </>
-                    )}
+                    <dt className="text-fg-mid text-xs uppercase tracking-wider font-bold">
+                      Season Fee
+                    </dt>
+                    <dd className="font-display font-black text-fg-high">
+                      {formatJpyFee(plannedRosterStats.defaultFee)}
+                    </dd>
+                  </div>
+                )}
+
+                {/* Register By */}
+                {showDeadline && plannedRosterStats.registrationDeadline && (
+                  <div
+                    className="flex justify-between items-baseline"
+                    data-testid="register-by-row"
+                  >
+                    <dt className="text-fg-mid text-xs uppercase tracking-wider font-bold">
+                      Register By
+                    </dt>
+                    <dd className="font-display font-black text-fg-high">
+                      {formatJstFriendly(plannedRosterStats.registrationDeadline, 'en')}
+                    </dd>
                   </div>
                 )}
                 {showFee && plannedRosterStats.positionFees.length > 0 && (

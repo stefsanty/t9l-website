@@ -136,9 +136,9 @@ describe('v1.75.5 LeagueDetailsEditor unified form', () => {
 describe('v1.75.5 LeagueDetailsPanel stats mini-section', () => {
   const src = read('src/components/LeagueDetailsPanel.tsx')
 
-  it('renders the combined fee+deadline row when fee or deadline is configured (v1.79.3 testid)', () => {
-    // v1.79.3 — testid renamed from season-fee-row to season-fee-register-by-row
-    expect(src).toMatch(/season-fee-register-by-row/)
+  it('renders separate season-fee-row when fee is configured (v1.79.4 testid)', () => {
+    // v1.79.4 — separate rows: season-fee-row and register-by-row
+    expect(src).toMatch(/season-fee-row/)
   })
 
   it('player-fee row uses formatJpyFee for currency formatting', () => {

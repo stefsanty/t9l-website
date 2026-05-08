@@ -84,40 +84,47 @@ describe('v1.75.6 Matchdays row added', () => {
   })
 })
 
-describe('v1.75.6 / v1.79.3 Season Fee + Register By on one combined line', () => {
+describe('v1.75.6 / v1.79.4 Season Fee + Register By as separate rows', () => {
   const src = read('src/components/LeagueDetailsPanel.tsx')
 
-  it('season-fee-register-by-row testid exists inside the stats section (v1.79.3)', () => {
-    // Use quoted form to avoid matching the testid string in comments.
+  it('season-fee-row testid exists inside the stats section (v1.79.4)', () => {
     const statsIdx = src.indexOf('league-stats-section')
-    const rowIdx = src.indexOf('"season-fee-register-by-row"')
+    const rowIdx = src.indexOf('"season-fee-row"')
     expect(rowIdx).toBeGreaterThan(-1)
     expect(rowIdx).toBeGreaterThan(statsIdx)
   })
 
-  it('season-fee-register-by-row uses col-span-2 (full width combined block)', () => {
-    const idx = src.indexOf('"season-fee-register-by-row"')
-    const surroundingBlock = src.slice(Math.max(0, idx - 200), idx + 50)
-    expect(surroundingBlock).toMatch(/col-span-2/)
+  it('register-by-row testid exists inside the stats section (v1.79.4)', () => {
+    const statsIdx = src.indexOf('league-stats-section')
+    const rowIdx = src.indexOf('"register-by-row"')
+    expect(rowIdx).toBeGreaterThan(-1)
+    expect(rowIdx).toBeGreaterThan(statsIdx)
   })
 
-  it('Season Fee and Register By both appear inside the combined row', () => {
-    const rowIdx = src.indexOf('"season-fee-register-by-row"')
-    const block = src.slice(rowIdx, rowIdx + 1200)
+  it('season-fee-row does NOT use col-span-2 (v1.79.4 separate rows, not combined block)', () => {
+    const idx = src.indexOf('"season-fee-row"')
+    const surroundingBlock = src.slice(Math.max(0, idx - 200), idx + 50)
+    expect(surroundingBlock).not.toMatch(/col-span-2/)
+  })
+
+  it('Season Fee appears in season-fee-row', () => {
+    const rowIdx = src.indexOf('"season-fee-row"')
+    const block = src.slice(rowIdx, rowIdx + 600)
     expect(block).toMatch(/Season Fee/)
+  })
+
+  it('Register By appears in register-by-row', () => {
+    const rowIdx = src.indexOf('"register-by-row"')
+    const block = src.slice(rowIdx, rowIdx + 600)
     expect(block).toMatch(/Register By/)
   })
 
-  it('showFee gates the fee portion within combined row', () => {
-    const rowIdx = src.indexOf('"season-fee-register-by-row"')
-    const block = src.slice(rowIdx, rowIdx + 1200)
-    expect(block).toMatch(/showFee[\s\S]{0,300}Season Fee/)
+  it('showFee gates the season-fee-row', () => {
+    expect(src).toMatch(/showFee[\s\S]{0,200}season-fee-row/)
   })
 
-  it('showDeadline gates the deadline portion within combined row', () => {
-    const rowIdx = src.indexOf('"season-fee-register-by-row"')
-    const block = src.slice(rowIdx, rowIdx + 1200)
-    expect(block).toMatch(/showDeadline[\s\S]{0,400}Register By/)
+  it('showDeadline gates the register-by-row', () => {
+    expect(src).toMatch(/showDeadline[\s\S]{0,200}register-by-row/)
   })
 })
 
@@ -146,9 +153,9 @@ describe('v1.75.6 stats section is BELOW the rules section in DOM order', () => 
     expect(idxStats).toBeGreaterThan(idxSubs)
   })
 
-  it('season-fee-register-by-row appears inside the stats section (after league-stats-section)', () => {
+  it('season-fee-row appears inside the stats section (after league-stats-section)', () => {
     const idxStats = src.indexOf('league-stats-section')
-    const idxFee = src.indexOf('"season-fee-register-by-row"')
+    const idxFee = src.indexOf('"season-fee-row"')
     expect(idxFee).toBeGreaterThan(idxStats)
   })
 
