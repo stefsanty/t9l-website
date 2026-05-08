@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Inter, Barlow_Condensed, Barlow, DM_Mono } from "next/font/google";
+import { Inter, Barlow_Condensed } from "next/font/google";
 import { Toaster } from "sonner";
 import { getServerSession } from "next-auth";
 import AuthProvider from "@/components/AuthProvider";
@@ -11,27 +11,45 @@ import { authOptions } from "@/lib/auth";
 import { getMembershipsForSession, type Membership } from "@/lib/memberships";
 import "./globals.css";
 
+// v1.80.6 — phase 4 perf:
+//   Inter is the body font (`--font-body`); loaded as a variable font (no
+//   `weight:` argument) so all weights stream from one woff2 file.
+//   `display: 'swap'` is fine here — Inter is the body, never the LCP
+//   element; swap latency is invisible on body text.
 const inter = Inter({
   variable: "--font-inter",
   subsets: ["latin"],
+  display: "swap",
 });
 
+// v1.80.6 — phase 4 perf, hypothesis A from docs/perf-phase3-lcp-handoff.md:
+//   The page's LCP element is the `<h2>` matchday date heading rendered
+//   in Barlow Condensed at `font-black` (mapped to weight 800 since
+//   Barlow Condensed has no 900). Default `display: 'swap'` triggered a
+//   late re-paint when the web font finished loading — Lighthouse
+//   recorded that as the LCP and the 2.7s "render delay" became the
+//   dominant LCP component.
+//   Switching to `display: 'optional'` tells the browser: if the web
+//   font isn't ready inside ~100 ms, render the entire first paint with
+//   the system fallback (no swap, no re-LCP). Returning visitors see
+//   Barlow Condensed from cache. Slow first-time loads see the system
+//   fallback for the entire session — acceptable LCP/visual tradeoff,
+//   matches Web Vitals' standard recommendation for text-LCP fonts.
+//
+//   Weights: 700 (`font-bold`, 13 public callsites + admin) + 800
+//   (`font-black`, 67 public callsites — the LCP) are paired with
+//   `font-display` on the public site. 600 is paired with `font-condensed`
+//   in the admin shell (table headers, "No leagues yet" empty states).
+//   Pre-v1.80.6 we also loaded weight 400 — never paired with
+//   `font-display` or `font-condensed` anywhere in the codebase. Drop it:
+//   -1 woff2 file, ~10 KiB transferred per first load. Keep 600/700/800
+//   so admin's `font-condensed font-semibold` headers still render at
+//   their intended weight.
 const barlowCondensed = Barlow_Condensed({
   variable: "--font-barlow-condensed",
   subsets: ["latin"],
-  weight: ["400", "600", "700", "800"],
-});
-
-const barlowSans = Barlow({
-  variable: "--font-barlow-sans",
-  subsets: ["latin"],
-  weight: ["400", "500", "600"],
-});
-
-const dmMono = DM_Mono({
-  variable: "--font-dm-mono",
-  subsets: ["latin"],
-  weight: ["400", "500"],
+  weight: ["600", "700", "800"],
+  display: "optional",
 });
 
 export const metadata: Metadata = {
@@ -83,7 +101,7 @@ export default async function RootLayout({
   return (
     <html
       lang="en"
-      className={`${inter.variable} ${barlowCondensed.variable} ${barlowSans.variable} ${dmMono.variable}`}
+      className={`${inter.variable} ${barlowCondensed.variable}`}
     >
       <head>
         <script dangerouslySetInnerHTML={{ __html: `(function(){var s=localStorage.getItem('t9l-theme');var d=window.matchMedia('(prefers-color-scheme: dark)').matches;document.documentElement.classList.add(s||(d?'dark':'light'));})();` }} />

@@ -225,9 +225,17 @@ html.light {
   --color-admin-blue: #60a5fa;
 
   /* Admin fonts */
+  /* v1.80.6 — `--font-dm-mono` and `--font-barlow-sans` are now loaded in
+     the admin layout only (saves ~50 KiB on every public page). Public
+     pages where the underlying var is undefined fall through to the
+     in-`var()` fallback (system mono / system sans) — `font-mono` on
+     `/join/[code]` and `/dev-login` still renders monospaced via
+     `ui-monospace`/`monospace`. `--font-barlow-condensed` stays in the
+     root layout (Barlow Condensed is the public-site display/heading
+     font, including the LCP element). */
   --font-condensed: var(--font-barlow-condensed), sans-serif;
-  --font-mono: var(--font-dm-mono), monospace;
-  --font-barlow: var(--font-barlow-sans), sans-serif;
+  --font-mono: var(--font-dm-mono, ui-monospace), monospace;
+  --font-barlow: var(--font-barlow-sans, system-ui), sans-serif;
 
   @keyframes fade-in {
     from {
