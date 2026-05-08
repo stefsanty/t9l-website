@@ -25,6 +25,8 @@ import {
 import { headers } from 'next/headers'
 import type { PlayerPosition, GoalType } from '@prisma/client'
 import { recomputeMatchScore } from '@/lib/matchScore'
+import { sendMail } from '@/lib/email'
+import { applicationApprovedEmail } from '@/lib/emailTemplates'
 
 /**
  * v1.13.0 — defer the Redis pre-warm off the admin response critical path.
@@ -1090,7 +1092,7 @@ export async function adminApproveApplication(input: {
   // are exclusively PLM rows from v1.65.4 onward.
   const player = await prisma.player.findUnique({
     where: { id: input.playerId },
-    select: { id: true },
+    select: { id: true, name: true, userId: true },
   })
   if (!player) throw new Error('Player not found')
 
@@ -1108,7 +1110,11 @@ export async function adminApproveApplication(input: {
 
   const leagueTeam = await prisma.leagueTeam.findUnique({
     where: { id: input.leagueTeamId },
-    select: { id: true, leagueId: true },
+    select: {
+      id: true,
+      leagueId: true,
+      league: { select: { name: true, subdomain: true } },
+    },
   })
   if (!leagueTeam) throw new Error('Team not found')
   if (leagueTeam.leagueId !== input.leagueId) {
@@ -1130,6 +1136,39 @@ export async function adminApproveApplication(input: {
 
   revalidate({ domain: 'admin', paths: [`/admin/leagues/${input.leagueId}/players`] })
   revalidate({ domain: 'public' })
+
+  // v1.79.1 — fire-and-forget approval email. Resolves the applicant's
+  // email from User.email; silently skips if no email is on file (e.g.
+  // LINE-only users who registered before v1.78.0 captured it) or SMTP
+  // is not configured. `sendMail` never throws.
+  if (player.userId) {
+    const user = await prisma.user.findUnique({
+      where: { id: player.userId },
+      select: { email: true },
+    })
+    if (user?.email) {
+      const slug = leagueTeam.league?.subdomain ?? input.leagueId
+      const leagueUrl = `https://t9l.me/id/${slug}`
+      waitUntil(
+        sendMail({
+          to: user.email,
+          ...applicationApprovedEmail({
+            leagueName: leagueTeam.league?.name ?? input.leagueId,
+            playerName: player.name ?? '',
+            leagueUrl,
+          }),
+        }).then((result) => {
+          if (result.status !== 'sent') {
+            console.error(
+              '[v1.79.1 EMAIL] kind=application-approved status=%s reason=%s',
+              result.status,
+              result.reason,
+            )
+          }
+        }),
+      )
+    }
+  }
 }
 
 /**
