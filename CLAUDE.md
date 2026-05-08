@@ -2,7 +2,7 @@
 
 T9L.me — mobile-first website for the Tennozu 9-Aside League, a recreational football league in Tokyo. Multi-tenant: a single Vercel deployment serves multiple leagues, each at `/id/<slug>`. Players sign in (LINE / Google / email magic-link), claim a Player record, RSVP availability for matchdays, and view live league data backed by Postgres (Neon) + Upstash Redis.
 
-**Current release:** v1.80.5.
+**Current release:** v1.80.6.
 
 ## Documentation
 
@@ -75,6 +75,7 @@ Keep each line short. Long explanations live in PR descriptions, not chat.
 
 ## Recent ledger (top 20 PRs)
 
+- **v1.80.6** — perf phase 4: LCP fix (Barlow Condensed `display: 'optional'` — kills the late font-swap re-paint that pinned LCP to the matchday `<h2>`) + admin-only fonts (Barlow Sans, DM Mono) lifted out of public root layout (~50 KiB woff2 transferred saved per first load) + drop unused weight 400 from Barlow Condensed (~10 KiB saved) + `@next/bundle-analyzer` wired (`ANALYZE=true npx next experimental-analyze`)
 - **v1.80.5** — perf phase 3: Google Translate gated behind locale (EN visitors skip the GT bundle entirely — removes el_main_css from PSI critical path) + browserslist config drops SWC legacy polyfills (Array.prototype.at, Object.fromEntries, etc.); LCP fix deferred via [docs/perf-phase3-lcp-handoff.md](docs/perf-phase3-lcp-handoff.md)
 - **v1.80.4** — perf phase 3: `sizes=` on 6 `<Image fill />` callers (PlayerAvatar, UserTeamBadge, MatchdayCard, SquadList, LeagueTable, TopPerformers) so next/image stops serving 3840px variants for 12-64px slots; defensive `take: 5000` on goal/matchEvent/leagueInvite findMany in admin-data
 - **v1.80.3** — perf phase 2: `next/dynamic` for below-fold widgets — Dashboard (MatchdayAvailability/LeagueDetailsPanel/PlannedRosterStats/RsvpBar/SubmitGoalForm/CompressedMatchdaySchedule) + /stats (TopPerformers/SquadList); H2 font pruning deferred (every candidate weight has callers)
@@ -94,8 +95,6 @@ Keep each line short. Long explanations live in PR descriptions, not chat.
 - **v1.75.6** — Stats moved to bottom + labels renamed + Matchdays row + Season Fee/Register By combined
 - **v1.75.5** — Consolidate admin League details + surface stats mini-section publicly
 - **v1.75.4** — Position LeagueDetailsPanel between banner and availability in Classic mode
-- **v1.75.3** — Increase top padding on LeagueDetailsPanel body
-- **v1.75.2** — League details panel header bg-surface + hover affordance
 
 Older entries condensed in [docs/ledger-archive.md](docs/ledger-archive.md).
 

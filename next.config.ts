@@ -1,4 +1,19 @@
 import type { NextConfig } from "next";
+import withBundleAnalyzerImport from "@next/bundle-analyzer";
+
+// v1.80.6 — phase 4 perf: opt-in bundle analyzer.
+//   Turbopack (Next 16 default) is incompatible with the webpack-based
+//   @next/bundle-analyzer plugin — `ANALYZE=true npx next build` warns
+//   and skips report generation. For Turbopack analysis use
+//   `npx next experimental-analyze` directly — that writes a treemap
+//   under `.next/diagnostics/analyze/` (open `index.html` from a static
+//   file server). The wrapper below is preserved as a webpack-fallback
+//   path: pass `--webpack` to next build alongside `ANALYZE=true` to opt
+//   out of Turbopack and generate the classic webpack-bundle-analyzer
+//   HTML. Default behavior (no env var) is unchanged — no-op wrapper.
+const withBundleAnalyzer = withBundleAnalyzerImport({
+  enabled: process.env.ANALYZE === "true",
+});
 
 const nextConfig: NextConfig = {
   // v1.71.1 — `bodySizeLimit` no longer drives ID-upload behavior.
@@ -52,4 +67,4 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+export default withBundleAnalyzer(nextConfig);
