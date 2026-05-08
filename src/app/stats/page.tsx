@@ -44,22 +44,19 @@ export default async function StatsPage() {
   // in a future PR.
   const leagueId = await getDefaultLeagueId();
 
-  // v1.63.0 — pre-season mode hides /stats. The homepage Header link is
-  // also suppressed; this server-side gate covers direct visits / shared
-  // links / browser history. Redirect to home so the user lands on the
-  // valid pre-season experience instead of a dead-end.
-  if (leagueId) {
-    const flags = await getLeagueFlags(leagueId);
-    if (flags.preseasonMode) {
-      redirect('/');
-    }
-  }
-
   let data;
+  let flags = null;
   // v1.66.0 — unpaid-fee banner data; null when banner stays hidden.
   let unpaidFee = null;
+  // v1.80.2 — fan out flags + public data + unpaidFee in a single
+  // Promise.all so the redirect-on-preseason check no longer adds a
+  // sequential round-trip to the common (non-preseason) path. The
+  // wasted fetch on the rare preseason hit is one warm `unstable_cache`
+  // round trip (cheap); the win on every other hit is one round trip
+  // saved.
   try {
-    [data, unpaidFee] = await Promise.all([
+    [flags, data, unpaidFee] = await Promise.all([
+      leagueId ? getLeagueFlags(leagueId) : Promise.resolve(null),
       getPublicLeagueData(leagueId ?? undefined),
       leagueId ? getUnpaidFeeBannerData(leagueId) : Promise.resolve(null),
     ]);
@@ -72,6 +69,14 @@ export default async function StatsPage() {
         </div>
       </div>
     );
+  }
+
+  // v1.63.0 — pre-season mode hides /stats. The homepage Header link is
+  // also suppressed; this server-side gate covers direct visits / shared
+  // links / browser history. Redirect to home so the user lands on the
+  // valid pre-season experience instead of a dead-end.
+  if (flags?.preseasonMode) {
+    redirect('/');
   }
 
   const leagueTable = computeLeagueTable(data.teams, data.matchdays);

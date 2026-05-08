@@ -121,9 +121,6 @@ export default async function RootLayout({
                 autoDisplay: false,
               }, 'google_translate_element');
             }
-            window.addEventListener('pageshow', function(e) {
-              if (e.persisted) { window.location.reload(); }
-            });
           `}
         </Script>
         <ThemeProvider>

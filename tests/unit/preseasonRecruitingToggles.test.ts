@@ -498,8 +498,11 @@ describe('v1.63.0 — /stats redirects to home when preseason on', () => {
   })
 
   it('redirects to / when flags.preseasonMode is true', () => {
+    // v1.80.2 — flags can be null when leagueId is null (Promise.all leg
+    // resolves to null in that case), so the access is via optional
+    // chaining. Allow `flags.preseasonMode` and `flags?.preseasonMode`.
     expect(STATS_PAGE_SRC).toMatch(
-      /flags\.preseasonMode[\s\S]{0,200}redirect\(\s*['"]\/['"]/,
+      /flags\??\.preseasonMode[\s\S]{0,200}redirect\(\s*['"]\/['"]/,
     )
   })
 
@@ -507,7 +510,14 @@ describe('v1.63.0 — /stats redirects to home when preseason on', () => {
     // Catastrophic-config defense: if there's no default league, don't try to
     // fetch flags — the page already has a downstream "Data unavailable"
     // surface.
-    expect(STATS_PAGE_SRC).toMatch(/if\s*\(\s*leagueId\s*\)\s*\{[\s\S]+?getLeagueFlags/)
+    //
+    // v1.80.2 — defense moved from an `if (leagueId) { ... }` wrapper to a
+    // ternary `leagueId ? getLeagueFlags(leagueId) : Promise.resolve(null)`
+    // inline inside Promise.all so flags fetches in parallel with publicData
+    // and unpaidFee. Allow either shape.
+    expect(STATS_PAGE_SRC).toMatch(
+      /(if\s*\(\s*leagueId\s*\)\s*\{[\s\S]+?getLeagueFlags|leagueId\s*\?\s*getLeagueFlags)/,
+    )
   })
 })
 
