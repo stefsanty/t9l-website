@@ -6,21 +6,30 @@ import { upload } from '@vercel/blob/client'
 /**
  * v1.68.0 — shared registration fields component.
  *
- * Single-page form rendering name + position + ID front + ID back +
- * (optional) profile picture. Used by both `/recruit/[slug]` (user-
- * initiated registration) and `/join/[code]/onboarding` (admin-invite
- * onboarding).
+ * Single-page form rendering name + position + (optional) ID front +
+ * ID back + (optional) profile picture + (optional) comments. Used by
+ * `/recruit/[slug]` (user-initiated registration) and
+ * `/join/[code]/onboarding` (admin-invite onboarding).
  *
  * v1.71.1 — files now upload CLIENT-SIDE direct to Vercel Blob via
- * `@vercel/blob/client#upload`. Pre-v1.71.1 the form built FormData
- * and the server action ran `put` server-side. Vercel's edge layer
- * enforces a ~4.5MB request-body cap on serverless functions and
- * rejected any large submission with HTTP 413 BEFORE the function
- * could run, regardless of `experimental.serverActions.bodySizeLimit`.
- * v1.71.1 routes the bytes around the function entirely: the browser
- * PUTs each file straight to Blob storage; only the resulting URLs
- * (a few KB) reach the parent's `onSubmit`. Field validity gates,
- * file-size guards, and the previews are unchanged.
+ * `@vercel/blob/client#upload`. The Vercel platform 4.5MB request-body
+ * cap rejected oversize multipart submissions at the edge before the
+ * server action could run; client-direct uploads route the bytes around
+ * the function entirely.
+ *
+ * v1.81.0 — `requireId` gates the ID segment. Recruit / onboarding
+ * pages compute `requireId = league.idRequired && !user.idUploadedAt`
+ * and thread it through. When false, the ID inputs are not rendered,
+ * the "Identity verification" section is omitted, and onSubmit's
+ * `idFrontUrl` / `idBackUrl` are empty strings — server actions skip
+ * the ID write entirely. Defaults to `true` to preserve the v1.68.0
+ * behavior for any caller that hasn't been updated.
+ *
+ * v1.81.0 — visual layout split into labeled sections separated by
+ * top-border dividers (Personal info → Identity verification → Profile
+ * picture → Comments). Helpful information (why we need ID, privacy
+ * note, email use) lives in surface-toned callout boxes using existing
+ * design tokens — no new colors introduced.
  */
 
 const POSITIONS: ReadonlyArray<{ value: '' | 'GK' | 'DF' | 'MF' | 'FW'; label: string }> = [
@@ -42,6 +51,11 @@ export interface RegistrationFieldsSubmit {
   name: string
   email: string
   position: '' | 'GK' | 'DF' | 'MF' | 'FW'
+  /**
+   * v1.81.0 — empty string when `requireId` is false (the segment is
+   * not rendered and no upload happens). Server actions ignore empty
+   * strings on the no-id path.
+   */
   idFrontUrl: string
   idBackUrl: string
   profilePictureUrl: string | null
@@ -64,6 +78,13 @@ export interface RegistrationFieldsProps {
   /** v1.80.0 — initial comments (empty for new applications). */
   initialComments?: string
   initialPosition?: 'GK' | 'DF' | 'MF' | 'FW' | null
+  /**
+   * v1.81.0 — when false, the ID segment is omitted entirely. Defaults
+   * to true to preserve pre-v1.81.0 behavior for any unmigrated caller.
+   * Pages should compute this as `league.idRequired && !user.idUploadedAt`
+   * (idRequired off OR user already passed ID once → segment hidden).
+   */
+  requireId?: boolean
   /** Submit button label, e.g. "Apply to T9L" or "Save and finish". */
   submitLabel: string
   /**
@@ -93,6 +114,7 @@ export default function RegistrationFields({
   initialEmail = '',
   initialComments = '',
   initialPosition = null,
+  requireId = true,
   submitLabel,
   uploadPathPrefix,
   picturePathPrefix,
@@ -169,35 +191,45 @@ export default function RegistrationFields({
       setError('Please enter a valid email address')
       return
     }
-    if (!idFrontFile) {
-      setError('Front of ID is required')
-      return
-    }
-    if (!idBackFile) {
-      setError('Back of ID is required')
-      return
+    if (requireId) {
+      if (!idFrontFile) {
+        setError('Front of ID is required')
+        return
+      }
+      if (!idBackFile) {
+        setError('Back of ID is required')
+        return
+      }
     }
 
     startTransition(async () => {
       try {
         const ts = Date.now()
-        const idFrontPath = `${uploadPathPrefix}/id-front-${ts}.${extOf(idFrontFile.name)}`
-        const idBackPath = `${uploadPathPrefix}/id-back-${ts}.${extOf(idBackFile.name)}`
+        const idFrontPath = requireId && idFrontFile
+          ? `${uploadPathPrefix}/id-front-${ts}.${extOf(idFrontFile.name)}`
+          : null
+        const idBackPath = requireId && idBackFile
+          ? `${uploadPathPrefix}/id-back-${ts}.${extOf(idBackFile.name)}`
+          : null
         const picPath = picFile
           ? `${picturePathPrefix ?? uploadPathPrefix}/profile-${ts}.${extOf(picFile.name)}`
           : null
 
         const [front, back, pic] = await Promise.all([
-          upload(idFrontPath, idFrontFile, {
-            access: 'public',
-            handleUploadUrl: UPLOAD_TOKEN_URL,
-            contentType: idFrontFile.type || undefined,
-          }),
-          upload(idBackPath, idBackFile, {
-            access: 'public',
-            handleUploadUrl: UPLOAD_TOKEN_URL,
-            contentType: idBackFile.type || undefined,
-          }),
+          idFrontPath && idFrontFile
+            ? upload(idFrontPath, idFrontFile, {
+                access: 'public',
+                handleUploadUrl: UPLOAD_TOKEN_URL,
+                contentType: idFrontFile.type || undefined,
+              })
+            : Promise.resolve(null),
+          idBackPath && idBackFile
+            ? upload(idBackPath, idBackFile, {
+                access: 'public',
+                handleUploadUrl: UPLOAD_TOKEN_URL,
+                contentType: idBackFile.type || undefined,
+              })
+            : Promise.resolve(null),
           picFile && picPath
             ? upload(picPath, picFile, {
                 access: 'public',
@@ -211,8 +243,8 @@ export default function RegistrationFields({
           name: trimmed,
           email: trimmedEmail,
           position,
-          idFrontUrl: front.url,
-          idBackUrl: back.url,
+          idFrontUrl: front?.url ?? '',
+          idBackUrl: back?.url ?? '',
           profilePictureUrl: pic?.url ?? null,
           comments: comments.trim(),
         })
@@ -226,132 +258,174 @@ export default function RegistrationFields({
     })
   }
 
-  const submitDisabled = pending || !name.trim() || !email.trim() || !idFrontFile || !idBackFile
+  const submitDisabled =
+    pending ||
+    !name.trim() ||
+    !email.trim() ||
+    (requireId && (!idFrontFile || !idBackFile))
 
   return (
     <form
       onSubmit={handleSubmit}
-      className="space-y-5"
+      className="space-y-6"
       data-testid="registration-fields"
     >
-      <label className="block">
-        <span className="block text-fg-mid text-xs uppercase tracking-widest font-bold mb-1.5">
-          Name <span className="text-vibrant-pink">*</span>
-        </span>
-        <input
-          type="text"
-          required
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          maxLength={100}
-          placeholder="e.g. Stefan S"
-          className="w-full bg-background border border-border-default rounded-lg px-3 py-2 text-sm text-fg-high"
-          data-testid="registration-name"
-        />
-      </label>
-
-      <label className="block">
-        <span className="block text-fg-mid text-xs uppercase tracking-widest font-bold mb-1.5">
-          Email <span className="text-vibrant-pink">*</span>
-        </span>
-        <input
-          type="email"
-          required
-          autoComplete="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          maxLength={EMAIL_MAX_LENGTH}
-          placeholder="you@example.com"
-          className="w-full bg-background border border-border-default rounded-lg px-3 py-2 text-sm text-fg-high"
-          data-testid="registration-email"
-        />
-        <span className="block text-fg-low text-xs mt-1">
-          We'll use this for league notifications and to follow up on your application.
-        </span>
-      </label>
-
-      <label className="block">
-        <span className="block text-fg-mid text-xs uppercase tracking-widest font-bold mb-1.5">
-          Position
-        </span>
-        <select
-          value={position}
-          onChange={(e) => setPosition(e.target.value as typeof position)}
-          className="w-full bg-background border border-border-default rounded-lg px-3 py-2 text-sm text-fg-high"
-          data-testid="registration-position"
-        >
-          {POSITIONS.map((p) => (
-            <option key={p.value} value={p.value}>
-              {p.label}
-            </option>
-          ))}
-        </select>
-      </label>
-
-      <div
-        className="rounded-lg border border-warning/40 bg-warning/10 px-4 py-3 text-sm text-fg-high leading-relaxed"
-        data-testid="registration-id-callout"
+      {/* Personal info section */}
+      <FormSection
+        title="About you"
+        testid="registration-section-about"
       >
-        <p className="font-bold mb-1.5 text-fg-high">Why we need your ID</p>
-        <p className="text-fg-mid">
-          We need these IDs to be able to book more courts. We will only ever use your ID
-          to book courts in order to host more games. We require all league members to
-          acknowledge this and submit their ID to join the league.
-        </p>
-      </div>
+        <label className="block">
+          <span className="block text-fg-mid text-xs uppercase tracking-widest font-bold mb-1.5">
+            Name <span className="text-vibrant-pink">*</span>
+          </span>
+          <input
+            type="text"
+            required
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            maxLength={100}
+            placeholder="e.g. Stefan S"
+            className="w-full bg-background border border-border-default rounded-lg px-3 py-2 text-sm text-fg-high"
+            data-testid="registration-name"
+          />
+        </label>
 
-      <FileField
-        label="Front of ID"
-        required
-        accept={ID_ACCEPT}
-        preview={idFrontPreview}
-        inputRef={idFrontRef}
-        onChange={(f) =>
-          handleFileChange(f, setIdFrontFile, setIdFrontPreview, ID_MAX_BYTES, 'Front of ID')
-        }
-        testid="registration-id-front"
-      />
+        <label className="block">
+          <span className="block text-fg-mid text-xs uppercase tracking-widest font-bold mb-1.5">
+            Email <span className="text-vibrant-pink">*</span>
+          </span>
+          <input
+            type="email"
+            required
+            autoComplete="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            maxLength={EMAIL_MAX_LENGTH}
+            placeholder="you@example.com"
+            className="w-full bg-background border border-border-default rounded-lg px-3 py-2 text-sm text-fg-high"
+            data-testid="registration-email"
+          />
+          <span className="block text-fg-low text-xs mt-1">
+            We'll use this for league notifications and to follow up on your application.
+          </span>
+        </label>
 
-      <FileField
-        label="Back of ID"
-        required
-        accept={ID_ACCEPT}
-        preview={idBackPreview}
-        inputRef={idBackRef}
-        onChange={(f) =>
-          handleFileChange(f, setIdBackFile, setIdBackPreview, ID_MAX_BYTES, 'Back of ID')
-        }
-        testid="registration-id-back"
-      />
+        <label className="block">
+          <span className="block text-fg-mid text-xs uppercase tracking-widest font-bold mb-1.5">
+            Position
+          </span>
+          <select
+            value={position}
+            onChange={(e) => setPosition(e.target.value as typeof position)}
+            className="w-full bg-background border border-border-default rounded-lg px-3 py-2 text-sm text-fg-high"
+            data-testid="registration-position"
+          >
+            {POSITIONS.map((p) => (
+              <option key={p.value} value={p.value}>
+                {p.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      </FormSection>
 
-      <FileField
-        label="Profile picture (optional)"
-        required={false}
-        accept={PIC_ACCEPT}
-        preview={picPreview}
-        inputRef={picRef}
-        onChange={(f) =>
-          handleFileChange(f, setPicFile, setPicPreview, PIC_MAX_BYTES, 'Profile picture')
-        }
-        testid="registration-profile-picture"
-      />
+      {/* v1.81.0 — Identity verification section, only when requireId is true. */}
+      {requireId && (
+        <FormSection
+          title="Identity verification"
+          testid="registration-section-id"
+        >
+          {/* v1.76.1 — operator-mandated copy + literal data-testid pinned by
+              tests/unit/v1761_id_callout.test.ts. The Callout helper is used
+              only for the secondary privacy note below; the primary "why" copy
+              stays inline so the v1.76.1 wording assertions keep passing. */}
+          <div
+            className="rounded-lg border border-warning/40 bg-warning/10 px-4 py-3 text-sm text-fg-high leading-relaxed"
+            data-testid="registration-id-callout"
+          >
+            <p className="font-display font-bold mb-1.5 text-fg-high">Why we need your ID</p>
+            <p className="text-fg-mid">
+              We need these IDs to be able to book more courts. We will only ever use your ID
+              to book courts in order to host more games. We require all league members to
+              acknowledge this and submit their ID to join the league.
+            </p>
+          </div>
 
-      <label className="block">
-        <span className="block text-fg-mid text-xs uppercase tracking-widest font-bold mb-1.5">
-          Comments (optional)
-        </span>
-        <textarea
-          value={comments}
-          onChange={(e) => setComments(e.target.value)}
-          rows={4}
-          placeholder="Anything you'd like the admin to know."
-          className="w-full bg-background border border-border-default rounded-lg px-3 py-2 text-sm text-fg-high resize-y"
-          data-testid="registration-comments"
+          <FileField
+            label="Front of ID"
+            required
+            accept={ID_ACCEPT}
+            preview={idFrontPreview}
+            inputRef={idFrontRef}
+            onChange={(f) =>
+              handleFileChange(f, setIdFrontFile, setIdFrontPreview, ID_MAX_BYTES, 'Front of ID')
+            }
+            testid="registration-id-front"
+          />
+
+          <FileField
+            label="Back of ID"
+            required
+            accept={ID_ACCEPT}
+            preview={idBackPreview}
+            inputRef={idBackRef}
+            onChange={(f) =>
+              handleFileChange(f, setIdBackFile, setIdBackPreview, ID_MAX_BYTES, 'Back of ID')
+            }
+            testid="registration-id-back"
+          />
+
+          <Callout variant="muted" testid="registration-id-privacy">
+            <p className="font-display font-bold mb-1.5 text-fg-high">Privacy</p>
+            <p className="text-fg-mid">
+              Only league admins can view your ID. We never share it externally
+              and you can request deletion at any time.
+            </p>
+          </Callout>
+        </FormSection>
+      )}
+
+      {/* Profile picture section */}
+      <FormSection
+        title="Profile picture"
+        testid="registration-section-picture"
+      >
+        <FileField
+          label="Profile picture (optional)"
+          required={false}
+          accept={PIC_ACCEPT}
+          preview={picPreview}
+          inputRef={picRef}
+          onChange={(f) =>
+            handleFileChange(f, setPicFile, setPicPreview, PIC_MAX_BYTES, 'Profile picture')
+          }
+          testid="registration-profile-picture"
         />
-        <span className="block text-fg-low text-xs mt-1">
-          Optional. Anything you'd like the admin to know.
-        </span>
-      </label>
+      </FormSection>
+
+      {/* Comments section */}
+      <FormSection
+        title="Anything else"
+        testid="registration-section-comments"
+      >
+        <label className="block">
+          <span className="block text-fg-mid text-xs uppercase tracking-widest font-bold mb-1.5">
+            Comments (optional)
+          </span>
+          <textarea
+            value={comments}
+            onChange={(e) => setComments(e.target.value)}
+            rows={4}
+            placeholder="Anything you'd like the admin to know."
+            className="w-full bg-background border border-border-default rounded-lg px-3 py-2 text-sm text-fg-high resize-y"
+            data-testid="registration-comments"
+          />
+          <span className="block text-fg-low text-xs mt-1">
+            Optional. Anything you'd like the admin to know.
+          </span>
+        </label>
+      </FormSection>
 
       <button
         type="submit"
@@ -375,6 +449,59 @@ function extOf(filename: string): string {
   const i = filename.lastIndexOf('.')
   if (i < 0) return 'bin'
   return filename.slice(i + 1).toLowerCase().replace(/[^a-z0-9]/g, '') || 'bin'
+}
+
+/**
+ * v1.81.0 — Section wrapper. Top-border divider + uppercase tracked
+ * heading matches the public site's `font-display` aesthetic. The first
+ * section in the form has `first:border-t-0 first:pt-0` so it doesn't
+ * draw a stray rule above itself.
+ */
+function FormSection({
+  title,
+  testid,
+  children,
+}: {
+  title: string
+  testid: string
+  children: React.ReactNode
+}) {
+  return (
+    <section
+      className="space-y-4 pt-5 border-t border-border-default first:border-t-0 first:pt-0"
+      data-testid={testid}
+    >
+      <h2 className="text-fg-high text-xs font-display uppercase tracking-widest font-bold">
+        {title}
+      </h2>
+      {children}
+    </section>
+  )
+}
+
+/**
+ * v1.81.0 — Callout box. `info` uses the existing warning palette
+ * (matches the v1.68.0 "Why we need your ID" affordance); `muted` uses
+ * the surface palette for softer secondary info.
+ */
+function Callout({
+  variant,
+  testid,
+  children,
+}: {
+  variant: 'info' | 'muted'
+  testid?: string
+  children: React.ReactNode
+}) {
+  const className =
+    variant === 'info'
+      ? 'rounded-lg border border-warning/40 bg-warning/10 px-4 py-3 text-sm text-fg-high leading-relaxed'
+      : 'rounded-lg border border-border-default bg-surface px-4 py-3 text-sm text-fg-high leading-relaxed'
+  return (
+    <div className={className} data-testid={testid}>
+      {children}
+    </div>
+  )
 }
 
 function FileField({

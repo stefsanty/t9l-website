@@ -58,6 +58,8 @@ interface Props {
   initialUnlimitedSubstitutions: boolean
   initialOrganizerMessage: string | null
   initialShowLeagueDetails: boolean
+  // v1.81.0 — per-league registration-form ID requirement toggle.
+  initialIdRequired: boolean
   // v1.75.5 — Fee fields (absorbed from LeagueFeesEditor).
   initialDefaultFee: number
   initialPositionFees: ReadonlyArray<FeeRow>
@@ -85,6 +87,7 @@ export default function LeagueDetailsEditor({
   initialUnlimitedSubstitutions,
   initialOrganizerMessage,
   initialShowLeagueDetails,
+  initialIdRequired,
   initialDefaultFee,
   initialPositionFees,
   initialPlannedPlayersPerTeam,
@@ -116,6 +119,7 @@ export default function LeagueDetailsEditor({
   const [showLeagueDetails, setShowLeagueDetails] = useState<boolean>(
     initialShowLeagueDetails,
   )
+  const [idRequired, setIdRequired] = useState<boolean>(initialIdRequired)
 
   // Fee fields (absorbed from LeagueFeesEditor)
   const [defaultFee, setDefaultFee] = useState<number>(initialDefaultFee)
@@ -174,6 +178,7 @@ export default function LeagueDetailsEditor({
             unlimitedSubstitutions,
             organizerMessage: organizerMessage.trim() === '' ? null : organizerMessage,
             showLeagueDetails,
+            idRequired,
           }),
           updateLeagueFeeSettings({
             leagueId,
@@ -562,6 +567,33 @@ export default function LeagueDetailsEditor({
           )}
         >
           {showLeagueDetails ? 'Visible' : 'Hidden'}
+        </button>
+      </div>
+
+      {/* v1.81.0 — Require ID on registration */}
+      <div
+        className="flex items-center justify-between gap-3"
+        data-testid="league-details-id-required-toggle"
+      >
+        <div>
+          <p className="text-sm font-medium text-admin-text">Require ID on registration</p>
+          <p className="text-xs text-admin-text3">
+            When off, the recruit / onboarding form skips the ID upload segment.
+            Users who already submitted ID for any league are never re-prompted.
+          </p>
+        </div>
+        <button
+          type="button"
+          aria-pressed={idRequired}
+          onClick={() => setIdRequired(!idRequired)}
+          className={cn(
+            'rounded-full px-4 py-1.5 text-xs font-bold uppercase tracking-widest border transition-colors',
+            idRequired
+              ? 'border-admin-green bg-admin-green/15 text-admin-text'
+              : 'border-admin-border bg-admin-surface2 text-admin-text3',
+          )}
+        >
+          {idRequired ? 'Required' : 'Optional'}
         </button>
       </div>
 

@@ -203,7 +203,10 @@ describe('v1.79.0 — completeOnboardingWithId (join path) email integration', (
   })
 
   it('selects league.name on the LeagueInvite findUnique inside completeOnboardingWithId', () => {
-    expect(COMPLETE_ONBOARDING_FN).toMatch(/league:\s*\{\s*select:\s*\{\s*name:\s*true\s*\}\s*\}/)
+    // v1.81.0 — the league select now also includes idRequired. The v1.79.0
+    // contract is just that `name: true` is selected; relax the literal
+    // shape match so additive future fields don't break this assertion.
+    expect(COMPLETE_ONBOARDING_FN).toMatch(/league:\s*\{\s*select:\s*\{[^}]*\bname:\s*true/)
   })
 
   it('queues sendMail via waitUntil inside completeOnboardingWithId', () => {

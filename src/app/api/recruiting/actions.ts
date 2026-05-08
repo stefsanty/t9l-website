@@ -264,8 +264,14 @@ export interface RegisterToLeagueInput {
    */
   email: string
   position?: 'GK' | 'DF' | 'MF' | 'FW' | null
-  idFrontUrl: string
-  idBackUrl: string
+  /**
+   * v1.81.0 — nullable. The server re-derives whether ID is required
+   * (league.idRequired AND user has no idUploadedAt). If derived-required
+   * is true, both URLs MUST be present and validated. If false, missing
+   * URLs are accepted and not written.
+   */
+  idFrontUrl: string | null
+  idBackUrl: string | null
   profilePictureUrl?: string | null
   /** v1.80.0 — optional free-text comments for the admin. Trimmed before storage. */
   comments?: string | null
@@ -307,24 +313,15 @@ export async function registerToLeague(
     return { ok: false, error: 'Please enter a valid email address' }
   }
 
-  // Defense in depth: the URLs must live under the user's own
-  // register-pending prefix on Vercel Blob. The token route already
-  // gated the PUT, but a forged URL on submit would land here without
-  // the gate having run.
   const expectedPrefix = `/register-pending/${userId}/`
-  if (!isOwnedBlobUrl(input.idFrontUrl, expectedPrefix)) {
-    return { ok: false, error: 'Front of ID is required' }
-  }
-  if (!isOwnedBlobUrl(input.idBackUrl, expectedPrefix)) {
-    return { ok: false, error: 'Back of ID is required' }
-  }
   if (input.profilePictureUrl && !isOwnedBlobUrl(input.profilePictureUrl, expectedPrefix)) {
     return { ok: false, error: 'profilePictureUrl is not yours' }
   }
 
   const league = await prisma.league.findUnique({
     where: { id: input.leagueId },
-    select: { id: true, recruiting: true, name: true, subdomain: true },
+    // v1.81.0 — pull idRequired so we can re-derive whether ID is needed.
+    select: { id: true, recruiting: true, name: true, subdomain: true, idRequired: true },
   })
   if (!league) return { ok: false, error: 'League not found' }
   if (!league.recruiting) {
@@ -333,13 +330,29 @@ export async function registerToLeague(
 
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { id: true, playerId: true, lineId: true, email: true },
+    // v1.81.0 — `idUploadedAt` flags users who already passed ID once.
+    select: { id: true, playerId: true, lineId: true, email: true, idUploadedAt: true },
   })
   if (!user) return { ok: false, error: 'User not found' }
   if (user.playerId) {
     return {
       ok: false,
       error: 'You already have a player. Use the apply button on the league page.',
+    }
+  }
+
+  // v1.81.0 — server re-derives whether ID is required. Mirrors the
+  // page's gate: `league.idRequired && !user.idUploadedAt`. Strict
+  // interpretation — only consider the user "has ID on file" if a full
+  // submission previously set `idUploadedAt`. Clients cannot bypass this:
+  // even if they post URLs when not required, we ignore them.
+  const requireId = league.idRequired && !user.idUploadedAt
+  if (requireId) {
+    if (!input.idFrontUrl || !isOwnedBlobUrl(input.idFrontUrl, expectedPrefix)) {
+      return { ok: false, error: 'Front of ID is required' }
+    }
+    if (!input.idBackUrl || !isOwnedBlobUrl(input.idBackUrl, expectedPrefix)) {
+      return { ok: false, error: 'Back of ID is required' }
     }
   }
 
@@ -372,9 +385,18 @@ export async function registerToLeague(
           playerId: created.id,
           // v1.72.0 — User.name = Player.name when linking.
           name: trimmedName,
-          idFrontUrl: input.idFrontUrl,
-          idBackUrl: input.idBackUrl,
-          idUploadedAt: new Date(),
+          // v1.81.0 — only write the ID columns when ID is actually
+          // being submitted in this flow. Skip-write on the no-id path
+          // so leagues that opted out don't blank out an existing
+          // idUploadedAt and so the row stays consistent (either all
+          // three columns set, or all three stay null/prior).
+          ...(requireId
+            ? {
+                idFrontUrl: input.idFrontUrl,
+                idBackUrl: input.idBackUrl,
+                idUploadedAt: new Date(),
+              }
+            : {}),
           // v1.78.0 — conditionally write email; do not overwrite a
           // pre-existing verified address.
           ...(shouldWriteEmail ? { email: trimmedEmail } : {}),

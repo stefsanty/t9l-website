@@ -372,6 +372,8 @@ export async function updateLeagueDetails(input: {
   unlimitedSubstitutions?: boolean
   organizerMessage?: string | null
   showLeagueDetails?: boolean
+  // v1.81.0 — per-league toggle for the registration ID upload segment.
+  idRequired?: boolean
 }): Promise<void> {
   await assertAdmin()
   if (!input.leagueId) throw new Error('leagueId is required')
@@ -457,6 +459,12 @@ export async function updateLeagueDetails(input: {
       throw new Error('showLeagueDetails must be a boolean')
     }
     data.showLeagueDetails = input.showLeagueDetails
+  }
+  if (input.idRequired !== undefined) {
+    if (typeof input.idRequired !== 'boolean') {
+      throw new Error('idRequired must be a boolean')
+    }
+    data.idRequired = input.idRequired
   }
 
   await prisma.league.update({
