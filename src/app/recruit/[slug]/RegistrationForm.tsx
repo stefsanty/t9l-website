@@ -7,6 +7,16 @@ import RegistrationFields, {
 import { registerToLeague } from '@/app/api/recruiting/actions'
 
 /**
+ * v1.81.0 — origin-path for the post-submit success popup. The
+ * `/recruit/<slug>` route's server-component guard redirects users with
+ * a now-bound Player back to `/id/<slug>`, so popping the popup on
+ * `/recruit/<slug>?submitted=...` would short-circuit before the modal
+ * could mount. We hardcode the league page (`/id/<slug>`) instead — that's
+ * also where the recruiting banner re-renders as State B ("being
+ * reviewed") so the popup overlays the correct surface.
+ */
+
+/**
  * v1.68.0 — `/recruit/[slug]` form, single-page name + position + ID
  * front + ID back + (optional) profile picture.
  *
@@ -59,6 +69,9 @@ export default function RegistrationForm({
       idBackUrl: input.idBackUrl,
       profilePictureUrl: input.profilePictureUrl,
       comments: input.comments || null,
+      // v1.81.0 — pin the post-submit popup to the league page; see
+      // file-level docstring for why we don't capture window.pathname.
+      originPath: `/id/${leagueSlug}`,
     })
     router.push(`/id/${leagueSlug}`)
   }

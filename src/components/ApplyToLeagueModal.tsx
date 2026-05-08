@@ -2,8 +2,6 @@
 
 import { useEffect, useState, useTransition } from 'react'
 import { createPortal } from 'react-dom'
-import { useRouter } from 'next/navigation'
-import { useSession } from 'next-auth/react'
 import { applyToLeague } from '@/app/api/recruiting/actions'
 
 /**
@@ -61,10 +59,19 @@ export default function ApplyToLeagueModal({
   const [error, setError] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
   const [mounted, setMounted] = useState(false)
-  const router = useRouter()
-  const { update } = useSession()
+  // v1.81.0 — capture the originating page path so the server action can
+  // redirect to `<originPath>?submitted=applyToLeague` and the popup
+  // mounts on the page the user came from. Captured at mount time
+  // (before any potential URL changes) so the value is stable for the
+  // life of the modal.
+  const [originPath, setOriginPath] = useState<string | null>(null)
 
-  useEffect(() => setMounted(true), [])
+  useEffect(() => {
+    setMounted(true)
+    if (typeof window !== 'undefined') {
+      setOriginPath(window.location.pathname + window.location.search)
+    }
+  }, [])
 
   // Body scroll lock + ESC dismiss.
   useEffect(() => {
@@ -85,25 +92,29 @@ export default function ApplyToLeagueModal({
     e.preventDefault()
     setError(null)
     startTransition(async () => {
-      const result = await applyToLeague({
-        leagueId,
-        // For State D ('existing'), the existing Player's name is
-        // unchanged; we send empty string and the action ignores it.
-        name: mode === 'existing' ? '' : name.trim(),
-        position: position === '' ? null : position,
-      })
-      if (!result.ok) {
-        setError(result.error)
-        return
-      }
-      // Success — refresh JWT and route so banner re-renders as 'pending_this'.
       try {
-        await update()
-      } catch {
-        /* swallow — refresh below covers the data path */
+        // v1.81.0 — server-side redirect handles success navigation.
+        // `redirect()` throws NEXT_REDIRECT which the Next.js framework
+        // catches and converts to a navigation; the resolved-result
+        // branch only fires on validation / authz failures.
+        const result = await applyToLeague({
+          leagueId,
+          // For State D ('existing'), the existing Player's name is
+          // unchanged; we send empty string and the action ignores it.
+          name: mode === 'existing' ? '' : name.trim(),
+          position: position === '' ? null : position,
+          originPath,
+        })
+        if (result && !result.ok) {
+          setError(result.error)
+        }
+      } catch (err) {
+        // Re-throw the Next.js redirect (recognised by the `digest` field
+        // starting with NEXT_REDIRECT) so the framework can apply the
+        // navigation. Any other thrown error gets surfaced inline.
+        if (err && typeof err === 'object' && 'digest' in err) throw err
+        setError(err instanceof Error ? err.message : 'Submit failed')
       }
-      router.refresh()
-      onClose()
     })
   }
 

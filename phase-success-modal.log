@@ -1,0 +1,200 @@
+# v1.81.0 — Post-submit success confirmation popup
+
+## M1 — Component built + smoke test wiring (DONE)
+
+**Component:** [src/components/SuccessConfirmationModal.tsx](src/components/SuccessConfirmationModal.tsx)
+
+**Prop API:**
+```ts
+interface Props {
+  open: boolean
+  title: string
+  description?: string
+  okHref: string          // absolute URL the OK button (and ESC + backdrop) navigate to
+  onClose?: () => void    // fires on OK click, ESC, backdrop click
+}
+```
+
+**Animation:** SVG check uses `pathLength={1}` + stroke-dasharray=1 +
+stroke-dashoffset 1 → 0 over 0.45s `cubic-bezier(0.65, 0, 0.45, 1)` after a
+0.18s delay. The ring scales from 0.6 → 1.0 with overshoot
+(`cubic-bezier(0.34, 1.56, 0.64, 1)`) over 0.25s. Both keyframes live in
+[src/app/globals.css](src/app/globals.css) so no new deps and no
+inline-style issues.
+
+**A11y:** `role="dialog"` + `aria-modal="true"` + `aria-labelledby`. Focus
+trap + body scroll lock + Tab cycle inside the card + previously-focused
+element restored on unmount, mirroring `SignInLightbox`. ESC closes
+(equivalent to OK). Backdrop click closes (equivalent to OK). All four
+exit affordances navigate to `okHref`.
+
+**Surface tokens:** `bg-card` / `border-border-default` / `electric-green`
+OK button / `font-display tracking-tight uppercase` heading — visually
+sibling to the v1.80.8 `SignInLightbox` + `ApplyToLeagueModal`.
+
+**Mount mechanism:** [src/components/SuccessConfirmationGate.tsx](src/components/SuccessConfirmationGate.tsx)
+reads `useSearchParams()` and renders the modal when
+`?submitted=<descriptor>` matches a known message in the `MESSAGES` map.
+Mounted lazily inside [Dashboard.tsx](src/components/Dashboard.tsx) via
+`dynamic(() => import('./SuccessConfirmationGate'), { loading: () => null })`
+so the gate's chunk only fetches on the success path.
+
+**Smoke test:** Will be added in M4 alongside the regression-target.
+
+---
+
+## M2 — Origin-tracking pattern wired on `applyToLeague` (DONE)
+
+**Origin-path flow** (page → form → server action → redirect → page → modal):
+
+1. **Page** (`/id/<slug>`) renders `<Dashboard>` which renders
+   `<RecruitingBanner>`. State D banner click opens
+   `<ApplyToLeagueModal>` (modal mounts on `/id/<slug>`).
+2. **Form** (`<ApplyToLeagueModal>`): on mount, captures
+   `window.location.pathname + window.location.search` into local state
+   `originPath` so the value is stable for the modal's lifetime even
+   if the URL changes (e.g. user opens dev tools, modifies URL, etc.).
+3. **Server action** (`applyToLeague` in
+   [src/app/api/recruiting/actions.ts](src/app/api/recruiting/actions.ts)):
+   - Accepts new optional `originPath` field.
+   - On success (3 branches: existingPlm idempotent, new PLM created,
+     fresh Player + PLM): calls
+     `redirect(buildSuccessRedirect(input.originPath, 'applyToLeague',
+     fallbackPath))`.
+   - `buildSuccessRedirect` (helper in
+     [src/lib/successRedirect.ts](src/lib/successRedirect.ts)):
+     - Validates `originPath` via `safeOriginPath`: must start with `/`,
+       not `//` (protocol-relative), no path-traversal `..`, ≤512 chars,
+       no control characters. Falls back to `fallbackPath` on validation
+       fail.
+     - Appends `?submitted=applyToLeague` (or `&submitted=...` if the
+       origin already has a query string), URL-encoded.
+   - Fallback path: `/id/<league.subdomain>` (or `DEFAULT_LEAGUE_SLUG`
+     if subdomain is null).
+4. **Redirect** issued server-side. The `redirect()` from
+   `next/navigation` throws `NEXT_REDIRECT` (with a `digest` field on
+   the error). The Next.js framework catches the throw on the boundary
+   and applies the navigation. Mirrors the v1.77.1 iOS-Safari fix:
+   server-side redirects survive app-switch suspend, client-side
+   `router.push` after a server action does not.
+5. **Page** (`/id/<slug>?submitted=applyToLeague`) renders
+   `<Dashboard>` which renders `<SuccessConfirmationGate>`. The gate
+   reads `useSearchParams()`, sees `submitted=applyToLeague` in the
+   `MESSAGES` map, and renders `<SuccessConfirmationModal open={true}
+   title="Application submitted" description="..." okHref={pathname-without-submitted}
+   onClose={() => setOpen(false)} />`.
+6. **Modal** displays animated check + title + OK button. OK clicks
+   navigate via `<Link replace href={okHref}>` to the same pathname
+   without the `?submitted=` param. ESC and backdrop click both call
+   `onClose` (which sets `open = false` immediately, hiding the modal,
+   preserving the URL — same effect as the user clicking OK then
+   immediately clicking the link, except no navigation if `replace`
+   would have been a no-op).
+
+**Modal post-submit cleanup:** Removed `await update()` and
+`router.refresh()` from `<ApplyToLeagueModal>` because the server-side
+redirect re-renders the destination page with fresh recruiting state
+(banner shifts to State B "being reviewed"). Calling them after the
+redirect causes a flash. The v1.81.0 control flow:
+
+```ts
+try {
+  const result = await applyToLeague({ ..., originPath })
+  // success path: server threw NEXT_REDIRECT → framework catches it
+  // before reaching here → navigation in-flight
+  if (result && !result.ok) setError(result.error)  // validation failure
+} catch (err) {
+  if (err && typeof err === 'object' && 'digest' in err) throw err  // re-throw redirect
+  setError(err instanceof Error ? err.message : 'Submit failed')
+}
+```
+
+**Test pin updates** (regression targets):
+- [tests/unit/v1771_recruit_server_redirect.test.ts](tests/unit/v1771_recruit_server_redirect.test.ts):
+  redirect literal moved from `redirect(\`/id/${...}\`)` to
+  `redirect(buildSuccessRedirect(...))`; fallback path is now in a
+  local `fallbackPath` variable. Updated regex to match new shape.
+  Added pin: `originPath: \`/id/${leagueSlug}\`` is passed from form.
+- [tests/unit/v164_application_workflow.test.ts](tests/unit/v164_application_workflow.test.ts):
+  removed `update()` / `router.refresh()` pin; added `originPath`
+  capture pin and Next.js redirect re-throw pin (`'digest' in err`).
+
+---
+
+## M3 — Pattern propagated, join paths surfaced as incompatible
+
+**`registerToLeague`** — wired in M2 alongside `applyToLeague` (both
+live in [src/app/api/recruiting/actions.ts](src/app/api/recruiting/actions.ts)).
+The form on `/recruit/<slug>` passes
+`originPath = \`/id/${leagueSlug}\`` as a hardcoded string rather than
+capturing `window.location.pathname` because the route-level guard at
+[src/app/recruit/[slug]/page.tsx:104](src/app/recruit/[slug]/page.tsx:104)
+short-circuits a now-bound user back to `/id/<slug>` — pointing the
+popup at `/recruit/<slug>` would re-bounce before the modal could mount.
+
+### Join paths — out of scope (spec exception)
+
+The spec said: **"If a path already redirects to a 'thank you' page or
+has a different success UX, leave it alone — but document which ones."**
+All 5 join-flow actions in
+[src/app/join/[code]/actions.ts](src/app/join/[code]/actions.ts) fall
+under that exception. Per-path notes:
+
+| Action | Current redirect target | Why no popup |
+|---|---|---|
+| `redeemInvite` (skipOnboarding=true) | `/join/<code>/welcome` | `/welcome` IS the explicit thank-you page — `<h1>You're all set!</h1>` + binding-confirmation + "Go to {league}" CTA. Stacking a popup over it is redundant. |
+| `redeemInvite` (skipOnboarding=false) | `/join/<code>/onboarding` | Continuation form. The user is mid-flow — popup at form mount would block them from filling out the very form they just navigated to. |
+| `submitOnboarding` | `/join/<code>/id-upload` | Continuation form (per v1.35.0 PR η, name/position submit doesn't yet flip onboardingStatus to COMPLETED). Same blocking problem as above. |
+| `submitIdUpload` | `/join/<code>/welcome` | `/welcome` thank-you page (final-step landing). |
+| `skipIdUpload` | `/join/<code>/welcome` | Same — `/welcome` already does the thank-you. |
+| `completeOnboardingWithId` | `/join/<code>/welcome` | Same — single-page onboarding's `/welcome` landing. |
+
+**Going-back semantics is incompatible with multi-step join flow.** The
+spec's "OK button directs the user back to the page where they
+initiated the action" assumes a single-shot action whose origin is
+visit-able after success. For join paths the origin is a partially-filled
+form that the user has already finished with — sending them "back" to
+`/join/<code>/onboarding` after `submitOnboarding` is anti-flow. The
+recruiting paths fit the pattern cleanly (origin = `/id/<slug>`, which
+naturally re-renders to State B "being reviewed"); the join paths
+don't.
+
+**Spec note (surfaced back):** if the orchestrator wants the popup
+treatment on the join flow, the natural extension is to redirect to
+`/welcome?submitted=onboardingComplete` and have `/welcome` render the
+popup with `okHref="/id/<league.subdomain>"`. That replaces (rather
+than overlays) the current welcome card. This is a separate UX decision
+about whether the welcome card or the popup is the canonical
+thank-you surface — out of scope for v1.81.0.
+
+---
+
+## M4 — Tests + suite passing (DONE)
+
+**Test count diff:**
+- New: [tests/unit/v181_success_modal.test.ts](tests/unit/v181_success_modal.test.ts) — **49 tests**.
+  Source-string assertions for the modal/gate/Dashboard wiring + runtime
+  tests for `safeOriginPath` + `buildSuccessRedirect`.
+- Updated regression-target pins (5 files):
+  - [tests/unit/v1771_recruit_server_redirect.test.ts](tests/unit/v1771_recruit_server_redirect.test.ts) — `redirect(\`/id/...\`)` literal moved to `redirect(buildSuccessRedirect(...))`; added pin for `originPath` in form caller.
+  - [tests/unit/v164_application_workflow.test.ts](tests/unit/v164_application_workflow.test.ts) — removed `update()` / `router.refresh()` pin; added `originPath` capture pin and `'digest' in err` re-throw pin.
+  - [tests/unit/v165_1_dual_write_state_d.test.ts](tests/unit/v165_1_dual_write_state_d.test.ts) — `mode: 'existing'` literal-return pin removed (existing-mode branch now redirects); type-discriminator pin retained.
+  - [tests/unit/v168_id_collection_streamlined.test.ts](tests/unit/v168_id_collection_streamlined.test.ts) — registerToLeague redirect pin updated to match new buildSuccessRedirect shape.
+  - [tests/unit/v180_onboarding_comments.test.ts](tests/unit/v180_onboarding_comments.test.ts) — `APP_VERSION = 1.80.[0-9]+` regex broadened to accept 1.81.x and beyond.
+  - [tests/unit/version.test.ts](tests/unit/version.test.ts) — pinned to 1.81.0.
+
+**Final suite:**
+- `npx vitest run`: 157 files, 2807 tests pass, 1 skip (pre-existing).
+- `npx tsc --noEmit`: clean (only pre-existing `@next/bundle-analyzer` type warning, unrelated).
+
+**Stash-pop sanity check (regression-target verification):**
+Stashed the load-bearing wiring (`actions.ts` + modal callers + globals.css)
+and re-ran `tests/unit/v181_success_modal.test.ts`:
+- **20 of 49 tests fail** — exactly the source-string assertions on
+  the recruiting actions + form callers + Dashboard mount + globals
+  keyframes. The remaining 29 (helper runtime tests + component-shape
+  pins on the new files which weren't stashed) pass.
+- Confirms the new tests catch the broken state. Stash popped to
+  restore the working state; full suite green again.
+
+---

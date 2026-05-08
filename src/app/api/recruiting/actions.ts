@@ -9,6 +9,7 @@ import { revalidate } from '@/lib/revalidate'
 import { DEFAULT_LEAGUE_SLUG } from '@/lib/leagueSlug'
 import { sendMail } from '@/lib/email'
 import { applicationReceivedEmail } from '@/lib/emailTemplates'
+import { buildSuccessRedirect } from '@/lib/successRedirect'
 
 /**
  * v1.64.0 / v1.65.1 — Application/recruiting workflow.
@@ -63,8 +64,22 @@ export interface ApplyToLeagueInput {
   // it knows the user is in State D.
   name: string
   position?: 'GK' | 'DF' | 'MF' | 'FW' | null
+  /**
+   * v1.81.0 — origin-path tracking for the success popup. Captured at
+   * form-mount time on the originating page (e.g. `/id/<slug>`) and
+   * passed through so the server action can redirect to
+   * `<originPath>?submitted=applyToLeague` on success. Validated via
+   * `safeOriginPath` (must start with `/`, not `//`, no traversal).
+   * Falls back to `/id/<league.subdomain>` when missing/invalid.
+   */
+  originPath?: string | null
 }
 
+/**
+ * v1.81.0 — success path now calls `redirect()` server-side; the resolved
+ * payload exists ONLY for the error path (`ok: false`). Existing tests
+ * pinning `{ ok: true, playerId, mode }` are updated in v181_*.
+ */
 export type ApplyToLeagueResult =
   | { ok: true; playerId: string; mode: 'fresh' | 'existing' }
   | { ok: false; error: string }
@@ -87,9 +102,11 @@ export async function applyToLeague(
   }
 
   // Verify the league exists and accepts applications.
+  // v1.81.0 — also pulls `subdomain` for the success-redirect fallback
+  // when `originPath` is missing/invalid.
   const league = await prisma.league.findUnique({
     where: { id: input.leagueId },
-    select: { id: true, recruiting: true, name: true },
+    select: { id: true, recruiting: true, name: true, subdomain: true },
   })
   if (!league) {
     return { ok: false, error: 'League not found' }
@@ -97,6 +114,10 @@ export async function applyToLeague(
   if (!league.recruiting) {
     return { ok: false, error: 'This league is not currently recruiting' }
   }
+  // v1.81.0 — origin-path fallback: the league's own subdomain page is
+  // the natural landing for the success popup when the caller didn't
+  // capture `originPath` (or when validation rejected it).
+  const fallbackPath = `/id/${league.subdomain ?? DEFAULT_LEAGUE_SLUG}`
 
   // v1.80.10 — resolve the calling User row by `userId` first (canonical
   // post-α.5 / v1.27.0 binding), falling back to `lineId` (legacy
@@ -136,7 +157,8 @@ export async function applyToLeague(
       // Either APPROVED (already a member; admin should reject silently
       // since the user is in State A from the banner's perspective) or
       // PENDING (no-op double-submit). Both treat as success.
-      return { ok: true, playerId: existingPlayerId, mode: 'existing' }
+      // v1.81.0 — redirect to <originPath>?submitted=applyToLeague.
+      redirect(buildSuccessRedirect(input.originPath, 'applyToLeague', fallbackPath))
     }
 
     // Create a new PLM(PENDING) for the existing Player in the new
@@ -163,7 +185,11 @@ export async function applyToLeague(
     })
     revalidate({ domain: 'public' })
 
-    return { ok: true, playerId: existingPlayerId, mode: 'existing' }
+    // v1.81.0 — redirect server-side so the NEXT_REDIRECT signal
+    // propagates through useTransition (mirrors v1.77.1 fix in
+    // registerToLeague). The originPath fallback to `/id/<subdomain>`
+    // matches the page that hosts the recruiting banner / modal.
+    redirect(buildSuccessRedirect(input.originPath, 'applyToLeague', fallbackPath))
   }
 
   // ── State C — fresh Player + dual-write the User binding ─────────────
@@ -216,6 +242,11 @@ export async function applyToLeague(
   })
   revalidate({ domain: 'public' })
 
+  // v1.81.0 — redirect server-side. `redirect()` throws and never
+  // returns; the unreachable return below satisfies the function's
+  // declared return type.
+  redirect(buildSuccessRedirect(input.originPath, 'applyToLeague', fallbackPath))
+  // unreachable — satisfies TypeScript's return-type check:
   return { ok: true, playerId: player.id, mode: 'fresh' }
 }
 
@@ -298,6 +329,17 @@ export interface RegisterToLeagueInput {
   profilePictureUrl?: string | null
   /** v1.80.0 — optional free-text comments for the admin. Trimmed before storage. */
   comments?: string | null
+  /**
+   * v1.81.0 — origin-path tracking for the success popup. Captured at
+   * form-mount time on `/recruit/<slug>` and used to redirect to
+   * `<originPath>?submitted=registerToLeague`. The `/recruit/<slug>`
+   * page itself short-circuits a now-bound user back to `/id/<slug>`
+   * (the route-level guard at [src/app/recruit/[slug]/page.tsx]:
+   * `if (user.playerId) redirect(...)` ), so the originating-page
+   * popup pattern relies on the originPath being the league page or a
+   * page that doesn't bounce. The form passes `/id/<slug>` directly.
+   */
+  originPath?: string | null
 }
 
 export async function registerToLeague(
@@ -487,7 +529,10 @@ export async function registerToLeague(
   // v1.77.1 — redirect server-side so the NEXT_REDIRECT signal propagates
   // through useTransition even when iOS Safari backgrounds the tab mid-flight.
   // `redirect()` throws and is never returned from; the line below is unreachable.
-  redirect(`/id/${league.subdomain ?? DEFAULT_LEAGUE_SLUG}`)
+  // v1.81.0 — append `?submitted=registerToLeague` so the destination
+  // mounts the success popup; safe origin defaults to the league page.
+  const fallbackPath = `/id/${league.subdomain ?? DEFAULT_LEAGUE_SLUG}`
+  redirect(buildSuccessRedirect(input.originPath, 'registerToLeague', fallbackPath))
   // unreachable — satisfies TypeScript's return-type check:
   return { ok: true, playerId: player.id, mode: 'fresh' }
 }

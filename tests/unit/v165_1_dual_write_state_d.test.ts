@@ -132,10 +132,17 @@ describe('v1.65.1 — State D bug fix in applyToLeague', () => {
     expect(block).toMatch(/applicationStatus:\s*['"]PENDING['"]/)
   })
 
-  it('result includes mode: fresh | existing for the caller to differentiate', () => {
+  it('result type includes mode: fresh | existing for the caller to differentiate', () => {
+    // v1.81.0 — applyToLeague now redirect()s server-side on every
+    // success branch (existingPlm idempotent / new PLM / fresh Player),
+    // so the inline literal `return { ..., mode: 'existing' }` is gone
+    // — the existing-mode redirect lands the user back on the league
+    // page where the popup signals success. The type still declares the
+    // discriminator (kept for the unreachable State C `return { ...
+    // mode: 'fresh' }` that satisfies tsc, plus future-proofing if a
+    // caller needs to branch on mode).
     expect(APPLY_ACTION_SRC).toMatch(/mode:\s*['"]fresh['"]\s*\|\s*['"]existing['"]/)
     expect(APPLY_ACTION_SRC).toMatch(/mode:\s*['"]fresh['"]\s*\}/)
-    expect(APPLY_ACTION_SRC).toMatch(/mode:\s*['"]existing['"]\s*\}/)
   })
 })
 

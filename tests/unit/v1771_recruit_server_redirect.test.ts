@@ -45,15 +45,26 @@ describe('v1.77.1 — registerToLeague server-side redirect', () => {
   })
 
   it('calls redirect() on the success path', () => {
-    expect(REGISTER_FN).toMatch(/redirect\(`\/id\//)
+    // v1.81.0 — redirect target is now built via `buildSuccessRedirect`
+    // (origin-path + ?submitted=registerToLeague). The legacy literal
+    // template `redirect(\`/id/...\`)` is gone; the contract is now the
+    // server-side redirect helper call with the league fallback path
+    // assembled inline.
+    expect(REGISTER_FN).toMatch(/redirect\(\s*buildSuccessRedirect\(/)
   })
 
-  it('redirect target uses league.subdomain with DEFAULT_LEAGUE_SLUG fallback', () => {
-    expect(REGISTER_FN).toMatch(/redirect\(`\/id\/\$\{league\.subdomain\s*\?\?\s*DEFAULT_LEAGUE_SLUG\}`\)/)
+  it('redirect fallback derives from league.subdomain with DEFAULT_LEAGUE_SLUG fallback', () => {
+    // v1.81.0 — fallback path is computed into a local before the
+    // redirect call so it can be passed to buildSuccessRedirect.
+    expect(REGISTER_FN).toMatch(
+      /fallbackPath\s*=\s*`\/id\/\$\{league\.subdomain\s*\?\?\s*DEFAULT_LEAGUE_SLUG\}`/,
+    )
   })
 
   it('redirect call precedes the unreachable return (order matters)', () => {
-    const redirectIdx = REGISTER_FN.indexOf('redirect(`/id/')
+    // v1.81.0 — redirect target is the buildSuccessRedirect call, not a
+    // literal `/id/` template.
+    const redirectIdx = REGISTER_FN.indexOf('redirect(buildSuccessRedirect')
     const returnIdx = REGISTER_FN.lastIndexOf('return { ok: true')
     expect(redirectIdx).toBeGreaterThan(-1)
     expect(returnIdx).toBeGreaterThan(-1)
@@ -77,6 +88,13 @@ describe('v1.77.1 — RegistrationForm no longer branches on result.ok', () => {
 
   it('keeps router.push as a defensive fallback after the await', () => {
     expect(FORM).toMatch(/router\.push\(`\/id\/\$\{leagueSlug\}`\)/)
+  })
+
+  // v1.81.0 — the form passes originPath=`/id/<slug>` so the server
+  // action's success redirect lands the popup on the league page (not
+  // /recruit/<slug>, which would re-bounce via the route-level guard).
+  it('passes originPath = `/id/<leagueSlug>` to registerToLeague', () => {
+    expect(FORM).toMatch(/originPath:\s*`\/id\/\$\{leagueSlug\}`/)
   })
 })
 

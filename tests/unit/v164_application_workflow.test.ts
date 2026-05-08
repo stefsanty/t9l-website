@@ -417,9 +417,30 @@ describe('v1.64.0 — ApplyToLeagueModal', () => {
     expect(APPLY_MODAL_SRC).toMatch(/applyToLeague\(\{[\s\S]*?leagueId[\s\S]*?name[\s\S]*?position/)
   })
 
-  it("refreshes session + route on success so banner re-renders as 'pending_this'", () => {
-    expect(APPLY_MODAL_SRC).toMatch(/await update\(\)/)
-    expect(APPLY_MODAL_SRC).toMatch(/router\.refresh\(\)/)
+  // v1.81.0 — `applyToLeague` now redirects server-side to
+  // `<originPath>?submitted=applyToLeague`; the success popup mounts on
+  // the destination page (Dashboard's <SuccessConfirmationGate>) and the
+  // post-action `router.refresh()` + session `update()` calls are no
+  // longer needed (the redirect re-renders the page server-side, picking
+  // up fresh recruiting-state for State B). Regression target: those
+  // calls must NOT come back, otherwise we'd trigger a refresh AFTER
+  // the redirect has navigated which causes a flash.
+  it('does not refresh session or route post-success (redirect handles it)', () => {
+    expect(APPLY_MODAL_SRC).not.toMatch(/await update\(\)/)
+    expect(APPLY_MODAL_SRC).not.toMatch(/router\.refresh\(\)/)
+  })
+
+  it('passes originPath captured at mount time', () => {
+    expect(APPLY_MODAL_SRC).toMatch(/originPath/)
+    expect(APPLY_MODAL_SRC).toMatch(/window\.location\.pathname/)
+  })
+
+  it('re-throws Next.js redirect digest so framework can navigate', () => {
+    // The try/catch must surface validation errors inline but re-throw
+    // the redirect (`digest` field on the thrown error) — without the
+    // re-throw, the framework can't apply the navigation and the user
+    // is stuck on the modal.
+    expect(APPLY_MODAL_SRC).toMatch(/'digest'\s+in\s+err/)
   })
 })
 
