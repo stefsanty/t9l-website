@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import type { Matchday, Team, Player, Availability, AvailabilityStatuses, PlayedStatus } from '@/types';
+import { getPositionBucket } from '@/lib/positions';
 
 // -- View mode --
 
@@ -11,16 +12,21 @@ const VIEW_MODE_STORAGE_KEY = 't9l-availability-view';
 
 // -- Position colors (mirrors SquadList.getPositionColor) --
 
+// v1.82.0 — colour-by-bucket. Public `Player.position` is now a joined
+// string like "CB/CM" (or futsal "FIXO/ALA"); the first code drives
+// the colour band.
+const BUCKET_COLORS: Record<'GK' | 'DF' | 'MF' | 'FW', string> = {
+  GK: 'bg-zinc-950 text-white border-white/20',
+  DF: 'bg-blue-600 text-white border-blue-400/30',
+  MF: 'bg-emerald-600 text-white border-emerald-400/30',
+  FW: 'bg-red-600 text-white border-red-400/30',
+};
+
 export function getPositionPillColor(pos: string | null | undefined): string {
-  switch (pos?.toUpperCase()) {
-    case 'GK': return 'bg-zinc-950 text-white border-white/20';
-    case 'DF': return 'bg-blue-600 text-white border-blue-400/30';
-    case 'DF/MF': return 'bg-teal-600 text-white border-teal-400/30';
-    case 'MF': return 'bg-emerald-600 text-white border-emerald-400/30';
-    case 'MF/FWD': return 'bg-orange-600 text-white border-orange-400/30';
-    case 'FWD': return 'bg-red-600 text-white border-red-400/30';
-    default: return 'bg-surface-md text-fg-mid border-border-subtle';
-  }
+  if (!pos) return 'bg-surface-md text-fg-mid border-border-subtle';
+  const first = pos.split('/')[0]?.toUpperCase();
+  if (!first) return 'bg-surface-md text-fg-mid border-border-subtle';
+  return BUCKET_COLORS[getPositionBucket(first)];
 }
 
 // -- TeamPillList sub-component --
@@ -40,16 +46,23 @@ function TeamPillList({
     );
   }
 
-  const positionOrder: Record<string, number> = {
-    'GK': 1, 'DF': 2, 'DF/MF': 3, 'MF': 4, 'MF/FWD': 5, 'FWD': 6,
+  // v1.82.0 — bucket-driven sort (GK → DF → MF → FW). The first code
+  // in the joined `position` string picks the bucket.
+  const bucketOrder: Record<'GK' | 'DF' | 'MF' | 'FW', number> = {
+    GK: 1, DF: 2, MF: 3, FW: 4,
   };
-
+  const sortKey = (pos: string | null) => {
+    if (!pos) return 99;
+    const first = pos.split('/')[0]?.toUpperCase();
+    if (!first) return 99;
+    return bucketOrder[getPositionBucket(first)] ?? 99;
+  };
   const confirmedPlayers = confirmedIds
     .map((id) => players.find((p) => p.id === id))
     .filter((p): p is Player => !!p)
     .sort((a, b) => {
-      const posA = positionOrder[a.position || ''] || 99;
-      const posB = positionOrder[b.position || ''] || 99;
+      const posA = sortKey(a.position);
+      const posB = sortKey(b.position);
       if (posA !== posB) return posA - posB;
       return a.name.localeCompare(b.name);
     });
@@ -172,17 +185,36 @@ function TeamFormation({
   const midFwdHybrids: Player[] = [];
   const pureFwds: Player[] = [];
 
+  // v1.82.0 — multi-position grouping. `Player.position` is now a
+  // `/`-joined string (e.g. "CB/CM" or futsal "FIXO/ALA"). We bucket
+  // each code, then route the player into a hybrid bucket if their
+  // codes span two adjacent role bands. Pre-v1.82.0 callers passed
+  // legacy strings like "DF/MF" / "MF/FWD" directly; those still work
+  // because the bucket helper recognises both old and new codes.
   for (const pid of confirmedIds) {
     const p = getPlayer(pid);
     if (!p) continue;
-    switch (p.position) {
-      case 'GK':     gks.push(p);            break;
-      case 'DF':     pureDefs.push(p);       break;
-      case 'DF/MF':  defMidHybrids.push(p);  break;
-      case 'MF':     pureMids.push(p);       break;
-      case 'MF/FWD': midFwdHybrids.push(p);  break;
-      case 'FWD':    pureFwds.push(p);       break;
-      default:       pureMids.push(p);       break;
+    const codes = (p.position ?? '')
+      .split('/')
+      .map((c) => c.trim().toUpperCase())
+      .filter(Boolean);
+    if (codes.length === 0) {
+      pureMids.push(p);
+      continue;
+    }
+    const buckets = new Set(codes.map((c) => getPositionBucket(c)));
+    if (buckets.has('GK')) {
+      gks.push(p);
+    } else if (buckets.has('DF') && buckets.has('MF') && !buckets.has('FW')) {
+      defMidHybrids.push(p);
+    } else if (buckets.has('MF') && buckets.has('FW') && !buckets.has('DF')) {
+      midFwdHybrids.push(p);
+    } else if (buckets.has('DF')) {
+      pureDefs.push(p);
+    } else if (buckets.has('FW')) {
+      pureFwds.push(p);
+    } else {
+      pureMids.push(p);
     }
   }
 

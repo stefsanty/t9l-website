@@ -462,7 +462,27 @@ model PlayerLeagueMembership {
   // Player.position so existing reads return the same value via either
   // path. Optional — FC Torpedo players have no positions; admin
   // pre-stages start with no position.
+  //
+  // v1.82.0 — DEPRECATED (kept for one release cycle). Multi-position
+  // data lives in the `positions` array below. This single-value column
+  // remains as a backward-compat read-fallback for any consumer that
+  // hasn't been updated. New writes dual-write: `positions[]` always
+  // gets the full array; `position` mirrors `positions[0]` IF that
+  // entry is one of GK/DF/MF/FW (futsal-only codes like FIXO/ALA/PIVOT
+  // can't fit this enum and write null here).
   position PlayerPosition?
+
+  // v1.82.0 — multi-position representation. Stored as canonical
+  // uppercase string codes (e.g. 'GK', 'FIXO', 'ALA', 'PIVOT' for
+  // futsal; 'GK', 'DF', 'MF', 'FW' for soccer). Vocabulary is per-
+  // format and lives in src/lib/positions.ts. Empty array == "no
+  // position recorded" (matches legacy `position IS NULL`).
+  //
+  // Why `String[]` (Postgres native array) and not a join table:
+  // positions are a fixed code list, not row data. The whole array
+  // round-trips on every Player read; a join table adds Prisma include
+  // ceremony and a joined query for zero referential benefit.
+  positions String[] @default([])
 
   // v1.65.0 — per-league jersey number. New, no backfill source.
   // Optional. Future admin UI surface populates it.

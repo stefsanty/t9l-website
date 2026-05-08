@@ -45,7 +45,9 @@ describe('v1.68.0 shared RegistrationFields component', () => {
   it('exposes the four field testids (name + position + ID front + ID back)', () => {
     expect(src).toMatch(/data-testid="registration-fields"/)
     expect(src).toMatch(/data-testid="registration-name"/)
-    expect(src).toMatch(/data-testid="registration-position"/)
+    // v1.82.0 — Position dropdown replaced with the chip
+    // PositionMultiSelect component using `testIdPrefix="registration-position"`.
+    expect(src).toMatch(/testIdPrefix="registration-position"/)
     expect(src).toMatch(/(?:data-)?testid="registration-id-front"/)
     expect(src).toMatch(/(?:data-)?testid="registration-id-back"/)
   })
@@ -126,9 +128,10 @@ describe('v1.68.0 /join/[code]/onboarding form (OnboardingForm)', () => {
     expect(code).not.toMatch(/submitOnboarding\(/)
   })
 
-  it('threads initialName and initialPosition into the shared component', () => {
+  it('v1.82.0 — threads initialName + initialPositions[] + ballType into the shared component', () => {
     expect(src).toMatch(/initialName=\{initialName\}/)
-    expect(src).toMatch(/initialPosition=\{initialPosition\}/)
+    expect(src).toMatch(/initialPositions=\{initialPositions\}/)
+    expect(src).toMatch(/ballType=\{ballType\}/)
   })
 
   it('preserves the onboarding-form testid wrapper', () => {

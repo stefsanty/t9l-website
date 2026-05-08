@@ -14,12 +14,16 @@ const {
   playerCreateMock,
   assignmentCreateMock,
   leagueTeamFindUniqueMock,
+  leagueFindUniqueMock,
   txMock,
   revalidateMock,
 } = vi.hoisted(() => {
   const playerCreateMock = vi.fn()
   const assignmentCreateMock = vi.fn().mockResolvedValue({})
   const leagueTeamFindUniqueMock = vi.fn()
+  // v1.82.0 — adminCreatePlayer now reads `League.ballType` to validate
+  // submitted positions against the right vocabulary.
+  const leagueFindUniqueMock = vi.fn().mockResolvedValue({ ballType: 'SOCCER' })
   const txMock = vi.fn(async (cb: (tx: unknown) => Promise<unknown>) => {
     const tx = {
       player: { create: playerCreateMock },
@@ -31,6 +35,7 @@ const {
     playerCreateMock,
     assignmentCreateMock,
     leagueTeamFindUniqueMock,
+    leagueFindUniqueMock,
     txMock,
     revalidateMock: vi.fn(),
   }
@@ -41,6 +46,7 @@ vi.mock('@/lib/prisma', () => ({
     player: { create: playerCreateMock, update: vi.fn(), findUnique: vi.fn(), updateMany: vi.fn() },
     playerLeagueMembership: { create: assignmentCreateMock },
     leagueTeam: { findUnique: leagueTeamFindUniqueMock },
+    league: { findUnique: leagueFindUniqueMock },
     leagueInvite: { findFirst: vi.fn(), create: vi.fn() },
     $transaction: txMock,
   },
@@ -79,12 +85,12 @@ beforeEach(() => {
 })
 
 describe('v1.33.0 (PR ε) — adminCreatePlayer', () => {
-  it('creates a player with name, position enum, and team assignment (v1.65.4 — position on PLM)', async () => {
+  it('v1.82.0 — creates a player with multi-position + team assignment (positions[] + legacy enum dual-write)', async () => {
     leagueTeamFindUniqueMock.mockResolvedValue({ leagueId: 'league-1' })
     const result = await adminCreatePlayer({
       leagueId: 'league-1',
       name: 'Ian Noseda',
-      position: 'MF',
+      positions: ['CM'],
       leagueTeamId: 'lt-mariners',
       fromGameWeek: 3,
     })
@@ -93,7 +99,8 @@ describe('v1.33.0 (PR ε) — adminCreatePlayer', () => {
     expect(playerCreateMock).toHaveBeenCalledWith({
       data: { name: 'Ian Noseda' },
     })
-    // PLM.create carries the position alongside the team binding.
+    // v1.82.0 — PLM.create dual-writes positions[] + legacy enum
+    // (CM buckets to MF in the legacy column).
     expect(assignmentCreateMock).toHaveBeenCalledWith({
       data: {
         playerId: 'p-new-player',
@@ -101,6 +108,7 @@ describe('v1.33.0 (PR ε) — adminCreatePlayer', () => {
         leagueId: 'league-1',
         fromGameWeek: 3,
         joinSource: 'ADMIN',
+        positions: ['CM'],
         position: 'MF',
       },
     })
@@ -135,36 +143,40 @@ describe('v1.33.0 (PR ε) — adminCreatePlayer', () => {
     expect(revalidateMock).not.toHaveBeenCalled()
   })
 
-  it('coerces unknown position strings to null (defensive against typos, v1.65.4 — position on PLM)', async () => {
+  it('v1.82.0 — REJECTS unknown position codes (vocabulary-aware validation throws)', async () => {
     leagueTeamFindUniqueMock.mockResolvedValue({ leagueId: 'league-1' })
-    await adminCreatePlayer({
-      leagueId: 'league-1',
-      name: 'X',
-      position: 'wing-back',
-      leagueTeamId: 'lt-x',
-    })
-    expect(playerCreateMock).toHaveBeenCalledWith({
-      data: { name: 'X' },
-    })
-    // The unknown position coerces to null on the PLM payload.
-    expect(assignmentCreateMock).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ position: null }) }),
-    )
+    await expect(
+      adminCreatePlayer({
+        leagueId: 'league-1',
+        name: 'X',
+        positions: ['wing-back'],
+        leagueTeamId: 'lt-x',
+      }),
+    ).rejects.toThrow(/Invalid position "WING-BACK"/)
+    // Player.create never fires when validation throws.
+    expect(playerCreateMock).not.toHaveBeenCalled()
+    expect(assignmentCreateMock).not.toHaveBeenCalled()
   })
 
-  it('uppercases position case-insensitively (v1.65.4 — position on PLM)', async () => {
+  it('v1.82.0 — uppercases & dedupes positions case-insensitively', async () => {
     leagueTeamFindUniqueMock.mockResolvedValue({ leagueId: 'league-1' })
     await adminCreatePlayer({
       leagueId: 'league-1',
       name: 'X',
-      position: 'mf',
+      positions: ['cm', 'CB', 'cm'],
       leagueTeamId: 'lt-x',
     })
     expect(playerCreateMock).toHaveBeenCalledWith({
       data: { name: 'X' },
     })
+    // Order from canonical vocabulary; CB precedes CM.
     expect(assignmentCreateMock).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ position: 'MF' }) }),
+      expect.objectContaining({
+        data: expect.objectContaining({
+          positions: ['CM', 'CB'],
+          position: 'MF',
+        }),
+      }),
     )
   })
 
@@ -183,6 +195,8 @@ describe('v1.33.0 (PR ε) — adminCreatePlayer', () => {
         leagueId: 'league-1',
         fromGameWeek: 1,
         joinSource: 'ADMIN',
+        // v1.82.0 — empty positions[] when caller supplies no positions.
+        positions: [],
         position: null,
       },
     })

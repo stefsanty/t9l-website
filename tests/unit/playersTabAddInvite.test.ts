@@ -120,15 +120,14 @@ describe('v1.33.0 (PR ε) — AddPlayerDialog wiring', () => {
   it('all three profile fields are optional in the dialog UI (name/team/position)', () => {
     expect(cleaned).toMatch(/data-testid="add-player-name"/)
     expect(cleaned).toMatch(/data-testid="add-player-team"/)
-    expect(cleaned).toMatch(/data-testid="add-player-position"/)
+    // v1.82.0 — Position dropdown replaced with the chip
+    // PositionMultiSelect component using `testIdPrefix="add-player-position"`.
+    expect(cleaned).toMatch(/testIdPrefix=['"]add-player-position['"]/)
   })
 
-  it('renders the four position enum options (GK / DF / MF / FW) plus a "no position" option', () => {
-    expect(cleaned).toMatch(/value:\s*['"]GK['"]/)
-    expect(cleaned).toMatch(/value:\s*['"]DF['"]/)
-    expect(cleaned).toMatch(/value:\s*['"]MF['"]/)
-    expect(cleaned).toMatch(/value:\s*['"]FW['"]/)
-    expect(cleaned).toMatch(/No position/)
+  it('v1.82.0 — wires PositionMultiSelect with the league ballType', () => {
+    expect(cleaned).toMatch(/PositionMultiSelect/)
+    expect(cleaned).toMatch(/ballType=\{ballType\}/)
   })
 
   it('exposes the "Generate invite immediately" affordance with a skipOnboarding sub-checkbox', () => {

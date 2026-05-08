@@ -106,22 +106,25 @@ describe('v1.69.0 MatchdayAvailability — TeamPillList view', () => {
     expect(src).toMatch(/TeamPillList[\s\S]*No confirmations yet/)
   })
 
-  it('exports a getPositionPillColor helper covering all canonical positions', () => {
+  it('v1.82.0 — exports a bucket-driven getPositionPillColor helper', () => {
     expect(src).toMatch(/export function getPositionPillColor/)
-    for (const pos of ['GK', 'DF', 'DF\\/MF', 'MF', 'MF\\/FWD', 'FWD']) {
-      expect(src).toMatch(new RegExp(`case ['"]${pos}['"]`))
+    // Colour map keyed by role bucket (GK / DF / MF / FW); the helper
+    // routes each code through getPositionBucket to pick the bucket.
+    for (const bucket of ['GK', 'DF', 'MF', 'FW']) {
+      expect(src).toMatch(new RegExp(`${bucket}:\\s*['"]bg-`))
     }
   })
 
   it('matches SquadList position colors (single source of truth for positions)', () => {
     const squadList = read('src/components/SquadList.tsx')
-    // Spot-check: GK / DF / FWD must use the same Tailwind class strings.
-    expect(squadList).toMatch(/'GK': return 'bg-zinc-950 text-white border-white\/20'/)
-    expect(src).toMatch(/case ['"]GK['"]:\s*return\s*['"]bg-zinc-950 text-white border-white\/20['"]/)
-    expect(squadList).toMatch(/'DF': return 'bg-blue-600 text-white border-blue-400\/30'/)
-    expect(src).toMatch(/case ['"]DF['"]:\s*return\s*['"]bg-blue-600 text-white border-blue-400\/30['"]/)
-    expect(squadList).toMatch(/'FWD': return 'bg-red-600 text-white border-red-400\/30'/)
-    expect(src).toMatch(/case ['"]FWD['"]:\s*return\s*['"]bg-red-600 text-white border-red-400\/30['"]/)
+    // v1.82.0 — both files use the same BUCKET_COLORS map shape with
+    // identical Tailwind classes per bucket.
+    expect(squadList).toMatch(/GK:\s*['"]bg-zinc-950 text-white border-white\/20['"]/)
+    expect(src).toMatch(/GK:\s*['"]bg-zinc-950 text-white border-white\/20['"]/)
+    expect(squadList).toMatch(/DF:\s*['"]bg-blue-600 text-white border-blue-400\/30['"]/)
+    expect(src).toMatch(/DF:\s*['"]bg-blue-600 text-white border-blue-400\/30['"]/)
+    expect(squadList).toMatch(/FW:\s*['"]bg-red-600 text-white border-red-400\/30['"]/)
+    expect(src).toMatch(/FW:\s*['"]bg-red-600 text-white border-red-400\/30['"]/)
   })
 
   it('renders pills inside a flex-wrap container with a list testid', () => {

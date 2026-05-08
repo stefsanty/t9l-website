@@ -156,7 +156,15 @@ export async function dbToPublicLeagueData(
       name: pla.player.name ?? 'TBD',
       teamId: teamSlug,
       // v1.65.4 — position lives on PlayerLeagueMembership, not Player.
-      position: pla.position ?? null,
+      // v1.82.0 — prefer the multi-position positions[] array, joined
+      // with `/` so existing readers (SquadList chip, formation
+      // grouping) handle the multi-position case as a single string
+      // (e.g. `"CB/CM"`). Falls through to the legacy single column
+      // for memberships that haven't been re-saved since the migration.
+      position:
+        pla.positions && pla.positions.length > 0
+          ? pla.positions.join('/')
+          : (pla.position ?? null),
       picture: pla.player.pictureUrl ?? null,
     })
   }

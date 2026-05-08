@@ -3,6 +3,8 @@
 import { useEffect, useState, useTransition } from 'react'
 import { createPortal } from 'react-dom'
 import { applyToLeague } from '@/app/api/recruiting/actions'
+import PositionMultiSelect from './PositionMultiSelect'
+import type { BallType } from '@/lib/positions'
 
 /**
  * v1.64.0 — Application form modal.
@@ -27,14 +29,6 @@ import { applyToLeague } from '@/app/api/recruiting/actions'
  *   - On failure: surfaces the error inline; modal stays open.
  */
 
-const POSITIONS: ReadonlyArray<{ value: '' | 'GK' | 'DF' | 'MF' | 'FW'; label: string }> = [
-  { value: '', label: 'Prefer not to say' },
-  { value: 'GK', label: 'GK — Goalkeeper' },
-  { value: 'DF', label: 'DF — Defender' },
-  { value: 'MF', label: 'MF — Midfielder' },
-  { value: 'FW', label: 'FW — Forward' },
-]
-
 interface Props {
   open: boolean
   onClose: () => void
@@ -45,6 +39,12 @@ interface Props {
   // already has a Player; only collect position for the new league —
   // the existing Player's name carries through).
   mode?: 'fresh' | 'existing'
+  /**
+   * v1.82.0 — league format. Drives the position chip vocabulary
+   * (SOCCER → 12 codes, FUTSAL → GK/FIXO/ALA/PIVOT). Optional;
+   * defaults to SOCCER for callers that haven't been updated.
+   */
+  ballType?: BallType | null
 }
 
 export default function ApplyToLeagueModal({
@@ -53,9 +53,10 @@ export default function ApplyToLeagueModal({
   leagueId,
   leagueName,
   mode = 'fresh',
+  ballType = null,
 }: Props) {
   const [name, setName] = useState('')
-  const [position, setPosition] = useState<'' | 'GK' | 'DF' | 'MF' | 'FW'>('')
+  const [positions, setPositions] = useState<string[]>([])
   const [error, setError] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
   const [mounted, setMounted] = useState(false)
@@ -102,7 +103,7 @@ export default function ApplyToLeagueModal({
           // For State D ('existing'), the existing Player's name is
           // unchanged; we send empty string and the action ignores it.
           name: mode === 'existing' ? '' : name.trim(),
-          position: position === '' ? null : position,
+          positions,
           originPath,
         })
         if (result && !result.ok) {
@@ -181,23 +182,21 @@ export default function ApplyToLeagueModal({
               </label>
             )}
 
-            <label className="block">
+            <div className="block">
               <span className="block text-fg-mid text-xs uppercase tracking-widest font-bold mb-1.5">
-                Position
+                Position(s)
               </span>
-              <select
-                value={position}
-                onChange={(e) => setPosition(e.target.value as typeof position)}
-                className="w-full bg-background border border-border-default rounded-lg px-3 py-2 text-sm text-fg-high"
-                data-testid="apply-position"
-              >
-                {POSITIONS.map((p) => (
-                  <option key={p.value} value={p.value}>
-                    {p.label}
-                  </option>
-                ))}
-              </select>
-            </label>
+              <PositionMultiSelect
+                selected={positions}
+                onChange={setPositions}
+                ballType={ballType}
+                disabled={pending}
+                testIdPrefix="apply-position"
+              />
+              <span className="block text-fg-low text-xs mt-1.5">
+                Tap to pick one or more. You can leave this blank.
+              </span>
+            </div>
 
             {error && (
               <p className="text-sm text-vibrant-pink" role="alert" data-testid="apply-error">

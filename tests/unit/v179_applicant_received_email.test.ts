@@ -202,8 +202,10 @@ describe('v1.79.0 — completeOnboardingWithId (join path) email integration', (
     )
   })
 
-  it('selects league.name on the LeagueInvite findUnique inside completeOnboardingWithId', () => {
-    expect(COMPLETE_ONBOARDING_FN).toMatch(/league:\s*\{\s*select:\s*\{\s*name:\s*true\s*\}\s*\}/)
+  it('selects league.name (and v1.82.0 ballType) on the LeagueInvite findUnique inside completeOnboardingWithId', () => {
+    // v1.82.0 — also pulls `ballType` for position-vocabulary
+    // validation; the helper now expects both fields in the select.
+    expect(COMPLETE_ONBOARDING_FN).toMatch(/league:\s*\{\s*select:\s*\{[\s\S]*?name:\s*true[\s\S]*?ballType:\s*true[\s\S]*?\}\s*\}/)
   })
 
   it('queues sendMail via waitUntil inside completeOnboardingWithId', () => {

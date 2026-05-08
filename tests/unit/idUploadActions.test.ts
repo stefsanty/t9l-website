@@ -137,7 +137,7 @@ describe('v1.35.0 (PR η) — submitIdUpload (v1.70.0 writes to User)', () => {
     // v1.80.11 — User row resolved by userId before the player check.
     userFindUniqueMock.mockResolvedValue({ id: 'u-1' })
     playerFindUniqueMock.mockResolvedValue({ id: 'p-1', userId: 'u-1' })
-    inviteFindUniqueMock.mockResolvedValue({ leagueId: 'l-1' })
+    inviteFindUniqueMock.mockResolvedValue({ leagueId: 'l-1', league: { ballType: 'SOCCER', name: 'Test League' } })
     putMock.mockImplementation(async (path: string) => ({
       url: `https://blob.vercel-storage.com/${path}`,
     }))
@@ -255,7 +255,7 @@ describe('v1.35.0 (PR η) — skipIdUpload', () => {
     // v1.80.11 — User row resolved by userId before the player check.
     userFindUniqueMock.mockResolvedValue({ id: 'u-1' })
     playerFindUniqueMock.mockResolvedValue({ id: 'p-1', userId: 'u-1' })
-    inviteFindUniqueMock.mockResolvedValue({ leagueId: 'l-1' })
+    inviteFindUniqueMock.mockResolvedValue({ leagueId: 'l-1', league: { ballType: 'SOCCER', name: 'Test League' } })
   })
 
   it('flips onboardingStatus to COMPLETED without writing ID URLs', async () => {
@@ -295,7 +295,7 @@ describe('v1.35.0 (PR η) — submitOnboarding routing change', () => {
     // v1.80.11 — User row resolved by userId before the player check.
     userFindUniqueMock.mockResolvedValue({ id: 'u-1', lineId: null })
     playerFindUniqueMock.mockResolvedValue({ id: 'p-1', userId: 'u-1' })
-    inviteFindUniqueMock.mockResolvedValue({ leagueId: 'l-1' })
+    inviteFindUniqueMock.mockResolvedValue({ leagueId: 'l-1', league: { ballType: 'SOCCER', name: 'Test League' } })
   })
 
   it('redirects to /id-upload (not /welcome) post-η', async () => {
@@ -309,23 +309,24 @@ describe('v1.35.0 (PR η) — submitOnboarding routing change', () => {
     expect(redirectMock).toHaveBeenCalledWith('/join/CODE12345678/id-upload')
   })
 
-  it('does NOT flip onboardingStatus to COMPLETED — that is the ID-upload step\'s job (v1.65.4)', async () => {
+  it('v1.82.0 — submits multi-position via PLM.updateMany; never sets onboardingStatus here', async () => {
     await expect(
       submitOnboarding({
         code: 'CODE12345678',
         playerId: 'p-1',
         name: 'Stefan S',
-        position: 'MF',
+        positions: ['CM'],
       }),
     ).rejects.toThrow('NEXT_REDIRECT')
     // Player gets the identity update (name).
     expect(playerUpdateMock).toHaveBeenCalled()
-    // v1.65.4 — position now writes to PLM, so PLM.updateMany IS called
-    // with the position (NOT with onboardingStatus). Pin the data shape:
-    // the call must not include `onboardingStatus`, only `position`.
+    // v1.82.0 — PLM.updateMany dual-writes positions[] + legacy enum
+    // (CM buckets to MF in the legacy column). onboardingStatus stays
+    // out of this payload — that's the ID-upload step's job.
     expect(assignmentUpdateManyMock).toHaveBeenCalled()
     const plmCall = assignmentUpdateManyMock.mock.calls[0][0] as { data: Record<string, unknown> }
     expect(plmCall.data.onboardingStatus).toBeUndefined()
+    expect(plmCall.data.positions).toEqual(['CM'])
     expect(plmCall.data.position).toBe('MF')
   })
 })

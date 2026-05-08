@@ -162,7 +162,7 @@ interface DashboardProps {
    * action passes leagueId + leagueName for display). Threaded as a
    * single prop so a future per-league rebrand only touches one site.
    */
-  league?: { id: string; name: string; abbreviation?: string | null };
+  league?: { id: string; name: string; abbreviation?: string | null; ballType?: 'SOCCER' | 'FUTSAL' | null };
   /**
    * v1.66.0 — unpaid league-fee banner data, computed server-side via
    * `getUnpaidFeeBannerData(leagueId)`. Null = banner stays hidden

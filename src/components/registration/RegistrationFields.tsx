@@ -2,6 +2,8 @@
 
 import { useRef, useState, useTransition } from 'react'
 import { upload } from '@vercel/blob/client'
+import PositionMultiSelect from '@/components/PositionMultiSelect'
+import type { BallType } from '@/lib/positions'
 
 /**
  * v1.68.0 — shared registration fields component.
@@ -21,15 +23,14 @@ import { upload } from '@vercel/blob/client'
  * PUTs each file straight to Blob storage; only the resulting URLs
  * (a few KB) reach the parent's `onSubmit`. Field validity gates,
  * file-size guards, and the previews are unchanged.
+ *
+ * v1.82.0 — single-select position dropdown replaced with the
+ * multi-select chip picker. Vocabulary keys off `ballType` so futsal
+ * leagues see GK/FIXO/ALA/PIVOT and soccer leagues see the 12-code
+ * set (GK + LB/CB/RB + LM/DM/CM/CAM/RM + LW/ST/RW). Optional —
+ * empty selection is allowed (matches the legacy "Prefer not to say"
+ * default).
  */
-
-const POSITIONS: ReadonlyArray<{ value: '' | 'GK' | 'DF' | 'MF' | 'FW'; label: string }> = [
-  { value: '', label: 'Prefer not to say' },
-  { value: 'GK', label: 'GK — Goalkeeper' },
-  { value: 'DF', label: 'DF — Defender' },
-  { value: 'MF', label: 'MF — Midfielder' },
-  { value: 'FW', label: 'FW — Forward' },
-]
 
 const ID_ACCEPT = 'image/jpeg,image/png,image/heic,image/webp,image/heif,application/pdf'
 const ID_MAX_BYTES = 8 * 1024 * 1024
@@ -41,7 +42,13 @@ const UPLOAD_TOKEN_URL = '/api/blob/upload-token'
 export interface RegistrationFieldsSubmit {
   name: string
   email: string
-  position: '' | 'GK' | 'DF' | 'MF' | 'FW'
+  /**
+   * v1.82.0 — multi-position. Stored as canonical uppercase codes from
+   * the league's vocabulary (per ballType). Empty array == "no
+   * position recorded" (matches the v1.68.0 "Prefer not to say"
+   * default semantics).
+   */
+  positions: string[]
   idFrontUrl: string
   idBackUrl: string
   profilePictureUrl: string | null
@@ -63,7 +70,18 @@ export interface RegistrationFieldsProps {
   initialEmail?: string
   /** v1.80.0 — initial comments (empty for new applications). */
   initialComments?: string
-  initialPosition?: 'GK' | 'DF' | 'MF' | 'FW' | null
+  /**
+   * v1.82.0 — initial selected position codes. Empty by default. Codes
+   * are validated against `ballType`'s vocabulary on submit (server-
+   * side validation owns the final word).
+   */
+  initialPositions?: ReadonlyArray<string>
+  /**
+   * v1.82.0 — league format. Drives the position chip vocabulary.
+   * Defaults to SOCCER for legacy callers; the recruit/onboarding/
+   * apply paths thread the league's actual ballType through.
+   */
+  ballType?: BallType | null
   /** Submit button label, e.g. "Apply to T9L" or "Save and finish". */
   submitLabel: string
   /**
@@ -92,7 +110,8 @@ export default function RegistrationFields({
   initialName = '',
   initialEmail = '',
   initialComments = '',
-  initialPosition = null,
+  initialPositions = [],
+  ballType = null,
   submitLabel,
   uploadPathPrefix,
   picturePathPrefix,
@@ -102,7 +121,7 @@ export default function RegistrationFields({
   const [name, setName] = useState(initialName)
   const [email, setEmail] = useState(initialEmail)
   const [comments, setComments] = useState(initialComments)
-  const [position, setPosition] = useState<'' | 'GK' | 'DF' | 'MF' | 'FW'>(initialPosition ?? '')
+  const [positions, setPositions] = useState<string[]>([...initialPositions])
   const [error, setError] = useState<string | null>(null)
 
   const idFrontRef = useRef<HTMLInputElement>(null)
@@ -210,7 +229,7 @@ export default function RegistrationFields({
         await onSubmit({
           name: trimmed,
           email: trimmedEmail,
-          position,
+          positions,
           idFrontUrl: front.url,
           idBackUrl: back.url,
           profilePictureUrl: pic?.url ?? null,
@@ -270,23 +289,21 @@ export default function RegistrationFields({
         </span>
       </label>
 
-      <label className="block">
+      <div className="block">
         <span className="block text-fg-mid text-xs uppercase tracking-widest font-bold mb-1.5">
-          Position
+          Position(s)
         </span>
-        <select
-          value={position}
-          onChange={(e) => setPosition(e.target.value as typeof position)}
-          className="w-full bg-background border border-border-default rounded-lg px-3 py-2 text-sm text-fg-high"
-          data-testid="registration-position"
-        >
-          {POSITIONS.map((p) => (
-            <option key={p.value} value={p.value}>
-              {p.label}
-            </option>
-          ))}
-        </select>
-      </label>
+        <PositionMultiSelect
+          selected={positions}
+          onChange={setPositions}
+          ballType={ballType}
+          disabled={pending}
+          testIdPrefix="registration-position"
+        />
+        <span className="block text-fg-low text-xs mt-1.5">
+          Tap to pick one or more. You can leave this blank.
+        </span>
+      </div>
 
       <div
         className="rounded-lg border border-warning/40 bg-warning/10 px-4 py-3 text-sm text-fg-high leading-relaxed"

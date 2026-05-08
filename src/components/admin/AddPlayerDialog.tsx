@@ -5,6 +5,8 @@ import { Plus, X } from 'lucide-react'
 import { adminCreatePlayer, adminGenerateInvite } from '@/app/admin/leagues/actions'
 import { useToast } from './ToastProvider'
 import InviteDisplay from './InviteDisplay'
+import PositionMultiSelect from '@/components/PositionMultiSelect'
+import type { BallType } from '@/lib/positions'
 
 interface LeagueTeamRef {
   id: string
@@ -14,15 +16,12 @@ interface LeagueTeamRef {
 interface AddPlayerDialogProps {
   leagueId: string
   leagueTeams: LeagueTeamRef[]
+  /**
+   * v1.82.0 — league format. Drives the position chip vocabulary
+   * (SOCCER → 12 codes, FUTSAL → GK/FIXO/ALA/PIVOT).
+   */
+  ballType: BallType | null
 }
-
-const POSITION_OPTIONS: ReadonlyArray<{ value: '' | 'GK' | 'DF' | 'MF' | 'FW'; label: string }> = [
-  { value: '',   label: 'No position' },
-  { value: 'GK', label: 'GK — Goalkeeper' },
-  { value: 'DF', label: 'DF — Defender' },
-  { value: 'MF', label: 'MF — Midfielder' },
-  { value: 'FW', label: 'FW — Forward' },
-]
 
 /**
  * v1.33.0 (PR ε of the onboarding chain) — admin "Add Player" affordance.
@@ -45,14 +44,14 @@ const POSITION_OPTIONS: ReadonlyArray<{ value: '' | 'GK' | 'DF' | 'MF' | 'FW'; l
  * the eventual /join/[code] route (PR ζ) reads it. Default off — the
  * onboarding form is the safe path.
  */
-export default function AddPlayerDialog({ leagueId, leagueTeams }: AddPlayerDialogProps) {
+export default function AddPlayerDialog({ leagueId, leagueTeams, ballType }: AddPlayerDialogProps) {
   const { toast } = useToast()
   const [open, setOpen] = useState(false)
   const [pending, startTransition] = useTransition()
 
   // Form state
   const [name, setName] = useState('')
-  const [position, setPosition] = useState<'' | 'GK' | 'DF' | 'MF' | 'FW'>('')
+  const [positions, setPositions] = useState<string[]>([])
   const [leagueTeamId, setLeagueTeamId] = useState('')
   const [generateInviteAfter, setGenerateInviteAfter] = useState(false)
   const [skipOnboarding, setSkipOnboarding] = useState(false)
@@ -68,7 +67,7 @@ export default function AddPlayerDialog({ leagueId, leagueTeams }: AddPlayerDial
 
   function reset() {
     setName('')
-    setPosition('')
+    setPositions([])
     setLeagueTeamId('')
     setGenerateInviteAfter(false)
     setSkipOnboarding(false)
@@ -99,7 +98,7 @@ export default function AddPlayerDialog({ leagueId, leagueTeams }: AddPlayerDial
         const created = await adminCreatePlayer({
           leagueId,
           name: trimmedName === '' ? null : trimmedName,
-          position: position === '' ? null : position,
+          positions,
           leagueTeamId: leagueTeamId === '' ? null : leagueTeamId,
         })
         if (generateInviteAfter) {
@@ -217,21 +216,19 @@ export default function AddPlayerDialog({ leagueId, leagueTeams }: AddPlayerDial
                     </select>
                   </label>
 
-                  <label className="block">
+                  <div className="block">
                     <span className="block text-admin-text3 text-[10px] font-bold uppercase tracking-widest mb-1">
-                      Position
+                      Position(s)
                     </span>
-                    <select
-                      value={position}
-                      onChange={(e) => setPosition(e.target.value as typeof position)}
-                      className="w-full bg-admin-surface2 border border-admin-border rounded px-3 py-2 text-sm text-admin-text"
-                      data-testid="add-player-position"
-                    >
-                      {POSITION_OPTIONS.map((p) => (
-                        <option key={p.value} value={p.value}>{p.label}</option>
-                      ))}
-                    </select>
-                  </label>
+                    <PositionMultiSelect
+                      selected={positions}
+                      onChange={setPositions}
+                      ballType={ballType}
+                      disabled={pending}
+                      variant="admin"
+                      testIdPrefix="add-player-position"
+                    />
+                  </div>
                 </div>
 
                 <div className="space-y-2 mb-5 bg-admin-surface2 border border-admin-border rounded-md p-3">

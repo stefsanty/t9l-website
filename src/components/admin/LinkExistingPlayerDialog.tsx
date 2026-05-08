@@ -18,6 +18,8 @@ export interface LinkablePlayerRow {
   id: string
   name: string | null
   position: string | null
+  /** v1.82.0 — multi-position display source. */
+  positions?: string[]
   profilePictureUrl: string | null
   pictureUrl: string | null
   userId: string | null
@@ -291,9 +293,17 @@ export default function LinkExistingPlayerDialog({
                             {c.name ?? <span className="italic text-admin-text3">Unnamed</span>}
                           </p>
                           <div className="mt-0.5 flex items-center gap-2 text-[11px] text-admin-text3">
-                            {c.position && (
-                              <span className="font-mono uppercase">{c.position}</span>
-                            )}
+                            {(() => {
+                              // v1.82.0 — multi-position display.
+                              const codes = c.positions && c.positions.length > 0
+                                ? c.positions
+                                : c.position
+                                  ? [c.position]
+                                  : []
+                              return codes.length > 0 ? (
+                                <span className="font-mono uppercase">{codes.join('/')}</span>
+                              ) : null
+                            })()}
                             {c.otherLeagues.length > 0 ? (
                               <span data-testid={`link-existing-player-other-leagues-${c.id}`}>
                                 Also in: {c.otherLeagues.join(', ')}
