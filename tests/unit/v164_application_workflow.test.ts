@@ -324,7 +324,13 @@ describe('v1.64.0 — getRecruitingViewerState helper', () => {
 
 describe('v1.64.0 — RecruitingBanner state rendering', () => {
   it('imports ApplyToLeagueModal', () => {
-    expect(BANNER_SRC).toMatch(/import\s+ApplyToLeagueModal\b/)
+    // v1.80.8 — declared via `next/dynamic` so the modal chunk only
+    // fetches when a State D applicant clicks the CTA. The static
+    // `import ApplyToLeagueModal from './ApplyToLeagueModal'` form was
+    // replaced; perfPhase4.test.ts pins the dynamic-import shape.
+    expect(BANNER_SRC).toMatch(
+      /(?:import\s+ApplyToLeagueModal\b|const\s+ApplyToLeagueModal\s*=\s*dynamic\()/,
+    )
   })
 
   it('approved_this surface has its own testid', () => {

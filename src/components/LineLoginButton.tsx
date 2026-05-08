@@ -3,11 +3,19 @@
 import { useSession, signIn, signOut } from 'next-auth/react';
 import { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
+import dynamic from 'next/dynamic';
 import Image from 'next/image';
 import Link from 'next/link';
 import { APP_VERSION } from '@/lib/version';
-import SignInLightbox from './SignInLightbox';
 import { getCurrentCallbackUrl } from '@/lib/signInCallbackUrl';
+
+// v1.80.8 — perf phase 4c: defer SignInLightbox to its own async chunk
+// so the modal's ~9 KB / ~3 KB gzipped doesn't ship in the eager Header
+// chunk on every page first-paint. Gated by `showSignInLightbox` so the
+// chunk only fetches when the user actually opens the lightbox.
+const SignInLightbox = dynamic(() => import('./SignInLightbox'), {
+  loading: () => null,
+});
 
 const GUEST_DISMISSED_KEY = 't9l-guest-dismissed';
 
@@ -212,7 +220,9 @@ export default function LineLoginButton() {
             </Link>
           )}
         </div>
-        <SignInLightbox open={showSignInLightbox} onClose={() => setShowSignInLightbox(false)} callbackUrl={signInCallbackUrl} />
+        {showSignInLightbox && (
+          <SignInLightbox open onClose={() => setShowSignInLightbox(false)} callbackUrl={signInCallbackUrl} />
+        )}
       </>
     );
   }

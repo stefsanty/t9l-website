@@ -51,7 +51,12 @@ describe('GuestLoginBanner — δ.1 single neutral button', () => {
   })
 
   it('imports + renders SignInLightbox', () => {
-    expect(bannerSrc).toMatch(/import\s+SignInLightbox\s+from\s+['"]\.\/SignInLightbox['"]/)
+    // v1.80.8 — lazy-loaded via `next/dynamic` so the modal chunk only
+    // fetches after the user clicks the Sign in CTA. Pre-v1.80.8 this
+    // was a static `import SignInLightbox from './SignInLightbox'`.
+    expect(bannerSrc).toMatch(
+      /const\s+SignInLightbox\s*=\s*dynamic\(\s*\(\s*\)\s*=>\s*import\(\s*['"]\.\/SignInLightbox['"]\s*\)/,
+    )
     expect(bannerSrc).toMatch(/<SignInLightbox\b/)
   })
 
@@ -72,7 +77,10 @@ describe('LineLoginButton — δ.1 single neutral button (logged-out branch)', (
   })
 
   it('imports + renders SignInLightbox', () => {
-    expect(headerSrc).toMatch(/import\s+SignInLightbox\s+from\s+['"]\.\/SignInLightbox['"]/)
+    // v1.80.8 — see GuestLoginBanner test above for the dynamic-import note.
+    expect(headerSrc).toMatch(
+      /const\s+SignInLightbox\s*=\s*dynamic\(\s*\(\s*\)\s*=>\s*import\(\s*['"]\.\/SignInLightbox['"]\s*\)/,
+    )
     expect(headerSrc).toMatch(/<SignInLightbox\b/)
     expect(headerSrc).toMatch(/showSignInLightbox/)
   })

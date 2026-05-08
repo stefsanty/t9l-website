@@ -2,7 +2,7 @@
 
 T9L.me — mobile-first website for the Tennozu 9-Aside League, a recreational football league in Tokyo. Multi-tenant: a single Vercel deployment serves multiple leagues, each at `/id/<slug>`. Players sign in (LINE / Google / email magic-link), claim a Player record, RSVP availability for matchdays, and view live league data backed by Postgres (Neon) + Upstash Redis.
 
-**Current release:** v1.80.7.
+**Current release:** v1.80.8.
 
 ## Documentation
 
@@ -75,7 +75,8 @@ Keep each line short. Long explanations live in PR descriptions, not chat.
 
 ## Recent ledger (top 20 PRs)
 
-- **v1.80.7** — perf phase 4b: bundle analyzer audit — `leagueSlug.ts` and `leagueDetails.ts` were dragging `@prisma/client/runtime/index-browser.js` (~47 KB parsed / ~17 KB gzip) into the public bundle on every route because client components legitimately imported pure exports (`DEFAULT_LEAGUE_SLUG`, `BALL_TYPE_LABELS`, etc.) from files that also `import { prisma }`. Split DB-cached lookups into `leagueSlugServer.ts` + `leagueDetailsServer.ts`; pure types/constants/helpers stay in the original modules. Total client bundle: -49,225 bytes parsed / -17,632 bytes gzip. Zero `@prisma/*` references remaining in `.next/static/chunks` (was 47 KB). Also closes the perf audit chain — cumulative phase 1-4b savings: ~966 KB image weight (phase 1) + below-fold widget lazy chunks (phase 2) + 3840px image variants pruned (phase 3) + GT locale-gated + SWC polyfill prune (phase 3) + LCP font fix + admin font split + bundle-analyzer wiring (phase 4) + Prisma leak fix (phase 4b)
+- **v1.80.8** — perf phase 4c: lazy-load auth modals (`SignInLightbox`, `ApplyToLeagueModal`) via `next/dynamic` — they were statically imported by `Header → LineLoginButton`, `RecruitingBanner`, and `GuestLoginBanner` but only mount after user click. Header chunk 1347: 27,577 → 21,509 parsed (-6,068 / -1,059 gz) on every public page. Dashboard chunk 7206: 33,725 → 26,174 parsed (-7,551 / -2,203 gz) on the landing page. Modals now ship as their own async chunks (~9 KB SignInLightbox, ~5 KB ApplyToLeagueModal) that fetch only when opened. JSX gated on the open-state booleans so the deferred chunks don't fetch on mount.
+- **v1.80.7** — perf phase 4b: bundle analyzer audit — `leagueSlug.ts` and `leagueDetails.ts` were dragging `@prisma/client/runtime/index-browser.js` (~47 KB parsed / ~17 KB gzip) into the public bundle on every route because client components legitimately imported pure exports (`DEFAULT_LEAGUE_SLUG`, `BALL_TYPE_LABELS`, etc.) from files that also `import { prisma }`. Split DB-cached lookups into `leagueSlugServer.ts` + `leagueDetailsServer.ts`; pure types/constants/helpers stay in the original modules. Total client bundle: -49,225 bytes parsed / -17,632 bytes gzip. Zero `@prisma/*` references remaining in `.next/static/chunks` (was 47 KB)
 - **v1.80.6** — perf phase 4: LCP fix (Barlow Condensed `display: 'optional'` — kills the late font-swap re-paint that pinned LCP to the matchday `<h2>`) + admin-only fonts (Barlow Sans, DM Mono) lifted out of public root layout (~50 KiB woff2 transferred saved per first load) + drop unused weight 400 from Barlow Condensed (~10 KiB saved) + `@next/bundle-analyzer` wired (`ANALYZE=true npx next experimental-analyze`)
 - **v1.80.5** — perf phase 3: Google Translate gated behind locale (EN visitors skip the GT bundle entirely — removes el_main_css from PSI critical path) + browserslist config drops SWC legacy polyfills (Array.prototype.at, Object.fromEntries, etc.); LCP fix deferred via [docs/perf-phase3-lcp-handoff.md](docs/perf-phase3-lcp-handoff.md)
 - **v1.80.4** — perf phase 3: `sizes=` on 6 `<Image fill />` callers (PlayerAvatar, UserTeamBadge, MatchdayCard, SquadList, LeagueTable, TopPerformers) so next/image stops serving 3840px variants for 12-64px slots; defensive `take: 5000` on goal/matchEvent/leagueInvite findMany in admin-data
@@ -94,7 +95,6 @@ Keep each line short. Long explanations live in PR descriptions, not chat.
 - **v1.75.8** — Consistent column alignment in Planned Season Schedule
 - **v1.75.7** — League details polish + Goal kick field
 - **v1.75.6** — Stats moved to bottom + labels renamed + Matchdays row + Season Fee/Register By combined
-- **v1.75.5** — Consolidate admin League details + surface stats mini-section publicly
 
 Older entries condensed in [docs/ledger-archive.md](docs/ledger-archive.md).
 

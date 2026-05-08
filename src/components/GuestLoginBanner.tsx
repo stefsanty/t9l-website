@@ -1,9 +1,15 @@
 'use client';
 
 import { useState } from 'react';
+import dynamic from 'next/dynamic';
 import { useSession } from 'next-auth/react';
-import SignInLightbox from './SignInLightbox';
 import { getCurrentCallbackUrl } from '@/lib/signInCallbackUrl';
+
+// v1.80.8 — perf phase 4c: lazy-load the modal so its chunk only fetches
+// when the user clicks the banner's Sign in CTA.
+const SignInLightbox = dynamic(() => import('./SignInLightbox'), {
+  loading: () => null,
+});
 
 export default function GuestLoginBanner() {
   const { data: session, status } = useSession();
@@ -43,7 +49,7 @@ export default function GuestLoginBanner() {
           </button>
         </div>
       </div>
-      <SignInLightbox open={open} onClose={() => setOpen(false)} callbackUrl={callbackUrl} />
+      {open && <SignInLightbox open onClose={() => setOpen(false)} callbackUrl={callbackUrl} />}
     </>
   );
 }
