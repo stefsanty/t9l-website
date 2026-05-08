@@ -171,6 +171,7 @@ export const getLeaguePlayers = unstable_cache(
           maxUses: true,
           usedCount: true,
         },
+        take: 5000,
       }),
       // v1.65.4 — pending applications targeting THIS league. The
       // legacy `Player.applicationStatus` + `Player.applicationLeagueId`
@@ -282,6 +283,7 @@ export const getLeagueStats = unstable_cache(
           match: { include: { gameWeek: true } },
           assist: { include: { player: true } },
         },
+        take: 5000,
       }),
       prisma.match.findMany({
         where: { leagueId },
@@ -338,6 +340,7 @@ export const getLeagueEvents = unstable_cache(
           { minute: 'asc' },
           { createdAt: 'asc' },
         ],
+        take: 5000,
       }),
       prisma.match.findMany({
         where: { leagueId },

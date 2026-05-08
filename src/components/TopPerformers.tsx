@@ -134,6 +134,7 @@ export default function TopPerformers({
                                 src={stat.teamLogo}
                                 alt={stat.teamName}
                                 fill
+                                sizes="12px"
                                 className="object-contain"
                               />
                             ) : (

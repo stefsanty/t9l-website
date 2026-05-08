@@ -34,6 +34,7 @@ export default function PlayerAvatar({
         src={hasError ? '/player_pics/default.png' : src}
         alt={playerName}
         fill
+        sizes="64px"
         className="object-cover transition-opacity duration-300"
         unoptimized={!!pictureUrl}
         onError={() => {

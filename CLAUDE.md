@@ -2,7 +2,7 @@
 
 T9L.me — mobile-first website for the Tennozu 9-Aside League, a recreational football league in Tokyo. Multi-tenant: a single Vercel deployment serves multiple leagues, each at `/id/<slug>`. Players sign in (LINE / Google / email magic-link), claim a Player record, RSVP availability for matchdays, and view live league data backed by Postgres (Neon) + Upstash Redis.
 
-**Current release:** v1.80.3.
+**Current release:** v1.80.4.
 
 ## Documentation
 
@@ -75,7 +75,8 @@ Keep each line short. Long explanations live in PR descriptions, not chat.
 
 ## Recent ledger (top 20 PRs)
 
-- **v1.80.3** — perf phase 2: `next/dynamic` for below-fold widgets — Dashboard (MatchdayAvailability/LeagueDetailsPanel/PlannedRosterStats/RsvpBar/SubmitGoalForm/CompressedMatchdaySchedule) + /stats (TopPerformers/SquadList); H2 font pruning deferred (every candidate weight has callers)
+- **v1.80.4** — perf phase 3: `sizes=` on 6 `<Image fill />` callers (PlayerAvatar, UserTeamBadge, MatchdayCard, SquadList, LeagueTable, TopPerformers) so next/image stops serving 3840px variants for 12-64px slots; defensive `take: 5000` on goal/matchEvent/leagueInvite findMany in admin-data
+- **v1.80.3** — perf phase 2: `next/dynamic` for below-fold widgets (MatchdayAvailability, LeagueDetailsPanel, RsvpBar, SubmitGoalForm, CompressedMatchdaySchedule, TopPerformers, SquadList) — initial route bundle hydrates the LCP banner first
 - **v1.80.2** — perf phase 1: bfcache reload deleted, /stats fetches parallelized, public-data revalidate 30s→300s, 3 oversized PNGs re-encoded (~966 KB saved)
 - **v1.80.1** — sign out preserves current page via getCurrentCallbackUrl()
 - **v1.80.0** — comments field on onboarding form + admin display
@@ -94,8 +95,6 @@ Keep each line short. Long explanations live in PR descriptions, not chat.
 - **v1.75.4** — Position LeagueDetailsPanel between banner and availability in Classic mode
 - **v1.75.3** — Increase top padding on LeagueDetailsPanel body
 - **v1.75.2** — League details panel header bg-surface + hover affordance
-- **v1.75.1** — Consolidate LeagueDetailsPanel + decouple preseasonMode + field reorder + collapsible
-- **v1.75.0** — League details settings + preseason public display
 
 Older entries condensed in [docs/ledger-archive.md](docs/ledger-archive.md).
 

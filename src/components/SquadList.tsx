@@ -91,6 +91,7 @@ export default function SquadList({
                         src={team.logo}
                         alt={team.name}
                         fill
+                        sizes="48px"
                         className="object-contain p-1"
                       />
                     ) : (

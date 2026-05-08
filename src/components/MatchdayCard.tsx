@@ -240,7 +240,7 @@ export default function MatchdayCard({
                   <div className="flex-1 flex items-center gap-2 min-w-0">
                     <div className={`relative w-9 h-9 shrink-0 rounded-lg p-1.5 border transition-all ${isUserHome ? 'bg-tertiary/10 border-tertiary/50 ' : 'bg-surface border-border-subtle'}`}>
                       {home?.logo && (
-                        <Image src={home.logo} alt={home.name} fill className="object-contain p-1" />
+                        <Image src={home.logo} alt={home.name} fill sizes="36px" className="object-contain p-1" />
                       )}
                     </div>
                     <div className="flex flex-col gap-0.5 min-w-0">
@@ -282,7 +282,7 @@ export default function MatchdayCard({
                     </div>
                     <div className={`relative w-9 h-9 shrink-0 rounded-lg p-1.5 border transition-all ${isUserAway ? 'bg-tertiary/10 border-tertiary/50 ' : 'bg-surface border-border-subtle'}`}>
                       {away?.logo && (
-                        <Image src={away.logo} alt={away.name} fill className="object-contain p-1" />
+                        <Image src={away.logo} alt={away.name} fill sizes="36px" className="object-contain p-1" />
                       )}
                     </div>
                   </div>
