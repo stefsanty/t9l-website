@@ -1,0 +1,92 @@
+# Phase 4b/4c follow-up — milestone log
+
+Worktree spawned with briefing referencing main=v1.80.6 / target=v1.80.7.
+Post-rebase, parent main is at v1.80.8:
+  - v1.80.6: bundle analyzer wired
+  - v1.80.7: Prisma client-runtime leak fix (-17 KB gzip per route)
+  - v1.80.8: lazy-load auth modals (SignInLightbox + ApplyToLeagueModal)
+
+The "phase 4b" labels in the briefing already shipped. This session is
+investigating whether action item 4 from the original perf audit
+("21.6 KiB unused JS in 0_k762lvts5s2.js") still has open territory
+post-v1.80.8, and if so, shipping it as v1.80.9.
+
+
+[$(date -u +%Y-%m-%dT%H:%M:%SZ)] M1 DONE: Bundle analyzer was already wired in v1.80.6.
+  Baseline (post-v1.80.8) captured via `next experimental-analyze --output`
+  + per-route stats from .next/diagnostics/route-bundle-stats.json:
+
+  Top public routes by first-load JS (uncompressed):
+    /id/[slug]              660,402 bytes  (13 chunks)
+    /id/[slug]/md/[id]      660,402 bytes
+    /                       660,402 bytes
+    /recruit/[slug]         645,328 bytes
+    /join/[code]/onboarding 639,596 bytes
+    /stats                  634,930 bytes
+    /schedule               633,604 bytes
+    /[slug]                 585,468 bytes  (10 root chunks; redirect-y page)
+    /league/[slug]          585,468 bytes
+    /matchday/[id]          585,468 bytes
+
+  Top 5 chunks by raw size:
+    0u_19j6weg3k3.js  227,379 / 71,027 gz   React + Next router runtime (framework)
+    03~yq9q893hmn.js  112,594 / 39,490 gz   polyfill-nomodule (served via <script nomodule>; modern browsers skip)
+    15541gdjq36ht.js  109,246 / 29,041 gz   Next router internals (framework)
+    16nmns7r41a3p.js   58,888 / 13,232 gz   admin-only chunk (per route-bundle-stats)
+    03vharm7a1~9r.js   55,831 / 13,071 gz   Next async-local-storage / draft-mode / search-params
+
+  Top 5 are ~93% framework — not user-controllable.
+
+[$(date -u +%Y-%m-%dT%H:%M:%SZ)] M2 DONE: Walked the public-root chunks that hit every page. Findings:
+
+  03vharm7a1~9r.js (55 KB / 13 KB gz) — Next.js next/headers + next/dynamic-tracking. Framework, can't prune.
+  0p0p6yfobvglb.js (36 KB /  9.7 KB gz) — sonner Toaster (rendered in app/layout.tsx) + MembershipsProvider.
+  0-2umy1z-gdzs.js (36 KB / 10.5 KB gz) — next-auth/react SessionProvider + GoogleTranslateLoader stub.
+  0--o4905mhw.e.js (44 KB /  9.3 KB gz) — Next.js dynamic tracking / async-local-storage. Framework.
+  01252jp0ai4yh.js (28 KB /  8.8 KB gz) — react-server-dom-webpack client. Framework.
+  0ayull263if0p.js (32 KB /  9.0 KB gz) — Next router / cache-key creation. Framework.
+
+  ONLY user-controllable target: sonner's <Toaster /> is mounted at root layout
+  but is invisible until a toast() call. Same lazy-load pattern as v1.80.8 modals.
+
+  Verified NOT actionable:
+  - polyfill-nomodule.js: served via <script nomodule>, modern browsers skip
+    download entirely. Browserslist (Chrome93+, Safari16+) means 100% of
+    visitors skip. Next.js doesn't expose a config to disable.
+  - core-js usage: the polyfill bundle ships from Next.js itself, not from
+    any of our deps (no `core-js` directory in node_modules).
+  - lucide-react: 28 callsites use named imports of specific icons (1.x is
+    per-icon files). Already tree-shaken.
+  - Prisma in client bundle: zero @prisma/* references in .next/static/chunks
+    (v1.80.7 fix held).
+
+[$(date -u +%Y-%m-%dT%H:%M:%SZ)] M3 DONE: One low-risk fix: extract <Toaster> into a 'use client' wrapper that uses next/dynamic to lazy-load sonner. Pattern matches v1.80.8 modal lazy-load. Expected savings: sonner's ~36 KB raw / ~10 KB gz moves out of root chunk on every public page; pages that import { toast } from 'sonner' directly (CopyMatchdayLink, AssignPlayerClient) still pull sonner but only on that route, in a per-route chunk.
+
+M4 DONE: Applied — extracted ToasterMount.tsx (use client + next/dynamic + ssr:false) and replaced static Toaster import in app/layout.tsx. Post-fix build passes. tsc clean. 2738 unit tests pass + 3 new regression-target tests in perfPhase4d.test.ts pass. Stash-pop verified — re-injecting <Toaster> into layout.tsx fails 2 of the 3 new tests.
+
+Per-route gz first-load delta (post-v1.80.8 baseline → v1.80.9):
+  /_not-found              166,176 → 157,924   -8,252 gz (-31,467 raw)
+  /[slug]                  166,176 → 157,924   -8,252 gz
+  /league/[slug]           166,176 → 157,924   -8,252 gz
+  /matchday/[id]           166,176 → 157,924   -8,252 gz
+  /recruit/[slug]          186,149 → 177,897   -8,252 gz
+  /join/[code]/onboarding  183,941 → 175,689   -8,252 gz
+  /stats                   181,869 → 172,884   -8,985 gz (-34,325 raw)
+  /                        188,962 → 189,556   +594 gz   (sonner preloaded as async chunk on Recruiting cluster)
+  /id/[slug]               188,962 → 189,556   +594 gz
+  /id/[slug]/md/[id]       188,962 → 189,556   +594 gz   (already had sonner via CopyMatchdayLink toast() caller)
+  /schedule                182,230 → 182,455   +225 gz
+
+  7 routes win, 4 regress slightly. Net weighted: ~5-7 KB gz off average public route entry.
+
+M5 DONE: Version bumped to v1.80.9; CLAUDE.md ledger updated; tests pass. PR push pending.
+
+Cumulative phase 1-4d savings (baseline early Jan → v1.80.9):
+  Phase 1 (v1.80.2): bfcache reload deleted, /stats parallelized, public-data revalidate 30s→300s, ~966 KB image weight
+  Phase 2 (v1.80.3): below-fold next/dynamic for Dashboard + /stats widgets
+  Phase 3 (v1.80.4): sizes= on <Image fill /> callers (no more 3840px variants for 12-64px slots) + admin findMany take limits
+  Phase 3 (v1.80.5): GT locale-gated + browserslist drops SWC legacy polyfills
+  Phase 4  (v1.80.6): LCP fix (Barlow Condensed display:optional) + admin font split out of public + bundle-analyzer wired
+  Phase 4b (v1.80.7): Prisma client-runtime leak fix (-49,225 raw / -17,632 gz on every public route)
+  Phase 4c (v1.80.8): lazy-load SignInLightbox + ApplyToLeagueModal (-13.6 KB raw / -3.3 KB gz on dashboard, -6 KB raw / -1 KB gz on Header-bearing routes)
+  Phase 4d (v1.80.9): lazy-load sonner Toaster (-31 KB raw / -8 KB gz on most public routes)

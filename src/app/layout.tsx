@@ -1,12 +1,12 @@
 import type { Metadata } from "next";
 import { Inter, Barlow_Condensed } from "next/font/google";
-import { Toaster } from "sonner";
 import { getServerSession } from "next-auth";
 import AuthProvider from "@/components/AuthProvider";
 import ThemeProvider from "@/components/ThemeProvider";
 import VersionFooter from "@/components/VersionFooter";
 import { MembershipsProvider } from "@/components/MembershipsProvider";
 import GoogleTranslateLoader from "@/components/GoogleTranslateLoader";
+import ToasterMount from "@/components/ToasterMount";
 import { authOptions } from "@/lib/auth";
 import { getMembershipsForSession, type Membership } from "@/lib/memberships";
 import "./globals.css";
@@ -144,12 +144,7 @@ export default async function RootLayout({
             </MembershipsProvider>
           </AuthProvider>
         </ThemeProvider>
-        <Toaster
-          position="top-center"
-          duration={4500}
-          theme="dark"
-          toastOptions={{ className: 'font-display uppercase tracking-wider text-xs' }}
-        />
+        <ToasterMount />
       </body>
     </html>
   );
