@@ -70,15 +70,47 @@ export async function redeemInvite(input: RedeemInviteInput): Promise<RedeemInvi
   if (!session) {
     return { ok: false, error: 'You must sign in before redeeming an invite' }
   }
-  const userId = (session as { userId?: string | null }).userId ?? null
-  if (!userId) {
-    // Admin-credentials sessions don't carry a User row — they can't
-    // redeem invites. Fail loud rather than silently mis-bind.
-    return { ok: false, error: 'Admin sessions cannot redeem player invites' }
+  const sessionUserId = (session as { userId?: string | null }).userId ?? null
+  // session.lineId is typed `string` (empty string for admin-credentials).
+  const sessionLineId = session.lineId || null
+  if (!sessionUserId && !sessionLineId) {
+    // v1.80.11 — admin-orthogonal-UX rule. Mirrors v1.80.10 in
+    // `api/recruiting/actions.ts`. Admin-credentials shared-password
+    // sessions (no userId, no lineId) can't redeem; LINE-auth admins
+    // and grandfathered LINE sessions (whose JWT predates v1.28.0
+    // stage α.5) flow through identically via the lineId fallback.
+    return { ok: false, error: 'Sign in with a player account to redeem this invite' }
   }
-  const lineId = session.lineId ?? null
 
   if (!input.code) return { ok: false, error: 'Missing invite code' }
+
+  // v1.80.11 — resolve the calling User row by `userId` first
+  // (canonical post-α.5 / v1.27.0 binding), falling back to `lineId`
+  // (legacy pre-v1.28.0 LINE sessions; LINE-auth admins whose role is
+  // orthogonal to player binding). Mirrors v1.80.10 in
+  // `api/recruiting/actions.ts`.
+  let user: { id: string; lineId: string | null } | null = null
+  if (sessionUserId) {
+    user = await prisma.user.findUnique({
+      where: { id: sessionUserId },
+      select: { id: true, lineId: true },
+    })
+  }
+  if (!user && sessionLineId) {
+    user = await prisma.user.findUnique({
+      where: { lineId: sessionLineId },
+      select: { id: true, lineId: true },
+    })
+  }
+  if (!user) {
+    return { ok: false, error: 'User not found' }
+  }
+  const userId = user.id
+  // Use the canonical User.lineId (not session.lineId) when telling
+  // `linkUserToPlayer` to also stamp Player.lineId. For Google/email
+  // sign-ins the User row's lineId is null and the helper will skip
+  // the Player.lineId write.
+  const lineId = user.lineId
 
   const invite = await prisma.leagueInvite.findUnique({
     where: { code: input.code },
@@ -256,9 +288,33 @@ export interface SubmitOnboardingInput {
 export async function submitOnboarding(input: SubmitOnboardingInput): Promise<void> {
   const session = await getServerSession(authOptions)
   if (!session) throw new Error('Sign in required')
-  const userId = (session as { userId?: string | null }).userId ?? null
-  if (!userId) throw new Error('Admin sessions cannot submit onboarding')
-  const lineId = session.lineId ?? null
+  const sessionUserId = (session as { userId?: string | null }).userId ?? null
+  // session.lineId is typed `string` (empty string for admin-credentials).
+  const sessionLineId = session.lineId || null
+  if (!sessionUserId && !sessionLineId) {
+    // v1.80.11 — admin-orthogonal-UX rule. Mirrors v1.80.10. Sessions
+    // with neither identifier (admin-credentials shared-password) get
+    // a neutral message; LINE-auth admins flow through via lineId.
+    throw new Error('Sign in with a player account to complete onboarding')
+  }
+  // Resolve the calling User row by userId first, falling back to
+  // lineId (legacy LINE sessions / LINE-auth admins).
+  let user: { id: string; lineId: string | null } | null = null
+  if (sessionUserId) {
+    user = await prisma.user.findUnique({
+      where: { id: sessionUserId },
+      select: { id: true, lineId: true },
+    })
+  }
+  if (!user && sessionLineId) {
+    user = await prisma.user.findUnique({
+      where: { lineId: sessionLineId },
+      select: { id: true, lineId: true },
+    })
+  }
+  if (!user) throw new Error('User not found')
+  const userId = user.id
+  const lineId = user.lineId
 
   const trimmedName = input.name.trim()
   if (!trimmedName) throw new Error('Your name is required')
@@ -345,8 +401,29 @@ export async function submitOnboarding(input: SubmitOnboardingInput): Promise<vo
 export async function submitIdUpload(formData: FormData): Promise<void> {
   const session = await getServerSession(authOptions)
   if (!session) throw new Error('Sign in required')
-  const userId = (session as { userId?: string | null }).userId ?? null
-  if (!userId) throw new Error('Admin sessions cannot submit onboarding')
+  const sessionUserId = (session as { userId?: string | null }).userId ?? null
+  // session.lineId is typed `string` (empty string for admin-credentials).
+  const sessionLineId = session.lineId || null
+  if (!sessionUserId && !sessionLineId) {
+    // v1.80.11 — admin-orthogonal-UX rule. Mirrors v1.80.10.
+    throw new Error('Sign in with a player account to complete onboarding')
+  }
+  // Resolve the calling User row by userId first, falling back to lineId.
+  let user: { id: string } | null = null
+  if (sessionUserId) {
+    user = await prisma.user.findUnique({
+      where: { id: sessionUserId },
+      select: { id: true },
+    })
+  }
+  if (!user && sessionLineId) {
+    user = await prisma.user.findUnique({
+      where: { lineId: sessionLineId },
+      select: { id: true },
+    })
+  }
+  if (!user) throw new Error('User not found')
+  const userId = user.id
 
   const code = formData.get('code') as string | null
   const playerId = formData.get('playerId') as string | null
@@ -482,9 +559,32 @@ export async function completeOnboardingWithId(
 ): Promise<void> {
   const session = await getServerSession(authOptions)
   if (!session) throw new Error('Sign in required')
-  const userId = (session as { userId?: string | null }).userId ?? null
-  if (!userId) throw new Error('Admin sessions cannot submit onboarding')
-  const lineId = session.lineId ?? null
+  const sessionUserId = (session as { userId?: string | null }).userId ?? null
+  // session.lineId is typed `string` (empty string for admin-credentials).
+  const sessionLineId = session.lineId || null
+  if (!sessionUserId && !sessionLineId) {
+    // v1.80.11 — admin-orthogonal-UX rule. Mirrors v1.80.10.
+    throw new Error('Sign in with a player account to complete onboarding')
+  }
+  // v1.80.11 — resolve User row by userId first, falling back to
+  // lineId. Selecting `email` here folds the v1.78.0 lookup at
+  // L536-539 into the same query.
+  let user: { id: string; lineId: string | null; email: string | null } | null = null
+  if (sessionUserId) {
+    user = await prisma.user.findUnique({
+      where: { id: sessionUserId },
+      select: { id: true, lineId: true, email: true },
+    })
+  }
+  if (!user && sessionLineId) {
+    user = await prisma.user.findUnique({
+      where: { lineId: sessionLineId },
+      select: { id: true, lineId: true, email: true },
+    })
+  }
+  if (!user) throw new Error('User not found')
+  const userId = user.id
+  const lineId = user.lineId
 
   if (!input.code) throw new Error('Missing invite code')
   if (!input.playerId) throw new Error('Missing playerId')
@@ -533,11 +633,9 @@ export async function completeOnboardingWithId(
   // v1.78.0 — only WRITE the submitted email if `User.email` is currently
   // null. Mirrors `registerToLeague` — verified pre-existing addresses
   // (Google or magic-link sign-in) are not silently overwritten.
-  const userRow = await prisma.user.findUnique({
-    where: { id: userId },
-    select: { email: true },
-  })
-  const shouldWriteEmail = !userRow?.email
+  // v1.80.11 — User row already resolved at the top of the function
+  // (selecting `email`); no extra round-trip needed.
+  const shouldWriteEmail = !user.email
 
   try {
     await prisma.$transaction(async (tx) => {
@@ -654,8 +752,29 @@ function isOwnedBlobUrl(url: string, expectedPrefix: string): boolean {
 export async function skipIdUpload(input: { code: string; playerId: string }): Promise<void> {
   const session = await getServerSession(authOptions)
   if (!session) throw new Error('Sign in required')
-  const userId = (session as { userId?: string | null }).userId ?? null
-  if (!userId) throw new Error('Admin sessions cannot submit onboarding')
+  const sessionUserId = (session as { userId?: string | null }).userId ?? null
+  // session.lineId is typed `string` (empty string for admin-credentials).
+  const sessionLineId = session.lineId || null
+  if (!sessionUserId && !sessionLineId) {
+    // v1.80.11 — admin-orthogonal-UX rule. Mirrors v1.80.10.
+    throw new Error('Sign in with a player account to complete onboarding')
+  }
+  // Resolve the calling User row by userId first, falling back to lineId.
+  let user: { id: string } | null = null
+  if (sessionUserId) {
+    user = await prisma.user.findUnique({
+      where: { id: sessionUserId },
+      select: { id: true },
+    })
+  }
+  if (!user && sessionLineId) {
+    user = await prisma.user.findUnique({
+      where: { lineId: sessionLineId },
+      select: { id: true },
+    })
+  }
+  if (!user) throw new Error('User not found')
+  const userId = user.id
 
   const player = await prisma.player.findUnique({
     where: { id: input.playerId },

@@ -1,0 +1,90 @@
+# Admin-orthogonal-UX follow-up — v1.80.11
+
+Stack on top of origin/main. PR #229 (v1.80.10) is OPEN, not merged.
+This PR mirrors the same pattern in src/app/join/[code]/actions.ts.
+
+## M1 — All 5 sites located + their current gate identified
+
+All 5 sites in [src/app/join/[code]/actions.ts](src/app/join/[code]/actions.ts):
+
+1. `redeemInvite` — lines 73-78
+   - Gate: `if (!userId) return { ok: false, error: 'Admin sessions cannot redeem player invites' }`
+   - userId used downstream for: `target.userId !== userId`, `linkUserToPlayer({ userId, ... })`
+
+2. `submitOnboarding` — lines 259-260
+   - Gate: `if (!userId) throw new Error('Admin sessions cannot submit onboarding')`
+   - userId used downstream for: `player.userId !== userId`
+
+3. `submitIdUpload` — lines 348-349
+   - Gate: `if (!userId) throw new Error('Admin sessions cannot submit onboarding')`
+   - userId used downstream for: `player.userId !== userId`, `tx.user.update where: { id: userId }`
+
+4. `completeOnboardingWithId` — lines 485-486
+   - Gate: `if (!userId) throw new Error('Admin sessions cannot submit onboarding')`
+   - userId used downstream for: `player.userId !== userId`, `prisma.user.findUnique where: { id: userId }`, `tx.user.update where: { id: userId }`
+
+5. `skipIdUpload` — lines 657-658
+   - Gate: `if (!userId) throw new Error('Admin sessions cannot submit onboarding')`
+   - userId used downstream for: `player.userId !== userId`
+
+## M2 — Pattern from #229 confirmed + applied to all 5 sites
+
+Diff shape (per site, mirrors v1.80.10 inline pattern):
+
+```ts
+// BEFORE
+const userId = (session as { userId?: string | null }).userId ?? null
+if (!userId) throw new Error('Admin sessions cannot ...')
+
+// AFTER
+const sessionUserId = (session as { userId?: string | null }).userId ?? null
+const sessionLineId = session.lineId || null
+if (!sessionUserId && !sessionLineId) {
+  throw new Error('Sign in with a player account to ...')
+}
+let user: { id: ... } | null = null
+if (sessionUserId) user = await prisma.user.findUnique({ where: { id: sessionUserId }, ... })
+if (!user && sessionLineId) user = await prisma.user.findUnique({ where: { lineId: sessionLineId }, ... })
+if (!user) throw new Error('User not found')
+const userId = user.id
+```
+
+`completeOnboardingWithId` additionally folds the v1.78.0 `userRow`
+email lookup into the resolved `user` row's select clause, eliminating
+one redundant DB round-trip.
+
+`redeemInvite` additionally resolves `lineId` from `user.lineId`
+(canonical, User.lineId @unique) rather than the session, so
+`linkUserToPlayer` writes the right value when the LINE-auth admin path
+is taken.
+
+All five sites preserve the downstream `userId` variable name (just
+sourced from `user.id` post-resolution), so no other call sites needed
+changing.
+
+## M3 — Regression tests added + suite passing
+
+New file: [tests/unit/v18011_admin_orthogonal_join.test.ts](tests/unit/v18011_admin_orthogonal_join.test.ts) — 24 source-string assertions across 7 describe blocks (one per fn + 1 shared admin-shaming-gone block + 1 version-bump block).
+
+Stash-pop sanity check: 23 of 24 new tests fail on the broken state
+(the 1 passing is the version-bump regex which is orthogonal to the
+actions.ts change). Confirms the regression-target shape.
+
+Existing tests updated to match the new shape:
+- `tests/unit/redeemInvite.test.ts` — added `userFindUniqueMock` to
+  the `prisma.user` mock, seeded it in PERSONAL/CODE happy-path
+  beforeEach blocks, updated the admin-shaming gate test, added a
+  positive lineId-fallback test.
+- `tests/unit/idUploadActions.test.ts` — seeded `userFindUniqueMock`
+  in beforeEach for submitIdUpload/skipIdUpload/submitOnboarding,
+  updated the admin-credentials reject test to match new copy, added
+  positive lineId-fallback test.
+- `tests/unit/v178_email_field.test.ts` — relaxed the
+  `prisma.user.findUnique` regex to accept the folded select clause.
+- `tests/unit/version.test.ts` — bumped to 1.80.11.
+
+Net test count diff: +24 new (v18011) + 1 new in idUploadActions
+(lineId fallback) + 1 new in redeemInvite (lineId fallback) = +26 tests.
+
+Full suite: 2767 passed, 2 skipped (was 2741 + 2 skipped). tsc clean.
+

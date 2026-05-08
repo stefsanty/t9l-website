@@ -16,6 +16,7 @@ const {
   inviteFindUniqueMock,
   playerFindUniqueMock,
   playerUpdateMock,
+  userFindUniqueMock,
   userUpdateMock,
   assignmentFindFirstMock,
   assignmentUpdateMock,
@@ -30,6 +31,7 @@ const {
   const inviteFindUniqueMock = vi.fn()
   const playerFindUniqueMock = vi.fn()
   const playerUpdateMock = vi.fn().mockResolvedValue({})
+  const userFindUniqueMock = vi.fn()
   const userUpdateMock = vi.fn().mockResolvedValue({})
   const assignmentFindFirstMock = vi.fn()
   const assignmentUpdateMock = vi.fn().mockResolvedValue({})
@@ -50,6 +52,7 @@ const {
     inviteFindUniqueMock,
     playerFindUniqueMock,
     playerUpdateMock,
+    userFindUniqueMock,
     userUpdateMock,
     assignmentFindFirstMock,
     assignmentUpdateMock,
@@ -67,7 +70,7 @@ vi.mock('@/lib/prisma', () => ({
   prisma: {
     leagueInvite: { findUnique: inviteFindUniqueMock, update: inviteUpdateMock },
     player: { findUnique: playerFindUniqueMock, update: playerUpdateMock },
-    user: { update: userUpdateMock },
+    user: { findUnique: userFindUniqueMock, update: userUpdateMock },
     playerLeagueMembership: {
       findFirst: assignmentFindFirstMock,
       update: assignmentUpdateMock,
@@ -93,6 +96,7 @@ beforeEach(() => {
   inviteFindUniqueMock.mockReset()
   playerFindUniqueMock.mockReset()
   playerUpdateMock.mockClear()
+  userFindUniqueMock.mockReset()
   userUpdateMock.mockClear()
   assignmentFindFirstMock.mockReset()
   assignmentUpdateMock.mockClear()
@@ -146,21 +150,39 @@ describe('v1.34.0 (PR ζ) — redeemInvite — auth gate', () => {
     expect(r).toEqual({ ok: false, error: expect.stringMatching(/sign in/i) })
   })
 
-  it('rejects admin-credentials sessions (no userId on session)', async () => {
+  it('rejects admin-credentials sessions (no userId, no lineId)', async () => {
+    // v1.80.11 — admin-orthogonal-UX: only sessions with NEITHER
+    // identifier are rejected, with neutral copy.
     sessionMock.mockResolvedValue({ isAdmin: true })
     const r = await redeemInvite({ code: 'C' })
-    expect(r).toEqual({ ok: false, error: expect.stringMatching(/admin sessions cannot/i) })
+    expect(r).toEqual({
+      ok: false,
+      error: expect.stringMatching(/sign in with a player account/i),
+    })
+  })
+
+  it('v1.80.11 — accepts LINE-auth admin (lineId present, no userId) via lineId fallback', async () => {
+    sessionMock.mockResolvedValue({ isAdmin: true, lineId: 'U_LINEID' })
+    userFindUniqueMock.mockResolvedValueOnce({ id: 'u-1', lineId: 'U_LINEID' })
+    const r = await redeemInvite({ code: '' })
+    // We pass empty code so we exit at the missing-code check, AFTER
+    // the gate. Confirms the admin session was NOT rejected at the gate.
+    expect(r).toEqual({ ok: false, error: 'Missing invite code' })
   })
 
   it('rejects when code is missing', async () => {
     sessionMock.mockResolvedValue({ userId: 'u-1' })
+    userFindUniqueMock.mockResolvedValueOnce({ id: 'u-1', lineId: null })
     const r = await redeemInvite({ code: '' })
     expect(r.ok).toBe(false)
   })
 })
 
 describe('v1.34.0 (PR ζ) — redeemInvite — validation rejections', () => {
-  beforeEach(() => sessionMock.mockResolvedValue({ userId: 'u-1', lineId: null }))
+  beforeEach(() => {
+    sessionMock.mockResolvedValue({ userId: 'u-1', lineId: null })
+    userFindUniqueMock.mockResolvedValue({ id: 'u-1', lineId: null })
+  })
 
   it('not-found → "we don\'t recognise" error + code: not-found', async () => {
     inviteFindUniqueMock.mockResolvedValue(null)
@@ -202,6 +224,9 @@ describe('v1.34.0 (PR ζ) — redeemInvite — validation rejections', () => {
 describe('v1.34.0 (PR ζ) — redeemInvite — PERSONAL happy path', () => {
   beforeEach(() => {
     sessionMock.mockResolvedValue({ userId: 'u-1', lineId: 'U_LINEID' })
+    // v1.80.11 — User row resolved by userId (canonical lineId comes
+    // from User row, not session, so it flows to linkUserToPlayer).
+    userFindUniqueMock.mockResolvedValue({ id: 'u-1', lineId: 'U_LINEID' })
     inviteFindUniqueMock.mockResolvedValue(personalInvite())
     playerFindUniqueMock.mockResolvedValue({ id: 'p-target', userId: null, lineId: null })
     assignmentFindFirstMock.mockResolvedValue({ id: 'pla-1' })
@@ -246,6 +271,8 @@ describe('v1.34.0 (PR ζ) — redeemInvite — PERSONAL happy path', () => {
 
   it('v1.39.0 (PR λ) — Google/email user routes through linkUserToPlayer with NO lineId (Player.lineId stays null)', async () => {
     sessionMock.mockResolvedValue({ userId: 'u-google', lineId: null })
+    // v1.80.11 — Google/email User row has no lineId.
+    userFindUniqueMock.mockResolvedValue({ id: 'u-google', lineId: null })
     await redeemInvite({ code: 'ABCD1234EFGH' })
     // The non-LINE branch passes only userId + playerId — no lineId
     // means the helper does NOT touch Player.lineId. This is the fix
@@ -308,6 +335,7 @@ describe('v1.34.0 (PR ζ) — redeemInvite — PERSONAL happy path', () => {
 describe('v1.34.0 (PR ζ) — redeemInvite — CODE flavor', () => {
   beforeEach(() => {
     sessionMock.mockResolvedValue({ userId: 'u-1', lineId: 'U_LINEID' })
+    userFindUniqueMock.mockResolvedValue({ id: 'u-1', lineId: 'U_LINEID' })
     inviteFindUniqueMock.mockResolvedValue(codeInvite())
     playerFindUniqueMock.mockResolvedValue({ id: 'p-picked', userId: null, lineId: null })
     assignmentFindFirstMock.mockResolvedValue({ id: 'pla-2' })

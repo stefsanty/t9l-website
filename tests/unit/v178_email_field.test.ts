@@ -195,8 +195,12 @@ describe('v1.78.0 — completeOnboardingWithId server action', () => {
   })
 
   it('reads existing User.email before deciding whether to write', () => {
+    // v1.80.11 — User row resolved at the top of the function with the
+    // session-resolution lookup; the select includes `email: true`
+    // (alongside `id: true, lineId: true`) so a separate lookup is no
+    // longer needed.
     expect(COMPLETE_ONBOARDING_FN).toMatch(
-      /prisma\.user\.findUnique\([\s\S]*?select:\s*\{\s*email:\s*true/,
+      /prisma\.user\.findUnique\([\s\S]*?select:\s*\{[\s\S]*?email:\s*true/,
     )
   })
 
