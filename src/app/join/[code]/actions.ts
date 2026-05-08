@@ -470,8 +470,14 @@ export interface CompleteOnboardingWithIdInput {
    */
   email: string
   position?: 'GK' | 'DF' | 'MF' | 'FW' | null
-  idFrontUrl: string
-  idBackUrl: string
+  /**
+   * v1.81.0 — nullable. Server re-derives whether ID is required based
+   * on `league.idRequired` AND `user.idUploadedAt`. If derived-required
+   * is true, both URLs MUST be present and validated. If false, missing
+   * URLs are accepted and not written.
+   */
+  idFrontUrl: string | null
+  idBackUrl: string | null
   profilePictureUrl?: string | null
   /** v1.80.0 — optional free-text comments for the admin. Trimmed before storage. */
   comments?: string | null
@@ -503,12 +509,6 @@ export async function completeOnboardingWithId(
 
   const idPrefix = `/player-id/${input.playerId}/`
   const picPrefix = `/player-profile/${input.playerId}/`
-  if (!isOwnedBlobUrl(input.idFrontUrl, idPrefix)) {
-    throw new Error('Front of ID is required')
-  }
-  if (!isOwnedBlobUrl(input.idBackUrl, idPrefix)) {
-    throw new Error('Back of ID is required')
-  }
   if (input.profilePictureUrl && !isOwnedBlobUrl(input.profilePictureUrl, picPrefix)) {
     throw new Error('profilePictureUrl is not for this player')
   }
@@ -525,19 +525,40 @@ export async function completeOnboardingWithId(
   const invite = await prisma.leagueInvite.findUnique({
     where: { code: input.code },
     // v1.79.0 — `league.name` is needed for the application-received
-    // email queued below. Cheap join (LeagueInvite → League is 1:1).
-    select: { leagueId: true, league: { select: { name: true } } },
+    // email queued below. v1.81.0 — also pull `idRequired` to re-derive
+    // whether ID is required.
+    select: {
+      leagueId: true,
+      league: { select: { name: true, idRequired: true } },
+    },
   })
   if (!invite) throw new Error('Invite not found')
 
   // v1.78.0 — only WRITE the submitted email if `User.email` is currently
   // null. Mirrors `registerToLeague` — verified pre-existing addresses
   // (Google or magic-link sign-in) are not silently overwritten.
+  // v1.81.0 — also pull `idUploadedAt` so the server re-derives whether
+  // ID is required (`league.idRequired && !user.idUploadedAt`).
   const userRow = await prisma.user.findUnique({
     where: { id: userId },
-    select: { email: true },
+    select: { email: true, idUploadedAt: true },
   })
   const shouldWriteEmail = !userRow?.email
+
+  // v1.81.0 — server-side ID gate. Strict interpretation: only consider
+  // the user "has ID on file" if `idUploadedAt` is non-null (the prior
+  // submission wrote both URLs + the timestamp atomically). Clients
+  // cannot bypass this — if requireId is false we ignore any URLs they
+  // posted and skip the User-row ID write.
+  const requireId = invite.league.idRequired && !userRow?.idUploadedAt
+  if (requireId) {
+    if (!input.idFrontUrl || !isOwnedBlobUrl(input.idFrontUrl, idPrefix)) {
+      throw new Error('Front of ID is required')
+    }
+    if (!input.idBackUrl || !isOwnedBlobUrl(input.idBackUrl, idPrefix)) {
+      throw new Error('Back of ID is required')
+    }
+  }
 
   try {
     await prisma.$transaction(async (tx) => {
@@ -556,9 +577,17 @@ export async function completeOnboardingWithId(
       await tx.user.update({
         where: { id: userId },
         data: {
-          idFrontUrl: input.idFrontUrl,
-          idBackUrl: input.idBackUrl,
-          idUploadedAt: new Date(),
+          // v1.81.0 — only write the ID columns when ID is actually
+          // being submitted in this flow. Skip-write on the no-id path
+          // so leagues that opted out don't blank out an existing
+          // idUploadedAt and so the row stays consistent.
+          ...(requireId
+            ? {
+                idFrontUrl: input.idFrontUrl,
+                idBackUrl: input.idBackUrl,
+                idUploadedAt: new Date(),
+              }
+            : {}),
           // v1.78.0 — conditionally write email; do not overwrite a
           // pre-existing verified address.
           ...(shouldWriteEmail ? { email: trimmedEmail } : {}),

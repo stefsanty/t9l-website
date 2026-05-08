@@ -25,6 +25,11 @@ interface Props {
    */
   initialEmail: string
   initialPosition: 'GK' | 'DF' | 'MF' | 'FW' | null
+  /**
+   * v1.81.0 — gate for the ID upload segment. Computed by the page
+   * server-component as `league.idRequired && !user.idUploadedAt`.
+   */
+  requireId: boolean
 }
 
 export default function OnboardingForm({
@@ -33,6 +38,7 @@ export default function OnboardingForm({
   initialName,
   initialEmail,
   initialPosition,
+  requireId,
 }: Props) {
   async function handleSubmit(input: RegistrationFieldsSubmit) {
     await completeOnboardingWithId({
@@ -41,8 +47,10 @@ export default function OnboardingForm({
       name: input.name,
       email: input.email,
       position: input.position === '' ? null : input.position,
-      idFrontUrl: input.idFrontUrl,
-      idBackUrl: input.idBackUrl,
+      // v1.81.0 — empty strings come from the no-id path; server action
+      // re-derives whether ID is required and accepts nulls accordingly.
+      idFrontUrl: input.idFrontUrl || null,
+      idBackUrl: input.idBackUrl || null,
       profilePictureUrl: input.profilePictureUrl,
       comments: input.comments || null,
     })
@@ -56,6 +64,7 @@ export default function OnboardingForm({
         initialName={initialName}
         initialEmail={initialEmail}
         initialPosition={initialPosition}
+        requireId={requireId}
         submitLabel="Save and finish"
         uploadPathPrefix={`player-id/${playerId}`}
         picturePathPrefix={`player-profile/${playerId}`}

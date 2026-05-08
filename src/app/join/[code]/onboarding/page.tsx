@@ -54,7 +54,8 @@ export default async function OnboardingPage({ params }: Props) {
   const [league, currentBinding, userRow] = await Promise.all([
     prisma.league.findUnique({
       where: { id: invite.leagueId },
-      select: { id: true, name: true, subdomain: true },
+      // v1.81.0 — pull idRequired so we can compute requireId for the form.
+      select: { id: true, name: true, subdomain: true, idRequired: true },
     }),
     prisma.playerLeagueMembership.findFirst({
       where: {
@@ -73,7 +74,8 @@ export default async function OnboardingPage({ params }: Props) {
     }),
     prisma.user.findUnique({
       where: { id: userId },
-      select: { email: true, emailVerified: true },
+      // v1.81.0 — `idUploadedAt` flags users who already passed ID once.
+      select: { email: true, emailVerified: true, idUploadedAt: true },
     }),
   ])
 
@@ -82,6 +84,7 @@ export default async function OnboardingPage({ params }: Props) {
     redirect(`/join/${code}`)
   }
   const initialEmail = userRow?.email && userRow?.emailVerified ? userRow.email : ''
+  const requireId = league.idRequired && !userRow?.idUploadedAt
 
   return (
     <main
@@ -110,6 +113,7 @@ export default async function OnboardingPage({ params }: Props) {
           // v1.65.4 — position lives on PLM, not Player. Read from the
           // current PLM (currentBinding) directly.
           initialPosition={(currentBinding.position as 'GK' | 'DF' | 'MF' | 'FW' | null) ?? null}
+          requireId={requireId}
         />
       </div>
     </main>

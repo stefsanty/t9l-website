@@ -225,6 +225,20 @@ model League {
   organizerMessage       String?      @db.Text
   showLeagueDetails      Boolean      @default(true)
 
+  // v1.81.0 — per-league toggle controlling whether the recruiting /
+  // onboarding registration form collects the player's ID (front + back
+  // photos). Defaults true so existing leagues keep the v1.70.0
+  // behavior (T9L books venues that demand ID copies). When false, the
+  // ID segment of the form is omitted entirely; the server action
+  // accepts submissions without ID and writes nothing to
+  // `User.idFrontUrl` / `User.idBackUrl` / `User.idUploadedAt`.
+  //
+  // Server-side gate: even when idRequired is true, a User who already
+  // has `idUploadedAt` non-null (full ID submission previously) is not
+  // re-prompted — identity proof is per-person, not per-league, so a
+  // user who passed ID once doesn't repeat it for a second league.
+  idRequired             Boolean      @default(true)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

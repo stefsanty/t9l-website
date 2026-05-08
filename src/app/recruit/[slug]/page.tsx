@@ -51,7 +51,9 @@ export default async function RecruitPage({ params }: Props) {
 
   const league = await prisma.league.findUnique({
     where: { id: leagueId },
-    select: { id: true, name: true, recruiting: true, subdomain: true },
+    // v1.81.0 — `idRequired` gates the ID segment in the registration
+    // form. False → segment hidden + ID write skipped server-side.
+    select: { id: true, name: true, recruiting: true, subdomain: true, idRequired: true },
   })
   if (!league) notFound()
 
@@ -77,12 +79,16 @@ export default async function RecruitPage({ params }: Props) {
   // soft-confirm an unverified address through this flow.
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { playerId: true, email: true, emailVerified: true },
+    // v1.81.0 — `idUploadedAt` gates the ID segment alongside
+    // `league.idRequired`. A user who already submitted full ID for any
+    // league is never re-prompted (identity proof is per-person).
+    select: { playerId: true, email: true, emailVerified: true, idUploadedAt: true },
   })
   if (user?.playerId) {
     redirect(`/id/${slug}`)
   }
   const initialEmail = user?.email && user?.emailVerified ? user.email : ''
+  const requireId = league.idRequired && !user?.idUploadedAt
 
   return (
     <main
@@ -104,6 +110,7 @@ export default async function RecruitPage({ params }: Props) {
           leagueName={league.name}
           userId={userId}
           initialEmail={initialEmail}
+          requireId={requireId}
         />
       </div>
     </main>

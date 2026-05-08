@@ -57,6 +57,9 @@ interface League {
   unlimitedSubstitutions: boolean
   organizerMessage: string | null
   showLeagueDetails: boolean
+  // v1.81.0 — per-league registration ID requirement. Defaults true on
+  // backfill; admin toggles via the LeagueDetailsEditor.
+  idRequired: boolean
 }
 
 // JST calendar date as YYYY-MM-DD for `<input type="date">`. See lib/jst.ts.
@@ -563,6 +566,7 @@ export default function SettingsTab({ league }: SettingsTabProps) {
         initialUnlimitedSubstitutions={league.unlimitedSubstitutions}
         initialOrganizerMessage={league.organizerMessage}
         initialShowLeagueDetails={league.showLeagueDetails}
+        initialIdRequired={league.idRequired}
         initialDefaultFee={league.defaultFee}
         initialPositionFees={league.positionFees}
         initialPlannedPlayersPerTeam={league.plannedPlayersPerTeam}

@@ -32,6 +32,13 @@ interface Props {
    * or email-magic-link). Empty string for LINE-only users.
    */
   initialEmail?: string
+  /**
+   * v1.81.0 — gate for the ID upload segment. Computed by the page
+   * server-component as `league.idRequired && !user.idUploadedAt` so
+   * the segment hides for leagues that opted out AND for users who
+   * already submitted ID for any league.
+   */
+  requireId: boolean
 }
 
 export default function RegistrationForm({
@@ -40,6 +47,7 @@ export default function RegistrationForm({
   leagueName,
   userId,
   initialEmail = '',
+  requireId,
 }: Props) {
   const router = useRouter()
 
@@ -55,8 +63,11 @@ export default function RegistrationForm({
       name: input.name,
       email: input.email,
       position: input.position === '' ? null : input.position,
-      idFrontUrl: input.idFrontUrl,
-      idBackUrl: input.idBackUrl,
+      // v1.81.0 — when the ID segment is hidden, RegistrationFields
+      // returns empty strings; the server action treats empty strings
+      // as "no upload, do not write idFrontUrl/idBackUrl/idUploadedAt".
+      idFrontUrl: input.idFrontUrl || null,
+      idBackUrl: input.idBackUrl || null,
       profilePictureUrl: input.profilePictureUrl,
       comments: input.comments || null,
     })
@@ -67,6 +78,7 @@ export default function RegistrationForm({
     <div data-testid="recruit-registration-form">
       <RegistrationFields
         initialEmail={initialEmail}
+        requireId={requireId}
         submitLabel={`Apply to ${leagueName}`}
         uploadPathPrefix={`register-pending/${userId}`}
         onSubmit={handleSubmit}
