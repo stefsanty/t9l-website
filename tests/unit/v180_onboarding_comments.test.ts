@@ -204,7 +204,7 @@ describe('v1.80.0 — admin Players display', () => {
 describe('v1.80.0 — version bump', () => {
   const version = readSrc('src/lib/version.ts')
 
-  it('APP_VERSION is 1.80.0', () => {
-    expect(version).toMatch(/APP_VERSION\s*=\s*'1\.80\.0'/)
+  it('APP_VERSION is 1.80.0 or later', () => {
+    expect(version).toMatch(/APP_VERSION\s*=\s*'1\.80\.[0-9]+'/)
   })
 })

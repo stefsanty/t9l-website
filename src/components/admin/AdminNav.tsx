@@ -6,6 +6,7 @@ import { useState } from 'react'
 import { signOut } from 'next-auth/react'
 import { ChevronDown, LogOut, User, Menu, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { getCurrentCallbackUrl } from '@/lib/signInCallbackUrl'
 
 interface AdminNavProps {
   adminName?: string | null
@@ -68,7 +69,7 @@ export default function AdminNav({ adminName }: AdminNavProps) {
               <div className="fixed inset-0 z-40" onClick={() => setDropdownOpen(false)} />
               <div className="absolute right-0 top-full mt-1 w-44 bg-admin-surface border border-admin-border rounded-lg shadow-xl z-50 py-1">
                 <button
-                  onClick={() => signOut({ callbackUrl: '/' })}
+                  onClick={() => signOut({ callbackUrl: getCurrentCallbackUrl() })}
                   className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-admin-text2 hover:text-admin-red hover:bg-admin-red-dim transition-colors"
                 >
                   <LogOut className="w-3.5 h-3.5" />
@@ -138,7 +139,7 @@ export default function AdminNav({ adminName }: AdminNavProps) {
                 <span className="text-admin-text2 text-sm truncate">{adminName ?? 'Admin'}</span>
               </div>
               <button
-                onClick={() => signOut({ callbackUrl: '/' })}
+                onClick={() => signOut({ callbackUrl: getCurrentCallbackUrl() })}
                 className="w-full flex items-center gap-2.5 px-3 py-3 text-sm text-admin-text2 hover:text-admin-red hover:bg-admin-red-dim transition-colors rounded-lg"
               >
                 <LogOut className="w-3.5 h-3.5" />
