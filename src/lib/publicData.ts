@@ -36,9 +36,15 @@ const getFromDb = unstable_cache(
   // `isDefault: true` league. Next.js's unstable_cache automatically encodes
   // the parameters into the cache key, so calling `getFromDb()` and
   // `getFromDb('l-foo')` produce distinct cache entries.
+  //
+  // v1.80.2 — `revalidate` raised from 30s → 300s. Tag-based busting via
+  // `revalidate({ domain })` already invalidates these tags on every admin
+  // write that touches public data, so the timer is belt-and-suspenders.
+  // Letting the warm cache serve more requests cuts Neon round trips and
+  // shaves the cold-revalidation tail off TTFB on lightly-trafficked nodes.
   async (leagueId?: string) => dbToPublicLeagueData(leagueId),
   ['public-data:db'],
-  { revalidate: 30, tags: ['public-data', 'leagues'] },
+  { revalidate: 300, tags: ['public-data', 'leagues'] },
 )
 
 /**
