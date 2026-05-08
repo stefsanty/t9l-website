@@ -2,7 +2,7 @@
 
 T9L.me — mobile-first website for the Tennozu 9-Aside League, a recreational football league in Tokyo. Multi-tenant: a single Vercel deployment serves multiple leagues, each at `/id/<slug>`. Players sign in (LINE / Google / email magic-link), claim a Player record, RSVP availability for matchdays, and view live league data backed by Postgres (Neon) + Upstash Redis.
 
-**Current release:** v1.80.2.
+**Current release:** v1.80.3.
 
 ## Documentation
 
@@ -75,6 +75,7 @@ Keep each line short. Long explanations live in PR descriptions, not chat.
 
 ## Recent ledger (top 20 PRs)
 
+- **v1.80.3** — perf phase 2: `next/dynamic` for below-fold widgets — Dashboard (MatchdayAvailability/LeagueDetailsPanel/PlannedRosterStats/RsvpBar/SubmitGoalForm/CompressedMatchdaySchedule) + /stats (TopPerformers/SquadList); H2 font pruning deferred (every candidate weight has callers)
 - **v1.80.2** — perf phase 1: bfcache reload deleted, /stats fetches parallelized, public-data revalidate 30s→300s, 3 oversized PNGs re-encoded (~966 KB saved)
 - **v1.80.1** — sign out preserves current page via getCurrentCallbackUrl()
 - **v1.80.0** — comments field on onboarding form + admin display
@@ -95,7 +96,6 @@ Keep each line short. Long explanations live in PR descriptions, not chat.
 - **v1.75.2** — League details panel header bg-surface + hover affordance
 - **v1.75.1** — Consolidate LeagueDetailsPanel + decouple preseasonMode + field reorder + collapsible
 - **v1.75.0** — League details settings + preseason public display
-- **v1.74.1** — Team color field + color picker on admin Teams tab
 
 Older entries condensed in [docs/ledger-archive.md](docs/ledger-archive.md).
 

@@ -118,7 +118,11 @@ describe('v1.67.0 Dashboard threading', () => {
 
   it('imports PlannedRosterStats + its data type', () => {
     expect(dashboard).toMatch(/import\s+type\s*\{\s*PlannedRosterStats[\s\S]*from\s+'@\/lib\/plannedRosterStats'/)
-    expect(dashboard).toMatch(/import\s+PlannedRosterStats\s+from\s+'\.\/PlannedRosterStats'/)
+    // v1.80.3 — PlannedRosterStats is below-fold and ships as a
+    // `next/dynamic` chunk; either the static or dynamic pull-in counts.
+    expect(dashboard).toMatch(
+      /import\s+PlannedRosterStats\s+from\s+'\.\/PlannedRosterStats'|dynamic\(\(\)\s*=>\s*import\('\.\/PlannedRosterStats'\)/
+    )
   })
 
   it('accepts plannedRosterStats prop', () => {

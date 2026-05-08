@@ -85,7 +85,11 @@ describe('v1.63.1 Bug A — sign out button uses explicit callbackUrl (updated v
 
 describe('v1.63.1 Bug B — RsvpBar anchors to viewport bottom', () => {
   it('Dashboard imports and renders RsvpBar', () => {
-    expect(DASHBOARD_SRC).toMatch(/import\s+RsvpBar\s+from\s+['"]\.\/RsvpBar['"]/)
+    // v1.80.3 — RsvpBar is below-fold + position-fixed and ships as a
+    // `next/dynamic` chunk; either the static or dynamic pull-in counts.
+    expect(DASHBOARD_SRC).toMatch(
+      /import\s+RsvpBar\s+from\s+['"]\.\/RsvpBar['"]|dynamic\(\(\)\s*=>\s*import\(['"]\.\/RsvpBar['"]\)/
+    )
     expect(DASHBOARD_SRC).toMatch(/<RsvpBar\b/)
   })
 

@@ -183,7 +183,11 @@ describe('v1.48.0 Dashboard — converges homepage + matchday route', () => {
   })
 
   it('mounts SubmitGoalForm gated by submitGateOpen', () => {
-    expect(DASHBOARD).toMatch(/import SubmitGoalForm from '\.\/matchday\/SubmitGoalForm'/)
+    // v1.80.3 — SubmitGoalForm is below-fold + auth-gated and ships as a
+    // `next/dynamic` chunk; either the static or dynamic pull-in counts.
+    expect(DASHBOARD).toMatch(
+      /import SubmitGoalForm from '\.\/matchday\/SubmitGoalForm'|dynamic\(\(\)\s*=>\s*import\('\.\/matchday\/SubmitGoalForm'\)/
+    )
     expect(DASHBOARD).toMatch(/submitGateOpen[\s\S]*<SubmitGoalForm/)
   })
 

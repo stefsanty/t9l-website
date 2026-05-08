@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import dynamic from 'next/dynamic';
 import { useSession } from 'next-auth/react';
 import type {
   Team, Player, Matchday, Goal, Availability, AvailabilityStatuses, PlayedStatus,
@@ -8,20 +9,93 @@ import type {
 import GuestLoginBanner from './GuestLoginBanner';
 import Header from './Header';
 import UserTeamBadge from './UserTeamBadge';
-import SubmitGoalForm from './matchday/SubmitGoalForm';
 import ClassicLeagueHomepage from './ClassicLeagueHomepage';
-import CompressedMatchdaySchedule from './CompressedMatchdaySchedule';
 import RecruitingBanner from './RecruitingBanner';
 import UnpaidFeeBanner from './UnpaidFeeBanner';
 import type { UnpaidFeeBannerData } from '@/lib/unpaidFeeBanner';
-import RsvpBar from './RsvpBar';
 import type { RecruitingViewerState } from '@/lib/recruitingViewerState';
 import type { PlannedRosterStats as PlannedRosterStatsData } from '@/lib/plannedRosterStats';
-import PlannedRosterStats from './PlannedRosterStats';
 import type { LeagueDetails as LeagueDetailsData } from '@/lib/leagueDetails';
-import LeagueDetailsPanel from './LeagueDetailsPanel';
 import { selfReportGateOpen } from '@/lib/playerSelfReportGate';
 import { combineJstDateAndTime } from '@/lib/jst';
+
+// v1.80.3 — phase 2 H3: split below-fold dashboard widgets out of the
+// initial route bundle. Keep Header / UnpaidFeeBanner / RecruitingBanner /
+// NextMatchdayBanner static (above-fold / LCP). Each `dynamic()` call below
+// lazy-loads its component as a separate chunk and renders a footprint-
+// matching skeleton so scroll position stays stable during chunk fetch.
+// `ssr: true` (the default) preserves SSR HTML for SEO + first paint;
+// only the JS chunk is deferred.
+const LeagueDetailsPanel = dynamic(() => import('./LeagueDetailsPanel'), {
+  loading: () => (
+    <section
+      data-testid="league-details-panel-skeleton"
+      aria-hidden
+      className="w-full mt-2 mb-3 rounded-2xl border border-border-default bg-card overflow-hidden animate-pulse"
+    >
+      <div className="w-full px-4 py-3 bg-surface flex items-center justify-between">
+        <div className="h-3 w-28 rounded bg-surface-md" />
+        <div className="h-4 w-4 rounded bg-surface-md" />
+      </div>
+    </section>
+  ),
+});
+
+const PlannedRosterStats = dynamic(() => import('./PlannedRosterStats'), {
+  loading: () => (
+    <section
+      data-testid="planned-roster-stats-skeleton"
+      aria-hidden
+      className="w-full mt-2 mb-3 rounded-2xl border border-border-default bg-card px-4 py-3 animate-pulse"
+    >
+      <div className="h-3 w-24 rounded bg-surface-md mb-3" />
+      <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <div key={i} className="h-4 rounded bg-surface" />
+        ))}
+      </div>
+    </section>
+  ),
+});
+
+// RsvpBar is `position: fixed` and outside the document flow, so its
+// skeleton doesn't need to reserve flow space (Dashboard's pb-32 already
+// budgets the viewport gap). Render `null` while the chunk loads — the
+// bar appearing a frame later is preferable to flashing a placeholder.
+const RsvpBar = dynamic(() => import('./RsvpBar'), { loading: () => null });
+
+const SubmitGoalForm = dynamic(() => import('./matchday/SubmitGoalForm'), {
+  loading: () => (
+    <div
+      data-testid="submit-goal-skeleton"
+      aria-hidden
+      className="mt-4 mb-6 h-[60px] rounded-2xl bg-surface-md animate-pulse"
+    />
+  ),
+});
+
+const CompressedMatchdaySchedule = dynamic(
+  () => import('./CompressedMatchdaySchedule'),
+  {
+    loading: () => (
+      <section
+        data-testid="compressed-matchday-schedule-skeleton"
+        aria-hidden
+        className="animate-pulse space-y-2"
+      >
+        <div className="px-1 mb-2">
+          <div className="h-3 w-40 rounded bg-surface-md" />
+        </div>
+        {Array.from({ length: 4 }).map((_, i) => (
+          <div
+            key={i}
+            className="rounded-2xl bg-card border border-border-subtle h-[88px]"
+          />
+        ))}
+      </section>
+    ),
+  }
+);
 
 interface DashboardProps {
   teams: Team[];

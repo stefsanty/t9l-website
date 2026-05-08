@@ -297,7 +297,11 @@ describe('v1.75.0 Dashboard wiring', () => {
   const dash = read('src/components/Dashboard.tsx')
 
   it('imports LeagueDetailsPanel and the helper type', () => {
-    expect(dash).toMatch(/import LeagueDetailsPanel from '\.\/LeagueDetailsPanel'/)
+    // v1.80.3 — LeagueDetailsPanel is below-fold so it ships as a
+    // `next/dynamic` chunk; either the static or dynamic pull-in counts.
+    expect(dash).toMatch(
+      /import LeagueDetailsPanel from '\.\/LeagueDetailsPanel'|dynamic\(\(\) => import\('\.\/LeagueDetailsPanel'\)/
+    )
     expect(dash).toMatch(/import type \{ LeagueDetails as LeagueDetailsData \} from '@\/lib\/leagueDetails'/)
   })
 
