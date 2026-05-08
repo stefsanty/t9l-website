@@ -85,9 +85,9 @@ describe('v1.79.4 row ordering in stats section', () => {
 })
 
 describe('v1.79.4 stash-pop regression targets', () => {
-  it('APP_VERSION is 1.79.4', () => {
+  it('APP_VERSION is 1.79.4 or later', () => {
     const v = read('src/lib/version.ts')
-    expect(v).toMatch(/APP_VERSION\s*=\s*'1\.79\.4'/)
+    expect(v).toMatch(/APP_VERSION\s*=\s*'1\.(79\.[4-9]|[89]\d+\.\d+|\d{3,}\.\d+)'/)
   })
 
   it('separate row testids exist (stash-pop gate)', () => {

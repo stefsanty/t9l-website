@@ -58,6 +58,7 @@ export default function RegistrationForm({
       idFrontUrl: input.idFrontUrl,
       idBackUrl: input.idBackUrl,
       profilePictureUrl: input.profilePictureUrl,
+      comments: input.comments || null,
     })
     router.push(`/id/${leagueSlug}`)
   }

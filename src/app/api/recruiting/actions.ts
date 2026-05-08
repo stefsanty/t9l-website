@@ -267,6 +267,8 @@ export interface RegisterToLeagueInput {
   idFrontUrl: string
   idBackUrl: string
   profilePictureUrl?: string | null
+  /** v1.80.0 — optional free-text comments for the admin. Trimmed before storage. */
+  comments?: string | null
 }
 
 export async function registerToLeague(
@@ -388,6 +390,8 @@ export async function registerToLeague(
           position: input.position ?? null,
           joinSource: 'SELF_SERVE',
           onboardingStatus: 'COMPLETED',
+          // v1.80.0 — persist trimmed comments; null when blank/omitted.
+          comments: input.comments?.trim() || null,
         },
       })
       return created

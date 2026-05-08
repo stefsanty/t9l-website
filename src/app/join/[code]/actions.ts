@@ -473,6 +473,8 @@ export interface CompleteOnboardingWithIdInput {
   idFrontUrl: string
   idBackUrl: string
   profilePictureUrl?: string | null
+  /** v1.80.0 — optional free-text comments for the admin. Trimmed before storage. */
+  comments?: string | null
 }
 
 export async function completeOnboardingWithId(
@@ -571,7 +573,11 @@ export async function completeOnboardingWithId(
           playerId: input.playerId,
           leagueTeam: { leagueId: invite.leagueId },
         },
-        data: { onboardingStatus: 'COMPLETED' },
+        data: {
+          onboardingStatus: 'COMPLETED',
+          // v1.80.0 — persist trimmed comments; null when blank/omitted.
+          comments: input.comments?.trim() || null,
+        },
       })
     })
   } catch (err) {

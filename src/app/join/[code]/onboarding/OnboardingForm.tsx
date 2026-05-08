@@ -44,6 +44,7 @@ export default function OnboardingForm({
       idFrontUrl: input.idFrontUrl,
       idBackUrl: input.idBackUrl,
       profilePictureUrl: input.profilePictureUrl,
+      comments: input.comments || null,
     })
     // completeOnboardingWithId redirects on success — anything past
     // here only runs if the action returns instead of throwing/redirecting.

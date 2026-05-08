@@ -119,9 +119,9 @@ describe('v1.79.4 regression targets — v1.79.3 combined-row testid is gone', (
 })
 
 describe('v1.79.4 version bump', () => {
-  it('APP_VERSION is 1.79.4', () => {
+  it('APP_VERSION is 1.79.4 or later', () => {
     const v = read('src/lib/version.ts')
-    expect(v).toMatch(/APP_VERSION\s*=\s*'1\.79\.4'/)
+    expect(v).toMatch(/APP_VERSION\s*=\s*'1\.(79\.[4-9]|[89]\d+\.\d+|\d{3,}\.\d+)'/)
   })
 
   it('stash-pop gate: separate rows exist, combined row is gone', () => {

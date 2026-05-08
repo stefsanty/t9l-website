@@ -506,6 +506,12 @@ model PlayerLeagueMembership {
   // `src/lib/playerFee.ts#resolvePlayerFee` for the resolution order.
   feeOverride Int?
 
+  // v1.80.0 — optional free-text comments submitted by the applicant at
+  // registration time. Per-league (same person may write different notes
+  // for different leagues). Admin-only display; not shown on public pages.
+  // TEXT type — no varchar cap.
+  comments String?
+
   player     Player      @relation(fields: [playerId], references: [id], onDelete: Cascade)
   leagueTeam LeagueTeam? @relation(fields: [leagueTeamId], references: [id], onDelete: Cascade)
   league     League?     @relation(fields: [leagueId], references: [id], onDelete: Cascade)

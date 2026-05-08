@@ -100,6 +100,8 @@ export default async function PlayersPage({ params }: Props) {
     effectiveFee?: number
     feeOverride?: number | null
     membershipId?: string
+    // v1.80.0 — applicant comments from the PLM.
+    comments?: string | null
     assignments: {
       id: string
       fromGameWeek: number
@@ -162,6 +164,8 @@ export default async function PlayersPage({ params }: Props) {
         ),
         feeOverride: a.feeOverride,
         membershipId: a.id,
+        // v1.80.0 — comments from the PLM row.
+        comments: a.comments ?? null,
         assignments: [aWithTeam],
       })
     }
@@ -202,6 +206,8 @@ export default async function PlayersPage({ params }: Props) {
       // synthetic-row builder hardcodes 'PENDING' since the
       // pending-applications source returns only PLM(PENDING) rows.
       applicationStatus: 'PENDING',
+      // v1.80.0 — comments from the PLM row (propagated via mergedPendingApplications).
+      comments: p.comments ?? null,
       assignments: [],
     })
   }
