@@ -238,6 +238,8 @@ export const getLeaguePlayers = unstable_cache(
       // builder; PlayerRow consumers read `player.position` post-v1.65.4
       // expecting the per-league position.
       position: plm.position,
+      // v1.80.0 — applicant comments from the PLM.
+      comments: plm.comments,
     }))
     // v1.70.0 — `idDataByPlayerId` keyed on User.playerId. Date is
     // serialized to ISO string at this boundary because the function is

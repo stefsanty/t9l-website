@@ -45,6 +45,8 @@ export interface RegistrationFieldsSubmit {
   idFrontUrl: string
   idBackUrl: string
   profilePictureUrl: string | null
+  /** v1.80.0 — optional free-text comments for the admin. */
+  comments: string
 }
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -59,6 +61,8 @@ export interface RegistrationFieldsProps {
    * pre-filled. LINE-only users see an empty field. v1.78.0.
    */
   initialEmail?: string
+  /** v1.80.0 — initial comments (empty for new applications). */
+  initialComments?: string
   initialPosition?: 'GK' | 'DF' | 'MF' | 'FW' | null
   /** Submit button label, e.g. "Apply to T9L" or "Save and finish". */
   submitLabel: string
@@ -87,6 +91,7 @@ export interface RegistrationFieldsProps {
 export default function RegistrationFields({
   initialName = '',
   initialEmail = '',
+  initialComments = '',
   initialPosition = null,
   submitLabel,
   uploadPathPrefix,
@@ -96,6 +101,7 @@ export default function RegistrationFields({
   const [pending, startTransition] = useTransition()
   const [name, setName] = useState(initialName)
   const [email, setEmail] = useState(initialEmail)
+  const [comments, setComments] = useState(initialComments)
   const [position, setPosition] = useState<'' | 'GK' | 'DF' | 'MF' | 'FW'>(initialPosition ?? '')
   const [error, setError] = useState<string | null>(null)
 
@@ -208,6 +214,7 @@ export default function RegistrationFields({
           idFrontUrl: front.url,
           idBackUrl: back.url,
           profilePictureUrl: pic?.url ?? null,
+          comments: comments.trim(),
         })
       } catch (err) {
         if (err && typeof err === 'object' && 'digest' in err) {
@@ -328,6 +335,23 @@ export default function RegistrationFields({
         }
         testid="registration-profile-picture"
       />
+
+      <label className="block">
+        <span className="block text-fg-mid text-xs uppercase tracking-widest font-bold mb-1.5">
+          Comments (optional)
+        </span>
+        <textarea
+          value={comments}
+          onChange={(e) => setComments(e.target.value)}
+          rows={4}
+          placeholder="Anything you'd like the admin to know."
+          className="w-full bg-background border border-border-default rounded-lg px-3 py-2 text-sm text-fg-high resize-y"
+          data-testid="registration-comments"
+        />
+        <span className="block text-fg-low text-xs mt-1">
+          Optional. Anything you'd like the admin to know.
+        </span>
+      </label>
 
       <button
         type="submit"

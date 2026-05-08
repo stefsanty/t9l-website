@@ -135,7 +135,7 @@ describe('v1.41.0 — EditPlayerPanel component', () => {
     // the panel and is destroyed on unmount. Pin the Cancel onClick.
     const panelIdx = PLAYERS_TAB.indexOf('function EditPlayerPanel(')
     expect(panelIdx).toBeGreaterThan(0)
-    const panelBody = PLAYERS_TAB.slice(panelIdx, panelIdx + 5000)
+    const panelBody = PLAYERS_TAB.slice(panelIdx, panelIdx + 7000)
     expect(panelBody).toMatch(/data-testid=\{`player-edit-cancel-\$\{player\.id\}`\}/)
     expect(panelBody).toMatch(/onClick=\{onClose\}/)
   })

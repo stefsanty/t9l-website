@@ -95,6 +95,9 @@ interface PlayerRow {
   effectiveFee?: number
   feeOverride?: number | null
   membershipId?: string
+  // v1.80.0 — optional free-text comments submitted by the applicant.
+  // Admin-only; not shown on public pages.
+  comments?: string | null
 }
 
 interface OrphanLineLogin {
@@ -1081,6 +1084,17 @@ function EditPlayerPanel({ player, leagueId, onClose }: EditPlayerPanelProps) {
       <p className="font-condensed text-[15px] font-bold tracking-[0.5px] text-admin-text mb-4">
         Edit {nameOrPlaceholder(player.name)}
       </p>
+      {player.comments && (
+        <div
+          className="mb-4 rounded-md bg-admin-surface2 border border-admin-border px-3 py-2.5"
+          data-testid={`player-comments-${player.id}`}
+        >
+          <p className="text-[11px] font-semibold uppercase tracking-[1.5px] text-admin-text3 mb-1">
+            Applicant comments
+          </p>
+          <p className="text-sm text-admin-text whitespace-pre-wrap">{player.comments}</p>
+        </div>
+      )}
       <div className="flex flex-col md:flex-row md:items-end gap-3 md:gap-4">
         {/* Name */}
         <div className="w-full md:flex-1 flex flex-col gap-1.5">
