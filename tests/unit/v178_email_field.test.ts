@@ -213,14 +213,20 @@ describe('v1.78.0 — completeOnboardingWithId server action', () => {
 
 describe('v1.78.0 — recruit page + RegistrationForm wiring', () => {
   it('recruit page selects email + emailVerified on the User read', () => {
+    // v1.80.10 — the User read now also pulls `id` because the page
+    // resolves the User row via userId-or-lineId fallback, then threads
+    // the canonical `user.id` into RegistrationForm. The select shape
+    // still includes playerId/email/emailVerified.
     expect(RECRUIT_PAGE).toMatch(
       /select:\s*\{[^}]*playerId:\s*true[^}]*email:\s*true[^}]*emailVerified:\s*true/,
     )
   })
 
   it('recruit page only pre-fills initialEmail when emailVerified is non-null', () => {
-    // const initialEmail = user?.email && user?.emailVerified ? user.email : ''
-    expect(RECRUIT_PAGE).toMatch(/user\?\.email\s*&&\s*user\?\.emailVerified\s*\?\s*user\.email\s*:\s*''/)
+    // v1.80.10 — `user` is non-null past the resolved-or-throw gate, so
+    // optional chaining on the access is no longer needed. Logic is
+    // identical: use email only when emailVerified is also set.
+    expect(RECRUIT_PAGE).toMatch(/user\.email\s*&&\s*user\.emailVerified\s*\?\s*user\.email\s*:\s*''/)
   })
 
   it('recruit page passes initialEmail prop to RegistrationForm', () => {

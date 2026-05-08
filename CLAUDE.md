@@ -2,7 +2,7 @@
 
 T9L.me — mobile-first website for the Tennozu 9-Aside League, a recreational football league in Tokyo. Multi-tenant: a single Vercel deployment serves multiple leagues, each at `/id/<slug>`. Players sign in (LINE / Google / email magic-link), claim a Player record, RSVP availability for matchdays, and view live league data backed by Postgres (Neon) + Upstash Redis.
 
-**Current release:** v1.80.9.
+**Current release:** v1.80.10.
 
 ## Documentation
 
@@ -75,6 +75,7 @@ Keep each line short. Long explanations live in PR descriptions, not chat.
 
 ## Recent ledger (top 20 PRs)
 
+- **v1.80.10** — admin-orthogonal-UX bug fix: `applyToLeague` / `registerToLeague` / `/recruit/[slug]` page / `upload-token` route all gated on raw `session.userId` and threw `"Admin sessions cannot submit applications"` for any session without `userId` — rejecting grandfathered LINE sessions whose JWT predates v1.28.0 stage α.5 (lineId set, userId never populated on token refresh) and LINE-auth admins whose admin role is orthogonal to player binding. Fix mirrors the v1.59.1 pattern in `account/player/actions.ts:requireSelfPlayerSession`: gate now accepts `userId` OR `lineId`, resolves the User row by either identifier (User.lineId @unique), and uses the canonical `user.id` for downstream Player.create / upload-pathname / etc. Admin-shaming copy replaced with neutral "Sign in with a player account to apply". Reported by user trying to apply to a new league via apex banner. 14 new regression-target tests pin the fix shape; stash-pop verified 12/14 fail on broken state. Audit findings (out of scope, follow-up): `redeemInvite`, `submitOnboarding`, `submitIdUpload`, `completeOnboardingWithId`, `skipIdUpload` in `src/app/join/[code]/actions.ts` use the same anti-pattern.
 - **v1.80.9** — perf phase 4d: lazy-load sonner's `<Toaster />` from `app/layout.tsx` via `next/dynamic` in a `'use client'` wrapper (`components/ToasterMount.tsx`). Pre-v1.80.9 the static `import { Toaster } from "sonner"` pulled the full sonner bundle (~36 KB raw / ~10 KB gz) into the public root chunk on every page load — even though the Toaster is DOM-empty until a `toast(...)` call fires. Same lazy-load pattern as the v1.80.8 modal fix. Per-route post-v1.80.8→v1.80.9 first-load JS measurements (`route-bundle-stats.json`, gzipped sum of `firstLoadChunkPaths`): `/_not-found`, `/[slug]`, `/league/[slug]`, `/matchday/[id]`, `/recruit/[slug]`, `/join/[code]/onboarding`: -8,252 gz each (~31 KB raw); `/stats`: -8,985 gz; `/`, `/id/[slug]`, `/id/[slug]/md/[id]`: +594 gz (sonner is preloaded as an async chunk for routes that share Recruiting/Header dependency clusters — Turbopack chunking trade-off; net loss is small versus the 7-route win). Total weighted savings across public routes: ~5-7 KB gz on average. Stash-pop verified: regression-target tests in `perfPhase4d.test.ts` fail when `<Toaster>` is re-injected into `app/layout.tsx`
 - **v1.80.8** — perf phase 4c: lazy-load auth modals (`SignInLightbox`, `ApplyToLeagueModal`) via `next/dynamic` — they were statically imported by `Header → LineLoginButton`, `RecruitingBanner`, and `GuestLoginBanner` but only mount after user click. Header chunk 1347: 27,577 → 21,509 parsed (-6,068 / -1,059 gz) on every public page. Dashboard chunk 7206: 33,725 → 26,174 parsed (-7,551 / -2,203 gz) on the landing page. Modals now ship as their own async chunks (~9 KB SignInLightbox, ~5 KB ApplyToLeagueModal) that fetch only when opened. JSX gated on the open-state booleans so the deferred chunks don't fetch on mount.
 - **v1.80.7** — perf phase 4b: bundle analyzer audit — `leagueSlug.ts` and `leagueDetails.ts` were dragging `@prisma/client/runtime/index-browser.js` (~47 KB parsed / ~17 KB gzip) into the public bundle on every route because client components legitimately imported pure exports (`DEFAULT_LEAGUE_SLUG`, `BALL_TYPE_LABELS`, etc.) from files that also `import { prisma }`. Split DB-cached lookups into `leagueSlugServer.ts` + `leagueDetailsServer.ts`; pure types/constants/helpers stay in the original modules. Total client bundle: -49,225 bytes parsed / -17,632 bytes gzip. Zero `@prisma/*` references remaining in `.next/static/chunks` (was 47 KB)
@@ -94,7 +95,6 @@ Keep each line short. Long explanations live in PR descriptions, not chat.
 - **v1.76.1** — ID upload callout (explain why ID is needed before file inputs)
 - **v1.76.0** — RecruitingBanner State E uses SignInLightbox instead of toast+signIn
 - **v1.75.8** — Consistent column alignment in Planned Season Schedule
-- **v1.75.7** — League details polish + Goal kick field
 
 Older entries condensed in [docs/ledger-archive.md](docs/ledger-archive.md).
 

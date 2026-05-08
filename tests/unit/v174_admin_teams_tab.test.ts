@@ -124,10 +124,13 @@ describe('v1.74.0 — server actions', () => {
 describe('v1.74.0 — upload-token route extension', () => {
   const src = read('src/app/api/blob/upload-token/route.ts')
 
-  it('accepts session.isAdmin (not just userId)', () => {
+  it('accepts session.isAdmin (not just resolved User.id)', () => {
     expect(src).toMatch(/isAdmin/)
-    // Authentication gate must allow either userId OR isAdmin
-    expect(src).toMatch(/!userId\s*&&\s*!isAdmin/)
+    // v1.80.10 — auth gate combines the resolved User.id (from userId
+    // first, lineId fallback) with isAdmin. Either suffices for the
+    // outer 401 gate; team-logo paths still require isAdmin inside
+    // onBeforeGenerateToken.
+    expect(src).toMatch(/!resolvedUserId\s*&&\s*!isAdmin/)
   })
 
   it('matches team-logo/<teamId>/ pathname prefix', () => {
@@ -147,8 +150,12 @@ describe('v1.74.0 — upload-token route extension', () => {
     expect(src).toMatch(/TEAM_LOGO_MAX_BYTES\s*=\s*5\s*\*\s*1024\s*\*\s*1024/)
   })
 
-  it('still requires userId for register-pending / player-id / player-profile paths (regression target)', () => {
-    expect(src).toMatch(/register-pending\/\$\{userId\}/)
+  it('still requires a resolved canonical user id for register-pending / player-id / player-profile paths (regression target)', () => {
+    // v1.80.10 — keying changed from raw `${userId}` to `${resolvedUserId}`
+    // so legacy LINE sessions (lineId only) work via the lineId fallback.
+    // Regression target: re-introducing raw `${userId}` keying would
+    // re-introduce the legacy-session block.
+    expect(src).toMatch(/register-pending\/\$\{resolvedUserId\}/)
     expect(src).toMatch(/player-id\\\/\[\^\/\]\+/)
     expect(src).toMatch(/player-profile\\\/\[\^\/\]\+/)
   })

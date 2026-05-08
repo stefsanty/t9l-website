@@ -27,8 +27,12 @@ import RegistrationForm from './RegistrationForm'
  *   - League not found → 404
  *   - League not recruiting → friendly "not recruiting" surface
  *   - No session → friendly "sign in to apply" surface
- *   - Admin-credentials session (no userId) → friendly "admin sessions
- *     can't apply" surface
+ *   - v1.80.10 — admin-orthogonal-UX rule: route resolves the User row
+ *     by `userId` OR `lineId` (User.lineId @unique). Sessions that
+ *     resolve to neither (admin-credentials shared-password) get a
+ *     neutral "sign in with a player account" surface — no admin-shaming
+ *     copy, mirrors the action gate in `applyToLeague` /
+ *     `registerToLeague`.
  *   - User has existing Player → redirect to `/id/<slug>` (the apex
  *     RecruitingBanner already handles States A/B/D for them)
  *   - All gates passed (true State C) → render <RegistrationForm/>
@@ -65,25 +69,42 @@ export default async function RecruitPage({ params }: Props) {
     return <SignInSurface slug={slug} leagueName={league.name} />
   }
   const userId = (session as { userId?: string | null }).userId ?? null
-  if (!userId) {
-    return <AdminSessionSurface />
+  // session.lineId is typed `string` (empty string for admin-credentials).
+  const lineId = session.lineId || null
+  if (!userId && !lineId) {
+    return <NoPlayerAccountSurface />
   }
 
-  // Check user's existing Player binding. State C requires NO Player at all.
-  // State A/B/D users are routed back to the apex `/id/<slug>` where the
-  // RecruitingBanner already shows the right surface for their state.
-  // v1.78.0 — also pull email + emailVerified so the form pre-fills the
-  // email input when we already have a verified address (Google OAuth /
-  // magic-link). Un-verified emails are not pre-filled — that would
-  // soft-confirm an unverified address through this flow.
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    select: { playerId: true, email: true, emailVerified: true },
-  })
-  if (user?.playerId) {
+  // v1.80.10 — resolve User by `userId` first, falling back to `lineId`
+  // so legacy LINE sessions (and LINE-auth admins, whose admin role is
+  // orthogonal to player binding per docs/admin-orthogonal-ux.md) flow
+  // through identically to non-admins. Mirrors the v1.59.1 fallback
+  // pattern in `account/player/actions.ts`.
+  // State C requires NO Player at all. State A/B/D users are routed back
+  // to the apex `/id/<slug>` where RecruitingBanner shows the right
+  // surface. v1.78.0 — also pull email + emailVerified so the form
+  // pre-fills the email input when we already have a verified address
+  // (Google OAuth / magic-link). Un-verified emails are not pre-filled.
+  let user: { id: string; playerId: string | null; email: string | null; emailVerified: Date | null } | null = null
+  if (userId) {
+    user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, playerId: true, email: true, emailVerified: true },
+    })
+  }
+  if (!user && lineId) {
+    user = await prisma.user.findUnique({
+      where: { lineId },
+      select: { id: true, playerId: true, email: true, emailVerified: true },
+    })
+  }
+  if (!user) {
+    return <NoPlayerAccountSurface />
+  }
+  if (user.playerId) {
     redirect(`/id/${slug}`)
   }
-  const initialEmail = user?.email && user?.emailVerified ? user.email : ''
+  const initialEmail = user.email && user.emailVerified ? user.email : ''
 
   return (
     <main
@@ -103,7 +124,7 @@ export default async function RecruitPage({ params }: Props) {
           leagueId={league.id}
           leagueSlug={slug}
           leagueName={league.name}
-          userId={userId}
+          userId={user.id}
           initialEmail={initialEmail}
         />
       </div>
@@ -161,25 +182,31 @@ function SignInSurface({ slug, leagueName }: { slug: string; leagueName: string 
   )
 }
 
-function AdminSessionSurface() {
+/**
+ * v1.80.10 — replaces the v1.67.2 `AdminSessionSurface`. Admin role is
+ * orthogonal to user-facing UX (docs/admin-orthogonal-ux.md); copy is
+ * neutral — the only thing missing is a player account, which any
+ * session without a userId or lineId lacks.
+ */
+function NoPlayerAccountSurface() {
   return (
     <main className="min-h-dvh flex items-center justify-center px-4 py-8 bg-background">
       <div
         className="max-w-md w-full bg-surface rounded-xl border border-border-default p-6 text-center"
-        data-testid="recruit-admin-session"
+        data-testid="recruit-no-player-account"
       >
         <h1 className="text-xl font-display font-bold text-fg-high mb-2">
-          Admin sessions can&apos;t apply
+          Sign in with a player account
         </h1>
         <p className="text-fg-mid text-sm mb-5">
-          You&apos;re signed in with an admin account. Sign in with a player
-          account to submit an application.
+          Your current sign-in isn&apos;t linked to a player. Sign in with LINE,
+          Google, or your email to submit an application.
         </p>
         <Link
-          href="/admin"
+          href="/auth/signin"
           className="inline-block bg-primary text-on-primary px-4 py-2 rounded-lg text-sm font-medium hover:opacity-90"
         >
-          Go to admin
+          Sign in
         </Link>
       </div>
     </main>

@@ -2,6 +2,7 @@ import { handleUpload, type HandleUploadBody } from '@vercel/blob/client'
 import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
+import { prisma } from '@/lib/prisma'
 
 /**
  * v1.71.1 — Presigned upload-token route for client-direct Vercel Blob uploads.
@@ -30,8 +31,14 @@ import { authOptions } from '@/lib/auth'
  *
  * Authorization model:
  *   - For `register-pending/`, `player-id/`, `player-profile/` paths:
- *       session must carry `userId` (LINE / Google / email; NOT admin
- *       credentials, which have no User row).
+ *       session must resolve to a User row. v1.80.10 — resolution is
+ *       `userId` first, falling back to `lineId` (User.lineId @unique).
+ *       This mirrors the v1.59.1 fallback pattern in
+ *       `account/player/actions.ts`: legacy LINE sessions and LINE-auth
+ *       admins (whose admin role is orthogonal per
+ *       docs/admin-orthogonal-ux.md) flow through identically. The
+ *       admin-credentials shared-password sessions still have neither
+ *       identifier and are still rejected.
  *   - For `team-logo/` paths:
  *       session must carry `isAdmin: true`.
  *   - We do NOT authoritatively validate playerId/teamId ownership at
@@ -62,10 +69,25 @@ const TEAM_LOGO_MAX_BYTES = 5 * 1024 * 1024
 
 export async function POST(request: Request): Promise<NextResponse> {
   const session = await getServerSession(authOptions)
-  const userId = (session as { userId?: string | null } | null)?.userId ?? null
+  const sessionUserId = (session as { userId?: string | null } | null)?.userId ?? null
+  // session.lineId is typed `string` (empty string for admin-credentials).
+  const lineId = (session as { lineId?: string | null } | null)?.lineId || null
   const isAdmin = (session as { isAdmin?: boolean } | null)?.isAdmin ?? false
 
-  if (!userId && !isAdmin) {
+  // v1.80.10 — resolve canonical User.id by `userId` first, falling back
+  // to `lineId` (User.lineId @unique). Mirrors the action-layer fix in
+  // `applyToLeague`/`registerToLeague`. Admin-credentials sessions still
+  // have neither identifier and are caught below.
+  let resolvedUserId: string | null = sessionUserId
+  if (!resolvedUserId && lineId) {
+    const user = await prisma.user.findUnique({
+      where: { lineId },
+      select: { id: true },
+    })
+    resolvedUserId = user?.id ?? null
+  }
+
+  if (!resolvedUserId && !isAdmin) {
     return NextResponse.json({ error: 'Sign in required' }, { status: 401 })
   }
 
@@ -89,11 +111,11 @@ export async function POST(request: Request): Promise<NextResponse> {
           }
         }
 
-        if (!userId) {
+        if (!resolvedUserId) {
           throw new Error('Sign in required')
         }
 
-        const isRegisterPending = pathname.startsWith(`register-pending/${userId}/`)
+        const isRegisterPending = pathname.startsWith(`register-pending/${resolvedUserId}/`)
         const isPlayerId = /^player-id\/[^/]+\/(front|back)-\d+\./.test(pathname)
         const isPlayerProfile = /^player-profile\/[^/]+\/\d+\./.test(pathname)
         if (!isRegisterPending && !isPlayerId && !isPlayerProfile) {

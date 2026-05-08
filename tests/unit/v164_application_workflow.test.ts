@@ -142,8 +142,17 @@ describe("v1.64.0 — applyToLeague action", () => {
     expect(APPLY_ACTION_SRC).toMatch(/Sign in required/)
   })
 
-  it('rejects admin-credentials sessions (no userId)', () => {
-    expect(APPLY_ACTION_SRC).toMatch(/Admin sessions cannot submit applications/)
+  it('admin-shaming gate is GONE (v1.80.10 — admin-orthogonal-UX rule)', () => {
+    // v1.64.0 returned `Admin sessions cannot submit applications` for any
+    // session without a userId. v1.80.10 closes the rule violation: the
+    // gate is now expressed in terms of identifier resolution
+    // (`userId` OR `lineId`, mirroring v1.59.1's
+    // `requireSelfPlayerSession`) and the user-facing copy is neutral.
+    // Regression target — re-introducing the admin-shaming string would
+    // re-introduce the rule violation flagged by docs/admin-orthogonal-ux.md.
+    expect(APPLY_ACTION_SRC).not.toMatch(/Admin sessions cannot submit applications/)
+    // The neutral fallback message from the new gate.
+    expect(APPLY_ACTION_SRC).toMatch(/Sign in with a player account to apply/)
   })
 
   it('validates name (required, ≤100 chars)', () => {
