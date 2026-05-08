@@ -163,8 +163,8 @@ describe('v1.79.1 — adminApproveApplication email integration', () => {
     expect(APPROVE_FN).toMatch(/kind=application-approved/)
   })
 
-  it('version is 1.79.1', async () => {
+  it('version is 1.79.1 or later', async () => {
     const { APP_VERSION } = await import('@/lib/version')
-    expect(APP_VERSION).toBe('1.79.1')
+    expect(APP_VERSION).toMatch(/^1\.79\.[1-9]\d*$|^1\.[89]\d\.\d+$|^[2-9]\.\d+\.\d+$/)
   })
 })

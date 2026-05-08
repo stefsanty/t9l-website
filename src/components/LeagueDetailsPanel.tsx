@@ -195,44 +195,45 @@ export default function LeagueDetailsPanel({
               data-testid="league-stats-section"
             >
               <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
-                {/* Season Fee + Register By — combined first line */}
-                {(showFee || showDeadline) && (
-                  <div className="col-span-2" data-testid="season-fee-row">
-                    <div className="flex items-baseline justify-between gap-3">
-                      {showFee && (
-                        <div className="flex items-baseline gap-1.5 min-w-0">
-                          <dt className="text-fg-mid text-xs uppercase tracking-wider font-bold shrink-0">
-                            Season Fee
-                          </dt>
-                          <dd className="font-display font-black text-fg-high tabular-nums">
-                            {formatJpyFee(plannedRosterStats.defaultFee)}
-                          </dd>
-                        </div>
-                      )}
-                      {showDeadline && plannedRosterStats.registrationDeadline && (
-                        <div className="flex items-baseline gap-1.5 min-w-0" data-testid="deadline-row">
-                          <dt className="text-fg-mid text-xs uppercase tracking-wider font-bold shrink-0">
-                            Register By
-                          </dt>
-                          <dd className="font-display font-black text-fg-high">
-                            {formatJstFriendly(plannedRosterStats.registrationDeadline, 'en')}
-                          </dd>
-                        </div>
-                      )}
-                    </div>
-                    {showFee && plannedRosterStats.positionFees.length > 0 && (
-                      <p
-                        className="text-[10px] text-fg-low mt-1 leading-snug"
-                        data-testid="player-fee-position-rows"
-                      >
-                        {plannedRosterStats.positionFees.map((p, idx) => (
-                          <span key={p.position}>
-                            {idx > 0 && ' '}
-                            ({p.position} – {formatJpyFee(p.fee)})
-                          </span>
-                        ))}
-                      </p>
-                    )}
+                {/* Season Fee — own row, table-aligned */}
+                {showFee && (
+                  <div
+                    className="col-span-2 flex justify-between items-baseline"
+                    data-testid="season-fee-row"
+                  >
+                    <dt className="text-fg-mid text-xs uppercase tracking-wider font-bold shrink-0">
+                      Season Fee
+                    </dt>
+                    <dd className="font-display font-black text-fg-high tabular-nums">
+                      {formatJpyFee(plannedRosterStats.defaultFee)}
+                    </dd>
+                  </div>
+                )}
+                {showFee && plannedRosterStats.positionFees.length > 0 && (
+                  <p
+                    className="col-span-2 text-[10px] text-fg-low leading-snug"
+                    data-testid="player-fee-position-rows"
+                  >
+                    {plannedRosterStats.positionFees.map((p, idx) => (
+                      <span key={p.position}>
+                        {idx > 0 && ' '}
+                        ({p.position} – {formatJpyFee(p.fee)})
+                      </span>
+                    ))}
+                  </p>
+                )}
+                {/* Register By — own row, table-aligned */}
+                {showDeadline && plannedRosterStats.registrationDeadline && (
+                  <div
+                    className="col-span-2 flex justify-between items-baseline"
+                    data-testid="deadline-row"
+                  >
+                    <dt className="text-fg-mid text-xs uppercase tracking-wider font-bold shrink-0">
+                      Register By
+                    </dt>
+                    <dd className="font-display font-black text-fg-high">
+                      {formatJstFriendly(plannedRosterStats.registrationDeadline, 'en')}
+                    </dd>
                   </div>
                 )}
 
