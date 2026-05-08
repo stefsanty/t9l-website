@@ -1,0 +1,119 @@
+# Success-popup extension (PR #231 follow-up)
+
+Branch: claude/admiring-meninsky-bc9c41
+Base: origin/main @ 50bf1b2 (v1.81.0)
+
+## M1 — PR #231 confirmed merged + path audit done
+
+### Stale-worktree protocol
+- `git -C /Users/stefan/t9l-website fetch --all --prune` → clean
+- `git -C /Users/stefan/t9l-website pull --ff-only origin main` → already up to date
+- `git rebase origin/main` → fast-forward to 50bf1b2 (v1.81.0). Worktree clean.
+
+### v1.81.0 primitives now present on main
+- `src/lib/successRedirect.ts` — `safeOriginPath()` + `buildSuccessRedirect(originPath, descriptor, fallback)`
+- `src/components/SuccessConfirmationModal.tsx` — portal-rendered modal with animated check
+- `src/components/SuccessConfirmationGate.tsx` — reads `?submitted=<descriptor>`, looks up MESSAGES map, mounts modal
+- Mounted on `<Dashboard>` (covers `/`, `/id/<slug>`, `/id/<slug>/md/<id>`)
+- Existing MESSAGES descriptors: `applyToLeague`, `registerToLeague`
+
+### Path-by-path audit
+
+#### 1. `redeemInvite` — LIVE
+- **Callers:** `RedeemPersonalForm.tsx:35`, `RedeemCodePicker.tsx:59`
+- **Returns:** `{ ok, redirectTo, ... }` (caller does `router.push`); does NOT call `redirect()` server-side
+- **Terminal states:**
+  - `skipOnboarding=true` → `/join/[code]/welcome` (terminal — user is now a member)
+  - `skipOnboarding=false` → `/join/[code]/onboarding` (continuation form via `completeOnboardingWithId`)
+- **Plan:**
+  - skipOnboarding=true: append `?submitted=redeemInvite` to redirectTo. Popup mounts on /welcome.
+  - skipOnboarding=false: leave unchanged. Popup fires after the user completes the onboarding form via `completeOnboardingWithId` instead — wiring it on `redeemInvite`'s onboarding redirect would be confusing ("Invite redeemed" then they still have to fill a form).
+- **Copy:** `Invite redeemed` / `You're now a member of the league.`
+
+#### 2. `submitOnboarding` — DEAD CODE
+- **No imports anywhere in src.** Only referenced in docstrings (`actions.ts` self-ref, `admin/leagues/actions.ts:890` historical comment, `account/player/actions.ts:16` historical comment).
+- **History:** Pre-v1.68.0 multi-step flow (form-first, then ID upload). Replaced by single-page `completeOnboardingWithId`. The function body's redirect to `/id-upload` is the smoking gun — that route is no longer in any active flow.
+- **Action:** Do not wire popup. Surface in PR description as candidate for deletion in a future cleanup PR.
+
+#### 3. `submitIdUpload` — LIVE (legacy two-step state)
+- **Callers:** `id-upload/IdUploadForm.tsx:69`
+- **Reachable via:** `/join/[code]` page state-machine resolver — when an existing user has `onboardingStatus=NOT_YET` AND `Player.name` is set (left over from pre-v1.68.0 flows). New users go straight to single-page `OnboardingForm` and never hit this path.
+- **Currently:** server-side `redirect('/join/[code]/welcome')`
+- **Plan:** redirect to `/join/[code]/welcome?submitted=submitIdUpload`
+- **Copy:** `ID uploaded` / `Your application is now complete.`
+
+#### 4. `completeOnboardingWithId` — LIVE (main single-page form)
+- **Callers:** `onboarding/OnboardingForm.tsx:38`
+- **The "main form" per user correction:** name + position + ID + email + comments in one submit.
+- **Currently:** server-side `redirect('/join/[code]/welcome')`
+- **Plan:** redirect to `/join/[code]/welcome?submitted=completeOnboardingWithId`
+- **Copy:** `Application submitted` / `The league admin will review your application and get back to you.`
+
+#### 5. `skipIdUpload` — LIVE (legacy skip + BLOB-unconfigured fallback)
+- **Callers:**
+  - `id-upload/IdUploadForm.tsx:83` (soft "Skip for now — admin will collect ID later")
+  - `id-upload/page.tsx:152` (operator BLOB-unconfigured fallback in `BlobUnconfiguredFallback`)
+- **Currently:** server-side `redirect('/join/[code]/welcome')`
+- **Plan:** redirect to `/join/[code]/welcome?submitted=skipIdUpload`
+- **Copy:** `Application complete` / `Admin will collect your ID separately.`
+
+### Mount strategy
+4/5 live actions land on `/join/[code]/welcome`. Simplest: mount `<SuccessConfirmationGate>` on the welcome page itself (server component → renders client gate). No `originPath` plumbing needed because the destination IS the popup-mounting page (unlike `applyToLeague` which returns the user to the originating league page).
+
+### Out-of-scope follow-ups (PR description notes)
+- Delete `submitOnboarding` (dead code) and prune historical docstring references.
+
+## M2 — Pattern applied to live paths
+
+### Edits
+
+#### `src/app/join/[code]/actions.ts` (4 redirect lines + 1 dead-code comment)
+- `redeemInvite`: `redirectTo` ternary now uses `/join/[code]/welcome?submitted=redeemInvite` for the skipOnboarding=true terminal arm; the skipOnboarding=false arm still routes to `/join/[code]/onboarding` unchanged (continuation form, no popup at this step).
+- `submitOnboarding`: redirect unchanged. Added an inline comment marking the function as a deletion candidate (no caller in src/).
+- `submitIdUpload`: redirect now `/join/[code]/welcome?submitted=submitIdUpload`.
+- `completeOnboardingWithId`: redirect now `/join/[code]/welcome?submitted=completeOnboardingWithId`.
+- `skipIdUpload`: redirect now `/join/[code]/welcome?submitted=skipIdUpload`.
+
+#### `src/components/SuccessConfirmationGate.tsx`
+- 4 new MESSAGES entries (under the v1.81.0 `applyToLeague` / `registerToLeague` block):
+  - `redeemInvite` → `Invite redeemed` / `You're now a member of the league.`
+  - `completeOnboardingWithId` → `Application submitted` / `The league admin will review your application and get back to you.` (mirrors recruiting copy — same user perception)
+  - `submitIdUpload` → `ID uploaded` / `Your application is now complete.`
+  - `skipIdUpload` → `Application complete` / `Admin will collect your ID separately.`
+
+#### `src/app/join/[code]/welcome/page.tsx`
+- Imports `SuccessConfirmationGate` from `@/components/SuccessConfirmationGate` and `Suspense` from `react`.
+- Renders `<Suspense fallback={null}><SuccessConfirmationGate /></Suspense>` after the welcome card. The Suspense boundary is required because the gate uses `useSearchParams()` from a server-component page.
+
+#### `src/lib/version.ts` + `tests/unit/version.test.ts`
+- Bumped APP_VERSION to `1.81.2`. Pin test updated.
+
+### Why no `originPath` plumbing
+PR #231 used `originPath` because `applyToLeague` returns the user to the originating league page (e.g. `/id/<slug>`), and the popup mounts there. For the join flow, all 4 live actions terminate at `/join/[code]/welcome` — the destination IS the popup-mounting page. A simple query-string append on the existing redirect target is sufficient; no validator wrapper or `safeOriginPath` call is needed because we're not echoing a user-supplied path.
+
+### Diff shape
+- Lines changed: ~30 across 5 files (4 redirect literals + MESSAGES additions + welcome-page mount + version bump).
+- No new files except the test (`tests/unit/v1812_join_success_modal.test.ts`).
+- No new dependencies.
+- No DB / schema / migration changes.
+
+## M3 — Tests + suite passing
+
+### New tests
+- `tests/unit/v1812_join_success_modal.test.ts` — 18 source-string + helper-runtime assertions pinning the four redirect shapes, the four MESSAGES descriptors, the welcome-page Suspense+Gate mount, and the dead-code marker for `submitOnboarding`.
+
+### Stash-pop sanity check (regression-target verification)
+- Stashed all 5 source edits (`actions.ts`, `welcome/page.tsx`, `SuccessConfirmationGate.tsx`, `version.ts`, `version.test.ts`); kept the new test in place via `git stash --keep-index` after `git add`-ing only the test.
+- Ran `npx vitest run tests/unit/v1812_join_success_modal.test.ts` against pre-edit state → **16 / 18 failed**. The 2 that pass are (a) the intentional dead-code "submitOnboarding stays untouched" assertion, and (b) one trivial structural check.
+- All four "?submitted= descriptor" assertions, all four MESSAGES copy assertions, the Welcome-page Suspense mount, and the version pin all fail correctly on the broken state.
+- `git stash pop` restored edits cleanly.
+
+### Pre-existing tests updated to the new redirect shape (5 assertions)
+- `tests/unit/idUploadActions.test.ts` (3 sites): `submitIdUpload` happy path + LINE-auth admin variant + `skipIdUpload` happy path now pin `'/join/CODE12345678/welcome?submitted=submitIdUpload'` / `?submitted=skipIdUpload`.
+- `tests/unit/redeemInvite.test.ts` (1 site): skipOnboarding=true terminal pin updated to `redirectTo: '/join/ABCD1234EFGH/welcome?submitted=redeemInvite'`.
+- `tests/unit/v168_id_collection_streamlined.test.ts` (1 site): `completeOnboardingWithId` redirect-shape regex updated to require the `?submitted=completeOnboardingWithId` query suffix.
+- `tests/unit/version.test.ts` — APP_VERSION pin updated to `1.81.2`.
+
+### Suite status
+- `npx vitest run` → 2851 passed, 2 skipped, 0 failed (159 test files, 2853 tests total). Same total count as pre-edit; the 5 broken assertions now match the new shape.
+- `npx tsc --noEmit` → clean. Note: `npm install` was needed in the worktree to populate `@next/bundle-analyzer` (added in v1.80.6); that's a pre-existing setup quirk, not related to v1.81.2.

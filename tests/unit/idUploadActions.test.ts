@@ -175,7 +175,11 @@ describe('v1.35.0 (PR η) — submitIdUpload (v1.70.0 writes to User)', () => {
       where: { playerId: 'p-1', leagueTeam: { leagueId: 'l-1' } },
       data: { onboardingStatus: 'COMPLETED' },
     })
-    expect(redirectMock).toHaveBeenCalledWith('/join/CODE12345678/welcome')
+    // v1.81.2 — the `?submitted=submitIdUpload` query param triggers the
+    // post-submit success popup on the welcome page.
+    expect(redirectMock).toHaveBeenCalledWith(
+      '/join/CODE12345678/welcome?submitted=submitIdUpload',
+    )
     delete process.env.BLOB_READ_WRITE_TOKEN
   })
 
@@ -209,7 +213,10 @@ describe('v1.35.0 (PR η) — submitIdUpload (v1.70.0 writes to User)', () => {
     userFindUniqueMock.mockResolvedValueOnce({ id: 'u-1' })
     process.env.BLOB_READ_WRITE_TOKEN = 'fake-token'
     await expect(submitIdUpload(makeFormData())).rejects.toThrow('NEXT_REDIRECT')
-    expect(redirectMock).toHaveBeenCalledWith('/join/CODE12345678/welcome')
+    // v1.81.2 — `?submitted=submitIdUpload` carries to the welcome page.
+    expect(redirectMock).toHaveBeenCalledWith(
+      '/join/CODE12345678/welcome?submitted=submitIdUpload',
+    )
     delete process.env.BLOB_READ_WRITE_TOKEN
   })
 
@@ -268,7 +275,11 @@ describe('v1.35.0 (PR η) — skipIdUpload', () => {
     })
     expect(playerUpdateMock).not.toHaveBeenCalled()
     expect(userUpdateMock).not.toHaveBeenCalled()
-    expect(redirectMock).toHaveBeenCalledWith('/join/CODE12345678/welcome')
+    // v1.81.2 — `?submitted=skipIdUpload` triggers the post-submit
+    // success popup on the welcome page.
+    expect(redirectMock).toHaveBeenCalledWith(
+      '/join/CODE12345678/welcome?submitted=skipIdUpload',
+    )
   })
 
   it('rejects when not signed in', async () => {

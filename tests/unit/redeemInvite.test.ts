@@ -242,13 +242,16 @@ describe('v1.34.0 (PR ζ) — redeemInvite — PERSONAL happy path', () => {
     })
   })
 
-  it('skipOnboarding=true → redirectTo /welcome + onboardingStatus COMPLETED', async () => {
+  it('skipOnboarding=true → redirectTo /welcome?submitted=redeemInvite + onboardingStatus COMPLETED', async () => {
+    // v1.81.2 — terminal redemption (skipOnboarding=true) carries
+    // `?submitted=redeemInvite` so the welcome page mounts the
+    // post-submit success popup.
     inviteFindUniqueMock.mockResolvedValue(personalInvite({ skipOnboarding: true }))
     const r = await redeemInvite({ code: 'ABCD1234EFGH' })
     expect(r).toMatchObject({
       ok: true,
       onboardingStatus: 'COMPLETED',
-      redirectTo: '/join/ABCD1234EFGH/welcome',
+      redirectTo: '/join/ABCD1234EFGH/welcome?submitted=redeemInvite',
     })
   })
 
