@@ -3,7 +3,8 @@ import Link from 'next/link'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
-import { getLeagueIdBySlug, normalizeLeagueSlug } from '@/lib/leagueSlug'
+import { normalizeLeagueSlug } from '@/lib/leagueSlug'
+import { getLeagueIdBySlug } from '@/lib/leagueSlugServer'
 import RegistrationForm from './RegistrationForm'
 
 /**

@@ -82,7 +82,7 @@ vi.mock('next/cache', () => ({
   unstable_cache: <T extends (...args: unknown[]) => unknown>(fn: T) => fn,
 }))
 
-vi.mock('@/lib/leagueSlug', () => ({
+vi.mock('@/lib/leagueSlugServer', () => ({
   getDefaultLeagueId: vi.fn().mockResolvedValue('l-minato-2025'),
 }))
 
@@ -229,7 +229,7 @@ describe('POST /api/assign-player — Redis-canonical sync, Prisma deferred', ()
   })
 
   it('v1.53.0 — threads the resolved default leagueId into getPlayerByPublicId', async () => {
-    const { getDefaultLeagueId } = await import('@/lib/leagueSlug')
+    const { getDefaultLeagueId } = await import('@/lib/leagueSlugServer')
     const getLeagueIdMock = vi.mocked(getDefaultLeagueId)
     getLeagueIdMock.mockResolvedValueOnce('l-minato-2025')
 
@@ -245,7 +245,7 @@ describe('POST /api/assign-player — Redis-canonical sync, Prisma deferred', ()
   })
 
   it('v1.53.0 — returns 404 when getDefaultLeagueId returns null (catastrophic config)', async () => {
-    const { getDefaultLeagueId } = await import('@/lib/leagueSlug')
+    const { getDefaultLeagueId } = await import('@/lib/leagueSlugServer')
     const getLeagueIdMock = vi.mocked(getDefaultLeagueId)
     getLeagueIdMock.mockResolvedValueOnce(null)
 

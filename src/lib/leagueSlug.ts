@@ -1,9 +1,14 @@
-import { unstable_cache } from 'next/cache'
-import { prisma } from './prisma'
-
 /**
- * v1.50.0 (PR 1 of the path-routing chain) — pure helpers + cached Prisma
- * lookups for path-based league resolution.
+ * v1.50.0 (PR 1 of the path-routing chain) — pure helpers for path-based
+ * league resolution.
+ *
+ * v1.80.7 (perf phase 4b) — the cached Prisma lookups (`getLeagueIdBySlug`,
+ * `getDefaultLeagueId`) moved to `leagueSlugServer.ts`. This file now
+ * contains ONLY pure, side-effect-free helpers so client components that
+ * legitimately import `DEFAULT_LEAGUE_SLUG` / `validateLeagueSlug` (e.g.
+ * `CopyMatchdayLink`, `RecruitingBanner`, `CreateLeagueModal`) don't drag
+ * `@prisma/client` and `next/cache` into the public bundle. Server callers
+ * that need the DB lookups now `import ... from '@/lib/leagueSlugServer'`.
  *
  * Pre-v1.50.0 the league context for a request came from the host header
  * (subdomain → leagueId). PR 4 (v1.53.0) of the path-routing chain
@@ -112,50 +117,3 @@ export function isResolvableLeagueSlug(slug: string): boolean {
   return validateLeagueSlug(normalizeLeagueSlug(slug)).ok
 }
 
-const getLeagueIdBySlugCached = unstable_cache(
-  async (slug: string): Promise<string | null> => {
-    const league = await prisma.league.findUnique({
-      where: { subdomain: slug },
-      select: { id: true },
-    })
-    return league?.id ?? null
-  },
-  ['league-id-by-slug'],
-  { revalidate: 60, tags: ['leagues'] },
-)
-
-const getDefaultLeagueIdCached = unstable_cache(
-  async (): Promise<string | null> => {
-    const league = await prisma.league.findFirst({
-      where: { isDefault: true },
-      select: { id: true },
-    })
-    return league?.id ?? null
-  },
-  ['default-league-id-slug'],
-  { revalidate: 60, tags: ['leagues'] },
-)
-
-/**
- * Resolve a path slug to a `League.id`, with reserved-word + format
- * validation up front. Returns null when:
- *   - slug fails format validation
- *   - slug is reserved
- *   - no League row matches the slug
- *
- * Cached for 60s under the `leagues` tag so admin writes that revalidate
- * 'leagues' (`updateLeagueInfo`, `createLeague`) bust this lookup too.
- */
-export async function getLeagueIdBySlug(slug: string): Promise<string | null> {
-  const normalized = normalizeLeagueSlug(slug)
-  if (!validateLeagueSlug(normalized).ok) return null
-  return getLeagueIdBySlugCached(normalized)
-}
-
-/**
- * Resolve the default league's id (the league with `isDefault: true`).
- * Used by apex `/` and any path that semantically means "the home league".
- */
-export async function getDefaultLeagueId(): Promise<string | null> {
-  return getDefaultLeagueIdCached()
-}

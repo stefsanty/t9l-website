@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import { existsSync, statSync } from 'fs'
 import path from 'path'
-import { RESERVED_LEAGUE_SLUGS, validateLeagueSlug, getLeagueIdBySlug } from '@/lib/leagueSlug'
+import { RESERVED_LEAGUE_SLUGS, validateLeagueSlug } from '@/lib/leagueSlug'
+import { getLeagueIdBySlug } from '@/lib/leagueSlugServer'
 
 /**
  * v1.53.2 (PR 6 of the path-routing chain) — reserved-word route

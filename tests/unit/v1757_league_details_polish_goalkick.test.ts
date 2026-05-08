@@ -129,28 +129,31 @@ describe('v1.75.7 migration file for GoalKickType', () => {
 // ── Change 3: GoalKickType in leagueDetails.ts ───────────────────────────────
 
 describe('v1.75.7 GoalKickType in leagueDetails.ts', () => {
-  const src = read('src/lib/leagueDetails.ts')
+  // v1.80.7 — Prisma select + row mapping moved to leagueDetailsServer.ts;
+  // type + interface field + LABELS stay in the pure leagueDetails.ts.
+  const pureSrc = read('src/lib/leagueDetails.ts')
+  const serverSrc = read('src/lib/leagueDetailsServer.ts')
 
   it('exports GoalKickType type', () => {
-    expect(src).toMatch(/export type GoalKickType/)
+    expect(pureSrc).toMatch(/export type GoalKickType/)
   })
 
   it('LeagueDetails interface includes goalKickType field', () => {
-    expect(src).toMatch(/goalKickType:\s*GoalKickType/)
+    expect(pureSrc).toMatch(/goalKickType:\s*GoalKickType/)
   })
 
   it('Prisma select includes goalKickType', () => {
-    expect(src).toMatch(/goalKickType:\s*true/)
+    expect(serverSrc).toMatch(/goalKickType:\s*true/)
   })
 
   it('return object includes goalKickType', () => {
-    expect(src).toMatch(/goalKickType:\s*row\.goalKickType/)
+    expect(serverSrc).toMatch(/goalKickType:\s*row\.goalKickType/)
   })
 
   it('exports GOAL_KICK_TYPE_LABELS record', () => {
-    expect(src).toMatch(/GOAL_KICK_TYPE_LABELS/)
-    expect(src).toMatch(/THROW.*Throw/)
-    expect(src).toMatch(/KICK.*Kick/)
+    expect(pureSrc).toMatch(/GOAL_KICK_TYPE_LABELS/)
+    expect(pureSrc).toMatch(/THROW.*Throw/)
+    expect(pureSrc).toMatch(/KICK.*Kick/)
   })
 })
 

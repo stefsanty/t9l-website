@@ -1,13 +1,14 @@
 import { notFound } from 'next/navigation'
 import Dashboard from '@/components/Dashboard'
 import { findNextMatchday } from '@/lib/stats'
-import { getLeagueIdBySlug, normalizeLeagueSlug } from '@/lib/leagueSlug'
+import { normalizeLeagueSlug } from '@/lib/leagueSlug'
+import { getLeagueIdBySlug } from '@/lib/leagueSlugServer'
 import { getPublicLeagueData } from '@/lib/publicData'
 import { getLeagueFlags } from '@/lib/leagueFlags'
 import { getRecruitingViewerState } from '@/lib/recruitingViewerState'
 import { getUnpaidFeeBannerData } from '@/lib/unpaidFeeBanner'
 import { getPlannedRosterStats } from '@/lib/plannedRosterStats'
-import { getLeagueDetails } from '@/lib/leagueDetails'
+import { getLeagueDetails } from '@/lib/leagueDetailsServer'
 import { prisma } from '@/lib/prisma'
 
 export const metadata = {

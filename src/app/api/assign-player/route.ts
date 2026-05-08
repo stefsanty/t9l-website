@@ -8,7 +8,7 @@ import { prisma } from "@/lib/prisma";
 import { revalidate } from "@/lib/revalidate";
 import { setMappingOrThrow } from "@/lib/playerMappingStore";
 import { playerIdToSlug, slugToPlayerId } from "@/lib/ids";
-import { getDefaultLeagueId } from "@/lib/leagueSlug";
+import { getDefaultLeagueId } from "@/lib/leagueSlugServer";
 import { getLeagueAllowSelfLink } from "@/lib/leagueSelfLink";
 import {
   linkPlayerToUser,

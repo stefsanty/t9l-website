@@ -3,7 +3,7 @@ import Link from 'next/link'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
-import { getDefaultLeagueId } from '@/lib/leagueSlug'
+import { getDefaultLeagueId } from '@/lib/leagueSlugServer'
 import AccountPlayerForm, { type AccountPlayerFormProps } from './AccountPlayerForm'
 
 /**
