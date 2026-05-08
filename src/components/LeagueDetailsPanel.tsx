@@ -26,6 +26,10 @@ import { formatJpyFee } from '@/lib/playerFee'
  * v1.75.7 — Rules section text-xs; "Goal size" → "Goal"; "Sideline restart"
  *   → "Sideline"; Goal kick row added (between Sideline and Backpass);
  *   Season Fee/Register By row no longer wraps on iPhone-width viewports.
+ * v1.79.3 — Combined Season Fee + Register By back onto ONE row using
+ *   proper dual dt/dd pairs inside a single flex justify-between container
+ *   (season-fee-register-by-row). Falls back to single pair when only one
+ *   value is present.
  *
  * Rules section order:
  *   1. Player format
@@ -195,18 +199,32 @@ export default function LeagueDetailsPanel({
               data-testid="league-stats-section"
             >
               <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
-                {/* Season Fee — own row, table-aligned */}
-                {showFee && (
+                {/* Season Fee + Register By — combined onto one row when both present */}
+                {(showFee || showDeadline) && (
                   <div
                     className="col-span-2 flex justify-between items-baseline"
-                    data-testid="season-fee-row"
+                    data-testid="season-fee-register-by-row"
                   >
-                    <dt className="text-fg-mid text-xs uppercase tracking-wider font-bold shrink-0">
-                      Season Fee
-                    </dt>
-                    <dd className="font-display font-black text-fg-high tabular-nums">
-                      {formatJpyFee(plannedRosterStats.defaultFee)}
-                    </dd>
+                    {showFee && (
+                      <>
+                        <dt className="text-fg-mid text-xs uppercase tracking-wider font-bold">
+                          Season Fee
+                        </dt>
+                        <dd className="font-display font-black text-fg-high tabular-nums">
+                          {formatJpyFee(plannedRosterStats.defaultFee)}
+                        </dd>
+                      </>
+                    )}
+                    {showDeadline && plannedRosterStats.registrationDeadline && (
+                      <>
+                        <dt className="text-fg-mid text-xs uppercase tracking-wider font-bold">
+                          Register By
+                        </dt>
+                        <dd className="font-display font-black text-fg-high">
+                          {formatJstFriendly(plannedRosterStats.registrationDeadline, 'en')}
+                        </dd>
+                      </>
+                    )}
                   </div>
                 )}
                 {showFee && plannedRosterStats.positionFees.length > 0 && (
@@ -221,20 +239,6 @@ export default function LeagueDetailsPanel({
                       </span>
                     ))}
                   </p>
-                )}
-                {/* Register By — own row, table-aligned */}
-                {showDeadline && plannedRosterStats.registrationDeadline && (
-                  <div
-                    className="col-span-2 flex justify-between items-baseline"
-                    data-testid="deadline-row"
-                  >
-                    <dt className="text-fg-mid text-xs uppercase tracking-wider font-bold shrink-0">
-                      Register By
-                    </dt>
-                    <dd className="font-display font-black text-fg-high">
-                      {formatJstFriendly(plannedRosterStats.registrationDeadline, 'en')}
-                    </dd>
-                  </div>
                 )}
 
                 {/* Teams */}
