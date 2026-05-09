@@ -1,0 +1,229 @@
+# Formations follow-up — phase log
+
+Branch: `claude/romantic-liskov-79da69`. Base: rebased onto `origin/main` at `3e09ea5` (v1.83.3).
+
+Follow-up to PR #237 (v1.83.1). Three asks:
+1. Widen slot-position compat to a primary + fallback model.
+2. Display subs as depth-chart alternates beneath each pitch slot.
+3. Add a position pill to each player tile on the pitch.
+
+Target version: **v1.84.0** (minor — new visible behaviour: depth-chart layout + position pills + widened compat. Net behaviour change visible in fielded MatchdayAvailability).
+
+---
+
+## M1 — Slot-compat map widened (slot → primary + fallback)
+
+The canonical data-direction flips from **player→slots** (v1.83.1) to **slot→{primary, fallback}** (v1.84.0). The user's spec is written in this direction and the two-pass algorithm reads it natively.
+
+### SOCCER (12-code)
+
+| slot | primary | fallback |
+|------|---------|----------|
+| GK   | {GK}    | {}       |
+| LB   | {LB}    | {CB, LM, DM} |
+| CB   | {CB}    | {DM}     |
+| RB   | {RB}    | {CB, RM, DM} |
+| DM   | {DM}    | {CM, CB} |
+| CM   | {CM}    | {DM, CAM} |
+| CAM  | {CAM}   | {CM, ST} |
+| LM   | {LM}    | {LW, CM} |
+| RM   | {RM}    | {RW, CM} |
+| LW   | {LW}    | {LM, ST} |
+| RW   | {RW}    | {RM, ST} |
+| ST   | {ST}    | {CAM, LW, RW} |
+
+### FUTSAL (4-code)
+
+| slot  | primary | fallback |
+|-------|---------|----------|
+| GK    | {GK}    | {}       |
+| FIXO  | {FIXO}  | {}       |
+| ALA   | {ALA}   | {PIVOT}  |
+| PIVOT | {PIVOT} | {ALA}    |
+
+### Spec-vs-narrative discrepancy (surfaced for review)
+
+The user's worked example in the brief — *"if there are 3 CM subs, and no LM RM or ST, place the 3 in those available slots"* — would require **CM ∈ ST fallback**. The literal table does NOT include CM in ST's fallback. Two interpretations:
+
+- **Literal spec (implemented):** ST stays empty when only CMs are available. The 3 CMs fill CM (primary) + LM/RM (fallback via the LM/RM tables); a third CM lands in subs.
+- **Narrative spec:** add CM to ST's fallback. Then a 3-CM roster fills LM/CM/RM via fallback, and one of the leftover CMs could fill ST via fallback.
+
+Implemented the **literal spec** because that's what the user explicitly wrote. If they want the narrative version, it's a one-line addition (`ST.fallback += ['CM']`).
+
+### FUTSAL tightening (surfaced)
+
+The user wrote "current strict map (`GK→{GK}`, `FIXO→{FIXO}`, etc.) is fine; … add a small fallback for ALA → `{PIVOT}` and PIVOT → `{ALA}`". The actual v1.83.1 map was NOT strict — it had `FIXO ↔ ALA` cross-fill in both directions. The new map removes those cross-fills (FIXO is strict, ALA↔PIVOT only). Two regression tests in `[regression] playerCodeFillsSlot — futsal` flip behaviour; updated to match.
+
+### Public API impact
+
+- `playerCodeFillsSlot(ballType, playerCode, slotCode)` — semantics unchanged: true iff the player can fill the slot via primary OR fallback. Used by the picker's "OUT OF POSITION" badge.
+- New helper `playerCodeFillsSlotPrimary(ballType, playerCode, slotCode)` — true iff via primary only. Used by the two-pass assignment + the alternate-display preference.
+- `playerFillsSlot(ballType, positions, slotCode)` — semantics unchanged: any matching position counts.
+
+---
+
+## M2 — Two-pass + re-balance assignment (planned)
+
+Algorithm (from the user spec):
+
+1. **Pass 1 — primary fill.** For each unfilled slot, candidates are players whose `positions[]` ∩ slot.primary ≠ ∅. Run the existing scarcity-first heuristic.
+2. **Pass 2 — fallback fill.** For each remaining unfilled slot, candidates are *unplaced* players whose `positions[]` ∩ slot.fallback ≠ ∅. Run scarcity-first again.
+3. **Pass 3 — overflow.** Anyone unassigned → subs (depth-chart alternates per M3).
+
+Re-balance: the function is pure — re-running it with the new roster after a player joins yields the new placement. The Dashboard is wired so confirmedIds drives a useMemo, so this happens automatically on each RSVP change.
+
+### Walk-through of the 9-aside `3-3-2` "3 CMs → ST joins" scenario
+
+Slots: `GK, LB, CB, RB, LM, CM, RM, ST, ST` (positions per `defRow`/`midRow`/`fwdRow`).
+
+**State A — only 3 CMs confirmed (no GK either):**
+- Pass 1 primary: CM slot's primary={CM} → 1 CM player picked. 2 CMs unassigned.
+- Pass 2 fallback: LM.fallback={LW,CM} → 1 CM picked. RM.fallback={RW,CM} → 1 CM picked. 0 CMs left.
+- ST/CB/LB/RB/GK slots remain empty (no candidates).
+- Bench: 0 (all 3 placed).
+
+**State B — a ST joins:**
+- Pass 1 primary: CM slot picks 1 CM, ST slot picks the ST. 2 CMs unassigned.
+- Pass 2 fallback: LM/RM fall back to CM as before. 0 CMs left.
+- Other ST slot remains empty.
+- Bench: 0.
+
+The new ST automatically takes its primary slot; nothing displaces back. (The user's narrative said "one of the CMs displaces back to LM/RM (or to subs if all 11 slots are now filled by primary-match elsewhere)" — that branch fires when there are MORE primary matches than slots. In a 4-3-3 with 4 CBs joining after CMs took CB-fallback, the extra CBs displace the CMs back to subs.)
+
+---
+
+## M3 — Subs as depth-chart alternates (planned)
+
+Each pitch slot renders:
+- The starter (existing SlotDot styling) at the absolutely-positioned coordinate.
+- Beneath the starter (or directly under the empty ring), a tiny stacked list of overflow players that could fill that slot.
+
+### Duplicate-listing decision
+
+User flagged: *"If a sub is a candidate for multiple slots, show under all of them (could create duplication — surface this in M2 and let the user decide between 'duplicate listing' vs 'show under primary slot only')."*
+
+Implemented **'show under primary slot only'**. Each sub is mapped to exactly one slot:
+- Their first **primary-eligible** slot (in slot-array order) when one exists.
+- Otherwise their first **fallback-eligible** slot.
+- Otherwise → an "Other subs" overflow row at the bottom of the pitch.
+
+Rationale: pitch real estate is tight on mobile (≈360px wide, 9-11 slots stacked). Duplicate listings multiply quickly with flexible players (a CB also fills LB/RB/DM/CM fallbacks → 5 listings) and clutter the depth chart. Single-listing preserves the "this is the depth chart" mental model.
+
+### Layout density on mobile
+
+- Pitch wraps in a 3:4 aspect-ratio container; for a 360px viewport that's ~480px tall.
+- Per-slot column rendered at the slot anchor: starter (~24px), then alternates stacked at 9px line-height each.
+- Hard cap of **3 alternates** per slot to prevent runaway stacks; remaining alternates go to the "Other subs" overflow row.
+- Alternate text uses `font-size: 8px`, `font-weight: 700`, opacity 0.85, with the player's primary position pill (M4) inline.
+
+---
+
+## M4 — Player position pills (planned)
+
+Each rendered player (starter on pitch + alternate in stack + "Other subs" pill) shows: `[POSITION] Name`.
+
+- Pill = small uppercase code in a muted background (`bg-surface-md`, `text-fg-low`, `tracking-widest`, `font-size: 7px`, `padding: 2px 4px`, `border-radius: 3px`).
+- Multi-position primary-pick rule: **first code in `positions[]`** (the array preserves the order the player chose in `PositionMultiSelect`, so this IS effectively the player-pinned primary).
+- Empty `positions[]` → no pill.
+
+This makes it visually obvious when a CM player is filling an LM slot (pill says CM, slot dot is at the LM coordinate with the LM slot label).
+
+---
+
+## M2 — Two-pass assignment shipped
+
+`assignPlayersToFormation()` rewritten as two scarcity-first passes over a single `placedPlayers` set. Internal `runPass()` closure takes a `passEligible(positions, slotCode)` predicate and runs the same picking logic the v1.83.1 single-pass used (least-flexible slot first, least-flexible candidate within it).
+
+- **Pass 1** predicate = `playerFillsSlotPrimary` (positions ∩ slot.primary ≠ ∅).
+- **Pass 2** predicate = positions ∩ slot.fallback ≠ ∅, restricted to *unplaced* players.
+- **Pass 3** = whatever remains lands in `unassignedPlayers` (subs).
+
+### Walkthroughs
+
+**Scenario: 3 CMs only (9-aside 3-3-2).** Slot order: GK(0), LB(1), CB(2), RB(3), LM(4), CM(5), RM(6), ST(7), ST(8).
+
+| Step | Slot picked | Player picked | Reason |
+|------|-------------|---------------|--------|
+| Pass 1 iter 1 | CM (5) | cm1 | Only slot with primary candidates; alphabetical tie-break among 3 CMs |
+| Pass 2 iter 1 | LM (4) | cm2 | LM and RM both have 1 unplaced fallback candidate; LM has lower idx |
+| Pass 2 iter 2 | RM (6) | cm3 | Last remaining slot with a candidate |
+| Pass 3 | — | — | 0 unassigned |
+
+ST stays empty (CM ∉ ST.fallback per literal spec).
+
+**Scenario: 3 CMs + 1 ST joins.** Same formation. State A is the above; State B re-runs the function with a 4th player.
+
+| Step | Slot picked | Player picked |
+|------|-------------|---------------|
+| Pass 1 iter 1 | CM (5) | cm1 |
+| Pass 1 iter 2 | ST (7) | st_new (only primary candidate) |
+| Pass 2 iter 1 | LM (4) | cm2 |
+| Pass 2 iter 2 | RM (6) | cm3 |
+| Pass 3 | — | — |
+
+ST takes its primary slot. CMs stay in CM/LM/RM. ST(8) and CB/LB/RB/GK remain empty. No displacement, no subs.
+
+**Scenario: CB-fallback DM displaced when a CB primary joins (11-aside 4-2-3-1).** Initial: 1 DM only → DM lands in DM(5)/DM(6) primary. Add a CB primary → CB primary takes CB(2) or CB(3); DM stays in DM. Adding the CB does NOT poach DM out of DM into LB-fallback territory (Pass 1 fixes DM's primary placement first). Test pinned.
+
+---
+
+## M3 — Subs as depth-chart alternates shipped
+
+- New `assignAlternatesToSlots(ballType, formation, subs)` — per-sub greedy single-listing: first primary-eligible slot in slot order, else first fallback-eligible slot, else `noFitOverflow`.
+- `<SlotColumn>` (renamed from `<SlotDot>`) renders `starter + alternates` stacked vertically at each pitch coordinate.
+- Per-slot cap: `MAX_ALTERNATES_PER_SLOT = 3`. Anything beyond plus `noFitOverflow` lands in the "Other subs" pill row below the pitch.
+- The "Subs (N)" row of v1.83.1 is gone — only OTHER subs (truncated or no-fit) show below the pitch.
+
+### Duplicate-listing decision
+
+Per M3 plan: implemented **'show under primary slot only'** (single-listing). Rationale: pitch is dense, multi-position players (CB-fallback for LB/RB/DM, CM-fallback for LM/RM/CAM/DM) would clutter every slot. The depth-chart frame stays legible.
+
+### Layout density on mobile (360px viewport)
+
+- Pitch container: 3:4 aspect ratio → ~360×480px.
+- Each slot column max-width 78px (constrains long names + truncates with `truncate`).
+- Alternate stack: 7px font + 1px row gap → ~9px per row → 3 rows ≈ 27px tall (~5.6% pitch height).
+- The CB row of a 4-3-3 has 4 slot columns at x = {0.15, 0.38, 0.62, 0.85}: at 360px, columns sit at {54, 137, 223, 306} — adjacent columns spaced ≥83px, room for the 78px max-width without horizontal collision. Verified by simple math; visual smoke deferred to user during manual review.
+
+---
+
+## M4 — Position pills shipped
+
+`<PositionPill code={...} tone="starter" | "alternate" />` rendered:
+- **Starter:** inside the player name pill, prefixed before the name. White text on `bg-black/55`, `text-[7px] font-black tracking-widest`.
+- **Alternate:** to the left of each alternate name, lower-contrast (`text-white/80 bg-white/10`).
+- **Other subs (overflow row below pitch):** same alternate styling.
+
+Multi-position primary-pick: **first code in `positions[]`** (matches the user-pinned order from `PositionMultiSelect`). Empty positions → no pill.
+
+`primaryPositionCode(player)` helper inlined in FormationPitch — pure split of the `/`-joined position string.
+
+---
+
+## M5 — Tests + suite + push
+
+### Test inventory
+
+- 28 v1.83.1 baseline tests retained.
+- 2 v1.83.1 futsal tests **rewritten** to match v1.84.0 tightening (FIXO no longer fills ALA; ALA no longer fills FIXO).
+- 1 v1.83.1 4-0 futsal test **rewritten** — expected 4 of 5 slots filled (FIXO is now subs).
+- **15 new** `[v1.84.0 regression]` tests covering primary helpers, fallback fills, two-pass behaviour, re-balance scenarios, and `assignAlternatesToSlots`.
+
+Total: **43 formation tests, all green.**
+
+### Stash-pop verification
+
+Stashed `src/lib/formations.ts` only (kept tests + component). Re-ran `tests/unit/formations.test.ts`:
+- **14 tests fail** — every `[v1.84.0 regression]` test fails as expected (TypeError or assertion mismatch), plus the rewritten futsal tightening tests. Catalog/geometry tests still pass because the v1.83.1 formation catalog itself is unchanged.
+- **29 tests still pass** — those that don't depend on v1.84.0 behaviour.
+
+This confirms the regression-target tests catch the broken state per the CLAUDE.md "End-to-end verification" rule.
+
+### Full suite
+
+`npx vitest run` — **2995 passed, 2 skipped, 0 failed** (165 files, including the broader rest of the project).
+
+`npx tsc --noEmit` — clean (the only message is the pre-existing `next.config.ts` reference to optional `@next/bundle-analyzer` from v1.80.6, present on `origin/main`).
+
+`npx eslint src/lib/formations.ts src/components/FormationPitch.tsx` — same 2 errors / 2 warnings as before my edits (verified by stashing my changes and re-linting). No new lint debt introduced.
+

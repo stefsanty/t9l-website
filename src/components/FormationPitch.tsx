@@ -5,6 +5,7 @@ import type { Player } from '@/types';
 import {
   type Formation,
   type AssignmentInput,
+  assignAlternatesToSlots,
   assignPlayersToFormation,
   findFormation,
   getFormationsFor,
@@ -45,13 +46,25 @@ function writeStoredCode(ballType: 'SOCCER' | 'FUTSAL', playerCount: number, cod
 // `Player.position` is a `/`-joined string (per dbToPublicLeagueData v1.82.0).
 // We split, normalise, and feed into the assignment algorithm.
 
-function toAssignmentInput(p: Player): AssignmentInput {
-  const positions = (p.position ?? '')
+function playerPositions(p: Player): string[] {
+  return (p.position ?? '')
     .split('/')
     .map((c) => c.trim().toUpperCase())
     .filter(Boolean);
-  return { id: p.id, positions };
 }
+
+function toAssignmentInput(p: Player): AssignmentInput {
+  return { id: p.id, positions: playerPositions(p) };
+}
+
+/** First code in the player's positions array — the user-pinned primary. */
+function primaryPositionCode(p: Player): string | null {
+  return playerPositions(p)[0] ?? null;
+}
+
+// Cap alternates rendered under each slot to keep the depth chart legible
+// on mobile (~360px viewport, 9-11 slots). Overflow lands in "Other subs".
+const MAX_ALTERNATES_PER_SLOT = 3;
 
 // ── Pitch SVG ─────────────────────────────────────────────────────────────
 
@@ -75,29 +88,50 @@ function PitchBackground() {
   );
 }
 
-// ── Slot dot ──────────────────────────────────────────────────────────────
+// ── Position pill ─────────────────────────────────────────────────────────
+//
+// Tiny chip showing the player's primary position code. Rendered next to
+// every player name on the pitch + alternates list, so it's visually
+// obvious when (e.g.) a CM is filling an LM slot.
 
-function SlotDot({
+function PositionPill({ code, tone }: { code: string | null; tone: 'starter' | 'alternate' }) {
+  if (!code) return null;
+  const className =
+    tone === 'starter'
+      ? 'text-[7px] font-black uppercase tracking-widest text-white/95 bg-black/55 px-1 py-[1px] rounded leading-none'
+      : 'text-[7px] font-black uppercase tracking-widest text-white/80 bg-white/10 px-[3px] py-[1px] rounded leading-none';
+  return (
+    <span className={className} data-testid={`position-pill-${code}`}>
+      {code}
+    </span>
+  );
+}
+
+// ── Slot column (starter + alternate stack) ──────────────────────────────
+
+function SlotColumn({
   slotCode,
-  player,
+  starter,
+  alternates,
   teamColor,
   onClick,
 }: {
   slotCode: string;
-  player: Player | null;
+  starter: Player | null;
+  alternates: Player[];
   teamColor: string;
   onClick: () => void;
 }) {
-  const filled = !!player;
+  const filled = !!starter;
   return (
     <button
       type="button"
       onClick={onClick}
-      className="flex flex-col items-center gap-[3px] focus:outline-none focus-visible:ring-2 focus-visible:ring-white/60 rounded p-0.5"
+      className="flex flex-col items-center gap-[2px] focus:outline-none focus-visible:ring-2 focus-visible:ring-white/60 rounded p-0.5 max-w-[78px]"
       data-testid={`formation-slot-${slotCode}`}
       aria-label={
         filled
-          ? `${slotCode} — ${player.name}. Tap to reassign.`
+          ? `${slotCode} — ${starter.name}. Tap to reassign.`
           : `${slotCode} — empty slot. Tap to assign.`
       }
     >
@@ -114,11 +148,16 @@ function SlotDot({
             {slotCode}
           </div>
           <div
-            className="text-[8px] font-black text-white text-center px-1.5 py-[2px] rounded whitespace-nowrap leading-tight"
-            translate="no"
+            className="flex items-center gap-[2px] px-1.5 py-[2px] rounded whitespace-nowrap"
             style={{ backgroundColor: 'rgba(0,0,0,0.62)' }}
           >
-            {player.name}
+            <PositionPill code={primaryPositionCode(starter)} tone="starter" />
+            <span
+              className="text-[8px] font-black text-white text-center leading-tight"
+              translate="no"
+            >
+              {starter.name}
+            </span>
           </div>
         </>
       ) : (
@@ -128,6 +167,29 @@ function SlotDot({
             {slotCode}
           </div>
         </>
+      )}
+
+      {alternates.length > 0 && (
+        <div
+          className="mt-[2px] flex flex-col items-center gap-[1px]"
+          data-testid={`formation-alternates-${slotCode}`}
+        >
+          {alternates.map((alt) => (
+            <span
+              key={alt.id}
+              className="flex items-center gap-[2px] max-w-full"
+              data-testid={`formation-alternate-${alt.id}`}
+            >
+              <PositionPill code={primaryPositionCode(alt)} tone="alternate" />
+              <span
+                className="text-[7px] font-bold text-white/85 leading-none truncate"
+                translate="no"
+              >
+                {alt.name}
+              </span>
+            </span>
+          ))}
+        </div>
       )}
     </button>
   );
@@ -395,13 +457,47 @@ export default function FormationPitch({
     [finalAssignment],
   );
   const benchPlayers: Player[] = useMemo(
-    () => confirmedPlayers.filter((p) => !assignedSet.has(p.id)),
+    () => confirmedPlayers.filter((p) => !assignedSet.has(p.id) && playerPositions(p).length > 0),
     [confirmedPlayers, assignedSet],
   );
   const playersWithoutPositions: Player[] = useMemo(
     () => confirmedPlayers.filter((p) => !p.position || p.position.trim() === ''),
     [confirmedPlayers],
   );
+
+  // Alternate (depth-chart) listing: each bench player goes under exactly
+  // one slot — primary-eligible first, fallback otherwise. Capped at
+  // MAX_ALTERNATES_PER_SLOT to keep the pitch readable on mobile;
+  // overflow lands in the "Other subs" row below the pitch.
+  const alternateAssignment = useMemo(() => {
+    if (!formation) return null;
+    const inputs = benchPlayers.map(toAssignmentInput);
+    return assignAlternatesToSlots(effectiveBallType, formation, inputs);
+  }, [benchPlayers, formation, effectiveBallType]);
+
+  const slotAlternatesShown: Player[][] = useMemo(() => {
+    if (!formation) return [];
+    if (!alternateAssignment) return formation.slots.map(() => []);
+    return alternateAssignment.slotAlternates.map((ids) =>
+      ids
+        .slice(0, MAX_ALTERNATES_PER_SLOT)
+        .map((id) => benchPlayers.find((p) => p.id === id))
+        .filter((p): p is Player => !!p),
+    );
+  }, [alternateAssignment, benchPlayers, formation]);
+
+  const otherSubs: Player[] = useMemo(() => {
+    if (!formation || !alternateAssignment) return [];
+    const shownIds = new Set<string>();
+    alternateAssignment.slotAlternates.forEach((ids) => {
+      ids.slice(0, MAX_ALTERNATES_PER_SLOT).forEach((id) => shownIds.add(id));
+    });
+    const overflow = alternateAssignment.noFitOverflow
+      .map((id) => benchPlayers.find((p) => p.id === id))
+      .filter((p): p is Player => !!p);
+    const truncated = benchPlayers.filter((p) => !shownIds.has(p.id) && !overflow.includes(p));
+    return [...overflow, ...truncated];
+  }, [alternateAssignment, benchPlayers, formation]);
 
   // Slot picker state.
   const [pickerSlotIdx, setPickerSlotIdx] = useState<number | null>(null);
@@ -475,10 +571,10 @@ export default function FormationPitch({
       >
         <PitchBackground />
 
-        {/* Slots are absolutely positioned by their normalised x/y. We
-            map y → top% with the bottom of the pitch being the GK
-            (y_GK ≈ 0.06) and top being the FWD (y_FWD ≈ 0.85). The
-            `1 - slot.y` flip puts y=1 at the top of the SVG. */}
+        {/* Slots are absolutely positioned by their normalised x/y. The
+            `1 - slot.y` flip puts y=1 at the top of the SVG (GK at the
+            bottom, ST at the top). Each slot column renders the starter
+            plus a stack of depth-chart alternates beneath. */}
         {formation.slots.map((slot, idx) => {
           const playerId = finalAssignment[idx];
           const player = playerId ? confirmedPlayers.find((p) => p.id === playerId) ?? null : null;
@@ -490,9 +586,10 @@ export default function FormationPitch({
               className="absolute -translate-x-1/2 -translate-y-1/2"
               style={{ top, left }}
             >
-              <SlotDot
+              <SlotColumn
                 slotCode={slot.code}
-                player={player}
+                starter={player}
+                alternates={slotAlternatesShown[idx] ?? []}
                 teamColor={teamColor}
                 onClick={() => setPickerSlotIdx(idx)}
               />
@@ -501,7 +598,9 @@ export default function FormationPitch({
         })}
       </div>
 
-      {/* Sub-pitch panels: bench + warnings. */}
+      {/* Sub-pitch panels: overflow subs (no slot fit or capped beyond
+          MAX_ALTERNATES_PER_SLOT) + warnings. The bulk of subs render
+          as alternates above; this row catches the remainder. */}
       <div className="mt-2 space-y-1.5">
         {slotsShort > 0 && (
           <p className="text-[10px] text-amber-300/90 px-1" data-testid="formation-shortage">
@@ -509,24 +608,20 @@ export default function FormationPitch({
           </p>
         )}
 
-        {benchPlayers.length > 0 && (
+        {otherSubs.length > 0 && (
           <div data-testid="formation-bench">
             <p className="text-[9px] font-black uppercase tracking-widest text-fg-low px-1 mb-1">
-              {`Subs (${benchPlayers.length})`}
+              {`Other subs (${otherSubs.length})`}
             </p>
             <div className="flex flex-wrap gap-1">
-              {benchPlayers.map((p) => (
+              {otherSubs.map((p) => (
                 <span
                   key={p.id}
-                  className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-surface-md text-fg-mid border border-border-subtle"
+                  className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-surface-md text-fg-mid border border-border-subtle"
                   translate="no"
                 >
-                  {p.name}
-                  {p.position && (
-                    <span className="text-[8px] font-black uppercase ml-1 opacity-70">
-                      {p.position}
-                    </span>
-                  )}
+                  <PositionPill code={primaryPositionCode(p)} tone="alternate" />
+                  <span>{p.name}</span>
                 </span>
               ))}
             </div>
