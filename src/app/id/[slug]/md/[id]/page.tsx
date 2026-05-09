@@ -1,6 +1,8 @@
 import { notFound } from 'next/navigation'
+import { getServerSession } from 'next-auth'
 import Dashboard from '@/components/Dashboard'
 import { findNextMatchday } from '@/lib/stats'
+import { authOptions } from '@/lib/auth'
 import { normalizeLeagueSlug } from '@/lib/leagueSlug'
 import { getLeagueIdBySlug } from '@/lib/leagueSlugServer'
 import { getPublicLeagueData } from '@/lib/publicData'
@@ -9,6 +11,7 @@ import { getRecruitingViewerState } from '@/lib/recruitingViewerState'
 import { getUnpaidFeeBannerData } from '@/lib/unpaidFeeBanner'
 import { getPlannedRosterStats } from '@/lib/plannedRosterStats'
 import { getLeagueDetails } from '@/lib/leagueDetailsServer'
+import { touchUserDefaultLeague } from '@/lib/userDefaultLeague'
 import { prisma } from '@/lib/prisma'
 
 export const metadata = {
@@ -40,6 +43,16 @@ export default async function LeagueByIdMatchdayPage({ params }: Props) {
 
   const leagueId = await getLeagueIdBySlug(slug)
   if (!leagueId) notFound()
+
+  // v1.85.0 — last-selected league tracker (see /id/[slug]/page.tsx
+  // for the why). Wrapped in `waitUntil` inside the helper, so it
+  // never blocks the response.
+  const session = await getServerSession(authOptions)
+  touchUserDefaultLeague({
+    userId: (session as { userId?: string | null } | null)?.userId ?? null,
+    lineId: (session as { lineId?: string | null } | null)?.lineId ?? null,
+    leagueId,
+  })
 
   let data
   let flags

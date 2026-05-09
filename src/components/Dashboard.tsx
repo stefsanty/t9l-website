@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import dynamic from 'next/dynamic';
 import { useSession } from 'next-auth/react';
 import type {
@@ -187,6 +187,16 @@ interface DashboardProps {
    * inline (the separate PlannedRosterStats render is the fallback).
    */
   leagueDetails?: LeagueDetailsData | null;
+  /**
+   * v1.85.0 — optional slot rendered immediately below the fixed
+   * Header and above the existing dashboard content. Used by the new
+   * `<MultiLeagueHub>` to inject the league-switcher tab strip + the
+   * "Also recruiting" handoff cards into the same `max-w-lg` column
+   * as the rest of the dashboard, without re-mounting the Header
+   * (which would double-render the brand bar). Optional + nullable so
+   * existing call sites compile unchanged.
+   */
+  topSlot?: ReactNode;
 }
 
 /**
@@ -222,6 +232,7 @@ export default function Dashboard({
   unpaidFee,
   plannedRosterStats,
   leagueDetails,
+  topSlot,
 }: DashboardProps) {
   const { data: session } = useSession();
   const [selectedMatchdayId, setSelectedMatchdayId] = useState(
@@ -320,6 +331,11 @@ export default function Dashboard({
       <Header hideStatsLink={preseasonMode} leagueTitle={league?.abbreviation ?? league?.name ?? null} />
 
       <main className={`flex-1 px-4 relative z-10 pt-12 ${showRsvpBar ? 'pb-32' : 'pb-2'}`}>
+        {/* v1.85.0 — optional slot rendered above the existing animated
+            content. Used by `<MultiLeagueHub>` to inject the league
+            switcher and recruiting handoff. Sits between the fixed
+            header (`pt-12` reserves space) and the animate-in column. */}
+        {topSlot}
         <div className="animate-in pt-2">
           {/* v1.66.0 — unpaid-fee banner renders ABOVE the recruiting
               banner. The unpaid-fee message takes priority because it's

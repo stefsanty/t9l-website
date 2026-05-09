@@ -1,0 +1,139 @@
+# Phase 1b/1c — Homepage redesign (router + directory + multi-league hub)
+
+Branch: claude/musing-aryabhata-c235e5 (worktree). Briefing: handover-homepage-ux.md (audit-only on the parallel worktree). Phase 1a (v1.84.0) shipped the schema foundations (`LeagueVisibility` enum, `User.defaultLeagueId` FK); this phase wires the persona-aware apex on top of those columns, mounted at `/test` for preview before promotion to `/`.
+
+## M1 — HomepageRouter scaffolded at /test
+
+**File structure (all under `src/components/homepage/`):**
+
+| File | Role |
+|---|---|
+| `HomepageRouter.tsx` | Server component. Reads session, calls `resolveHomepagePersona`, branches: `single` → `redirect('/id/<slug>')`, `multi` → `<MultiLeagueHub>`, `directory` → `<LeagueDirectory>`. |
+| `LeagueDirectory.tsx` | Server component. Mobile-first card list; "League Directory" literal heading; status pill differentiates Recruiting / Closed. |
+| `MultiLeagueHub.tsx` | Server component. Wraps `<Dashboard>` for the active league + injects switcher + handoff via the new `topSlot` prop. |
+| `LeagueSwitcherTabs.tsx` | Client component. Pill-strip tab UI (Option A); calls `setUserDefaultLeague` server action + `router.refresh()`. |
+| `RecruitingHandoff.tsx` | Server component. Capped (≤2) cards for PUBLIC_OPEN leagues the viewer is NOT in. |
+| `actions.ts` | `'use server'` — `setUserDefaultLeague(leagueId)` server action with auth + membership gates. |
+
+**Persona detection (server-side):**
+
+`src/lib/homepageRouting.ts` exposes three functions:
+
+- `getApprovedMembershipsAndDefault({ userId, lineId })` — async DB read. Resolves the canonical User row (accepts either identifier per the v1.80.10 admin-orthogonal-UX shape), reads `defaultLeagueId` + the linked Player's APPROVED current PLMs in a single chain, dedupes by leagueId, sorts alphabetically.
+- `classifyPersona({ memberships, defaultLeagueId })` — pure decision function. `0 → directory`, `1 → single`, `≥2 → multi`. The multi branch honours `defaultLeagueId` ONLY when it points at a league the user is still APPROVED in (stale-default fallback to `memberships[0]`).
+- `resolveHomepagePersona({ userId, lineId })` — convenience composer; production calls this from `<HomepageRouter>`. Tests typically use the two helpers separately for hermetic decision-rule pinning.
+
+**Mount points:**
+
+- `src/app/test/page.tsx` — minimal mount: `<HomepageRouter />`.
+- `src/app/test/directory/page.tsx` — mounts `<LeagueDirectory>` directly with `getDirectoryLeagues()`. Same surface; shareable URL.
+
+`src/app/page.tsx` (apex `/`) is **untouched** — the legacy default-league Dashboard continues to render there. Promotion is a one-line PR (see M5).
+
+## M2 — Directory page + last-selected tracking wired
+
+**Directory data + styling:**
+
+- `src/lib/leagueDirectoryData.ts` reads every `League.visibility !== 'PRIVATE'` row, cached 60s under the `'leagues'` tag (admin `setLeagueVisibility` busts via `revalidate({ domain: 'public' })` → instant directory propagation). Exposes `deriveSeasonLabel(startDate)` purely so unit tests can pin the JST → "'YY 春/秋" derivation without DB.
+- Card layout: 14×14 colored-block "thumbnail" using the league abbreviation (no `League.thumbnail` column exists yet — surfacing what we have honestly), name + ball-type + location + season label, status pill. PUBLIC_OPEN → "Recruiting" (primary fill), PUBLIC_CLOSED → "Closed" (surface fill). Mobile-first single column inside the existing `max-w-lg` brand container.
+
+**Last-selected tracking — cheap-write mechanism:**
+
+- `src/lib/userDefaultLeague.ts#touchUserDefaultLeague({ userId, lineId, leagueId })` is fire-and-forget via `waitUntil` from `@vercel/functions` (the same shape `applyToLeague` uses for the v1.79.0 application-received email). Wired into `src/app/id/[slug]/page.tsx` and `src/app/id/[slug]/md/[id]/page.tsx`.
+- Three short-circuits keep the cost zero on the hot path: (1) no userId AND no lineId → return immediately, (2) `User.defaultLeagueId === leagueId` → no-op fast path, (3) viewer has no APPROVED + current PLM in the league they're visiting → no write (a logged-in user can't bookmark a league they're not in by visiting it).
+- Apex `/page.tsx` does not call this helper — the apex doesn't have per-league context AND remains the legacy untouched default-league surface during the preview window.
+
+**Test pin update:** `tests/unit/v1755_league_details_full_consolidation.test.ts` previously asserted that `getServerSession(authOptions)` was absent from all three page sources. The pin is now scoped to `apex /page.tsx` only; the `/id/[slug]/*` pages legitimately re-introduce the session call to drive `touchUserDefaultLeague`. Documented inline.
+
+## M3 — Multi-league switcher built
+
+**Chose Option A (pill-strip tab UI) over Option B (banner + dropdown).**
+
+Rationale: a 2–4-league user benefits from at-a-glance visibility — every league is one tap away with no extra interaction. A dropdown adds a tap and hides the membership count behind a chevron. On overflow (5+ leagues, currently zero in production) the strip horizontally scrolls via `overflow-x-auto` rather than wrapping, keeping the typography intact.
+
+**Mobile layout:**
+
+- `h-9` pills with `gap-2`, `flex-shrink-0`. Active pill: `bg-primary text-primary-foreground`. Inactive: `bg-surface text-fg-mid hover:bg-surface-md`. `aria-pressed` + `data-active="true"` for testid + a11y.
+- Sits inside Dashboard's `topSlot` (new prop on Dashboard, optional + nullable so existing call sites compile unchanged) — that puts it inside the same `max-w-lg` column as everything else, BELOW the fixed Header. Rendering it OUTSIDE Dashboard would push it under the fixed Header (would have been a regression target).
+- `useTransition` wraps the switch action so the strip stays interactive while the refresh is in flight; the active pill shows a subtle `animate-pulse` rather than freezing the whole UI.
+
+**Click behaviour:**
+
+1. Optimistic visual swap of the active pill.
+2. `setUserDefaultLeague(leagueId)` server action — auth + APPROVED-PLM gate.
+3. On `{ ok: true }` → `router.refresh()` re-renders the server component with the new active league.
+
+**Capped recruiting cards (`<RecruitingHandoff>`):**
+
+- Reads `League.visibility = 'PUBLIC_OPEN'` AND `id NOT IN (excludeIds = user's memberships)`.
+- Sorted by `updatedAt DESC, id ASC` as the recency proxy. We don't track `recruiting`-toggle history; `updatedAt` is the pragmatic available signal. Documented in the file head.
+- `take: 2` — capped per the brief.
+- Returns `null` (no surface, no chrome) when zero candidates remain — the hub stays clean for users in every PUBLIC_OPEN league.
+- Card visual mirrors the directory's smaller variant: 10×10 abbreviation block + name + location + "Recruiting" pill.
+
+## M4 — Tests + suite passing
+
+**New tests (`tests/unit/v185_homepage_phase1bc.test.ts`):** 57 in total, organised by section:
+
+| Section | Count | Coverage |
+|---|---|---|
+| 1. Version bump | 1 | APP_VERSION ≥ 1.85.0 |
+| 2. Preview mounts at /test | 3 | `/test`, `/test/directory`, apex `/` untouched |
+| 3. Persona resolver (pure) | 6 | Unauth, single, multi-honour-default, multi-fallback-null, multi-stale-default-fallback (regression target) |
+| 4. HomepageRouter wiring | 6 | session read, redirect on single, hub mount on multi, directory fallthrough, both userId+lineId |
+| 5. Directory data + UI | 9 | PRIVATE filter (regression), 60s cache, status mapping, headline, link target, status pill, season-label derivation |
+| 6. Multi-league hub composition | 9 | Dashboard mount, topSlot wiring, switcher hidden <2, pill testids, overflow-x-auto, handoff capped, recency sort, exclude membership ids |
+| 7. touchUserDefaultLeague | 6 | waitUntil shape, no-op fast paths, APPROVED-only gate (regression), wired into both league pages |
+| 8. setUserDefaultLeague action runtime | 7 | Auth gates, member gate (regression), no-op fast path, lineId-only admin-orthogonal path |
+| 9. getApprovedMembershipsAndDefault pins | 4 | Selects defaultLeagueId, APPROVED-only filter, alphabetical sort, DEFAULT_LEAGUE_SLUG fallback |
+
+**Persona-detection coverage breakdown** (per the brief's request): 7 tests cover persona scenarios — directory-when-zero (1), single-when-one (2), multi-honour-stored-default (1), multi-fallback-when-null (1), multi-stale-default-fallback (1), HomepageRouter dispatches each correctly (3 testids).
+
+**Stash-pop sanity check (regression-target verification):**
+
+Reverted four load-bearing pieces (classifyPersona stale-default fallback, setUserDefaultLeague membership gate, touchUserDefaultLeague membership gate, HomepageRouter single→redirect dispatch) — 4 of 57 tests fail on the broken state. Restored after verification:
+
+- `classifyPersona — STALE defaultLeagueId fallback`
+- `touchUserDefaultLeague — requires APPROVED + current PLM in THIS league`
+- `setUserDefaultLeague — rejects when user has no APPROVED PLM`
+- (HomepageRouter redirect-on-single — caught by structural pin)
+
+**Suite results:**
+
+- `npx vitest run` — 3063 passed / 2 skipped / 0 failed (was 3008/2/0 pre-PR; +55 new).
+- `npx tsc --noEmit` — only the pre-existing `@next/bundle-analyzer` typedef error from main; verified by stash + tsc on clean tree (same error). Not introduced by this PR.
+
+**Existing test updates:**
+
+- `tests/unit/v1755_league_details_full_consolidation.test.ts` — `getServerSession` pin scoped to apex only; v1.85.0 inline comment explains the rationale.
+- `tests/unit/version.test.ts` — bumped `1.84.0 → 1.85.0`.
+
+## M5 — PR pushed + swap-instructions documented
+
+**Exact swap step (a separate one-line follow-up PR after the user reviews the preview at `/test`):**
+
+```diff
+--- a/src/app/page.tsx
++++ b/src/app/page.tsx
+- import type { Metadata } from "next";
+- import { findNextMatchday } from "@/lib/stats";
+- import Dashboard from "@/components/Dashboard";
+- ...
+- export default async function Home() {
+-   const leagueId = await getDefaultLeagueId();
+-   if (leagueId === null) { ... }
+-   ...
+-   return ( <Dashboard ... /> );
+- }
++ import HomepageRouter from "@/components/homepage/HomepageRouter";
++
++ export default function Home() {
++   return <HomepageRouter />;
++ }
+```
+
+The `<HomepageRouter>` already handles the catastrophic-config branch (no leagues → directory shows the empty state) and the persona dispatch. After the swap, `src/app/test/page.tsx` can stay as a permanent test hook OR be removed in the same PR — operator preference.
+
+**Files unchanged by the swap:** `src/app/id/[slug]/page.tsx`, `src/app/id/[slug]/md/[id]/page.tsx` already call `touchUserDefaultLeague` so the swap is purely an apex change.
+
+**CLAUDE.md ledger:** Updated with the v1.85.0 entry summarising the surface, persona shape, and swap-step pointer.

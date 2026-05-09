@@ -1,7 +1,9 @@
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
+import { getServerSession } from 'next-auth'
 import Dashboard from '@/components/Dashboard'
 import { findNextMatchday } from '@/lib/stats'
+import { authOptions } from '@/lib/auth'
 import { normalizeLeagueSlug } from '@/lib/leagueSlug'
 import { getLeagueIdBySlug } from '@/lib/leagueSlugServer'
 import { getPublicLeagueData } from '@/lib/publicData'
@@ -10,6 +12,7 @@ import { getRecruitingViewerState } from '@/lib/recruitingViewerState'
 import { getUnpaidFeeBannerData } from '@/lib/unpaidFeeBanner'
 import { getPlannedRosterStats } from '@/lib/plannedRosterStats'
 import { getLeagueDetails } from '@/lib/leagueDetailsServer'
+import { touchUserDefaultLeague } from '@/lib/userDefaultLeague'
 import { prisma } from '@/lib/prisma'
 
 type Props = { params: Promise<{ slug: string }> }
@@ -55,6 +58,19 @@ export default async function LeagueByIdPage({ params }: Props) {
 
   const leagueId = await getLeagueIdBySlug(slug)
   if (!leagueId) notFound()
+
+  // v1.85.0 — last-selected league tracker. Fire-and-forget write
+  // (wrapped in `waitUntil` inside the helper) so the user's next
+  // visit to the persona-aware apex (`/test`, swap-target `/`) lands
+  // on the league they were last looking at. No-op for unauth and
+  // non-member visitors. Resolves the session inline because we don't
+  // already have it on this path.
+  const session = await getServerSession(authOptions)
+  touchUserDefaultLeague({
+    userId: (session as { userId?: string | null } | null)?.userId ?? null,
+    lineId: (session as { lineId?: string | null } | null)?.lineId ?? null,
+    leagueId,
+  })
 
   let data
   let flags

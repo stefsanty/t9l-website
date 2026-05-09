@@ -211,13 +211,22 @@ describe('v1.75.5 page-level threading: plannedRosterStats unconditional', () =>
     expect(src).toMatch(/plannedRosterStats\s*=\s*_plannedRosterStats/)
   })
 
-  it.each(sources)('%s no longer pulls getServerSession into the public Promise.all', (rel) => {
-    // The session was only consumed by the now-removed gate. Removing
-    // it saves a Prisma round-trip on every public render. Regression
-    // target — re-introducing it would re-hit the JWT/Prisma callback
-    // path on every public page load.
-    expect(read(rel)).not.toMatch(/getServerSession\(authOptions\)/)
-  })
+  // v1.85.0 — the `getServerSession` pin no longer applies to the
+  // `/id/[slug]/*` league pages: phase 1b/1c re-introduces a single
+  // session call to drive `touchUserDefaultLeague(...)` (last-selected
+  // league tracker for the persona-aware apex). The call is OUTSIDE
+  // the Promise.all chain and the helper itself is fire-and-forget
+  // (wrapped in `waitUntil`), so the original concern about "extra
+  // Prisma round-trip on the public render path" is preserved by a
+  // different mechanism. The pin still applies to apex `/page.tsx`,
+  // which has no per-league context and thus no need for the session.
+  const sourcesWithoutSession = ['src/app/page.tsx']
+  it.each(sourcesWithoutSession)(
+    '%s no longer pulls getServerSession into the public Promise.all (v1.85.0 — only league pages need it now)',
+    (rel) => {
+      expect(read(rel)).not.toMatch(/getServerSession\(authOptions\)/)
+    },
+  )
 })
 
 describe('v1.75.5 stash-pop regression target', () => {
