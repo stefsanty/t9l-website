@@ -127,9 +127,11 @@ describe('v1.69.0 MatchdayAvailability — TeamPillList view', () => {
     expect(src).toMatch(/FW:\s*['"]bg-red-600 text-white border-red-400\/30['"]/)
   })
 
-  it('renders pills inside a flex-wrap container with a list testid', () => {
+  it('renders pills inside a grouped container with a list testid', () => {
     expect(src).toMatch(/data-testid="availability-pill-list"/)
-    expect(src).toMatch(/className="mt-2 flex flex-wrap/)
+    // v1.85.3: top-level container is space-y-3 (groups); flex-wrap is per-bucket
+    expect(src).toMatch(/className="mt-2 space-y-3"/)
+    expect(src).toMatch(/className="flex flex-wrap gap-1\.5"/)
   })
 
   it('per-player pills use getPositionPillColor and carry per-player testids', () => {

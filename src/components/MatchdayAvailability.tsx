@@ -30,6 +30,60 @@ export function getPositionPillColor(pos: string | null | undefined): string {
   return BUCKET_COLORS[getPositionBucket(first)];
 }
 
+// -- List-view grouping ────────────────────────────────────────────────────
+//
+// Groups confirmed players by coarse position bucket for the list view.
+// English labels used for all formats (futsal FIXO→Defense, PIVOT→Forwards).
+// Empty buckets are omitted by the caller; the order is always GK→DF→MF→FW.
+
+const BUCKET_ORDER: ReadonlyArray<'GK' | 'DF' | 'MF' | 'FW'> = ['GK', 'DF', 'MF', 'FW'];
+
+export const BUCKET_LABEL: Record<'GK' | 'DF' | 'MF' | 'FW', string> = {
+  GK: 'Goalkeepers',
+  DF: 'Defense',
+  MF: 'Midfield',
+  FW: 'Forwards',
+};
+
+export const BUCKET_DOT: Record<'GK' | 'DF' | 'MF' | 'FW', string> = {
+  GK: 'bg-yellow-400',
+  DF: 'bg-blue-400',
+  MF: 'bg-green-400',
+  FW: 'bg-red-400',
+};
+
+export interface BucketGroup {
+  bucket: 'GK' | 'DF' | 'MF' | 'FW';
+  players: Player[];
+}
+
+/** Pure helper — resolves + groups confirmed players by position bucket. */
+export function bucketConfirmedPlayers(
+  confirmedIds: string[],
+  players: Player[],
+): BucketGroup[] {
+  const resolved = confirmedIds
+    .map((id) => players.find((p) => p.id === id))
+    .filter((p): p is Player => !!p);
+
+  const map = new Map<'GK' | 'DF' | 'MF' | 'FW', Player[]>([
+    ['GK', []], ['DF', []], ['MF', []], ['FW', []],
+  ]);
+
+  for (const p of resolved) {
+    const first = (p.position ?? '').split('/')[0]?.toUpperCase() ?? '';
+    const bucket = getPositionBucket(first);
+    map.get(bucket)!.push(p);
+  }
+
+  // Sort within each bucket alphabetically by name.
+  for (const group of map.values()) group.sort((a, b) => a.name.localeCompare(b.name));
+
+  return BUCKET_ORDER
+    .map((bucket) => ({ bucket, players: map.get(bucket)! }))
+    .filter((g) => g.players.length > 0);
+}
+
 // -- TeamPillList sub-component --
 
 function TeamPillList({
@@ -47,41 +101,35 @@ function TeamPillList({
     );
   }
 
-  // v1.82.0 — bucket-driven sort (GK → DF → MF → FW). The first code
-  // in the joined `position` string picks the bucket.
-  const bucketOrder: Record<'GK' | 'DF' | 'MF' | 'FW', number> = {
-    GK: 1, DF: 2, MF: 3, FW: 4,
-  };
-  const sortKey = (pos: string | null) => {
-    if (!pos) return 99;
-    const first = pos.split('/')[0]?.toUpperCase();
-    if (!first) return 99;
-    return bucketOrder[getPositionBucket(first)] ?? 99;
-  };
-  const confirmedPlayers = confirmedIds
-    .map((id) => players.find((p) => p.id === id))
-    .filter((p): p is Player => !!p)
-    .sort((a, b) => {
-      const posA = sortKey(a.position);
-      const posB = sortKey(b.position);
-      if (posA !== posB) return posA - posB;
-      return a.name.localeCompare(b.name);
-    });
+  const groups = bucketConfirmedPlayers(confirmedIds, players);
 
   return (
-    <div className="mt-2 flex flex-wrap gap-1.5" data-testid="availability-pill-list">
-      {confirmedPlayers.map((p) => (
-        <span
-          key={p.id}
-          className={`text-[11px] font-bold px-2 py-1 rounded-full border ${getPositionPillColor(p.position)}`}
-          translate="no"
-          data-testid={`availability-pill-${p.id}`}
-        >
-          <span className="text-[9px] font-black uppercase tracking-wider opacity-80 mr-1">
-            {p.position || '—'}
-          </span>
-          {p.name}
-        </span>
+    <div className="mt-2 space-y-3" data-testid="availability-pill-list">
+      {groups.map(({ bucket, players: groupPlayers }) => (
+        <div key={bucket} data-testid={`availability-group-${bucket}`}>
+          <div className="flex items-center gap-1.5 mb-1.5">
+            <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${BUCKET_DOT[bucket]}`} />
+            <span className="text-[9px] font-black uppercase tracking-wider text-fg-low">
+              {BUCKET_LABEL[bucket]}
+            </span>
+            <div className="h-px flex-1 bg-border-subtle" />
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {groupPlayers.map((p) => (
+              <span
+                key={p.id}
+                className={`text-[11px] font-bold px-2 py-1 rounded-full border ${getPositionPillColor(p.position)}`}
+                translate="no"
+                data-testid={`availability-pill-${p.id}`}
+              >
+                <span className="text-[9px] font-black uppercase tracking-wider opacity-80 mr-1">
+                  {p.position || '—'}
+                </span>
+                {p.name}
+              </span>
+            ))}
+          </div>
+        </div>
       ))}
     </div>
   );
