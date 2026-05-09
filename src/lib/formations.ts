@@ -467,62 +467,92 @@ export function findFormation(
 
 // ── Slot-position compatibility map ───────────────────────────────────────
 //
-// Direction: PLAYER_FILLS_SLOTS[playerCode] = set of slot codes that
-// player can fill. Permissive enough that:
-//   - LB plays only LB slots (strict per spec).
-//   - CM can fill {DM, CM, CAM} (per spec).
-//   - LM can fill {LM, LW} (per spec).
-//   - Plus football-common extensions (CB↔DM swap, LW↔ST, etc.).
+// v1.84.0 flipped the data direction: source-of-truth is now
+// SLOT_COMPAT[slotCode] = { primary: <player codes>, fallback: <...> }.
+// The two-pass assignment reads this natively (Pass 1 = primary, Pass 2
+// = fallback). Player-direction queries derive from the inverse.
 //
-// The inverse (slot → eligible players) is computed lazily by
-// `playerEligibleForSlot()` — we keep the source-of-truth in player→slots
-// because that's the direction the user spec is written in and the
-// direction the assignment algorithm reads.
-//
-// See M3 entry of phase-formations.log for the full per-format rationale.
+// See M1 entry of phase-formations-followup.log for the full table +
+// rationale. GK is sacred everywhere (primary {GK}, no fallback).
 
-const SOCCER_PLAYER_FILLS_SLOTS: Record<string, ReadonlyArray<string>> = {
-  GK: ['GK'],
-  LB: ['LB'],
-  CB: ['CB', 'DM'],
-  RB: ['RB'],
-  LM: ['LM', 'LW'],
-  DM: ['DM', 'CM', 'CB'],
-  CM: ['DM', 'CM', 'CAM'],
-  CAM: ['CAM', 'CM', 'ST'],
-  RM: ['RM', 'RW'],
-  LW: ['LW', 'LM', 'ST'],
-  ST: ['ST', 'CAM'],
-  RW: ['RW', 'RM', 'ST'],
+interface SlotCompat {
+  primary: ReadonlyArray<string>
+  fallback: ReadonlyArray<string>
 }
 
-const FUTSAL_PLAYER_FILLS_SLOTS: Record<string, ReadonlyArray<string>> = {
-  GK: ['GK'],
-  FIXO: ['FIXO', 'ALA'],
-  ALA: ['ALA', 'FIXO', 'PIVOT'],
-  PIVOT: ['PIVOT', 'ALA'],
+const SOCCER_SLOT_COMPAT: Record<string, SlotCompat> = {
+  GK:  { primary: ['GK'],  fallback: [] },
+  LB:  { primary: ['LB'],  fallback: ['CB', 'LM', 'DM'] },
+  CB:  { primary: ['CB'],  fallback: ['DM'] },
+  RB:  { primary: ['RB'],  fallback: ['CB', 'RM', 'DM'] },
+  DM:  { primary: ['DM'],  fallback: ['CM', 'CB'] },
+  CM:  { primary: ['CM'],  fallback: ['DM', 'CAM'] },
+  CAM: { primary: ['CAM'], fallback: ['CM', 'ST'] },
+  LM:  { primary: ['LM'],  fallback: ['LW', 'CM'] },
+  RM:  { primary: ['RM'],  fallback: ['RW', 'CM'] },
+  LW:  { primary: ['LW'],  fallback: ['LM', 'ST'] },
+  RW:  { primary: ['RW'],  fallback: ['RM', 'ST'] },
+  ST:  { primary: ['ST'],  fallback: ['CAM', 'LW', 'RW'] },
+}
+
+const FUTSAL_SLOT_COMPAT: Record<string, SlotCompat> = {
+  GK:    { primary: ['GK'],    fallback: [] },
+  FIXO:  { primary: ['FIXO'],  fallback: [] },
+  ALA:   { primary: ['ALA'],   fallback: ['PIVOT'] },
+  PIVOT: { primary: ['PIVOT'], fallback: ['ALA'] },
+}
+
+function compatFor(
+  ballType: BallType | null | undefined,
+  slotCode: string,
+): SlotCompat | undefined {
+  const map = ballType === 'FUTSAL' ? FUTSAL_SLOT_COMPAT : SOCCER_SLOT_COMPAT
+  return map[slotCode.toUpperCase()]
 }
 
 /**
- * True iff the player's position code is allowed in the given slot.
- * Unknown player codes match nothing (caller should treat as "no
- * positions on file" and route to the unassigned bucket). Slot codes
- * are matched case-insensitively for safety; player codes are assumed
- * upstream-normalised by `normalizePositions()`.
+ * True iff the player's position code can fill the given slot via
+ * the slot's PRIMARY list (Pass 1 candidate).
+ */
+export function playerCodeFillsSlotPrimary(
+  ballType: BallType | null | undefined,
+  playerCode: string,
+  slotCode: string,
+): boolean {
+  const compat = compatFor(ballType, slotCode)
+  if (!compat) return false
+  return compat.primary.includes(playerCode.toUpperCase())
+}
+
+/**
+ * True iff the player's position code is allowed in the given slot
+ * (primary OR fallback). Used by the picker's "OUT OF POSITION" badge.
  */
 export function playerCodeFillsSlot(
   ballType: BallType | null | undefined,
   playerCode: string,
   slotCode: string,
 ): boolean {
-  const map = ballType === 'FUTSAL' ? FUTSAL_PLAYER_FILLS_SLOTS : SOCCER_PLAYER_FILLS_SLOTS
-  const fills = map[playerCode.toUpperCase()]
-  if (!fills) return false
-  return fills.includes(slotCode.toUpperCase())
+  const compat = compatFor(ballType, slotCode)
+  if (!compat) return false
+  const upper = playerCode.toUpperCase()
+  return compat.primary.includes(upper) || compat.fallback.includes(upper)
+}
+
+/** True iff ANY of the player's positions can fill the slot via primary. */
+export function playerFillsSlotPrimary(
+  ballType: BallType | null | undefined,
+  playerPositions: ReadonlyArray<string>,
+  slotCode: string,
+): boolean {
+  for (const code of playerPositions) {
+    if (playerCodeFillsSlotPrimary(ballType, code, slotCode)) return true
+  }
+  return false
 }
 
 /**
- * True iff ANY of the player's positions can fill the slot.
+ * True iff ANY of the player's positions can fill the slot (primary or fallback).
  * Empty positions array → false (player has no position on file).
  */
 export function playerFillsSlot(
@@ -558,27 +588,32 @@ export interface AssignmentResult {
 }
 
 /**
- * Greedy scarcity-first assignment of available players to formation slots.
+ * Two-pass scarcity-first assignment of available players to formation slots.
+ *
+ * v1.84.0 — flipped from "any-eligible" matching to a primary-first model
+ * driven by the slot→{primary, fallback} compat table. Re-balance happens
+ * automatically on roster change because the function is pure: re-running
+ * with the new player set produces the new placement (no internal state).
  *
  * Algorithm:
- *   1. Filter out players with no positions on file (they go to
- *      `playersWithoutPositions`).
- *   2. For each remaining slot, compute its candidate set
- *      (players whose positions ∩ slot.compatible-positions ≠ ∅).
- *   3. Repeatedly pick the slot with the FEWEST candidates remaining
- *      (scarcity-first — pin down the constrained slots before the
- *      flexible ones). Tie-break by slot index for determinism.
- *   4. Within that slot, pick the candidate with the FEWEST other
- *      compatible slots (least flexible — save the polyvalent players
- *      for slots that desperately need them). Tie-break by player id.
- *   5. Mark slot+player as assigned, remove the player from all other
- *      slots' candidate sets, and recurse.
- *   6. When no slot has any candidate left, stop. Remaining players go
- *      to `unassignedPlayers` (subs).
+ *   0. Players with empty `positions[]` → `playersWithoutPositions` bucket.
+ *   1. **Pass 1 (primary).** For each slot, candidate set = unplaced
+ *      players whose positions ∩ slot.PRIMARY ≠ ∅. Run scarcity-first:
+ *      pick the unfilled slot with the fewest primary candidates; within
+ *      that slot, pick the player with the fewest other primary-eligible
+ *      slots. Tie-break by player id. Repeat until no primary candidate
+ *      remains.
+ *   2. **Pass 2 (fallback).** For each STILL-unfilled slot, candidate set
+ *      = unplaced players whose positions ∩ slot.FALLBACK ≠ ∅. Run the
+ *      same scarcity heuristic. Repeat until exhausted.
+ *   3. **Pass 3 (overflow).** Anyone unplaced → `unassignedPlayers` (subs).
  *
- * Complexity: O(slots² × players). For ≤11×~25 this runs in microseconds.
+ * Re-balance scenario: 3 CMs roster → CM gets primary, LM/RM via fallback.
+ * Add a real ST → re-running picks CM at CM (primary), ST at ST (primary),
+ * LM/RM still via fallback. The new ST never displaces a primary match;
+ * only fallback placements yield to incoming primaries.
  *
- * Tested separately in `tests/unit/formationsAssignment.test.ts`.
+ * Complexity: O(slots² × players). Runs in microseconds for typical sizes.
  */
 export function assignPlayersToFormation(
   ballType: BallType | null | undefined,
@@ -597,61 +632,152 @@ export function assignPlayersToFormation(
 
   const slotCount = formation.slots.length
   const slotAssignments: Array<string | null> = Array(slotCount).fill(null)
+  const placedPlayers = new Set<string>()
 
-  // Precompute compatibility matrix: slotIndex → Set<playerId>
-  const slotCandidates: Array<Set<string>> = formation.slots.map((slot) => {
-    const set = new Set<string>()
-    for (const p of eligible) {
-      if (playerFillsSlot(ballType, p.positions, slot.code)) set.add(p.id)
-    }
-    return set
-  })
-
-  // Inverse: playerId → Set<slotIndex>
-  const playerSlots = new Map<string, Set<number>>()
-  for (const p of eligible) playerSlots.set(p.id, new Set())
-  slotCandidates.forEach((cands, slotIdx) => {
-    for (const pid of cands) playerSlots.get(pid)!.add(slotIdx)
-  })
-
-  while (true) {
-    // Pick the unfilled slot with the fewest candidates (>0). Skip slots
-    // with empty candidate sets — they'll show as empty in the UI.
-    let bestSlot = -1
-    let bestSize = Infinity
-    for (let i = 0; i < slotCount; i++) {
-      if (slotAssignments[i] !== null) continue
-      const size = slotCandidates[i].size
-      if (size === 0) continue
-      if (size < bestSize) {
-        bestSize = size
-        bestSlot = i
+  // ── Pass executor ──────────────────────────────────────────────────────
+  // Runs one greedy scarcity-first sweep using a per-slot candidate function.
+  // `eligible` predicate returns true iff the player can fill the slot
+  // *under the current pass's rules* (primary-only, or fallback-only).
+  function runPass(
+    passEligible: (positions: ReadonlyArray<string>, slotCode: string) => boolean,
+  ) {
+    // slotIndex → Set<playerId>, only for unfilled slots and unplaced players.
+    const slotCandidates: Array<Set<string>> = formation.slots.map((slot, idx) => {
+      const set = new Set<string>()
+      if (slotAssignments[idx] !== null) return set
+      for (const p of eligible) {
+        if (placedPlayers.has(p.id)) continue
+        if (passEligible(p.positions, slot.code)) set.add(p.id)
       }
-    }
-    if (bestSlot === -1) break
+      return set
+    })
 
-    // Within that slot, pick the player with the fewest other slot options.
-    let bestPlayer = ''
-    let bestPlayerSize = Infinity
-    for (const pid of slotCandidates[bestSlot]) {
-      const size = playerSlots.get(pid)!.size
-      if (size < bestPlayerSize || (size === bestPlayerSize && pid < bestPlayer)) {
-        bestPlayerSize = size
-        bestPlayer = pid
+    // playerId → Set<slotIndex> (their candidate slots within this pass).
+    const playerSlots = new Map<string, Set<number>>()
+    slotCandidates.forEach((cands, slotIdx) => {
+      for (const pid of cands) {
+        let set = playerSlots.get(pid)
+        if (!set) {
+          set = new Set()
+          playerSlots.set(pid, set)
+        }
+        set.add(slotIdx)
       }
-    }
+    })
 
-    slotAssignments[bestSlot] = bestPlayer
-    // Remove the picked player from every slot's candidate set.
-    for (const cands of slotCandidates) cands.delete(bestPlayer)
-    playerSlots.delete(bestPlayer)
+    while (true) {
+      let bestSlot = -1
+      let bestSize = Infinity
+      for (let i = 0; i < slotCount; i++) {
+        if (slotAssignments[i] !== null) continue
+        const size = slotCandidates[i].size
+        if (size === 0) continue
+        if (size < bestSize) {
+          bestSize = size
+          bestSlot = i
+        }
+      }
+      if (bestSlot === -1) break
+
+      let bestPlayer = ''
+      let bestPlayerSize = Infinity
+      for (const pid of slotCandidates[bestSlot]) {
+        const size = playerSlots.get(pid)!.size
+        if (size < bestPlayerSize || (size === bestPlayerSize && pid < bestPlayer)) {
+          bestPlayerSize = size
+          bestPlayer = pid
+        }
+      }
+
+      slotAssignments[bestSlot] = bestPlayer
+      placedPlayers.add(bestPlayer)
+      for (const cands of slotCandidates) cands.delete(bestPlayer)
+      playerSlots.delete(bestPlayer)
+    }
   }
 
-  const assignedSet = new Set(slotAssignments.filter((id): id is string => id !== null))
+  // Pass 1: primary-only
+  runPass((positions, slotCode) => playerFillsSlotPrimary(ballType, positions, slotCode))
+
+  // Pass 2: fallback-only (positions that match the slot's fallback list,
+  // EXCLUDING positions that match its primary — the latter would have
+  // been picked up in Pass 1 already, so excluding is a wash).
+  runPass((positions, slotCode) => {
+    const compat = compatFor(ballType, slotCode)
+    if (!compat) return false
+    for (const code of positions) {
+      const upper = code.toUpperCase()
+      if (compat.fallback.includes(upper)) return true
+    }
+    return false
+  })
+
   const unassignedPlayers: string[] = []
   for (const p of eligible) {
-    if (!assignedSet.has(p.id)) unassignedPlayers.push(p.id)
+    if (!placedPlayers.has(p.id)) unassignedPlayers.push(p.id)
   }
 
   return { slotAssignments, unassignedPlayers, playersWithoutPositions }
+}
+
+// ── Sub-as-alternate (depth chart) assignment ───────────────────────────
+
+/**
+ * For each overflow player (sub), pick exactly ONE slot to display them
+ * under as a depth-chart alternate. Decision rule (single-listing per M3):
+ *   1. First slot in slot-array order where the sub is a PRIMARY candidate.
+ *   2. Otherwise, first slot in slot-array order where they're FALLBACK.
+ *   3. Otherwise, the sub goes into the `noFitOverflow` bucket.
+ *
+ * This is independent of the starter assignment — alternates are display-only.
+ *
+ * Returns:
+ *   - `slotAlternates[i]` — ordered list of sub player ids displayed under slot i
+ *   - `noFitOverflow` — subs that don't compat with any slot in the formation
+ */
+export interface AlternateAssignment {
+  slotAlternates: Array<string[]>
+  noFitOverflow: string[]
+}
+
+export function assignAlternatesToSlots(
+  ballType: BallType | null | undefined,
+  formation: Formation,
+  subs: ReadonlyArray<AssignmentInput>,
+): AlternateAssignment {
+  const slotAlternates: Array<string[]> = formation.slots.map(() => [])
+  const noFitOverflow: string[] = []
+
+  for (const sub of subs) {
+    let placed = false
+    // Pass 1 — primary.
+    for (let i = 0; i < formation.slots.length; i++) {
+      if (playerFillsSlotPrimary(ballType, sub.positions, formation.slots[i].code)) {
+        slotAlternates[i].push(sub.id)
+        placed = true
+        break
+      }
+    }
+    if (placed) continue
+    // Pass 2 — fallback.
+    for (let i = 0; i < formation.slots.length; i++) {
+      const compat = compatFor(ballType, formation.slots[i].code)
+      if (!compat) continue
+      let ok = false
+      for (const code of sub.positions) {
+        if (compat.fallback.includes(code.toUpperCase())) {
+          ok = true
+          break
+        }
+      }
+      if (ok) {
+        slotAlternates[i].push(sub.id)
+        placed = true
+        break
+      }
+    }
+    if (!placed) noFitOverflow.push(sub.id)
+  }
+
+  return { slotAlternates, noFitOverflow }
 }
