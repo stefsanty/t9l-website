@@ -1,0 +1,197 @@
+# phase-formations.log — v1.83.0 formation visualization + multi-role assignment
+
+## M1 — PlayerAvailability audit + formation library drafted
+
+### Existing component
+`src/components/MatchdayAvailability.tsx` (554 lines, lazy-loaded from `ClassicLeagueHomepage.tsx` per v1.80.3).
+
+Current shape:
+- Receives `matchday`, `teams`, `players`, `availability`, `availabilityStatuses`, `played` — no league context (no `playerFormat`, no `ballType`).
+- Toggle: "Pitch" vs "List" (`AvailabilityViewMode = 'formation' | 'list'`, persisted via `localStorage`).
+- Hardcoded 5-formation list `FORMATIONS = [3-4-1, 3-3-2, 3-2-3, 4-3-1, 4-2-2]` — all 9-aside-flavoured (Tennozu's format), no per-format variation.
+- Formation selection: `pickFormation(defCount, midCount, fwdCount)` — Manhattan-distance pick across the 5 candidates from the bucket totals.
+- Player-to-slot fill: bucket-driven groups (`pureDefs / defMidHybrids / pureMids / midFwdHybrids / pureFwds`) routed into 4 fixed rows (FWD / MID / DEF / GK) via `distributeToSlots(items, slots)` round-robin. **No per-slot codes** — slots are anonymous-within-row.
+- Player position arrives as a `/`-joined string (e.g. `"CB/CM"` or futsal `"FIXO/ALA"`) per `dbToPublicLeagueData.ts:164` — this is the dual-write read shape from v1.82.0.
+
+### What v1.83.0 changes
+1. Add `league: { ballType, playerFormat }` prop threaded ClassicLeagueHomepage → MatchdayAvailability (page.tsx already has `LeagueDetails` available via `getLeagueDetails`).
+2. Replace the 5-formation hardcoded list with a per-format library.
+3. Replace bucket-row distribution with **per-slot, position-code-aware assignment** using a published slot-compat map.
+4. Move pitch SVG + per-slot rendering into a reusable `<FormationPitch>` component so the "who played" and "who's coming" sections share it.
+
+### Formation library (proposed — `src/lib/formations.ts`)
+
+Per the user spec, top 5 per format. Each entry: `{ playerCount, code, displayName, slots: { code, x, y }[] }`.
+
+Coordinate system: `x ∈ [0, 1]` left→right; `y ∈ [0, 1]` own-goal→opponent-goal. GK at `y≈0.06`; DEF row `y≈0.27`; deep-mid `y≈0.42`; MID `y≈0.55`; CAM `y≈0.66`; FWD `y≈0.85`.
+
+Per-row x distribution: 1→[0.5], 2→[0.32,0.68], 3→[0.2,0.5,0.8], 4→[0.15,0.38,0.62,0.85], 5→[0.1,0.3,0.5,0.7,0.9].
+
+**Soccer (12-code vocab)** — 6/7/8/9/10/11-aside lists per the user's message:
+- 6-aside (1 GK + 5 outfield): `2-2-1`, `1-2-2`, `3-1-1`, `2-1-2`, `2-3`
+- 7-aside (1+6): `2-3-1`, `3-2-1`, `2-1-3`, `3-1-2`, `2-2-2`
+- 8-aside (1+7): `3-3-1`, `3-2-2`, `2-3-2`, `2-4-1`, `3-1-3`
+- 9-aside (1+8 — Tennozu): `3-3-2`, `3-4-1`, `4-3-1`, `2-4-2`, `3-2-3`
+- 10-aside (1+9): `4-3-2`, `3-4-2`, `4-4-1`, `3-3-3`, `4-2-3`
+- 11-aside (1+10): `4-3-3`, `4-4-2`, `4-2-3-1`, `3-5-2`, `4-1-4-1`
+
+**Futsal (4-code vocab — GK / FIXO / ALA / PIVOT)** — 5-aside per user spec:
+- 5-aside (1+4): `1-2-1`, `2-2`, `1-1-2`, `2-1-1`, `4-0` (rotational; 4 ALA slots)
+
+Slot-code conventions for soccer rows:
+- 4-DF row → LB, CB, CB, RB
+- 3-DF row → LB, CB, RB (or CB×3 if formation reads as narrow back-3)
+- 2-DF row → CB, CB
+- 1-DF → CB
+- 5-MID row → LM, CM, DM, CM, RM
+- 4-MID row → LM, CM, CM, RM
+- 3-MID row → CM, CM, CM (or DM, CM, CAM for the triangular `4-3-3` variant)
+- 2-MID → CM, CM (DM, DM where formation is double-pivot e.g. `4-2-3-1`)
+- 3-AM row (4-2-3-1) → LW, CAM, RW
+- 3-FW row → LW, ST, RW
+- 2-FW row → ST, ST
+- 1-FW → ST
+
+### Stop / surface back to user before building
+Will surface the slot-compat map for soccer + futsal in M3 (per the user's explicit "Surface compatibility decisions in your report" ask). M1 doesn't yet need ack — the formation list above is verbatim from the user's brief.
+
+### Next: M2 (pitch SVG + picker UI)
+
+## M2 — Pitch SVG + formation picker UI built
+
+### New files
+- `src/lib/formations.ts` — pure module: `Formation` / `FormationSlot` types, per-format catalogs (SOCCER 5..11-aside, FUTSAL 5-aside), assignment helpers, slot-compat map.
+- `src/components/FormationPitch.tsx` — replaces the old in-file `TeamFormation`. Renders the picker, the SVG pitch, and the auto+manual assignment.
+
+### Updated wiring
+- `MatchdayAvailability.tsx` — drops the in-file 5-formation list + bucket-row distribution + `<TeamFormation>`. New props `ballType?: 'SOCCER' | 'FUTSAL' | null` and `playerFormat?: number | null` thread to `<FormationPitch>` for both the "Who Played" (past) and "Who else is coming?" (upcoming) sections.
+- `ClassicLeagueHomepage.tsx` — adds the same two props and forwards them down.
+- `Dashboard.tsx` — at the `<ClassicLeagueHomepage>` call site: `ballType={league?.ballType ?? leagueDetails?.ballType ?? null}` + `playerFormat={leagueDetails?.playerFormat ?? null}`. Both sources already exist on the server-side payload (`league` is the prisma row select including `ballType`; `leagueDetails` carries `playerFormat`).
+
+### Coordinate system
+Normalised `x ∈ [0, 1]` (left→right) and `y ∈ [0, 1]` (own goal→opp goal). The pitch SVG keeps the existing 100×133 viewBox and dark-green stripes. Slots position absolutely via `top: (1 - slot.y) * 100%` / `left: slot.x * 100%` with a `-translate-x-1/2 -translate-y-1/2` to centre. Row y bands: GK=0.06, DEF=0.27, DM=0.42, MID=0.55, AM=0.66, FWD=0.85.
+
+### Picker UX choice
+**Horizontal scrollable strip** of formation pills (text-only, e.g. `4-3-3`, `1-2-1 (Diamond)`). Why not thumbnail grid:
+- The pitch directly below already renders the *active* formation in full — a thumbnail strip would be redundant chrome on a small mobile screen.
+- 5 short pills fit a 360 px viewport inline; longer labels (futsal `1-2-1 (Diamond)`, `4-0 (Rotational)`) get a horizontal-scroll fallback via `overflow-x-auto`.
+- Matches the existing pre-v1.83.0 picker shape (`text-[8px] uppercase tracking-widest` pills with team-colour active state) so this isn't a chrome shock to existing users.
+
+The active pill highlights with `teamColor + '55'` background (same convention as the old TeamFormation).
+
+### localStorage
+Selected formation persists per `(ballType, playerCount)` tuple under `t9l-formation:<ballType>:<n>`. Hydrates on mount, falls back to `formations[0]?.code` (the catalog's conventional default).
+
+### Next: M3 (assignment + slot-compat map for review)
+
+## M3 — Multi-role assignment algorithm + slot-compat map
+
+### Algorithm — `assignPlayersToFormation()` in `src/lib/formations.ts`
+Greedy scarcity-first:
+1. Players with `positions.length === 0` skip the assignment loop and surface in `playersWithoutPositions` (UI hints "fill in your profile").
+2. For each formation slot, build a candidate set: all eligible players whose `positions` include any code that the slot's code accepts.
+3. While unfilled slots with non-empty candidate sets remain:
+   a. Pick the unfilled slot with the FEWEST candidates (>0). Tie-break by slot index.
+   b. Within that slot, pick the player with the FEWEST other compatible slots (least flexible — save the polyvalent players for the slots that desperately need them). Tie-break by player id (lexicographic) for determinism.
+   c. Mark the slot+player assigned. Remove the player from every other slot's candidate set.
+4. Remaining eligible players → `unassignedPlayers` (rendered as "Subs (N)").
+5. Slots with no candidate at all stay empty (rendered as a dashed circle); the UI surfaces a `"N slots have no candidate available."` line.
+
+Complexity: `O(slots² × players)` — for ≤11×~25 it runs in microseconds. Hungarian-algorithm overkill, per the user spec.
+
+### Slot-compat map — direction: PLAYER position → set of SLOT codes the player can fill
+
+#### Soccer (12-code vocabulary)
+| Player code | Slots it can fill                | Rationale                                         |
+|-------------|----------------------------------|---------------------------------------------------|
+| `GK`        | `GK`                             | Strict.                                           |
+| `LB`        | `LB`                             | Per user spec — strict (no auto-shift to CB/RB). |
+| `CB`        | `CB`, `DM`                       | CB→DM common in build-up (false-CB / regista).   |
+| `RB`        | `RB`                             | Mirror of LB — strict.                            |
+| `LM`        | `LM`, `LW`                       | Per user spec.                                    |
+| `DM`        | `DM`, `CM`, `CB`                 | DM↔CB swap on overload; DM→CM box-to-box pivot. |
+| `CM`        | `DM`, `CM`, `CAM`                | Per user spec.                                    |
+| `CAM`       | `CAM`, `CM`, `ST`                | False-9 / second-striker drop in.                |
+| `RM`        | `RM`, `RW`                       | Mirror of LM.                                     |
+| `LW`        | `LW`, `LM`, `ST`                 | Wide forward → wide mid / centre forward.        |
+| `ST`        | `ST`, `CAM`                      | Centre forward swaps; doesn't shift wide.        |
+| `RW`        | `RW`, `RM`, `ST`                 | Mirror of LW.                                     |
+
+#### Futsal (4-code vocabulary)
+| Player code | Slots it can fill                | Rationale                                         |
+|-------------|----------------------------------|---------------------------------------------------|
+| `GK`        | `GK`                             | Strict.                                           |
+| `FIXO`      | `FIXO`, `ALA`                    | FIXO can step into ALA on the rotational system. |
+| `ALA`       | `ALA`, `FIXO`, `PIVOT`           | Most flexible — wing/midfield bridge.            |
+| `PIVOT`     | `PIVOT`, `ALA`                   | PIVOT can drop to ALA when teams play 4-0.       |
+
+The 4-0 (Rotational) futsal formation models its 4 outfield slots as `ALA` since that's the most permissive code — any FIXO/ALA/PIVOT player can fill them.
+
+### Surface-back to user
+The strict cases (`LB`, `RB`, `GK`) intentionally do NOT auto-shift to nearby roles. If you'd rather LB-tagged players also fill the LB or CB slot when the formation has no other LB candidate, say the word and I'll widen those entries — would be a 2-line change.
+
+### Next: M4 (edge cases + manual override UX — most already implemented in FormationPitch)
+
+## M4 — Edge cases + manual override UX
+
+### Edge case handling
+| Case                                                         | Handling                                                                                              |
+|--------------------------------------------------------------|-------------------------------------------------------------------------------------------------------|
+| No confirmations yet                                         | "No confirmations yet" italic text — same as pre-v1.83.0.                                             |
+| Player has no positions on file                              | Skipped from assignment loop; surfaced in a footer line: `"N players have no position on file."`     |
+| Fewer available players than slots                           | Unfilled slots render as dashed-ring placeholders. Counter line: `"N slots have no candidate available."` |
+| More players than slots (overflow)                           | Bench section "Subs (N)" with name pills (small + position chip). Auto-assignment respects scarcity, so the most-flexible players go to subs first. |
+| Formation has no candidates for a slot type                  | Same as "fewer players than slots" — empty dashed circle, counter line.                                |
+| `(ballType, playerFormat)` has no catalog (e.g. SOCCER/4)    | Falls back to a flat name-list with an amber italic hint: `"No formations defined for this league format yet."` |
+| `playerFormat` is null (legacy league row)                   | Catalog returns empty; same fallback as above.                                                        |
+| `ballType` is null                                           | Defaults to `'SOCCER'` for catalog + slot-compat (Tennozu's default). Logged once via the type union. |
+
+### Manual override UX
+**SlotPickerSheet** — bottom-sheet on mobile, centred dialog on `sm+`:
+- Triggered by tapping any slot (filled OR empty).
+- Lists every confirmed-going player. Each row shows name + their position codes; non-compatible candidates get an amber `"OUT OF POSITION"` chip but stay tappable (admins know best — the algorithm shouldn't refuse a manual override).
+- Currently-assigned player is highlighted with `bg-electric-violet/20`.
+- "Clear slot" button below the list (only when a player is currently assigned).
+- Backdrop + ESC + "Close" button all dismiss.
+- Manual choices are stored in a local `overrides: Record<slotIdx, playerId | null>` map merged with the auto-assignment. Picking a player who was already auto-placed elsewhere automatically wipes that other placement (no duplicates).
+- Overrides reset when the formation code changes or the confirmed player set changes (different slot indexes / different roster invalidates the choices).
+
+### Next: M5 (tests + tsc + push PR)
+
+## M5 — Tests + suite passing + PR pushed
+
+### Test file
+`tests/unit/formations.test.ts` — 28 tests across 6 `describe` blocks:
+- `[catalog]` — 5 tests pinning every (ballType, playerCount) catalog shape: 5 entries each, slot count = playerCount, exactly one GK per formation, x/y normalised, vocabulary stays in-format.
+- `[regression] playerCodeFillsSlot — soccer` — 6 tests pinning the exact slot-compat decisions from the user spec (LB strict, CM → DM/CM/CAM, LM → LM/LW, GK strict, case-insensitive on slot, unknown player code matches nothing).
+- `[regression] playerCodeFillsSlot — futsal` — 1 test pinning the futsal map.
+- `[regression] playerFillsSlot` — 2 tests pinning multi-position any-match logic.
+- `[regression] assignment — happy path` — 2 tests (4-3-3 + futsal 1-2-1) for full-roster assignment.
+- `[regression] assignment — multi-role players` — 2 tests pinning the scarcity-first behavior (CM → CAM when no specialist; LB-tagged player goes to LB even when also tagged CM).
+- `[regression] assignment — edge cases` — 7 tests for empty positions, fewer/more players than slots, determinism, GK-only player, no-GK roster, futsal 4-0 rotational.
+
+Stash-pop verification: `git stash push -- src/lib/formations.ts` and re-running the tests yields a module-not-found suite-level failure (28/28 don't load). Restored after verification.
+
+### Pre-existing test fix
+`tests/unit/v169_availability_toggle.test.ts:155` — the structural matcher looked for `<TeamFormation` (the in-file v1.69.0 component). v1.83.0 extracts the formation render to standalone `<FormationPitch>`, so the regex updates to match the new component name. Same two-branch pattern (past + upcoming) preserved.
+
+### CI gates
+- `npx vitest run` — 2932 passed, 2 skipped (line-login integration), 0 failed.
+- `npx tsc --noEmit` — 1 error, identical to the pre-PR baseline (`@next/bundle-analyzer` missing in this worktree's node_modules; unrelated to this PR).
+
+### Files touched (final)
+| File | Status | Why |
+|------|--------|-----|
+| `src/lib/formations.ts` | new | Per-format catalog + slot-compat map + assignment algo. |
+| `src/components/FormationPitch.tsx` | new | Picker + pitch SVG + auto+manual assignment. |
+| `src/components/MatchdayAvailability.tsx` | modified | Drops in-file `<TeamFormation>` and the legacy 5-formation list; new `ballType` + `playerFormat` props; renders `<FormationPitch>`. |
+| `src/components/ClassicLeagueHomepage.tsx` | modified | Threads `ballType` + `playerFormat` props through. |
+| `src/components/Dashboard.tsx` | modified | At the `<ClassicLeagueHomepage>` call site: `ballType={league?.ballType ?? leagueDetails?.ballType ?? null}` + `playerFormat={leagueDetails?.playerFormat ?? null}`. |
+| `tests/unit/formations.test.ts` | new | 28 regression-target tests. |
+| `tests/unit/v169_availability_toggle.test.ts` | modified | One-line shim from `<TeamFormation` → `<FormationPitch`. |
+| `src/lib/version.ts` | modified | v1.82.2 → v1.83.0 (minor — new user-visible feature). |
+| `tests/unit/version.test.ts` | modified | Pinned-version test bump. |
+| `phase-formations.log` | new | This file. |
+
+
+

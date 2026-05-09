@@ -369,6 +369,8 @@ export default function Dashboard({
                   initialMatchdayId={initialMatchdayId}
                   leagueSlug={leagueSlug}
                   submitGoalSlot={submitGoalSlot}
+                  ballType={league?.ballType ?? leagueDetails?.ballType ?? null}
+                  playerFormat={leagueDetails?.playerFormat ?? null}
                   leagueDetailsPanelSlot={leagueDetails ? (
                     <LeagueDetailsPanel
                       data={leagueDetails}
