@@ -368,6 +368,7 @@ export async function submitOnboarding(input: SubmitOnboardingInput): Promise<vo
   // captures preference fields.
   // v1.65.4 — position lives on PlayerLeagueMembership, not Player.
   // v1.82.0 — dual-write positions[] + legacy enum.
+  // v1.86.0 — also dual-write preferredPositions; secondaryPositions stays [].
   await prisma.$transaction(async (tx) => {
     await tx.player.update({
       where: { id: input.playerId },
@@ -379,6 +380,8 @@ export async function submitOnboarding(input: SubmitOnboardingInput): Promise<vo
       where: { playerId: input.playerId, toGameWeek: null },
       data: {
         positions: validatedPositions,
+        preferredPositions: validatedPositions,
+        secondaryPositions: [],
         position: legacyPosition,
       },
     })
@@ -709,10 +712,13 @@ export async function completeOnboardingWithId(
         },
       })
       // v1.82.0 — dual-write positions[] + legacy enum.
+      // v1.86.0 — also dual-write preferredPositions; secondaryPositions stays [].
       await tx.playerLeagueMembership.updateMany({
         where: { playerId: input.playerId, toGameWeek: null },
         data: {
           positions: validatedPositions,
+          preferredPositions: validatedPositions,
+          secondaryPositions: [],
           position: legacyPosition,
         },
       })

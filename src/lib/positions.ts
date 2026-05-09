@@ -237,3 +237,32 @@ export function groupedPositionLabel(positions: ReadonlyArray<string>): string {
   }
   return labels.join(' / ')
 }
+
+/**
+ * v1.86.0 — Validate and normalise the preferred + secondary position
+ * arrays submitted from the account page or join flow.
+ *
+ * Rules:
+ *   - Each array is independently normalised via `normalizePositions`.
+ *   - A code that appears in `preferred` is silently removed from
+ *     `secondary` (no duplicates across the two sets).
+ *   - Both may be empty (no position recorded).
+ *
+ * Returns `{ ok: true, preferred, secondary }` or
+ *         `{ ok: false, error }` on invalid code.
+ */
+export function validatePreferredSecondary(
+  rawPreferred: ReadonlyArray<string> | null | undefined,
+  rawSecondary: ReadonlyArray<string> | null | undefined,
+  ballType: BallType | null | undefined,
+): { ok: true; preferred: PositionCode[]; secondary: PositionCode[] } | { ok: false; error: string } {
+  try {
+    const preferred = normalizePositions(rawPreferred ?? [], ballType)
+    const prefSet = new Set(preferred)
+    const secondaryRaw = normalizePositions(rawSecondary ?? [], ballType)
+    const secondary = secondaryRaw.filter((c) => !prefSet.has(c))
+    return { ok: true, preferred, secondary }
+  } catch (err) {
+    return { ok: false, error: (err as Error).message }
+  }
+}

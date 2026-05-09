@@ -101,6 +101,7 @@ describe('v1.33.0 (PR ε) — adminCreatePlayer', () => {
     })
     // v1.82.0 — PLM.create dual-writes positions[] + legacy enum
     // (CM buckets to MF in the legacy column).
+    // v1.86.0 — also writes preferredPositions; secondaryPositions starts [].
     expect(assignmentCreateMock).toHaveBeenCalledWith({
       data: {
         playerId: 'p-new-player',
@@ -109,6 +110,8 @@ describe('v1.33.0 (PR ε) — adminCreatePlayer', () => {
         fromGameWeek: 3,
         joinSource: 'ADMIN',
         positions: ['CM'],
+        preferredPositions: ['CM'],
+        secondaryPositions: [],
         position: 'MF',
       },
     })
@@ -196,7 +199,10 @@ describe('v1.33.0 (PR ε) — adminCreatePlayer', () => {
         fromGameWeek: 1,
         joinSource: 'ADMIN',
         // v1.82.0 — empty positions[] when caller supplies no positions.
+        // v1.86.0 — also writes preferredPositions; secondaryPositions starts [].
         positions: [],
+        preferredPositions: [],
+        secondaryPositions: [],
         position: null,
       },
     })

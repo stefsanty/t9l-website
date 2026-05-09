@@ -178,7 +178,7 @@ describe('v1.41.0 — adminUpdatePlayerPosition server action', () => {
     // contract; this test pins the call site shape inside the action.
     const fnIdx = LEAGUES_ACTIONS.indexOf('export async function adminUpdatePlayerPosition')
     expect(fnIdx).toBeGreaterThan(0)
-    const fnBody = LEAGUES_ACTIONS.slice(fnIdx, fnIdx + 1500)
+    const fnBody = LEAGUES_ACTIONS.slice(fnIdx, fnIdx + 2000)
     expect(fnBody).toMatch(
       /revalidate\(\{ domain: 'admin', paths: \[`\/admin\/leagues\/\$\{leagueId\}\/players`\] \}\)/,
     )
@@ -197,7 +197,11 @@ describe('v1.41.0 — adminUpdatePlayerPosition server action', () => {
     expect(updateIdx).toBeGreaterThan(idGuardIdx)
     // v1.82.0 — the updateMany payload now dual-writes positions[] +
     // the legacy enum bucketed via legacyPositionFromArray().
-    expect(fnBody).toMatch(/data:\s*\{\s*positions:\s*validatedPositions,\s*position:\s*legacyPosition/)
+    // v1.86.0 — also writes preferredPositions + secondaryPositions.
+    expect(fnBody).toMatch(/data:\s*\{\s*positions:\s*validatedPositions/)
+    expect(fnBody).toMatch(/preferredPositions:\s*validatedPositions/)
+    expect(fnBody).toMatch(/secondaryPositions:\s*\[\]/)
+    expect(fnBody).toMatch(/position:\s*legacyPosition/)
   })
 
   it('PlayersTab imports the new action alongside adminUpdatePlayerName', () => {

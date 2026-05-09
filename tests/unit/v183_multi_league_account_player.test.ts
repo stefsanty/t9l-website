@@ -185,9 +185,9 @@ describe('v1.83.0 — form renders per-league cards', () => {
   it('regression-target — LeagueCard sends scoped positions/idShared, not a global update', () => {
     const src = stripComments(read(FORM))
     // Reverting to a global `updatePlayerSelf({ positions })` shape
-    // would be a regression. The card sends only changed slices via
-    // `positionsChanged ? positions : undefined` — partial updates.
-    expect(src).toMatch(/positionsChanged\s*\?\s*positions\s*:\s*undefined/)
+    // would be a regression. v1.86.0: the card sends preferredPositions +
+    // secondaryPositions (not the legacy `positions`) as partial updates.
+    expect(src).toMatch(/positionsChanged\s*\?\s*preferred\s*:\s*undefined/)
     expect(src).toMatch(/idSharedChanged\s*\?\s*idShared\s*:\s*undefined/)
   })
 

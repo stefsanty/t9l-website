@@ -165,6 +165,14 @@ export async function dbToPublicLeagueData(
         pla.positions && pla.positions.length > 0
           ? pla.positions.join('/')
           : (pla.position ?? null),
+      // v1.86.0 — expose split preferred/secondary so FormationPitch can
+      // pass them directly into AssignmentInput without re-parsing position.
+      preferredPositions: (pla.preferredPositions ?? []).length > 0
+        ? [...pla.preferredPositions]
+        : undefined,
+      secondaryPositions: (pla.secondaryPositions ?? []).length > 0
+        ? [...pla.secondaryPositions]
+        : undefined,
       picture: pla.player.pictureUrl ?? null,
     })
   }

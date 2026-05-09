@@ -544,11 +544,26 @@ model PlayerLeagueMembership {
   // format and lives in src/lib/positions.ts. Empty array == "no
   // position recorded" (matches legacy `position IS NULL`).
   //
+  // v1.86.0 — DEPRECATED (kept for backward compat). Canonical data
+  // now lives in `preferredPositions` + `secondaryPositions` below.
+  // This array dual-writes as concat(preferred, secondary) for any
+  // consumer that hasn't been updated to read the split fields.
+  //
   // Why `String[]` (Postgres native array) and not a join table:
   // positions are a fixed code list, not row data. The whole array
   // round-trips on every Player read; a join table adds Prisma include
   // ceremony and a joined query for zero referential benefit.
   positions String[] @default([])
+
+  // v1.86.0 — split positions into preferred vs secondary.
+  // preferredPositions: roles the player WANTS to play (formation
+  //   algorithm fills these first; account page labels "Preferred").
+  // secondaryPositions: roles the player CAN also cover (fills
+  //   fallback slots; account page labels "Also plays").
+  // Migration backfill: preferredPositions ← existing positions[];
+  // secondaryPositions starts empty (players opt-in via editing).
+  preferredPositions String[] @default([])
+  secondaryPositions String[] @default([])
 
   // v1.65.0 — per-league jersey number. New, no backfill source.
   // Optional. Future admin UI surface populates it.

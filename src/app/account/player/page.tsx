@@ -170,6 +170,10 @@ export default async function AccountPlayerPage() {
         positions: m.positions ?? null,
         position: m.position ?? null,
       })
+      // v1.86.0 — prefer split fields; fall back to legacy positions[]
+      const preferredPositions: string[] =
+        m.preferredPositions.length > 0 ? [...m.preferredPositions] : positions
+      const secondaryPositions: string[] = [...m.secondaryPositions]
       const positionFees =
         ('positionFees' in league && Array.isArray(league.positionFees)
           ? league.positionFees
@@ -187,6 +191,8 @@ export default async function AccountPlayerPage() {
         membershipStatus: m.status,
         teamName,
         positions,
+        preferredPositions,
+        secondaryPositions,
         jerseyNumber: m.jerseyNumber ?? null,
         resolvedFeeJpy,
         hasFeeOverride: m.feeOverride !== null,

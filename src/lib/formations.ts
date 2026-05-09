@@ -571,8 +571,17 @@ export function playerFillsSlot(
 export interface AssignmentInput {
   /** Stable id (Player.id from the public payload). */
   id: string
-  /** Normalised position codes (per `normalizePositions`). */
+  /**
+   * Normalised position codes (per `normalizePositions`).
+   * @deprecated Use `preferredPositions` + `secondaryPositions` (v1.86.0).
+   * Kept for backward compat: when preferred/secondary are absent, positions[0]
+   * is treated as primary and positions[1..] as secondary.
+   */
   positions: ReadonlyArray<string>
+  /** v1.86.0 — explicit preferred positions (fills pass 1a/2a). */
+  preferredPositions?: ReadonlyArray<string>
+  /** v1.86.0 — explicit secondary positions (fills pass 1b/2b). */
+  secondaryPositions?: ReadonlyArray<string>
 }
 
 export interface AssignmentResult {
@@ -628,13 +637,29 @@ export function assignPlayersToFormation(
   formation: Formation,
   players: ReadonlyArray<AssignmentInput>,
 ): AssignmentResult {
+  // Normalise each player onto canonical preferred/secondary arrays.
+  // When the new split fields are present, use them directly.
+  // When absent, fall back to positions[0]=primary, positions[1..]=secondary.
+  interface NormalisedPlayer {
+    id: string
+    preferred: ReadonlyArray<string>
+    secondary: ReadonlyArray<string>
+  }
   const playersWithoutPositions: string[] = []
-  const eligible: AssignmentInput[] = []
+  const eligible: NormalisedPlayer[] = []
   for (const p of players) {
-    if (p.positions.length === 0) {
+    const hasNewFields =
+      p.preferredPositions !== undefined || p.secondaryPositions !== undefined
+    const preferred: ReadonlyArray<string> = hasNewFields
+      ? (p.preferredPositions ?? [])
+      : p.positions.slice(0, 1)
+    const secondary: ReadonlyArray<string> = hasNewFields
+      ? (p.secondaryPositions ?? [])
+      : p.positions.slice(1)
+    if (preferred.length === 0 && secondary.length === 0) {
       playersWithoutPositions.push(p.id)
     } else {
-      eligible.push(p)
+      eligible.push({ id: p.id, preferred, secondary })
     }
   }
 
@@ -645,9 +670,9 @@ export function assignPlayersToFormation(
   // ── Pass executor ──────────────────────────────────────────────────────
   // Runs one greedy scarcity-first sweep using a per-slot candidate function.
   // `eligible` predicate returns true iff the player can fill the slot
-  // *under the current pass's rules* (primary-only, or fallback-only).
+  // *under the current pass's rules* (preferred-only, or fallback-only).
   function runPass(
-    passEligible: (positions: ReadonlyArray<string>, slotCode: string) => boolean,
+    passEligible: (p: NormalisedPlayer, slotCode: string) => boolean,
   ) {
     // slotIndex → Set<playerId>, only for unfilled slots and unplaced players.
     const slotCandidates: Array<Set<string>> = formation.slots.map((slot, idx) => {
@@ -655,7 +680,7 @@ export function assignPlayersToFormation(
       if (slotAssignments[idx] !== null) return set
       for (const p of eligible) {
         if (placedPlayers.has(p.id)) continue
-        if (passEligible(p.positions, slot.code)) set.add(p.id)
+        if (passEligible(p, slot.code)) set.add(p.id)
       }
       return set
     })
@@ -704,33 +729,32 @@ export function assignPlayersToFormation(
     }
   }
 
-  // Pass 1a: player's primary position (positions[0]) matches slot.primary
-  runPass((positions, slotCode) =>
-    playerCodeFillsSlotPrimary(ballType, positions[0] ?? '', slotCode),
+  // Pass 1a: player's preferred position matches slot.primary
+  runPass((p, slotCode) =>
+    p.preferred.length > 0 && playerCodeFillsSlotPrimary(ballType, p.preferred[0]!, slotCode),
   )
 
-  // Pass 1b: any secondary position (positions[1..]) matches slot.primary
-  runPass((positions, slotCode) => {
-    for (let i = 1; i < positions.length; i++) {
-      if (playerCodeFillsSlotPrimary(ballType, positions[i]!, slotCode)) return true
+  // Pass 1b: any secondary position matches slot.primary
+  runPass((p, slotCode) => {
+    for (const code of p.secondary) {
+      if (playerCodeFillsSlotPrimary(ballType, code, slotCode)) return true
     }
     return false
   })
 
-  // Pass 2a: player's primary position matches slot.fallback
-  runPass((positions, slotCode) => {
+  // Pass 2a: player's preferred position matches slot.fallback
+  runPass((p, slotCode) => {
     const compat = compatFor(ballType, slotCode)
-    if (!compat) return false
-    const upper = (positions[0] ?? '').toUpperCase()
-    return compat.fallback.includes(upper)
+    if (!compat || p.preferred.length === 0) return false
+    return compat.fallback.includes(p.preferred[0]!.toUpperCase())
   })
 
   // Pass 2b: any secondary position matches slot.fallback
-  runPass((positions, slotCode) => {
+  runPass((p, slotCode) => {
     const compat = compatFor(ballType, slotCode)
     if (!compat) return false
-    for (let i = 1; i < positions.length; i++) {
-      if (compat.fallback.includes(positions[i]!.toUpperCase())) return true
+    for (const code of p.secondary) {
+      if (compat.fallback.includes(code.toUpperCase())) return true
     }
     return false
   })

@@ -54,7 +54,10 @@ export interface LeagueCardData {
   applicationStatus: 'APPROVED' | 'PENDING'
   membershipStatus: 'ACTIVE' | 'INACTIVE' | 'SUSPENDED'
   teamName: string | null
+  /** @deprecated Kept for backward compat. Use preferredPositions + secondaryPositions. */
   positions: string[]
+  preferredPositions: string[]
+  secondaryPositions: string[]
   jerseyNumber: number | null
   resolvedFeeJpy: number
   hasFeeOverride: boolean
@@ -375,16 +378,32 @@ interface LeagueCardProps {
 function LeagueCard({ league, adminContactEmail }: LeagueCardProps) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
-  const [positions, setPositions] = useState<string[]>([...league.positions])
+  const [preferred, setPreferred] = useState<string[]>([...league.preferredPositions])
+  const [secondary, setSecondary] = useState<string[]>([...league.secondaryPositions])
   const [idShared, setIdShared] = useState<boolean>(league.idShared)
   const [error, setError] = useState<string | null>(null)
   const [successAt, setSuccessAt] = useState<number | null>(null)
 
-  const positionsChanged =
-    positions.length !== league.positions.length ||
-    positions.some((p, i) => p !== league.positions[i])
+  const preferredChanged =
+    preferred.length !== league.preferredPositions.length ||
+    preferred.some((p, i) => p !== league.preferredPositions[i])
+  const secondaryChanged =
+    secondary.length !== league.secondaryPositions.length ||
+    secondary.some((p, i) => p !== league.secondaryPositions[i])
+  const positionsChanged = preferredChanged || secondaryChanged
   const idSharedChanged = idShared !== league.idShared
   const dirty = positionsChanged || idSharedChanged
+
+  // When preferred changes, remove any codes from secondary that are now preferred.
+  function handlePreferredChange(next: string[]) {
+    const nextSet = new Set(next)
+    setPreferred(next)
+    setSecondary((prev) => prev.filter((c) => !nextSet.has(c)))
+  }
+
+  // Secondary picker excludes codes already in preferred.
+  const preferredSet = new Set(preferred)
+  const secondaryFiltered = secondary.filter((c) => !preferredSet.has(c))
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -395,10 +414,8 @@ function LeagueCard({ league, adminContactEmail }: LeagueCardProps) {
       try {
         await updatePlayerLeague({
           leagueId: league.leagueId,
-          // Send only the changed slices. The server treats `undefined`
-          // as "leave alone" — keeps writes minimal and preserves the
-          // dual-write of legacy `position` only when positions change.
-          positions: positionsChanged ? positions : undefined,
+          preferredPositions: positionsChanged ? preferred : undefined,
+          secondaryPositions: positionsChanged ? secondaryFiltered : undefined,
           idShared: idSharedChanged ? idShared : undefined,
         })
         setSuccessAt(Date.now())
@@ -470,20 +487,37 @@ function LeagueCard({ league, adminContactEmail }: LeagueCardProps) {
           </dd>
         </div>
 
-        {/* Positions (editable) */}
+        {/* Preferred positions (editable) */}
         <div>
           <span className="block text-fg-low text-xs uppercase tracking-wider font-bold mb-1.5">
-            Position(s)
+            Preferred positions
           </span>
           <PositionMultiSelect
-            selected={positions}
-            onChange={setPositions}
+            selected={preferred}
+            onChange={handlePreferredChange}
             ballType={league.ballType}
             disabled={pending}
-            testIdPrefix={`league-card-position-${league.leagueId}`}
+            testIdPrefix={`league-card-preferred-${league.leagueId}`}
           />
           <span className="block text-fg-low text-xs mt-1.5">
-            Tap to pick one or more for this league. You can leave this blank.
+            Roles you want to play. Formation assignment fills these first.
+          </span>
+        </div>
+
+        {/* Secondary positions (editable) */}
+        <div>
+          <span className="block text-fg-low text-xs uppercase tracking-wider font-bold mb-1.5">
+            Also plays
+          </span>
+          <PositionMultiSelect
+            selected={secondaryFiltered}
+            onChange={setSecondary}
+            ballType={league.ballType}
+            disabled={pending}
+            testIdPrefix={`league-card-secondary-${league.leagueId}`}
+          />
+          <span className="block text-fg-low text-xs mt-1.5">
+            Roles you can cover if needed. Optional.
           </span>
         </div>
 

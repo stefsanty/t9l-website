@@ -9,6 +9,7 @@ import { PROFILE_PIC_ALLOWED_TYPES, PROFILE_PIC_MAX_BYTES } from './validation'
 import {
   legacyPositionFromArray,
   normalizePositions,
+  validatePreferredSecondary,
   type BallType,
 } from '@/lib/positions'
 
@@ -130,7 +131,10 @@ export async function updatePlayerProfile(
 
 export interface UpdatePlayerLeagueInput {
   leagueId: string
+  /** @deprecated Use preferredPositions + secondaryPositions instead. */
   positions?: ReadonlyArray<string>
+  preferredPositions?: ReadonlyArray<string>
+  secondaryPositions?: ReadonlyArray<string>
   idShared?: boolean
 }
 
@@ -181,14 +185,36 @@ export async function updatePlayerLeague(
 
   const data: {
     positions?: string[]
+    preferredPositions?: string[]
+    secondaryPositions?: string[]
     position?: 'GK' | 'DF' | 'MF' | 'FW' | null
     idShared?: boolean
   } = {}
-  if (input.positions !== undefined) {
-    const validated = normalizePositions(input.positions, ballType)
+
+  const hasNewFields =
+    input.preferredPositions !== undefined || input.secondaryPositions !== undefined
+  const hasLegacyField = input.positions !== undefined
+
+  if (hasNewFields) {
+    const result = validatePreferredSecondary(
+      input.preferredPositions,
+      input.secondaryPositions,
+      ballType,
+    )
+    if (!result.ok) throw new Error(result.error)
+    data.preferredPositions = result.preferred
+    data.secondaryPositions = result.secondary
+    // Dual-write positions[] = concat(preferred, secondary) for backward compat
+    data.positions = [...result.preferred, ...result.secondary]
+    data.position = legacyPositionFromArray(result.preferred)
+  } else if (hasLegacyField) {
+    const validated = normalizePositions(input.positions!, ballType)
     data.positions = validated
+    data.preferredPositions = validated
+    data.secondaryPositions = []
     data.position = legacyPositionFromArray(validated)
   }
+
   if (input.idShared !== undefined) {
     data.idShared = input.idShared
   }
