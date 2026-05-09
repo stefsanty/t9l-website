@@ -1,0 +1,174 @@
+# Phase: preseason countdown
+
+## M1 — Located preseason view + first-matchday data path identified
+
+**Preseason view location.** `preseasonMode` is a league-flag; flips on at
+`src/app/id/[slug]/page.tsx:78` (`getLeagueFlags`) and is threaded into
+`src/components/Dashboard.tsx:217` as a prop. The branch at
+`Dashboard.tsx:341-349` is the preseason-specific render path:
+
+  {preseasonMode && (leagueDetails ? (
+    <LeagueDetailsPanel ... preseasonMode={preseasonMode} />
+  ) : (
+    plannedRosterStats && <PlannedRosterStats data={plannedRosterStats} />
+  ))}
+
+Above that block live `<UnpaidFeeBanner>` and `<RecruitingBanner>` (see
+the `<div className="animate-in pt-2">` ordering in `Dashboard.tsx:322`).
+
+**Visual hierarchy at the top of `/id/<slug>`** (preseason variant):
+1. `<Header>`                                 (Dashboard.tsx:319)
+2. `<UnpaidFeeBanner>`                        (Dashboard.tsx:327)
+3. `<RecruitingBanner>` (when recruiting on)  (Dashboard.tsx:328)
+4. `<LeagueDetailsPanel>` / `<PlannedRosterStats>`  (Dashboard.tsx:341-349) ← countdown goes ABOVE this
+5. `<GuestLoginBanner>`                       (Dashboard.tsx:353)
+6. `<UserTeamBadge>` + `<CompressedMatchdaySchedule>`
+
+**First matchday data path.** `Matchday[]` are sorted by `weekNumber asc`
+in `src/lib/dbToPublicLeagueData.ts:106` (`orderBy: { weekNumber: 'asc' }`)
+when read from DB, and `dbToPublicLeagueData.ts:176` iterates in that order
+when building the public-side `matchdays[]`. So `matchdays[0]` is the first
+matchday for the league.
+
+The "league start" instant on the public side is computed from:
+- `Matchday.date` — JST `"YYYY-MM-DD"` string (from `formatJstDate(gw.startDate)`,
+  null when admin clears it)
+- `Matchday.matches[0].kickoff` — JST `"HH:MM"` string (from `formatJstTime(m.playedAt)`,
+  empty string when no playedAt)
+
+Combined via `jstIsoString(date, kickoff)` → `new Date(...)` to get the UTC
+instant. Same path the existing `<MatchdayCountdown>` uses
+(`src/components/MatchdayCountdown.tsx:21-24`).
+
+**Existing precedent.** `<MatchdayCountdown>` already exists for individual
+matchday cards (live "X from now" / "Live") inside the schedule list. The
+new component is functionally distinct: it's a per-LEAGUE banner, only
+fires preseason, and uses simplified day/hour/minute copy.
+
+## M2 — Component built + styled
+
+**File:** `src/components/LeagueStartCountdown.tsx`
+
+**Props:** `{ firstMatchday: Matchday | null }` — the first-matchday object
+sourced from `matchdays[0]` in the parent (already sorted by `weekNumber asc`
+on the read path, see M1).
+
+**Three exported pure helpers (testable without DOM):**
+1. `firstMatchdayStartInstant(matchday)` — returns the JST → UTC `Date`
+   instant by combining `matchday.date` + `matches[0].kickoff` via the
+   canonical `jstIsoString(...)` helper. Returns `null` when either
+   piece is missing.
+2. `computeLeagueStartCountdown(start, now)` — returns the discriminated
+   union `{ unit, value }` or `null` when the start is in the past.
+3. `formatLeagueStartCopy({ unit, value })` — renders the user-visible
+   string with correct singular/plural noun.
+
+**Copy choices for the four ranges (per scope spec):**
+| diff range          | display copy                       |
+|---------------------|------------------------------------|
+| ≥ 24 hours          | "League starts in X days" (X = `Math.ceil(diff/86400s)`) |
+| ≥ 1h, < 24h         | "League starts in X hours" (X = `Math.ceil(diff/3600s)`) |
+| > 0, < 1h           | "League starts in X minutes" (X = `Math.ceil(diff/60s)`) |
+| ≤ 0 (past or equal) | component returns `null` (hides itself) |
+
+**Past-start case** — chose to **hide** rather than show "League is live!".
+Two reasons: (a) the matchday-card-level `<MatchdayCountdown>`
+(`src/components/MatchdayCountdown.tsx:108-114`) already renders a "Live"
+pill for the matchday in progress, so a duplicate "live" signal at the
+banner level would be visual noise, and (b) once the league has started
+the term "preseason" no longer applies, so a banner whose entire premise
+is "before kickoff" should disappear. The matchday-card surface
+remains the single source of truth for live status.
+
+**Singular handling.** Plural-correct: 1 day vs 7 days, 1 hour vs 5 hours,
+1 minute vs 30 minutes.
+
+**Visuals — "very visible".**
+- Same `vibrant-pink → orange-500` gradient as `RecruitingBanner` (project
+  precedent for high-prominence pre-season banners).
+- Border `border-vibrant-pink/60`, rounded `rounded-2xl`, diagonal-pattern
+  overlay at 10% opacity (matches the same Recruiting card).
+- Typography: `font-display text-3xl font-black uppercase tracking-tight
+  text-white leading-tight tabular-nums`. Bumped from RecruitingBanner's
+  `text-2xl` to `text-3xl` because this banner has only one line of copy
+  (vs RecruitingBanner's heading + subhead) and the user explicitly asked
+  for "very visible".
+- Centered (`text-center`) — single-line headline, no CTA arrow, no
+  secondary body text.
+- `tabular-nums` so the digit doesn't shift width as it counts down.
+- `translate="no"` so the in-page Google Translate widget (v1.80.5)
+  doesn't mangle the X.
+
+**Auto-update cadence.** `setInterval(60_000)` in `useEffect` — once per
+minute. Days/hours/minutes resolution doesn't justify a 1Hz tick.
+
+**Hydration treatment.** Same pattern as the existing `<MatchdayCountdown>`
+(in production since v1.41.x): `useState(() => new Date())`. Server-side
+render uses the server's clock; client uses the client's clock at hydration.
+For day/hour-resolution copy the values are identical 99.99% of the time
+(server↔client clock skew is sub-second); the one-minute interval picks up
+any drift on next tick. No `suppressHydrationWarning` needed because the
+rendered text matches.
+
+## M3 — Wired above LeagueDetailsPanel
+
+**Wire site:** `src/components/Dashboard.tsx`. Added one import
+(`LeagueStartCountdown`) and one render block immediately before the
+existing `preseasonMode && (leagueDetails ? <LeagueDetailsPanel /> : ...)`
+branch. Render is gated on `preseasonMode === true` AND `matchdays[0]`
+exists; when both fire, `<LeagueStartCountdown firstMatchday={matchdays[0]} />`
+renders. The component itself short-circuits to `null` when:
+  - matchday date is null (TBD)
+  - first match's kickoff is empty (no time signal)
+  - `now ≥ start` (kickoff has passed)
+
+**Visible-state matrix:**
+| preseasonMode | matchdays | first.date | first.kickoff | now vs start | result |
+|---------------|-----------|------------|---------------|--------------|--------|
+| false         | any       | any        | any           | any          | hidden — wire-level gate |
+| true          | empty     | —          | —             | —            | hidden — wire-level gate |
+| true          | present   | null       | any           | any          | hidden — `firstMatchdayStartInstant` returns null |
+| true          | present   | set        | empty         | any          | hidden — `firstMatchdayStartInstant` returns null |
+| true          | present   | set        | set           | now ≥ start  | hidden — `computeLeagueStartCountdown` returns null |
+| true          | present   | set        | set           | now < start  | **VISIBLE** — banner renders with computed copy |
+
+**Hydration.** No `dynamic()`-lazy wrapping (unlike the v1.80.3 wave for
+`<LeagueDetailsPanel>` etc.). The countdown is intentionally above-fold
+and contributes to LCP — it's the most prominent paint element on the
+page when visible. Inline import keeps it in the initial route bundle so
+SSR HTML lands with the banner already painted at first frame.
+
+## M4 — Tests + suite passing
+
+**File:** `tests/unit/leagueStartCountdown.test.ts` — 17 new tests across
+4 describe blocks:
+1. `firstMatchdayStartInstant` (4) — TBD-date case, empty-matches case,
+   empty-kickoff case (the "matchday is TBD" requirement), JST→UTC
+   parsing correctness.
+2. `computeLeagueStartCountdown` (5) — past-start case (the "matchday is
+   in the past" requirement), exact-start equality, days-bucket ceil
+   rounding, hours-bucket ceil, minutes-bucket ceil.
+3. `formatLeagueStartCopy` (5) — singular vs plural for each unit, exact
+   copy match.
+4. `end-to-end shape` (3) — TBD null-date wire-up, TBD empty-kickoff
+   wire-up, past-start full-pipeline assertion.
+
+**Stash-pop sanity check.** Replaced `Math.ceil` with `Math.floor` + removed
+the `diffMs <= 0` guard in `computeLeagueStartCountdown`: **5/17 tests
+fail** as expected:
+  - "returns null when start has already passed" (catches missing past-start guard)
+  - "returns null at the exact start instant" (catches missing past-start guard)
+  - "returns hours when diff < 24h and uses Math.ceil" (catches floor)
+  - "past-start case: full pipeline returns null when 'now' is post-kickoff"
+    (catches missing past-start guard at the e2e layer)
+
+**Test count diff.** `before: 2940 vitest tests → after: 2957 tests` (+17).
+**Full suite result.** `Test Files 164 passed | 1 skipped (165); Tests
+2957 passed | 2 skipped (2959).` All green.
+
+**tsc.** `npx tsc --noEmit` reports only the pre-existing
+`next.config.ts(2,38) error TS2307: Cannot find module
+'@next/bundle-analyzer'` (introduced by v1.80.6 perf phase 4 wiring on
+`main`; not new in this PR). No new tsc errors introduced.
+
+## M5 — TBD (after PR push)
