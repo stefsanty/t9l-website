@@ -11,6 +11,10 @@ export interface Player {
   name: string;
   teamId: string;
   position: string | null;
+  /** v1.86.0 — preferred positions (replaces parsing positions[0] from `position`). */
+  preferredPositions?: string[];
+  /** v1.86.0 — secondary positions. */
+  secondaryPositions?: string[];
   picture: string | null;
 }
 

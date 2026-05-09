@@ -305,7 +305,7 @@ describe('updatePlayerLeague — positions write', () => {
     await updatePlayerLeague({ leagueId: 'league-A', positions: ['CM', 'CB'] })
     expect(plmUpdateManyMock).toHaveBeenCalledWith({
       where: { playerId: 'p-stefan-s', leagueId: 'league-A', toGameWeek: null },
-      data: { positions: ['CM', 'CB'], position: 'MF' },
+      data: { positions: ['CM', 'CB'], preferredPositions: ['CM', 'CB'], secondaryPositions: [], position: 'MF' },
     })
   })
 
@@ -330,7 +330,7 @@ describe('updatePlayerLeague — positions write', () => {
     await updatePlayerLeague({ leagueId: 'league-A', positions: ['ALA'] })
     expect(plmUpdateManyMock).toHaveBeenCalledWith({
       where: { playerId: 'p-stefan-s', leagueId: 'league-A', toGameWeek: null },
-      data: { positions: ['ALA'], position: 'MF' },
+      data: { positions: ['ALA'], preferredPositions: ['ALA'], secondaryPositions: [], position: 'MF' },
     })
   })
 
@@ -338,7 +338,7 @@ describe('updatePlayerLeague — positions write', () => {
     await updatePlayerLeague({ leagueId: 'league-A', positions: [] })
     expect(plmUpdateManyMock).toHaveBeenCalledWith({
       where: { playerId: 'p-stefan-s', leagueId: 'league-A', toGameWeek: null },
-      data: { positions: [], position: null },
+      data: { positions: [], preferredPositions: [], secondaryPositions: [], position: null },
     })
   })
 
@@ -354,7 +354,7 @@ describe('updatePlayerLeague — positions write', () => {
     await updatePlayerLeague({ leagueId: 'league-A', positions: ['PIVOT'] })
     expect(plmUpdateManyMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: { positions: ['PIVOT'], position: 'FW' },
+        data: { positions: ['PIVOT'], preferredPositions: ['PIVOT'], secondaryPositions: [], position: 'FW' },
       }),
     )
   })
@@ -384,7 +384,7 @@ describe('updatePlayerLeague — idShared write', () => {
     })
     expect(plmUpdateManyMock).toHaveBeenCalledWith({
       where: { playerId: 'p-stefan-s', leagueId: 'league-A', toGameWeek: null },
-      data: { positions: ['ST'], position: 'FW', idShared: false },
+      data: { positions: ['ST'], preferredPositions: ['ST'], secondaryPositions: [], position: 'FW', idShared: false },
     })
   })
 

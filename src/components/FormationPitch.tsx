@@ -55,7 +55,12 @@ function playerPositions(p: Player): string[] {
 }
 
 function toAssignmentInput(p: Player): AssignmentInput {
-  return { id: p.id, positions: playerPositions(p) };
+  return {
+    id: p.id,
+    positions: playerPositions(p),
+    preferredPositions: p.preferredPositions,
+    secondaryPositions: p.secondaryPositions,
+  };
 }
 
 /** First code in the player's positions array — the user-pinned primary. */

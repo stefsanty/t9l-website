@@ -978,10 +978,13 @@ export async function adminUpdatePlayerPosition(input: {
   // Player. Update every PLM for this player in this league (typically
   // one — the active assignment; players rarely have multiple PLMs in
   // the same league at once).
+  // v1.86.0 — also dual-write preferredPositions; secondaryPositions stays [].
   await prisma.playerLeagueMembership.updateMany({
     where: { playerId, leagueId },
     data: {
       positions: validatedPositions,
+      preferredPositions: validatedPositions,
+      secondaryPositions: [],
       position: legacyPosition,
     },
   })
@@ -1424,7 +1427,10 @@ export async function adminCreatePlayer(input: {
           fromGameWeek,
           joinSource: 'ADMIN',
           // v1.82.0 — dual-write positions[] + legacy enum.
+          // v1.86.0 — also dual-write preferredPositions.
           positions: validatedPositions,
+          preferredPositions: validatedPositions,
+          secondaryPositions: [],
           position: legacyPosition,
         },
       })
