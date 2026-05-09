@@ -171,4 +171,15 @@ fail** as expected:
 '@next/bundle-analyzer'` (introduced by v1.80.6 perf phase 4 wiring on
 `main`; not new in this PR). No new tsc errors introduced.
 
-## M5 — TBD (after PR push)
+## M5 — PR pushed
+
+PR #238 pushed to `claude/optimistic-dijkstra-696c7f` →
+https://github.com/stefsanty/t9l-website/pull/238
+
+Branch base: `origin/main` @ 2e5cd23 (v1.83.0).
+Commit: 0f709da — "v1.83.1: preseason 'League starts in X days' countdown
+banner".
+Files changed: 6 (3 new, 3 modified). +499/-2.
+Test count: 2940 → 2957.
+Version: 1.83.0 → 1.83.1 (patch — new user-visible feature on a single
+narrow surface).
