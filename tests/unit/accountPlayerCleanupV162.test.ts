@@ -117,7 +117,7 @@ describe('v1.62.0 — /account/player page drops unused preferences fetches', ()
   })
 })
 
-describe('v1.62.0 — /account/player updatePlayerSelf invalidates Redis mapping', () => {
+describe('v1.62.0 — /account/player profile-update invalidates Redis mapping (renamed updatePlayerProfile in v1.83.0)', () => {
   const ACTIONS = 'src/app/account/player/actions.ts'
 
   it('imports deleteMapping from playerMappingStore', () => {
@@ -134,7 +134,7 @@ describe('v1.62.0 — /account/player updatePlayerSelf invalidates Redis mapping
     expect(src).toMatch(/if\s*\(\s*session\.lineId\s*\)/)
   })
 
-  it('UpdatePlayerSelfInput shape no longer carries preference fields', () => {
+  it('UpdatePlayerProfileInput shape no longer carries preference fields', () => {
     const src = stripComments(read(ACTIONS))
     expect(src).not.toMatch(/preferredLeagueTeamId\?:/)
     expect(src).not.toMatch(/preferredTeammateIds\?:/)
@@ -143,7 +143,7 @@ describe('v1.62.0 — /account/player updatePlayerSelf invalidates Redis mapping
 
   it('action body no longer writes onboardingPreferences', () => {
     const src = stripComments(read(ACTIONS))
-    // The Prisma update in updatePlayerSelf must not mention
+    // The Prisma update in updatePlayerProfile must not mention
     // onboardingPreferences. Block-comments are stripped above, so any
     // remaining mention would be a real code reference.
     expect(src).not.toMatch(/onboardingPreferences/)
@@ -254,9 +254,12 @@ describe('v1.62.0 — name-propagation fix on AccountPlayerForm', () => {
     expect(src).toMatch(/updateSession\??\.\(\)/)
   })
 
-  it('form awaits updatePlayerSelf BEFORE calling update() (order matters)', () => {
+  it('form awaits the profile update BEFORE calling update() (order matters)', () => {
+    // v1.83.0 — `updatePlayerSelf` was renamed to `updatePlayerProfile`
+    // in the per-league split. The order constraint is unchanged: JWT
+    // refresh has to happen AFTER the Prisma write.
     const src = stripComments(read(FORM))
-    const updateIdx = src.indexOf('await updatePlayerSelf')
+    const updateIdx = src.indexOf('await updatePlayerProfile')
     const sessionIdx = src.indexOf('updateSession?.()')
     expect(updateIdx).toBeGreaterThan(0)
     expect(sessionIdx).toBeGreaterThan(0)

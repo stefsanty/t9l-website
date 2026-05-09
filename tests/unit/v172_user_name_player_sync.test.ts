@@ -228,13 +228,15 @@ describe('v1.72.0 adminUpdatePlayerName', () => {
   })
 })
 
-// ── 8. updatePlayerSelf — propagates to User.name ────────────────────────────
+// ── 8. updatePlayerProfile — propagates to User.name ────────────────────────
+// v1.83.0 — renamed from `updatePlayerSelf` when the per-league split landed.
+// The User.name sync still happens inside the transaction.
 
-describe('v1.72.0 updatePlayerSelf', () => {
+describe('v1.83.0 updatePlayerProfile (was updatePlayerSelf in v1.72.0)', () => {
   const actions = readSrc('src', 'app', 'account', 'player', 'actions.ts')
   const block = actions.slice(
-    actions.indexOf('export async function updatePlayerSelf'),
-    actions.indexOf('export async function uploadPlayerProfilePicture'),
+    actions.indexOf('export async function updatePlayerProfile'),
+    actions.indexOf('export async function updatePlayerLeague'),
   )
 
   it('issues tx.user.updateMany to sync User.name = Player.name', () => {

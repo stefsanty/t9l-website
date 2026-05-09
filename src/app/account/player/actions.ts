@@ -13,68 +13,49 @@ import {
 } from '@/lib/positions'
 
 /**
- * v1.37.0 (PR ι) — user self-service "Change player details".
+ * v1.83.0 — actions split for the multi-league redesign.
  *
- * Three actions:
+ * Pre-v1.83.0 a single `updatePlayerSelf({ name, positions })` action
+ * wrote the same submitted positions[] to EVERY active PLM (legacy
+ * `updateMany({ playerId, toGameWeek: null })` then v1.82.0's per-row
+ * loop). That made it impossible for a player to play GK in League A
+ * and FW in League B.
  *
- *   1. updatePlayerSelf — name / position / preferences. Identical
- *      validation shape to /join/[code]/onboarding's submitOnboarding
- *      so the field semantics stay consistent across the two surfaces.
+ * v1.83.0 splits this into two actions, each scoped:
  *
- *   2. uploadPlayerProfilePicture — file upload to Vercel Blob.
- *      Replace-only: re-upload deletes the prior asset. Validates
- *      MIME (image/jpeg | image/png | image/webp) and size (≤5MB).
- *      Operator gate: requires `BLOB_READ_WRITE_TOKEN`. Without it,
- *      throws a friendly error so the form can surface "ask admin".
+ *   1. `updatePlayerProfile({ name })` — player-level. Writes
+ *      Player.name + User.name, busts the per-LINE Redis mapping
+ *      cache, revalidates. Same auth/owner shape as before.
  *
- *   3. removePlayerProfilePicture — clears the column + DELs the Blob.
- *      Best-effort Blob delete (logged on failure); the column always
- *      clears so the UI doesn't dangle a stale URL.
+ *   2. `updatePlayerLeague({ leagueId, positions, idShared })` —
+ *      per-league. Owner gate: the membership must be (a) owned by the
+ *      calling player and (b) `toGameWeek === null`. Validates
+ *      `positions` against THAT league's `ballType` (a soccer membership
+ *      can't accept FIXO; a futsal membership can't accept LB). Dual-
+ *      writes the legacy `position` scalar so admin reads + the
+ *      v1.66.0 fee resolver keep working.
  *
- * Auth gate: session must carry `userId` AND `playerId`. Admins
- * (admin-credentials sessions) have no playerId so they can't reach
- * this surface — they edit player rows via /admin/leagues/[id]/players.
+ * Picture upload/removal actions stay player-level (unchanged).
  *
- * Why playerId-gated (not just session-gated): authenticated lurkers
- * (Google/email signed in but no LeagueInvite redeemed) have no Player
- * row to edit. The page renders a friendly "redeem your invite first"
- * message instead of a form.
+ * Auth gate for both update actions:
+ *   - No session → throws.
+ *   - Admin-credentials session (no userId, no lineId) → throws.
+ *   - Player not resolvable from userId/lineId → throws.
+ * The owner gate for `updatePlayerLeague` adds: the leagueId must
+ * resolve to ≥1 active PLM owned by the caller. Otherwise it throws
+ * "No active membership in that league" (no silent no-op — fast fail
+ * helps catch UI/server drift).
  */
-
-// v1.59.2 — `PROFILE_PIC_MAX_BYTES` and `PROFILE_PIC_ALLOWED_TYPES` moved
-// to `./validation` because exporting non-async values from a `'use server'`
-// file turns them into server-action proxies on the client (the values
-// never reach the browser). See `validation.ts` for the full backstory.
-// Re-exporting here would re-introduce the bug — DON'T.
 
 interface AuthedSession {
   userId: string | null
   lineId: string | null
 }
 
-/**
- * v1.59.1 — gate loosened to accept either `userId` (canonical post-α.5)
- * OR `lineId` (legacy fallback for pre-v1.28.0 LINE sessions). Pre-v1.59.1
- * the gate threw "Admin sessions cannot edit" for any session without
- * `userId`, which incorrectly rejected grandfathered LINE users (and
- * LINE-auth admins like Stefan S whose role is orthogonal to player
- * binding). Admin role is NOT a gate here — it's about whether the
- * session can resolve to a linked Player row.
- *
- * Admin-credentials sessions (no userId, no lineId) still throw — they
- * have no auth-provider link to any Player and edit players via
- * /admin/leagues/[id]/players instead.
- *
- * The session.playerId presence check is dropped — the gate is now
- * "can we resolve a linked Player from `userId` or `lineId`," and that
- * resolution happens in `resolveOwnedPlayerId` below. session.playerId
- * can be stale post-admin-remap; userId/lineId stay canonical.
- */
 async function requireSelfPlayerSession(): Promise<AuthedSession> {
   const session = await getServerSession(authOptions)
   if (!session) throw new Error('Sign in required')
   const userId = (session as { userId?: string | null }).userId ?? null
-  // session.lineId is typed `string` (empty for admin-credentials).
   const lineId = session.lineId || null
   if (!userId && !lineId) {
     throw new Error('Admin sessions cannot edit player details')
@@ -82,19 +63,6 @@ async function requireSelfPlayerSession(): Promise<AuthedSession> {
   return { userId, lineId }
 }
 
-/**
- * Resolve the calling user's Player row id by trying `userId` first
- * (canonical post-α.5 / v1.27.0 binding from PR β/v1.29.0 dual-write),
- * falling back to `lineId` (legacy pre-v1.28.0 binding). Both
- * identifiers are minted by the auth server, so either is a safe
- * lookup key.
- *
- * Looking up by session.playerId (slug) alone is unsafe — admin remap
- * can leave the slug stale relative to the canonical lineId/userId
- * binding. The userId/lineId pair always reflects the current binding.
- *
- * Returns the DB-prefixed Player.id on success; throws on mismatch.
- */
 async function resolveOwnedPlayerId(session: AuthedSession): Promise<string> {
   let player: { id: string } | null = null
   if (session.userId) {
@@ -115,18 +83,19 @@ async function resolveOwnedPlayerId(session: AuthedSession): Promise<string> {
   return player.id
 }
 
-export interface UpdatePlayerSelfInput {
+export interface UpdatePlayerProfileInput {
   name: string
-  /**
-   * v1.82.0 — multi-position. Codes are validated PER-LEAGUE against
-   * each active membership's `league.ballType` so a soccer-league
-   * membership can't be saved with a futsal-only code (or vice versa).
-   * Empty array clears the player's positions in every active league.
-   */
-  positions?: ReadonlyArray<string>
 }
 
-export async function updatePlayerSelf(input: UpdatePlayerSelfInput): Promise<void> {
+/**
+ * v1.83.0 — replaces the player-level half of the old `updatePlayerSelf`.
+ * Writes Player.name + User.name, busts the per-LINE Redis mapping
+ * cache so the next JWT callback re-reads the fresh `playerName`,
+ * revalidates the page.
+ */
+export async function updatePlayerProfile(
+  input: UpdatePlayerProfileInput,
+): Promise<void> {
   const session = await requireSelfPlayerSession()
   const playerId = await resolveOwnedPlayerId(session)
 
@@ -134,81 +103,18 @@ export async function updatePlayerSelf(input: UpdatePlayerSelfInput): Promise<vo
   if (!trimmedName) throw new Error('Name is required')
   if (trimmedName.length > 100) throw new Error('Name must be 100 characters or fewer')
 
-  // v1.82.0 — pull active memberships UP-FRONT so we can validate the
-  // submitted positions against EACH league's vocabulary. A user in
-  // both a SOCCER and a FUTSAL league sees one chip set in the form
-  // (driven by the active league's ballType) — but if they ever
-  // straddle formats, this loop catches the mismatch and surfaces a
-  // friendly error rather than corrupting one of the rows.
-  const rawPositions = input.positions ?? []
-  const activeMemberships = await prisma.playerLeagueMembership.findMany({
-    where: { playerId, toGameWeek: null },
-    select: {
-      id: true,
-      leagueTeam: { select: { league: { select: { ballType: true } } } },
-      league: { select: { ballType: true } },
-    },
-  })
-  // Build per-membership write payloads so we can validate against
-  // each membership's format BEFORE entering the transaction.
-  type WritePayload = {
-    id: string
-    positions: string[]
-    legacyPosition: 'GK' | 'DF' | 'MF' | 'FW' | null
-  }
-  const writes: WritePayload[] = []
-  for (const m of activeMemberships) {
-    const ballType: BallType | null =
-      (m.leagueTeam?.league.ballType as BallType | undefined) ??
-      (m.league?.ballType as BallType | undefined) ??
-      null
-    const validated = normalizePositions(rawPositions, ballType)
-    writes.push({
-      id: m.id,
-      positions: validated,
-      legacyPosition: legacyPositionFromArray(validated),
-    })
-  }
-
-  // v1.62.0 — `Player.onboardingPreferences` is no longer written here.
-  // The column stays in the schema for compatibility (existing JSON data
-  // is preserved). The form no longer captures preference fields.
-  // v1.65.4 — position lives on PlayerLeagueMembership, not Player.
-  // v1.82.0 — dual-write `positions[]` (canonical) + `position` (legacy
-  // backward-compat scalar). Per-membership writes so the legacy column
-  // gets a sensible value bucketed from each row's vocabulary.
   await prisma.$transaction(async (tx) => {
     await tx.player.update({
       where: { id: playerId },
-      data: {
-        name: trimmedName,
-      },
+      data: { name: trimmedName },
     })
     // v1.72.0 — sync User.name = Player.name for the linked User.
     await tx.user.updateMany({
       where: { playerId },
       data: { name: trimmedName },
     })
-    for (const w of writes) {
-      await tx.playerLeagueMembership.update({
-        where: { id: w.id },
-        data: {
-          positions: w.positions,
-          position: w.legacyPosition,
-        },
-      })
-    }
   })
 
-  // v1.62.0 — invalidate the per-league Redis mapping store (v1.5.0
-  // canonical store) for this LINE id so the next JWT callback re-reads
-  // the fresh `playerName` from Prisma. Without this, the account-menu
-  // dropdown keeps showing the old name until the 24h sliding TTL
-  // expires. `deleteMapping(lineId)` (no leagueId arg) SCANs the
-  // namespace and DELs every per-league entry — the right shape because
-  // we don't know which league(s) the user is currently routed to.
-  // Best-effort; failure here is silent (the next JWT callback will
-  // still get the stale value but eventually self-heals).
   if (session.lineId) {
     await deleteMapping(session.lineId).catch((err) => {
       console.warn(
@@ -222,17 +128,86 @@ export async function updatePlayerSelf(input: UpdatePlayerSelfInput): Promise<vo
   revalidate({ domain: 'public', paths: ['/account/player'] })
 }
 
+export interface UpdatePlayerLeagueInput {
+  leagueId: string
+  positions?: ReadonlyArray<string>
+  idShared?: boolean
+}
+
 /**
- * Validate and upload a profile picture File. Pure-ish: pulls
- * `@vercel/blob` lazily so unit tests don't need to mock the import
- * graph (and so the import only happens on the server-action path,
- * never at page render).
+ * v1.83.0 — per-league membership update. The owner gate scopes the
+ * write to active PLMs owned by the calling player in this league.
  *
- * Returns nothing on success — the caller redirects/refreshes via the
- * revalidatePath tag. Throws on validation failure with a user-facing
- * message; the FormData parse errors throw with technical messages
- * (caught and re-cast by the form component).
+ * Fields:
+ *   - `positions` (optional) — validated against the league's ballType.
+ *     Empty array clears positions. Omit to leave unchanged.
+ *   - `idShared` (optional) — per-league consent for the player's
+ *     uploaded ID being viewable by THIS league's admins. Omit to
+ *     leave unchanged.
+ *
+ * If both are omitted the action is a no-op revalidate (no DB write).
+ * The dual-write of legacy `position` happens only when `positions`
+ * is specified; we don't want to clobber the legacy column when only
+ * `idShared` is being toggled.
  */
+export async function updatePlayerLeague(
+  input: UpdatePlayerLeagueInput,
+): Promise<void> {
+  const session = await requireSelfPlayerSession()
+  const playerId = await resolveOwnedPlayerId(session)
+
+  if (!input.leagueId) throw new Error('leagueId is required')
+
+  // Owner gate: scope the lookup to active PLMs owned by THIS player
+  // in THIS league. Use findFirst to surface a clear error when the
+  // player has no active membership in the requested league (vs. a
+  // silent no-op via updateMany that masks UI/server drift).
+  const target = await prisma.playerLeagueMembership.findFirst({
+    where: { playerId, leagueId: input.leagueId, toGameWeek: null },
+    select: {
+      id: true,
+      league: { select: { ballType: true } },
+      leagueTeam: { select: { league: { select: { ballType: true } } } },
+    },
+  })
+  if (!target) {
+    throw new Error('No active membership in that league')
+  }
+
+  const ballType: BallType =
+    (target.league?.ballType as BallType | undefined) ??
+    (target.leagueTeam?.league.ballType as BallType | undefined) ??
+    'SOCCER'
+
+  const data: {
+    positions?: string[]
+    position?: 'GK' | 'DF' | 'MF' | 'FW' | null
+    idShared?: boolean
+  } = {}
+  if (input.positions !== undefined) {
+    const validated = normalizePositions(input.positions, ballType)
+    data.positions = validated
+    data.position = legacyPositionFromArray(validated)
+  }
+  if (input.idShared !== undefined) {
+    data.idShared = input.idShared
+  }
+
+  if (Object.keys(data).length > 0) {
+    // Scope the write the same way as the lookup so concurrent admin
+    // writes can't sneak through (e.g. an admin marks the membership
+    // INACTIVE between the lookup and the write — updateMany scoped to
+    // toGameWeek === null still no-ops if the row no longer matches,
+    // which is the right shape).
+    await prisma.playerLeagueMembership.updateMany({
+      where: { playerId, leagueId: input.leagueId, toGameWeek: null },
+      data,
+    })
+  }
+
+  revalidate({ domain: 'public', paths: ['/account/player'] })
+}
+
 export async function uploadPlayerProfilePicture(formData: FormData): Promise<void> {
   const session = await requireSelfPlayerSession()
   const playerId = await resolveOwnedPlayerId(session)
@@ -253,10 +228,6 @@ export async function uploadPlayerProfilePicture(formData: FormData): Promise<vo
 
   const { put, del } = await import('@vercel/blob')
 
-  // Read the prior URL so we can DEL it after the new write lands. We
-  // do the put first so a Blob outage doesn't leave the user with no
-  // picture; the prior asset only gets deleted on a successful new
-  // upload.
   const prior = await prisma.player.findUnique({
     where: { id: playerId },
     select: { profilePictureUrl: true },
@@ -275,8 +246,6 @@ export async function uploadPlayerProfilePicture(formData: FormData): Promise<vo
     data: { profilePictureUrl: result.url },
   })
 
-  // Best-effort delete of the prior asset. A failure here just leaves
-  // an orphan in Blob — no user-visible impact.
   if (prior?.profilePictureUrl && prior.profilePictureUrl !== result.url) {
     try {
       await del(prior.profilePictureUrl)

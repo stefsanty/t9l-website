@@ -1,0 +1,189 @@
+# /account/player redesign — phase log
+
+## M1 — Audit complete + handover doc written
+
+**Status:** done. Read-only — no code changes.
+
+**Worktree state at M1:**
+- Parent `main` already at `origin/main` (no-op pull).
+- Worktree branch `claude/optimistic-panini-0b1c1d` already up to date
+  with `origin/main` (no-op rebase).
+- No open PR yet for this branch.
+
+**Files surveyed:**
+- `src/app/account/player/page.tsx` (217 lines) — server component / gate.
+- `src/app/account/player/AccountPlayerForm.tsx` (363 lines) — client UI.
+- `src/app/account/player/actions.ts` (282 lines) — three server actions.
+- `src/app/account/player/validation.ts` (36 lines) — file-upload constants (kept neutral per v1.59.2 standing rule).
+- `prisma/schema.prisma` — Player, PlayerLeagueMembership, League, LeagueTeam, LeaguePositionFee.
+- `src/components/admin/PlayersTab.tsx` — admin EditPlayerPanel (layout reference for per-card UX).
+- `src/app/join/[code]/onboarding/page.tsx` — join-flow analog.
+
+**Handover doc:** `handover-edit-details-audit.md`. 6 sections, 8 open
+questions surfaced for user review. Recommended scope guard: ship the
+core per-league card structure + position multi-select (G1–G5, G6 if
+the PR doesn't blow past ~400 LOC) in one PR; defer DOB / jersey
+editability / skill-level to follow-ups.
+
+**Load-bearing finding:**
+`updatePlayerSelf` writes one position to **every active PLM** for the
+player via `prisma.playerLeagueMembership.updateMany({ playerId,
+toGameWeek: null })` (`actions.ts:143-146`). A user playing GK in
+League A and FW in League B cannot represent that today — the form
+silently overwrites both legs every time they save.
+
+**Surfaced for user:**
+- "Skill level" hint is a misread — no `skillLevel` field exists in
+  schema or src. Treating as out-of-scope unless told otherwise.
+- 8 design questions in §4 of the handover doc — decisions can be made
+  during M2 ack or after item 1 merges.
+
+**Next step:** M2 — wait for the multi-position-model PR (item 1) to
+merge, then rebase this branch on `origin/main`, re-verify the
+position shape on PLM, and lock the M3 plan against post-merge state.
+**Execution does NOT start until item 1 merges.**
+
+---
+
+## M2 — Item 1 PR confirmed merged + execution plan finalized
+
+**Status:** done.
+
+- PR #235 (v1.82.0 multi-position) merged at 2026-05-08T23:12:41Z (head
+  `claude/fervent-wilson-ddc8c5`).
+- Parent fast-forwarded clean (`Updating cb3b5d5..fb60e42`).
+- Worktree rebased clean on `origin/main` (no conflicts).
+- Worktree base: `fb60e42` (post-v1.82.0).
+
+**v1.82.0 surface delivered AT /account/player:**
+- `PositionMultiSelect` chip-toggle component wired into the form.
+- `updatePlayerSelf` accepts `positions: ReadonlyArray<string>`, validates
+  per-league via `normalizePositions(raw, ballType)`, dual-writes
+  `positions[]` + legacy `position` scalar.
+- Page picks ONE active membership (default-league-first), passes a
+  single `ballType` to the form.
+
+**v1.82.0 did NOT fix:**
+- W1 — single-league read on the page (only default league surfaces).
+- W2 — `updatePlayerSelf` still writes one positions[] to ALL active
+  memberships in the same transaction → multi-league players can't
+  have different positions per league.
+- W3 — no UI surface for paidStatus, applicationStatus, idShared,
+  feeOverride, comments, jerseyNumber.
+- W4 — single ballType from one league → user in soccer + futsal sees
+  only one chip vocabulary.
+- W5 — "set by admin" panel scalar.
+
+**Field-location confirmation (user request):**
+All five fields the user listed are **per-membership** on
+`PlayerLeagueMembership`:
+- `applicationStatus`, `idShared`, `paidStatus`, `feeOverride`, `comments`.
+None are on `User`. → All five live on per-league cards in the new layout.
+
+**Execution plan locked:**
+- v1.83.0 (minor — new user-visible feature).
+- M3: page + form scaffolding + new server actions.
+- M4: read-only displays + tests.
+- Phase A always; Phase B (idShared / feeOverride / comments / jersey)
+  decided at end of M4 by diff size.
+
+---
+
+## M3 — Top section + per-league card structure built
+
+**Status:** done.
+
+**Files written:**
+- `src/app/account/player/page.tsx` — drops the `getDefaultLeagueId`
+  scalar resolution; reads ALL active memberships (`toGameWeek ===
+  null`) with `League.positionFees` eager-loaded for the per-card fee
+  resolver. Builds `LeagueCardData[]` server-side, sorted (default-
+  league first → APPROVED alphabetical → PENDING last). Empty
+  `leagues` array reaches a new `<NoLeaguesNotice>` branch.
+- `src/app/account/player/AccountPlayerForm.tsx` — split into
+  `<ProfileSection>` (name + picture + ID-upload state, saves via
+  `updatePlayerProfile`) and one `<LeagueCard>` per active membership
+  (per-league save via `updatePlayerLeague`, scoped). Each card
+  carries its own `useState` + Save button. Position chips use the
+  card's own `ballType`. Renders application-pending badge,
+  membership-status badge (when not ACTIVE), team display, jersey
+  number (read-only), fee + paid badge (via `formatJpyFee`), idShared
+  toggle, applicant comments quoted back read-only.
+- `src/app/account/player/actions.ts` — split monolithic
+  `updatePlayerSelf` into `updatePlayerProfile({ name })` (player-
+  level, no PLM writes) and `updatePlayerLeague({ leagueId,
+  positions?, idShared? })` (per-league). Owner gate scopes lookup
+  via `findFirst({ playerId, leagueId, toGameWeek: null })` and write
+  via `updateMany` scoped the same way. Validates positions per the
+  membership's `ballType`. Dual-writes legacy `position` scalar only
+  when `positions` is supplied. No-op (no positions, no idShared)
+  skips the write entirely but still revalidates.
+
+**Phase decision:** Phase A + Phase B fit one PR. Final form ships
+with positions multi-select + idShared toggle as the editables, plus
+team / app-status / membership-status / fee + paid / jersey / comments
+as read-only displays.
+
+---
+
+## M4 — Tests reshaped + multi-league regression added + stash-pop verified
+
+**Status:** done.
+
+**Tests touched:**
+- `tests/unit/accountPlayerActions.test.ts` — rewritten for the new
+  split. 42 tests covering: auth gates (`updatePlayerProfile` and
+  `updatePlayerLeague` separately), v1.83.0 regression-target "no PLM
+  touch from profile action," cross-league owner-gate guard, per-
+  league ballType validation (SOCCER + FUTSAL), legacy enum dual-
+  write, idShared isolated update, combined positions+idShared write,
+  no-op skip, picture upload/remove (unchanged contract).
+- `tests/unit/v172_user_name_player_sync.test.ts` — describe block #8
+  renamed/retargeted from `updatePlayerSelf` to `updatePlayerProfile`.
+- `tests/unit/accountPlayerCleanupV162.test.ts` — describe block 3
+  renamed/retargeted; "form awaits BEFORE update()" now matches
+  `await updatePlayerProfile`.
+
+**New file:** `tests/unit/v183_multi_league_account_player.test.ts` —
+24 structural assertions on page.tsx / AccountPlayerForm.tsx /
+actions.ts source content.
+
+**Stash-pop sanity:** reverted source files to v1.82.0 state with
+`git checkout HEAD -- src/app/account/player/...` then ran the new
+test file. Result: **21/24 fail** on the broken state, 3 pass (those
+overlap content that already existed in v1.82.0 — e.g. `paidStatus`
+literal that was already in the schema even though no UI rendered it).
+Restored v1.83.0 source files; 24/24 pass.
+
+**Full suite:** 2904 / 2906 tests pass (2 skipped — pre-existing
+LINE-OAuth integration tests). tsc clean (only the pre-existing
+bundle-analyzer dev-dep warning remains).
+
+---
+
+## M5 — Version bump + commit + push + PR
+
+**Status:** in progress.
+
+- `src/lib/version.ts` → `1.83.0`.
+- `tests/unit/version.test.ts` → expect `'1.83.0'`.
+- CLAUDE.md current-release line bumped to v1.83.0; new ledger entry
+  prepended above v1.82.0.
+
+---
+
+## M3 — Top section + per-league card structure built
+
+(pending — blocked on M2)
+
+---
+
+## M4 — Position multi-select integrated + tests passing
+
+(pending — blocked on M3)
+
+---
+
+## M5 — PR pushed
+
+(pending — blocked on M4)

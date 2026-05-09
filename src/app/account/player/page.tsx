@@ -4,29 +4,32 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { getDefaultLeagueId } from '@/lib/leagueSlugServer'
-import AccountPlayerForm, { type AccountPlayerFormProps } from './AccountPlayerForm'
+import { resolvePlayerFee } from '@/lib/playerFee'
+import { readPositions, type BallType } from '@/lib/positions'
+import AccountPlayerForm, {
+  type AccountPlayerFormProps,
+  type LeagueCardData,
+} from './AccountPlayerForm'
 
 /**
- * v1.37.0 (PR ι) — user self-service "Change player details".
+ * v1.83.0 — multi-league redesign of "My player details".
  *
- * v1.59.1 — fixed gate that blocked legitimate LINE-auth users with a
- * linked Player but no `session.userId` (pre-v1.28.0 sessions, or any
- * case where `User.lineId` linkage drifted). Pre-v1.59.1 the page
- * rejected any session without `userId` as an "admin session" — but
- * `userId` is only set on JWTs created post-v1.28.0 by the PrismaAdapter.
- * A LINE user signed in before v1.28.0 deployed retains a `lineId`-only
- * JWT and was incorrectly bucketed with admin-credentials. This also
- * blocked LINE-auth admins (e.g. Stefan S, whose LINE ID is in
- * `ADMIN_LINE_IDS`) from editing their own player details — admin role
- * is orthogonal to "have a linked Player".
+ * Pre-v1.83.0 the page resolved `getDefaultLeagueId()` and surfaced
+ * exactly ONE PlayerLeagueMembership (the default league's, falling
+ * back to the most-recent assignment). A user rostered in two leagues
+ * saw only one — and the old `updatePlayerSelf` overwrote every active
+ * PLM with the same submitted positions[] (`actions.ts:144-201`
+ * pre-rebase), so a player who plays GK in League A and FW in League B
+ * literally couldn't represent that.
  *
- * New auth model: resolve the linked Player via `userId` first
- * (canonical post-α.5 / v1.27.0 binding) with `lineId` fallback (legacy
- * for grandfathered LINE sessions). The Player lookup is the gate; if
- * no Player resolves, render the appropriate empty state based on
- * what the session offers.
+ * v1.83.0 — read every active membership and pass per-league data to
+ * the form. Cards are split server-side into one `LeagueCardData` per
+ * active PLM. The form renders one card per league, each with its own
+ * `PositionMultiSelect` (driven by THAT league's ballType) and its own
+ * Save button → scoped `updatePlayerLeague` server action that writes
+ * exactly one PLM. No more cross-league bleed.
  *
- * Branches (in order):
+ * Auth gate (unchanged from v1.59.1):
  *   - No session → redirect to /auth/signin.
  *   - No userId AND no lineId (admin-credentials only) → friendly
  *     "this surface is for player accounts" message.
@@ -34,8 +37,16 @@ import AccountPlayerForm, { type AccountPlayerFormProps } from './AccountPlayerF
  *   - Otherwise (Google/email lurker, or LINE user with no link) →
  *     friendly "redeem your invite first" message.
  *
- * `force-dynamic` because the page reads the request session and Host
- * header (for league context). Revalidate on every navigation.
+ * Empty-active-memberships (new branch, reachable only post-v1.83.0
+ * because the old single-league shape short-circuited via
+ * activeAssignment fallback to realAssignments[0]):
+ *   - Player resolves but has zero `toGameWeek === null` rows → render
+ *     just the profile section (name + picture + ID-upload state) and
+ *     a friendly "you're not currently rostered in any league" note.
+ *
+ * `force-dynamic` because the page reads the request session and
+ * (post-v1.83.0) all of the player's memberships, which change as
+ * admins approve applications. Revalidate on every navigation.
  */
 export const dynamic = 'force-dynamic'
 
@@ -49,12 +60,8 @@ export default async function AccountPlayerPage() {
   }
 
   const userId = (session as { userId?: string | null }).userId ?? null
-  // session.lineId is typed `string` (empty when admin-credentials);
-  // coerce empty → null so the OR-fallback chain treats it as absent.
   const lineId = session.lineId || null
 
-  // Admin-credentials sessions have neither — they can't have a player
-  // bound. Show the friendly admin shell pointer.
   if (!userId && !lineId) {
     return (
       <Shell>
@@ -75,16 +82,19 @@ export default async function AccountPlayerPage() {
     )
   }
 
-  // Try userId first (canonical post-α.5 / v1.27.0 binding), then
-  // fallback to lineId (legacy for pre-v1.28.0 LINE sessions). Both
-  // identifiers are minted by the auth server; either is a safe lookup
-  // key. Looking up by session.playerId (slug) alone is unsafe — admin
-  // remap can leave the slug stale relative to the canonical binding.
-  // v1.62.0 — drop the now-unused `Player.onboardingPreferences` JSON
-  // read from the include (the form no longer surfaces preferences).
+  // v1.83.0 — include EVERY active membership's needed fields. Eager-
+  // load `league.positionFees` so the per-card fee resolver runs from
+  // the same data without an extra round-trip.
   const playerInclude = {
     leagueAssignments: {
-      include: { leagueTeam: { include: { team: true, league: true } } },
+      include: {
+        leagueTeam: { include: { team: true, league: true } },
+        league: {
+          include: {
+            positionFees: { select: { position: true, fee: true } },
+          },
+        },
+      },
       orderBy: { fromGameWeek: 'desc' as const },
     },
   }
@@ -95,9 +105,6 @@ export default async function AccountPlayerPage() {
     player = await prisma.player.findUnique({ where: { lineId }, include: playerInclude })
   }
 
-  // v1.70.0 — ID upload state lives on User. Fetch via the resolved
-  // userId (or via the linked Player.userId fallback for legacy
-  // lineId-only sessions).
   const idUserId = userId ?? player?.userId ?? null
   const idUser = idUserId
     ? await prisma.user.findUnique({
@@ -107,9 +114,6 @@ export default async function AccountPlayerPage() {
     : null
 
   if (!player) {
-    // Authenticated but no Player linked. Two sub-cases share this
-    // copy — Google/email lurker who hasn't redeemed an invite, or
-    // LINE user with a session but no Player.lineId/userId match.
     return (
       <Shell>
         <div className="bg-card border border-border-default rounded-2xl p-6 text-fg-mid">
@@ -136,64 +140,84 @@ export default async function AccountPlayerPage() {
     )
   }
 
-  // v1.53.0 — subdomain teardown. /account/player always operates on
-  // the default league. A future PR can scope this to a per-league URL
-  // if account editing per-league becomes a requirement.
-  const leagueId = await getDefaultLeagueId()
-
-  // Pick the assignment that matches the default league — falls back
-  // to the most recent assignment if there's no match (e.g. user is
-  // rostered only in a non-default league via /league/<slug>).
-  // v1.65.0 — only consider memberships with a real leagueTeam (PENDING
-  // applicants without a team aren't shown a "your team is X" surface).
-  const realAssignments = player.leagueAssignments.filter((a) => a.leagueTeam !== null)
-  const activeAssignment =
-    (leagueId
-      ? realAssignments.find((a) => a.leagueTeam!.leagueId === leagueId && a.toGameWeek === null)
-      : null) ??
-    realAssignments.find((a) => a.toGameWeek === null) ??
-    realAssignments[0] ??
-    null
-
-  // v1.62.0 — `sessionPictureUrl` is the OAuth-provided picture (LINE
-  // CDN for LINE users via `session.linePictureUrl`; Google profile
-  // image is exposed at `session.user?.image` for non-LINE users). It
-  // surfaces as the avatar/upload-preview default when the user has
-  // neither uploaded a custom picture nor linked via the legacy
-  // `/assign-player` mirror flow.
   const sessionPictureUrl =
     session.linePictureUrl ||
     (session.user as { image?: string | null } | undefined)?.image ||
     null
 
-  // v1.82.0 — multi-position. Prefer the new positions[] array; fall
-  // through to the legacy single column for memberships that haven't
-  // been re-saved since the migration.
-  const sourceAssignment = activeAssignment ?? realAssignments[0] ?? null
-  const initialPositions: string[] = (() => {
-    if (!sourceAssignment) return []
-    if (sourceAssignment.positions && sourceAssignment.positions.length > 0) {
-      return [...sourceAssignment.positions]
-    }
-    return sourceAssignment.position ? [sourceAssignment.position] : []
-  })()
-  // v1.82.0 — ballType drives the chip vocabulary. Read from the
-  // active assignment's league; fall back to SOCCER for users with no
-  // active membership.
-  const ballType = sourceAssignment?.leagueTeam?.league.ballType ?? null
+  const defaultLeagueId = await getDefaultLeagueId()
+
+  // v1.83.0 — build one LeagueCardData per ACTIVE membership
+  // (toGameWeek === null). PENDING applications surface as cards too —
+  // they have no leagueTeam but still carry leagueId + applicationStatus.
+  // Cards sort: default league first, then APPROVED alphabetical, then
+  // PENDING (alphabetical) last.
+  const activeMemberships = player.leagueAssignments.filter(
+    (m) => m.toGameWeek === null,
+  )
+  const leagueCards: LeagueCardData[] = activeMemberships
+    .map((m): LeagueCardData | null => {
+      // The membership has `leagueId` directly (v1.65.0); fall back to
+      // the join through leagueTeam for older rows that haven't backfilled.
+      const league =
+        (m.league as typeof m.league | null) ??
+        m.leagueTeam?.league ??
+        null
+      if (!league) return null
+      const ballType = (league.ballType as BallType | undefined) ?? 'SOCCER'
+      const teamName = m.leagueTeam?.team.name ?? null
+      const positions = readPositions({
+        positions: m.positions ?? null,
+        position: m.position ?? null,
+      })
+      const positionFees =
+        ('positionFees' in league && Array.isArray(league.positionFees)
+          ? league.positionFees
+          : []) as ReadonlyArray<{ position: string; fee: number }>
+      const resolvedFeeJpy = resolvePlayerFee(
+        { position: m.position ?? null, feeOverride: m.feeOverride ?? null },
+        { defaultFee: league.defaultFee ?? 0, positionFees },
+      )
+      return {
+        leagueId: league.id,
+        leagueName: league.name,
+        leagueAbbreviation: league.abbreviation ?? null,
+        ballType,
+        applicationStatus: m.applicationStatus,
+        membershipStatus: m.status,
+        teamName,
+        positions,
+        jerseyNumber: m.jerseyNumber ?? null,
+        resolvedFeeJpy,
+        hasFeeOverride: m.feeOverride !== null,
+        paidStatus: m.paidStatus,
+        idShared: m.idShared,
+        comments: m.comments ?? null,
+        isDefaultLeague: defaultLeagueId !== null && league.id === defaultLeagueId,
+      }
+    })
+    .filter((c): c is LeagueCardData => c !== null)
+    .sort((a, b) => {
+      // Default league always first.
+      if (a.isDefaultLeague && !b.isDefaultLeague) return -1
+      if (!a.isDefaultLeague && b.isDefaultLeague) return 1
+      // APPROVED before PENDING.
+      if (a.applicationStatus !== b.applicationStatus) {
+        return a.applicationStatus === 'APPROVED' ? -1 : 1
+      }
+      // Alphabetical within the same status.
+      return a.leagueName.localeCompare(b.leagueName)
+    })
 
   const formProps: AccountPlayerFormProps = {
     initialName: player.name ?? '',
-    initialPositions,
-    ballType,
     profilePictureUrl: player.profilePictureUrl ?? null,
     pictureUrl: player.pictureUrl ?? null,
     sessionPictureUrl,
     blobConfigured: !!process.env.BLOB_READ_WRITE_TOKEN,
-    currentTeamName: activeAssignment?.leagueTeam?.team.name ?? null,
-    currentLeagueName: activeAssignment?.leagueTeam?.league.name ?? null,
     hasUploadedId: !!idUser?.idUploadedAt,
     adminContactEmail: ADMIN_CONTACT_EMAIL,
+    leagues: leagueCards,
   }
 
   return (
@@ -217,11 +241,10 @@ function Shell({ children }: { children: React.ReactNode }) {
           My player details
         </h1>
         <p className="text-sm text-fg-mid mb-8">
-          Update your name, picture, position, and preferences.
+          Update your name, picture, and per-league settings.
         </p>
         {children}
       </div>
     </div>
   )
 }
-

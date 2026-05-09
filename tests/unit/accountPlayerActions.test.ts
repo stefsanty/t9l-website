@@ -1,37 +1,38 @@
 /**
- * v1.37.0 (PR ι) — server actions for /account/player.
+ * v1.83.0 — server actions for /account/player after the multi-league
+ * redesign. The old monolithic `updatePlayerSelf({ name, positions })`
+ * is split into:
  *
- * Three actions:
- *   1. updatePlayerSelf — name + position
- *   2. uploadPlayerProfilePicture — file → Blob → Player.profilePictureUrl
- *   3. removePlayerProfilePicture — clear column + DEL Blob
+ *   1. `updatePlayerProfile({ name })` — player-level, writes Player.name
+ *      + User.name, busts the per-LINE Redis mapping cache.
+ *   2. `updatePlayerLeague({ leagueId, positions?, idShared? })` —
+ *      per-league, scoped to one PLM owned by the caller. Validates
+ *      positions against THAT league's ballType. Dual-writes the legacy
+ *      `position` scalar only when `positions` is provided.
  *
  * Pin:
  *   - Auth gate: no session → throws; admin-credentials session (no
  *     userId AND no lineId) → throws. v1.59.1: LINE-only sessions
- *     (lineId present, userId absent — pre-v1.28.0 grandfathered
- *     sessions OR LINE-auth admins) are NOT rejected.
- *   - Owner gate (v1.59.1): resolves Player by `userId @unique` first,
- *     falling back to `lineId @unique`. Throws if neither resolves.
+ *     (lineId present, userId absent) are NOT rejected.
+ *   - Owner gate: resolves Player by `userId @unique` first, falling
+ *     back to `lineId @unique`. Throws if neither resolves.
+ *   - `updatePlayerLeague` cross-league guard: throws when the
+ *     submitted leagueId doesn't resolve to an active PLM owned by the
+ *     caller — the player can't write to a league they're not in.
  *   - File validation: MIME (jpeg/png/webp), size (≤5MB).
  *   - Blob token gate: upload throws when BLOB_READ_WRITE_TOKEN missing.
  *   - Replace-only: prior URL is DEL'd after successful new put.
- *   - Validation: name required, ≤100 chars; position enum or null.
  *
- * v1.62.0 — preferred-team / preferred-teammate fields are removed. The
- * input shape no longer carries `preferredLeagueTeamId` etc., and the
- * server action no longer writes `Player.onboardingPreferences`. The
- * action also calls `deleteMapping(lineId)` to bust the v1.5.0 Redis
- * mapping store so the next JWT callback re-reads the fresh playerName.
+ * v1.83.0 regression-target tests are tagged in the test names so
+ * stash-pop sanity-checks can verify they fail on the broken state.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
 const {
   playerFindUniqueMock,
   playerUpdateMock,
+  plmFindFirstMock,
   plmUpdateManyMock,
-  plmFindManyMock,
-  plmUpdateMock,
   userUpdateManyMock,
   transactionMock,
   revalidateMock,
@@ -42,28 +43,24 @@ const {
 } = vi.hoisted(() => {
   const playerFindUniqueMock = vi.fn()
   const playerUpdateMock = vi.fn().mockResolvedValue({})
+  // v1.83.0 — `updatePlayerLeague` looks up the target PLM via
+  // findFirst (owner gate scoped to playerId + leagueId + toGameWeek
+  // === null) before writing.
+  const plmFindFirstMock = vi.fn().mockResolvedValue({
+    id: 'plm-1',
+    league: { ballType: 'SOCCER' },
+    leagueTeam: null,
+  })
+  // v1.83.0 — write happens via updateMany scoped to
+  // (playerId, leagueId, toGameWeek === null).
   const plmUpdateManyMock = vi.fn().mockResolvedValue({ count: 1 })
-  // v1.82.0 — updatePlayerSelf now (a) reads active memberships
-  // outside the transaction via plm.findMany (to validate positions
-  // per-league) and (b) writes per-membership via plm.update.
-  const plmFindManyMock = vi.fn().mockResolvedValue([
-    { id: 'plm-1', leagueTeam: { league: { ballType: 'SOCCER' } }, league: null },
-  ])
-  const plmUpdateMock = vi.fn().mockResolvedValue({})
   const userUpdateManyMock = vi.fn().mockResolvedValue({ count: 0 })
-  // v1.65.4 — updatePlayerSelf now uses prisma.$transaction with an inner
-  // callback that calls tx.player.update + tx.playerLeagueMembership.update.
-  // v1.72.0 — also calls tx.user.updateMany to sync User.name = Player.name.
-  // The transaction mock invokes the callback with a tx delegating to the
-  // per-method mocks so existing assertions on playerUpdateMock still fire.
+  // updatePlayerProfile uses prisma.$transaction with an inner callback
+  // calling tx.player.update + tx.user.updateMany.
   const transactionMock = vi.fn().mockImplementation(async (arg) => {
     if (typeof arg === 'function') {
       const tx = {
         player: { update: playerUpdateMock, findUnique: playerFindUniqueMock },
-        playerLeagueMembership: {
-          updateMany: plmUpdateManyMock,
-          update: plmUpdateMock,
-        },
         user: { updateMany: userUpdateManyMock },
       }
       return arg(tx)
@@ -73,9 +70,8 @@ const {
   return {
     playerFindUniqueMock,
     playerUpdateMock,
+    plmFindFirstMock,
     plmUpdateManyMock,
-    plmFindManyMock,
-    plmUpdateMock,
     userUpdateManyMock,
     transactionMock,
     revalidateMock: vi.fn(),
@@ -90,9 +86,8 @@ vi.mock('@/lib/prisma', () => ({
   prisma: {
     player: { findUnique: playerFindUniqueMock, update: playerUpdateMock },
     playerLeagueMembership: {
+      findFirst: plmFindFirstMock,
       updateMany: plmUpdateManyMock,
-      findMany: plmFindManyMock,
-      update: plmUpdateMock,
     },
     $transaction: transactionMock,
   },
@@ -107,12 +102,11 @@ vi.mock('@vercel/blob', () => ({
 }))
 
 import {
-  updatePlayerSelf,
+  updatePlayerProfile,
+  updatePlayerLeague,
   uploadPlayerProfilePicture,
   removePlayerProfilePicture,
 } from '@/app/account/player/actions'
-// v1.59.2 — constants moved to a non-`'use server'` module so client
-// imports get the real values; see validation.ts.
 import {
   PROFILE_PIC_ALLOWED_TYPES,
   PROFILE_PIC_MAX_BYTES,
@@ -125,6 +119,13 @@ beforeEach(() => {
   process.env.BLOB_READ_WRITE_TOKEN = 'test-token'
   sessionMock.mockResolvedValue({ userId: 'u-1', playerId: 'p-stefan-s' })
   playerFindUniqueMock.mockResolvedValue({ id: 'p-stefan-s' })
+  // Default plm.findFirst — soccer membership owned by the caller.
+  plmFindFirstMock.mockResolvedValue({
+    id: 'plm-1',
+    league: { ballType: 'SOCCER' },
+    leagueTeam: null,
+  })
+  plmUpdateManyMock.mockResolvedValue({ count: 1 })
 })
 
 afterEach(() => {
@@ -132,154 +133,265 @@ afterEach(() => {
   else process.env.BLOB_READ_WRITE_TOKEN = ORIG_BLOB_TOKEN
 })
 
-import { afterEach } from 'vitest'
-
-describe('updatePlayerSelf — auth gates', () => {
+describe('updatePlayerProfile — auth gates', () => {
   it('throws when there is no session', async () => {
     sessionMock.mockResolvedValue(null)
-    await expect(updatePlayerSelf({ name: 'Stefan' })).rejects.toThrow(/sign in/i)
+    await expect(updatePlayerProfile({ name: 'Stefan' })).rejects.toThrow(/sign in/i)
     expect(playerUpdateMock).not.toHaveBeenCalled()
   })
 
   it('throws when admin-credentials session has no userId AND no lineId', async () => {
     sessionMock.mockResolvedValue({ playerId: null, lineId: '' })
-    await expect(updatePlayerSelf({ name: 'Stefan' })).rejects.toThrow(/admin/i)
+    await expect(updatePlayerProfile({ name: 'Stefan' })).rejects.toThrow(/admin/i)
     expect(playerUpdateMock).not.toHaveBeenCalled()
   })
 
   it("throws when neither userId nor lineId resolves a Player", async () => {
     sessionMock.mockResolvedValue({ userId: 'u-1', lineId: 'L-1' })
     playerFindUniqueMock.mockResolvedValue(null)
-    await expect(updatePlayerSelf({ name: 'Stefan' })).rejects.toThrow(/no player/i)
+    await expect(updatePlayerProfile({ name: 'Stefan' })).rejects.toThrow(/no player/i)
     expect(playerUpdateMock).not.toHaveBeenCalled()
   })
 
-  // v1.59.1 — pre-v1.28.0 LINE sessions (and LINE-auth admins like
-  // Stefan S) have lineId set but no userId. They MUST be allowed in,
-  // resolving the Player via the lineId fallback.
+  // v1.59.1 — pre-v1.28.0 LINE sessions (and LINE-auth admins) have
+  // lineId set but no userId. They MUST be allowed in, resolving via
+  // the lineId fallback.
   it('v1.59.1 — accepts LINE-only session (no userId, has lineId) and resolves Player via lineId fallback', async () => {
     sessionMock.mockResolvedValue({ userId: null, lineId: 'L-stefan' })
-    // First findUnique (where: { userId }) is skipped because userId is null.
-    // Fallback findUnique (where: { lineId }) returns the player.
     playerFindUniqueMock.mockResolvedValueOnce({ id: 'p-stefan-s' })
-    await updatePlayerSelf({ name: 'Stefan S' })
-    // Verify the lookup was by lineId, not userId
+    await updatePlayerProfile({ name: 'Stefan S' })
     expect(playerFindUniqueMock).toHaveBeenCalledWith({
       where: { lineId: 'L-stefan' },
       select: { id: true },
     })
     expect(playerUpdateMock).toHaveBeenCalledWith({
       where: { id: 'p-stefan-s' },
-      data: expect.objectContaining({ name: 'Stefan S' }),
+      data: { name: 'Stefan S' },
     })
   })
 
-  // v1.59.1 — userId-first preference: when both are present, userId
-  // resolves first. lineId is the fallback only.
-  it('v1.59.1 — prefers userId lookup when both userId and lineId are present', async () => {
+  it('v1.59.1 — prefers userId lookup when both are present', async () => {
     sessionMock.mockResolvedValue({ userId: 'u-1', lineId: 'L-1' })
     playerFindUniqueMock.mockResolvedValueOnce({ id: 'p-stefan-s' })
-    await updatePlayerSelf({ name: 'Stefan' })
+    await updatePlayerProfile({ name: 'Stefan' })
     expect(playerFindUniqueMock).toHaveBeenCalledTimes(1)
     expect(playerFindUniqueMock).toHaveBeenCalledWith({
       where: { userId: 'u-1' },
       select: { id: true },
     })
   })
-
-  // v1.59.1 — drift case: session has userId but Player.userId column
-  // isn't populated (e.g. v1.29.0 backfill missed this row). Falls
-  // through to lineId.
-  it('v1.59.1 — falls back to lineId when userId lookup misses', async () => {
-    sessionMock.mockResolvedValue({ userId: 'u-1', lineId: 'L-stefan' })
-    playerFindUniqueMock
-      .mockResolvedValueOnce(null) // userId miss
-      .mockResolvedValueOnce({ id: 'p-stefan-s' }) // lineId hit
-    await updatePlayerSelf({ name: 'Stefan S' })
-    expect(playerFindUniqueMock).toHaveBeenCalledTimes(2)
-    expect(playerFindUniqueMock).toHaveBeenNthCalledWith(1, {
-      where: { userId: 'u-1' },
-      select: { id: true },
-    })
-    expect(playerFindUniqueMock).toHaveBeenNthCalledWith(2, {
-      where: { lineId: 'L-stefan' },
-      select: { id: true },
-    })
-  })
 })
 
-describe('updatePlayerSelf — validation', () => {
+describe('updatePlayerProfile — validation + writes', () => {
   it('rejects empty name', async () => {
-    await expect(updatePlayerSelf({ name: '   ' })).rejects.toThrow(/required/i)
+    await expect(updatePlayerProfile({ name: '   ' })).rejects.toThrow(/required/i)
     expect(playerUpdateMock).not.toHaveBeenCalled()
   })
 
   it('rejects names over 100 chars', async () => {
-    await expect(updatePlayerSelf({ name: 'x'.repeat(101) })).rejects.toThrow(/100/)
+    await expect(updatePlayerProfile({ name: 'x'.repeat(101) })).rejects.toThrow(/100/)
     expect(playerUpdateMock).not.toHaveBeenCalled()
   })
 
-  it('trims name and writes Prisma update (v1.82.0 — multi-position dual-write to PLM)', async () => {
-    // v1.82.0 — single-string `position: 'MF'` replaced with
-    // `positions: ['CM']`. Server validates per-membership against
-    // each league's ballType and writes positions[] + legacy enum.
-    await updatePlayerSelf({ name: '  Stefan S  ', positions: ['CM'] })
+  it('trims name and writes Player.name + User.name', async () => {
+    await updatePlayerProfile({ name: '  Stefan S  ' })
     expect(playerUpdateMock).toHaveBeenCalledWith({
       where: { id: 'p-stefan-s' },
-      data: expect.objectContaining({ name: 'Stefan S' }),
+      data: { name: 'Stefan S' },
     })
-    const call = playerUpdateMock.mock.calls[0][0]
-    expect(call.data.position).toBeUndefined()
-    // v1.82.0 — per-membership update carries positions[] + legacy.
-    expect(plmUpdateMock).toHaveBeenCalledWith({
-      where: { id: 'plm-1' },
-      data: { positions: ['CM'], position: 'MF' },
+    expect(userUpdateManyMock).toHaveBeenCalledWith({
+      where: { playerId: 'p-stefan-s' },
+      data: { name: 'Stefan S' },
     })
   })
 
-  // v1.62.0 — preference fields removed from the form. The action no
-  // longer writes `Player.onboardingPreferences` (the column stays in
-  // the schema for compat).
-  it('v1.62.0 — does NOT write onboardingPreferences (field removed)', async () => {
-    await updatePlayerSelf({ name: 'Stefan', positions: ['CM'] })
-    const call = playerUpdateMock.mock.calls[0][0]
-    expect(call.data.onboardingPreferences).toBeUndefined()
+  // v1.83.0 regression-target — `updatePlayerProfile` must NOT write
+  // any positions to any membership. Pre-v1.83.0 the monolithic
+  // `updatePlayerSelf` always touched PLM rows; the split removes
+  // that coupling. If a regression re-introduces a per-membership
+  // write inside the profile action, this test fails.
+  it('v1.83.0 regression-target — does NOT touch any PlayerLeagueMembership rows', async () => {
+    await updatePlayerProfile({ name: 'Stefan' })
+    expect(plmFindFirstMock).not.toHaveBeenCalled()
+    expect(plmUpdateManyMock).not.toHaveBeenCalled()
   })
 
-  // v1.62.0 — busts the per-league Redis mapping cache so the next JWT
-  // callback re-reads the new playerName. Without this, the account
-  // menu would show the old name until the 24h sliding TTL expires.
-  it('v1.62.0 — calls deleteMapping(lineId) to bust the Redis mapping cache', async () => {
+  it('busts deleteMapping(lineId) so JWT picks up the new playerName', async () => {
     sessionMock.mockResolvedValue({ userId: 'u-1', lineId: 'L-stefan' })
-    await updatePlayerSelf({ name: 'Stefan' })
+    await updatePlayerProfile({ name: 'Stefan' })
     expect(deleteMappingMock).toHaveBeenCalledWith('L-stefan')
   })
 
-  it('v1.62.0 — does NOT call deleteMapping when session has no lineId (Google/email user)', async () => {
+  it('does NOT call deleteMapping when session has no lineId', async () => {
     sessionMock.mockResolvedValue({ userId: 'u-1', lineId: null })
-    await updatePlayerSelf({ name: 'Stefan' })
+    await updatePlayerProfile({ name: 'Stefan' })
     expect(deleteMappingMock).not.toHaveBeenCalled()
   })
 
-  it('v1.62.0 — survives deleteMapping rejection (best-effort, no throw)', async () => {
+  it('survives deleteMapping rejection (best-effort)', async () => {
     sessionMock.mockResolvedValue({ userId: 'u-1', lineId: 'L-stefan' })
     deleteMappingMock.mockRejectedValueOnce(new Error('upstash blip'))
-    await expect(updatePlayerSelf({ name: 'Stefan' })).resolves.toBeUndefined()
+    await expect(updatePlayerProfile({ name: 'Stefan' })).resolves.toBeUndefined()
     expect(playerUpdateMock).toHaveBeenCalled()
   })
 
-  it('v1.82.0 — empty positions[] clears PLM positions (writes empty array + null legacy)', async () => {
-    await updatePlayerSelf({ name: 'Stefan', positions: [] })
-    const playerCall = playerUpdateMock.mock.calls[0][0]
-    expect(playerCall.data.position).toBeUndefined()
-    expect(plmUpdateMock).toHaveBeenCalledWith({
-      where: { id: 'plm-1' },
+  it('revalidates the public domain', async () => {
+    await updatePlayerProfile({ name: 'Stefan' })
+    expect(revalidateMock).toHaveBeenCalledWith({
+      domain: 'public',
+      paths: ['/account/player'],
+    })
+  })
+})
+
+describe('updatePlayerLeague — auth gates', () => {
+  it('throws when there is no session', async () => {
+    sessionMock.mockResolvedValue(null)
+    await expect(
+      updatePlayerLeague({ leagueId: 'league-1', positions: ['CM'] }),
+    ).rejects.toThrow(/sign in/i)
+    expect(plmUpdateManyMock).not.toHaveBeenCalled()
+  })
+
+  it('throws when admin-credentials session has no userId AND no lineId', async () => {
+    sessionMock.mockResolvedValue({ playerId: null, lineId: '' })
+    await expect(
+      updatePlayerLeague({ leagueId: 'league-1', positions: ['CM'] }),
+    ).rejects.toThrow(/admin/i)
+    expect(plmUpdateManyMock).not.toHaveBeenCalled()
+  })
+
+  it('throws when leagueId is empty', async () => {
+    await expect(
+      updatePlayerLeague({ leagueId: '', positions: ['CM'] }),
+    ).rejects.toThrow(/leagueId/i)
+    expect(plmUpdateManyMock).not.toHaveBeenCalled()
+  })
+
+  // v1.83.0 regression-target — owner-gate cross-league bleed. A
+  // player must not be able to write to a league they're not in.
+  // Pre-v1.83.0 the action was scoped to (playerId, toGameWeek === null)
+  // alone — passing any leagueId would silently no-op via updateMany,
+  // OR (worse) overwrite EVERY active membership. Post-v1.83.0 the
+  // findFirst lookup enforces the league owner gate; if it returns
+  // null, the action throws.
+  it('v1.83.0 regression-target — throws when the leagueId is not an active membership of the caller', async () => {
+    plmFindFirstMock.mockResolvedValueOnce(null)
+    await expect(
+      updatePlayerLeague({ leagueId: 'someone-elses-league', positions: ['CM'] }),
+    ).rejects.toThrow(/no active membership/i)
+    expect(plmUpdateManyMock).not.toHaveBeenCalled()
+  })
+
+  it('owner gate uses (playerId, leagueId, toGameWeek === null) — no cross-league bleed', async () => {
+    await updatePlayerLeague({ leagueId: 'league-A', positions: ['CM'] })
+    expect(plmFindFirstMock).toHaveBeenCalledWith({
+      where: { playerId: 'p-stefan-s', leagueId: 'league-A', toGameWeek: null },
+      select: expect.any(Object),
+    })
+  })
+})
+
+describe('updatePlayerLeague — positions write', () => {
+  it('validates positions against the membership league ballType (SOCCER)', async () => {
+    plmFindFirstMock.mockResolvedValue({
+      id: 'plm-1',
+      league: { ballType: 'SOCCER' },
+      leagueTeam: null,
+    })
+    // `normalizePositions` keeps input order while deduping; the
+    // legacy enum is bucketed from the FIRST entry — so submit-order
+    // ['CM', 'CB'] writes positions=['CM','CB'] and legacy=MF.
+    await updatePlayerLeague({ leagueId: 'league-A', positions: ['CM', 'CB'] })
+    expect(plmUpdateManyMock).toHaveBeenCalledWith({
+      where: { playerId: 'p-stefan-s', leagueId: 'league-A', toGameWeek: null },
+      data: { positions: ['CM', 'CB'], position: 'MF' },
+    })
+  })
+
+  it('rejects soccer codes for a futsal membership', async () => {
+    plmFindFirstMock.mockResolvedValue({
+      id: 'plm-1',
+      league: { ballType: 'FUTSAL' },
+      leagueTeam: null,
+    })
+    await expect(
+      updatePlayerLeague({ leagueId: 'league-A', positions: ['CM'] }),
+    ).rejects.toThrow(/invalid position/i)
+    expect(plmUpdateManyMock).not.toHaveBeenCalled()
+  })
+
+  it('accepts FIXO/ALA/PIVOT for a futsal membership and dual-writes legacy bucket', async () => {
+    plmFindFirstMock.mockResolvedValue({
+      id: 'plm-1',
+      league: { ballType: 'FUTSAL' },
+      leagueTeam: null,
+    })
+    await updatePlayerLeague({ leagueId: 'league-A', positions: ['ALA'] })
+    expect(plmUpdateManyMock).toHaveBeenCalledWith({
+      where: { playerId: 'p-stefan-s', leagueId: 'league-A', toGameWeek: null },
+      data: { positions: ['ALA'], position: 'MF' },
+    })
+  })
+
+  it('empty positions[] clears positions + null legacy', async () => {
+    await updatePlayerLeague({ leagueId: 'league-A', positions: [] })
+    expect(plmUpdateManyMock).toHaveBeenCalledWith({
+      where: { playerId: 'p-stefan-s', leagueId: 'league-A', toGameWeek: null },
       data: { positions: [], position: null },
     })
   })
 
-  it("revalidates the public domain so dashboard reflects the new name", async () => {
-    await updatePlayerSelf({ name: 'Stefan' })
+  // v1.83.0 — falls through league.ballType when leagueTeam.league
+  // exists. Older membership rows may have leagueId NULL but a
+  // leagueTeam pointing at a league.
+  it('falls back to leagueTeam.league.ballType when membership.league is null', async () => {
+    plmFindFirstMock.mockResolvedValue({
+      id: 'plm-1',
+      league: null,
+      leagueTeam: { league: { ballType: 'FUTSAL' } },
+    })
+    await updatePlayerLeague({ leagueId: 'league-A', positions: ['PIVOT'] })
+    expect(plmUpdateManyMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: { positions: ['PIVOT'], position: 'FW' },
+      }),
+    )
+  })
+})
+
+describe('updatePlayerLeague — idShared write', () => {
+  it('writes idShared when supplied', async () => {
+    await updatePlayerLeague({ leagueId: 'league-A', idShared: false })
+    expect(plmUpdateManyMock).toHaveBeenCalledWith({
+      where: { playerId: 'p-stefan-s', leagueId: 'league-A', toGameWeek: null },
+      data: { idShared: false },
+    })
+  })
+
+  it('idShared-only update does NOT touch positions/legacy enum', async () => {
+    await updatePlayerLeague({ leagueId: 'league-A', idShared: true })
+    const call = plmUpdateManyMock.mock.calls[0][0]
+    expect(call.data.positions).toBeUndefined()
+    expect(call.data.position).toBeUndefined()
+  })
+
+  it('combined positions + idShared write hits both columns', async () => {
+    await updatePlayerLeague({
+      leagueId: 'league-A',
+      positions: ['ST'],
+      idShared: false,
+    })
+    expect(plmUpdateManyMock).toHaveBeenCalledWith({
+      where: { playerId: 'p-stefan-s', leagueId: 'league-A', toGameWeek: null },
+      data: { positions: ['ST'], position: 'FW', idShared: false },
+    })
+  })
+
+  it('no-op (no positions, no idShared) skips the write entirely', async () => {
+    await updatePlayerLeague({ leagueId: 'league-A' })
+    expect(plmUpdateManyMock).not.toHaveBeenCalled()
+    // Still revalidates so the page reflects any concurrent state.
     expect(revalidateMock).toHaveBeenCalledWith({
       domain: 'public',
       paths: ['/account/player'],
@@ -361,8 +473,8 @@ describe('uploadPlayerProfilePicture — replace-only behavior', () => {
   it('uploads, persists URL, and DELs the prior asset', async () => {
     putMock.mockResolvedValue({ url: 'https://blob/new.jpg' })
     playerFindUniqueMock
-      .mockResolvedValueOnce({ id: 'p-stefan-s' }) // resolveOwnedPlayerId
-      .mockResolvedValueOnce({ profilePictureUrl: 'https://blob/old.jpg' }) // prior
+      .mockResolvedValueOnce({ id: 'p-stefan-s' })
+      .mockResolvedValueOnce({ profilePictureUrl: 'https://blob/old.jpg' })
 
     const formData = new FormData()
     formData.append('picture', makeFile())
@@ -407,7 +519,7 @@ describe('uploadPlayerProfilePicture — replace-only behavior', () => {
     const formData = new FormData()
     formData.append('picture', makeFile())
     await expect(uploadPlayerProfilePicture(formData)).resolves.toBeUndefined()
-    expect(playerUpdateMock).toHaveBeenCalled() // column still updated
+    expect(playerUpdateMock).toHaveBeenCalled()
   })
 
   it('skips DEL when there is no prior asset', async () => {
