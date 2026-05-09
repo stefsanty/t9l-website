@@ -308,12 +308,13 @@ describe('v1.65.4 — getLeaguePlayers PLM-only pending applications', () => {
     expect(exec).not.toMatch(/seenPendingPlayerIds/)
   })
 
-  it('returns 7-element tuple including mergedPendingApplications (v1.70.0 added idDataByPlayerId)', () => {
-    // v1.70.0 (PR move_id_to_user) appends idDataByPlayerId as the 7th
-    // element. The mergedPendingApplications block is preserved as the
-    // 6th element; both must be present in the return.
+  it('returns 8-element tuple including mergedPendingApplications, idDataByPlayerId, activeInviteByPlayerId (v1.84.1)', () => {
+    // v1.70.0 — idDataByPlayerId appended as the 7th element.
+    // v1.84.1 — activeInviteByPlayerId appended as the 8th (last) element
+    // so the admin Players tab can surface existing invite codes.
     expect(ADMIN_DATA_SRC).toMatch(/mergedPendingApplications,/)
-    expect(ADMIN_DATA_SRC).toMatch(/idDataByPlayerId,?\s*\] as const/)
+    expect(ADMIN_DATA_SRC).toMatch(/idDataByPlayerId,/)
+    expect(ADMIN_DATA_SRC).toMatch(/activeInviteByPlayerId,?\s*\] as const/)
   })
 
   it('attaches PLM.position to each pending applicant row', () => {

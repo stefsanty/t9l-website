@@ -1,12 +1,13 @@
 'use client'
 
 import { useMemo, useState, useTransition } from 'react'
-import { ArrowRight, Send, Pencil } from 'lucide-react'
+import { ArrowRight, Send, Pencil, X } from 'lucide-react'
 import ConfirmDialog from './ConfirmDialog'
 import AssignLineDialog from './AssignLineDialog'
 import AddPlayerDialog from './AddPlayerDialog'
 import LinkExistingPlayerDialog, { type LinkablePlayerRow } from './LinkExistingPlayerDialog'
 import GenerateInviteDialog from './GenerateInviteDialog'
+import InviteDisplay from './InviteDisplay'
 import IdViewerDialog from './IdViewerDialog'
 import AdminPlayerAvatar from './AdminPlayerAvatar'
 import SignInStatusBadge from './SignInStatusBadge'
@@ -26,6 +27,7 @@ import {
 } from '@/app/admin/leagues/actions'
 import { formatJpyFee } from '@/lib/playerFee'
 import PositionMultiSelect from '@/components/PositionMultiSelect'
+import { buildInviteUrl } from '@/lib/inviteCodes'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -122,6 +124,9 @@ interface PlayerRow {
   // v1.80.0 — optional free-text comments submitted by the applicant.
   // Admin-only; not shown on public pages.
   comments?: string | null
+  // v1.84.1 — first active PERSONAL invite for this player. Non-null
+  // when activeInviteCount > 0; used by "View active invite" affordance.
+  activeInvite?: { code: string; expiresAt: string | null; skipOnboarding: boolean } | null
 }
 
 interface OrphanLineLogin {
@@ -224,6 +229,9 @@ export default function PlayersTab({
   const [bulkInviteOpen, setBulkInviteOpen] = useState(false)
   // v1.35.0 (PR η) — when non-null, IdViewerDialog opens for this player.
   const [idViewerPlayerId, setIdViewerPlayerId] = useState<string | null>(null)
+  // v1.84.1 — when non-null, ViewInviteDialog opens showing the existing
+  // active invite code for this player.
+  const [viewInvitePlayerId, setViewInvitePlayerId] = useState<string | null>(null)
 
   function toggleBulkSelected(playerId: string) {
     setSelectedForBulk((prev) => {
@@ -545,6 +553,7 @@ export default function PlayersTab({
                         onTransferToggle: () =>
                           setTransferPanelId(isTransferOpen ? null : player.id),
                         onInvite: () => setInviteTargetPlayerId(player.id),
+                        onViewInvite: () => setViewInvitePlayerId(player.id),
                         onViewId: () => setIdViewerPlayerId(player.id),
                         onResetOnboarding: () =>
                           handleResetOnboarding(player.id, player.name),
@@ -778,6 +787,7 @@ export default function PlayersTab({
                         onTransferToggle: () =>
                           setTransferPanelId(isTransferOpen ? null : player.id),
                         onInvite: () => setInviteTargetPlayerId(player.id),
+                        onViewInvite: () => setViewInvitePlayerId(player.id),
                         onViewId: () => setIdViewerPlayerId(player.id),
                         onResetOnboarding: () =>
                           handleResetOnboarding(player.id, player.name),
@@ -895,6 +905,22 @@ export default function PlayersTab({
         )
       })()}
 
+      {/* v1.84.1 — View active invite dialog. Mounts when admin clicks
+          "View active invite" in the kebab for a player that already has
+          an un-expired PERSONAL invite. Shows the same InviteDisplay
+          surface as the post-generation view without re-generating. */}
+      {viewInvitePlayerId && (() => {
+        const target = players.find((p) => p.id === viewInvitePlayerId)
+        if (!target || !target.activeInvite) return null
+        return (
+          <ViewInviteDialog
+            player={{ id: target.id, name: target.name }}
+            invite={target.activeInvite}
+            onClose={() => setViewInvitePlayerId(null)}
+          />
+        )
+      })()}
+
       {/* v1.64.0 — Approve application dialog. Mounts when admin clicks
           "Approve application…" in the kebab for a PENDING player.
           Asks for team selection (a PLA needs a leagueTeamId) then
@@ -945,6 +971,7 @@ interface BuildPlayerMenuArgs {
   handlers: {
     onTransferToggle: () => void
     onInvite: () => void
+    onViewInvite: () => void
     onViewId: () => void
     onResetOnboarding: () => Promise<void>
     onRemap: () => void
@@ -982,7 +1009,13 @@ function buildPlayerMenuItems(args: BuildPlayerMenuArgs) {
     })
   }
   if (!player.lineId) {
-    items.push({ label: 'Generate invite', onSelect: handlers.onInvite })
+    if (player.activeInviteCount > 0) {
+      // v1.84.1 — show "View active invite" when one already exists;
+      // generating a second would fail server-side anyway.
+      items.push({ label: 'View active invite', onSelect: handlers.onViewInvite })
+    } else {
+      items.push({ label: 'Generate invite', onSelect: handlers.onInvite })
+    }
   }
   // Reset onboarding only surfaces when the assignment is COMPLETED —
   // for NOT_YET it's a no-op. Native window.confirm gates the
@@ -1207,6 +1240,70 @@ function EditPlayerPanel({ player, leagueId, ballType, onClose }: EditPlayerPane
             data-testid={`player-edit-cancel-${player.id}`}
           >
             Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── View active invite dialog (v1.84.1) ─────────────────────────────────────
+
+/**
+ * v1.84.1 — shows an existing active PERSONAL invite code for a player
+ * without re-generating it. Surfaces the same InviteDisplay component
+ * used by GenerateInviteDialog's post-generation view, so the admin gets
+ * QR + grouped code + copy buttons + expiry footer.
+ *
+ * The joinUrl is reconstructed client-side from `window.location.host`
+ * so it matches the subdomain the admin is operating on (same approach
+ * as the server-side `buildInviteUrl(reqHeaders.get('host'), code)`).
+ */
+interface ViewInviteDialogProps {
+  player: { id: string; name: string | null }
+  invite: { code: string; expiresAt: string | null; skipOnboarding: boolean }
+  onClose: () => void
+}
+
+function ViewInviteDialog({ player, invite, onClose }: ViewInviteDialogProps) {
+  const joinUrl = buildInviteUrl(
+    typeof window !== 'undefined' ? window.location.host : 't9l.me',
+    invite.code,
+  )
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center" data-testid="view-invite-dialog">
+      <div className="absolute inset-0 bg-black/60" onClick={onClose} />
+      <div className="relative bg-admin-surface border border-admin-border rounded-xl p-6 w-full max-w-md mx-4 shadow-2xl max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-admin-text font-condensed font-bold text-lg">
+            Active invite — {nameOrPlaceholder(player.name)}
+          </h3>
+          <button
+            onClick={onClose}
+            className="text-admin-text3 hover:text-admin-text"
+            aria-label="Close"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        <p className="text-admin-text2 text-sm mb-4">
+          This invite was previously generated. Share it with{' '}
+          {player.name ?? 'this player'} — it is still active and a new one
+          cannot be issued until this one expires or is redeemed.
+        </p>
+        <InviteDisplay
+          code={invite.code}
+          joinUrl={joinUrl}
+          expiresAt={invite.expiresAt}
+          skipOnboarding={invite.skipOnboarding}
+        />
+        <div className="mt-5 flex justify-end">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 rounded-lg text-sm bg-admin-green text-admin-ink font-medium hover:opacity-90"
+          >
+            Done
           </button>
         </div>
       </div>

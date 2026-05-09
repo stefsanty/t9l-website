@@ -167,7 +167,9 @@ export const getLeaguePlayers = unstable_cache(
         },
         select: {
           targetPlayerId: true,
+          code: true,
           expiresAt: true,
+          skipOnboarding: true,
           maxUses: true,
           usedCount: true,
         },
@@ -219,6 +221,13 @@ export const getLeaguePlayers = unstable_cache(
     // typically have `maxUses: 1` so any usedCount ≥ 1 means consumed.
     const now = Date.now()
     const activeInviteCountByPlayerId: Record<string, number> = {}
+    // v1.84.1 — first active invite per player so the admin can retrieve
+    // an existing code without generating a duplicate.
+    const activeInviteByPlayerId: Record<string, {
+      code: string
+      expiresAt: string | null
+      skipOnboarding: boolean
+    }> = {}
     for (const inv of activeInvites) {
       if (!inv.targetPlayerId) continue
       const usedUp = inv.maxUses !== null && inv.usedCount >= inv.maxUses
@@ -227,6 +236,13 @@ export const getLeaguePlayers = unstable_cache(
       if (expired) continue
       activeInviteCountByPlayerId[inv.targetPlayerId] =
         (activeInviteCountByPlayerId[inv.targetPlayerId] ?? 0) + 1
+      if (!activeInviteByPlayerId[inv.targetPlayerId]) {
+        activeInviteByPlayerId[inv.targetPlayerId] = {
+          code: inv.code,
+          expiresAt: inv.expiresAt ? inv.expiresAt.toISOString() : null,
+          skipOnboarding: inv.skipOnboarding,
+        }
+      }
     }
     // v1.65.4 — pending applications come exclusively from PLM rows now.
     // The legacy Player.* source is gone; the merge step is unnecessary.
@@ -268,6 +284,7 @@ export const getLeaguePlayers = unstable_cache(
       activeInviteCountByPlayerId,
       mergedPendingApplications,
       idDataByPlayerId,
+      activeInviteByPlayerId,
     ] as const
   },
   ['league-players'],

@@ -27,6 +27,7 @@ export default async function PlayersPage({ params }: Props) {
       activeInviteCountByPlayerId,
       pendingApplications,
       idDataByPlayerId,
+      activeInviteByPlayerId,
     ],
     orphansRaw,
     allLineLoginsRaw,
@@ -107,6 +108,8 @@ export default async function PlayersPage({ params }: Props) {
     membershipId?: string
     // v1.80.0 — applicant comments from the PLM.
     comments?: string | null
+    // v1.84.1 — first active PERSONAL invite for this player.
+    activeInvite?: { code: string; expiresAt: string | null; skipOnboarding: boolean } | null
     assignments: {
       id: string
       fromGameWeek: number
@@ -173,6 +176,7 @@ export default async function PlayersPage({ params }: Props) {
         membershipId: a.id,
         // v1.80.0 — comments from the PLM row.
         comments: a.comments ?? null,
+        activeInvite: activeInviteByPlayerId[a.player.id] ?? null,
         assignments: [aWithTeam],
       })
     }
@@ -217,6 +221,7 @@ export default async function PlayersPage({ params }: Props) {
       applicationStatus: 'PENDING',
       // v1.80.0 — comments from the PLM row (propagated via mergedPendingApplications).
       comments: p.comments ?? null,
+      activeInvite: activeInviteByPlayerId[p.id] ?? null,
       assignments: [],
     })
   }

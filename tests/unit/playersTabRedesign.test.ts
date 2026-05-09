@@ -105,8 +105,11 @@ describe('v1.38.0 (PR κ) — column structure changes', () => {
     expect(callSites.length).toBe(2)
   })
 
-  it('the kebab menu offers Generate invite / Reset onboarding / View ID / Transfer / Remap / Unlink / Remove', () => {
+  it('the kebab menu offers Generate invite / View active invite / Reset onboarding / View ID / Transfer / Remap / Unlink / Remove', () => {
+    // v1.84.1 — both "Generate invite" and "View active invite" appear as
+    // branches inside the !lineId block.
     expect(cleaned).toMatch(/label:\s*['"]Generate invite['"]/)
+    expect(cleaned).toMatch(/label:\s*['"]View active invite['"]/)
     expect(cleaned).toMatch(/label:\s*['"]Reset onboarding['"]/)
     expect(cleaned).toMatch(/label:\s*['"]View ID['"]/)
     expect(cleaned).toMatch(/['"]Transfer to team…['"]/) // "Transfer to team…"
@@ -134,8 +137,13 @@ describe('v1.38.0 (PR κ) — column structure changes', () => {
 })
 
 describe('v1.38.0 (PR κ) — kebab menu visibility rules', () => {
-  it('Generate invite is conditional on !player.lineId', () => {
-    expect(cleaned).toMatch(/if\s*\(\s*!player\.lineId\s*\)\s*\{\s*items\.push\(\s*\{\s*label:\s*['"]Generate invite['"]/)
+  it('Generate invite is conditional on !player.lineId (v1.84.1 — also shows View active invite branch)', () => {
+    // v1.84.1 — the invite block branches on activeInviteCount inside the
+    // lineId gate. Both "Generate invite" and "View active invite" must be
+    // present in the source; the outer `!player.lineId` condition is preserved.
+    expect(cleaned).toMatch(/if\s*\(\s*!player\.lineId\s*\)/)
+    expect(cleaned).toMatch(/label:\s*['"]Generate invite['"]/)
+    expect(cleaned).toMatch(/label:\s*['"]View active invite['"]/)
   })
 
   it('Reset onboarding is conditional on current?.onboardingStatus === "COMPLETED"', () => {
