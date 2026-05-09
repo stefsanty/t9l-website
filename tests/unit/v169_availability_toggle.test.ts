@@ -152,8 +152,11 @@ describe('v1.69.0 MatchdayAvailability — viewMode routes both branches', () =>
     expect(pillListMounts.length).toBeGreaterThanOrEqual(2)
   })
 
-  it('TeamFormation is still rendered in both branches when viewMode is formation', () => {
-    const formationMounts = src.match(/<TeamFormation[\s\S]*?\/>/g) || []
+  it('FormationPitch is rendered in both branches when viewMode is formation', () => {
+    // v1.83.0 — the in-file `<TeamFormation>` was extracted into the
+    // standalone `<FormationPitch>` (per-format catalog + multi-role
+    // assignment). The two-branch pattern (past + upcoming) is preserved.
+    const formationMounts = src.match(/<FormationPitch[\s\S]*?\/>/g) || []
     expect(formationMounts.length).toBeGreaterThanOrEqual(2)
   })
 })

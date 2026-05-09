@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import type { Matchday, Team, Player, Availability, AvailabilityStatuses, PlayedStatus } from '@/types';
 import { getPositionBucket } from '@/lib/positions';
+import FormationPitch from './FormationPitch';
 
 // -- View mode --
 
@@ -126,217 +127,11 @@ function ViewModeToggle({
   );
 }
 
-// -- Formation helpers --
-
-interface Formation {
-  label: string;
-  def: number;
-  mid: number;
-  fwd: number;
-}
-
-const FORMATIONS: Formation[] = [
-  { label: '3-4-1', def: 3, mid: 4, fwd: 1 },
-  { label: '3-3-2', def: 3, mid: 3, fwd: 2 },
-  { label: '3-2-3', def: 3, mid: 2, fwd: 3 },
-  { label: '4-3-1', def: 4, mid: 3, fwd: 1 },
-  { label: '4-2-2', def: 4, mid: 2, fwd: 2 },
-];
-
-function pickFormation(defCount: number, midCount: number, fwdCount: number): Formation {
-  let best = FORMATIONS[0];
-  let bestScore = Infinity;
-  for (const f of FORMATIONS) {
-    const score =
-      Math.abs(defCount - f.def) +
-      Math.abs(midCount - f.mid) +
-      Math.abs(fwdCount - f.fwd);
-    if (score < bestScore) {
-      bestScore = score;
-      best = f;
-    }
-  }
-  return best;
-}
-
-function distributeToSlots<T>(items: T[], slots: number): T[][] {
-  const result: T[][] = Array.from({ length: slots }, () => []);
-  items.forEach((item, i) => result[i % slots].push(item));
-  return result;
-}
-
-// -- TeamFormation sub-component --
-
-function TeamFormation({
-  confirmedIds,
-  players,
-  teamColor,
-}: {
-  confirmedIds: string[];
-  players: Player[];
-  teamColor: string;
-}) {
-    const getPlayer = (id: string) => players.find((p) => p.id === id);
-
-  const gks: Player[] = [];
-  const pureDefs: Player[] = [];
-  const defMidHybrids: Player[] = [];
-  const pureMids: Player[] = [];
-  const midFwdHybrids: Player[] = [];
-  const pureFwds: Player[] = [];
-
-  // v1.82.0 — multi-position grouping. `Player.position` is now a
-  // `/`-joined string (e.g. "CB/CM" or futsal "FIXO/ALA"). We bucket
-  // each code, then route the player into a hybrid bucket if their
-  // codes span two adjacent role bands. Pre-v1.82.0 callers passed
-  // legacy strings like "DF/MF" / "MF/FWD" directly; those still work
-  // because the bucket helper recognises both old and new codes.
-  for (const pid of confirmedIds) {
-    const p = getPlayer(pid);
-    if (!p) continue;
-    const codes = (p.position ?? '')
-      .split('/')
-      .map((c) => c.trim().toUpperCase())
-      .filter(Boolean);
-    if (codes.length === 0) {
-      pureMids.push(p);
-      continue;
-    }
-    const buckets = new Set(codes.map((c) => getPositionBucket(c)));
-    if (buckets.has('GK')) {
-      gks.push(p);
-    } else if (buckets.has('DF') && buckets.has('MF') && !buckets.has('FW')) {
-      defMidHybrids.push(p);
-    } else if (buckets.has('MF') && buckets.has('FW') && !buckets.has('DF')) {
-      midFwdHybrids.push(p);
-    } else if (buckets.has('DF')) {
-      pureDefs.push(p);
-    } else if (buckets.has('FW')) {
-      pureFwds.push(p);
-    } else {
-      pureMids.push(p);
-    }
-  }
-
-  const autoFormation = pickFormation(
-    pureDefs.length + defMidHybrids.length,
-    pureMids.length + midFwdHybrids.length,
-    pureFwds.length,
-  );
-
-  const [formation, setFormation] = useState<Formation>(autoFormation);
-
-  if (confirmedIds.length === 0) {
-    return (
-      <span className="text-[11px] text-fg-mid italic py-2 px-1 block">
-        {"No confirmations yet"}
-      </span>
-    );
-  }
-
-  const defSlotsLeft = Math.max(0, formation.def - pureDefs.length);
-  const defMidToDef  = defMidHybrids.slice(0, defSlotsLeft);
-  const defMidToMid  = defMidHybrids.slice(defSlotsLeft);
-
-  const midSlotsLeft = Math.max(0, formation.mid - pureMids.length - defMidToMid.length);
-  const midFwdToMid  = midFwdHybrids.slice(0, midSlotsLeft);
-  const midFwdToFwd  = midFwdHybrids.slice(midSlotsLeft);
-
-  const defs = [...pureDefs, ...defMidToDef];
-  const mids = [...pureMids, ...defMidToMid, ...midFwdToMid];
-  const fwds = [...pureFwds, ...midFwdToFwd];
-
-  const fwdSlots = distributeToSlots(fwds, formation.fwd);
-  const midSlots = distributeToSlots(mids, formation.mid);
-  const defSlots = distributeToSlots(defs, formation.def);
-  const gkSlots  = distributeToSlots(gks, 1);
-
-  const rows = [
-    { label: "FWD", slots: fwdSlots },
-    { label: "MID", slots: midSlots },
-    { label: "DEF", slots: defSlots },
-    { label: "GK",  slots: gkSlots  },
-  ];
-
-  return (
-    <div className="mt-2">
-      <div className="flex justify-between items-center mb-1">
-        <span className="text-[9px] font-black uppercase tracking-widest text-fg-low">{"LINEUP"}</span>
-        <div className="flex gap-1">
-          {FORMATIONS.map((f) => {
-            const isActive = formation.label === f.label;
-            return (
-              <button
-                key={f.label}
-                onClick={() => setFormation(f)}
-                className={`text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded transition-all ${isActive ? 'text-foreground' : 'text-fg-low bg-surface'}`}
-                style={isActive ? { backgroundColor: teamColor + '55' } : undefined}
-              >
-                {f.label}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      <div
-        className="relative w-full rounded-xl overflow-hidden"
-        style={{
-          aspectRatio: '3 / 4',
-          background: 'repeating-linear-gradient(180deg,#1d6b2b 0%,#1d6b2b 12.5%,#196126 12.5%,#196126 25%)',
-        }}
-      >
-        <svg
-          className="absolute inset-0 w-full h-full"
-          viewBox="0 0 100 133"
-          preserveAspectRatio="none"
-          xmlns="http://www.w3.org/2000/svg"
-        >
-          <rect x="4" y="4" width="92" height="125" fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth="0.9"/>
-          <line x1="4" y1="66.5" x2="96" y2="66.5" stroke="rgba(255,255,255,0.3)" strokeWidth="0.9"/>
-          <circle cx="50" cy="66.5" r="14" fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth="0.9"/>
-          <rect x="23" y="4" width="54" height="22" fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth="0.9"/>
-          <rect x="37" y="4" width="26" height="9" fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth="0.9"/>
-          <rect x="23" y="107" width="54" height="22" fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth="0.9"/>
-          <rect x="37" y="120" width="26" height="9" fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth="0.9"/>
-        </svg>
-
-        <div className="absolute inset-0 flex flex-col justify-evenly py-[9%] px-[5%]">
-          {rows.map(({ label, slots }) => (
-            <div key={label} className="flex justify-around items-start">
-              {slots.map((slotPlayers, i) => (
-                <div key={i} className="flex flex-col items-center gap-[3px]">
-                  {slotPlayers.length > 0 ? (
-                    <>
-                      <div
-                        className="w-5 h-5 rounded-full shrink-0"
-                        style={{
-                          background: teamColor,
-                          boxShadow: '0 0 0 2px rgba(255,255,255,0.85), 0 2px 6px rgba(0,0,0,0.5)',
-                        }}
-                      />
-                      {slotPlayers.map((p) => (
-                        <div
-                          key={p.id}
-                          className="text-[8px] font-black text-white text-center px-1.5 py-[2px] rounded whitespace-nowrap leading-tight" translate="no"
-                          style={{ backgroundColor: 'rgba(0,0,0,0.62)' }}
-                        >
-                          {p.name}
-                        </div>
-                      ))}
-                    </>
-                  ) : (
-                    <div className="w-5 h-5 rounded-full border-2 border-dashed border-white/40" />
-                  )}
-                </div>
-              ))}
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
+// -- TeamFormation removed in v1.83.0 — replaced by <FormationPitch>
+//    (per-format catalog from src/lib/formations.ts + multi-role
+//    assignment + manual override). The bucket-row distribution and
+//    hardcoded FORMATIONS list lived here before; both are now driven
+//    by `getFormationsFor(ballType, playerFormat)`.
 
 // -- Main component --
 
@@ -347,6 +142,15 @@ interface MatchdayAvailabilityProps {
   availability: Availability;
   availabilityStatuses: AvailabilityStatuses;
   played: PlayedStatus;
+  /**
+   * v1.83.0 — league context drives the formation catalog
+   * (`src/lib/formations.ts`) + the position vocabulary used for
+   * slot-compat. Optional because some legacy preview paths render
+   * MatchdayAvailability without league lookup; in that case we fall
+   * back to SOCCER + the 9-aside catalog (Tennozu's default).
+   */
+  ballType?: 'SOCCER' | 'FUTSAL' | null;
+  playerFormat?: number | null;
 }
 
 export default function MatchdayAvailability({
@@ -356,6 +160,8 @@ export default function MatchdayAvailability({
   availability,
   availabilityStatuses,
   played,
+  ballType,
+  playerFormat,
 }: MatchdayAvailabilityProps) {
     const isNext = matchday.matches[0].homeGoals === null;
   const playingTeams = teams.filter((t) => t.id !== matchday.sittingOutTeamId);
@@ -455,7 +261,13 @@ export default function MatchdayAvailability({
                     {viewMode === 'list' ? (
                       <TeamPillList confirmedIds={playedIds} players={players} />
                     ) : (
-                      <TeamFormation confirmedIds={playedIds} players={players} teamColor={team.color} />
+                      <FormationPitch
+                        confirmedIds={playedIds}
+                        players={players}
+                        teamColor={team.color}
+                        ballType={ballType}
+                        playerFormat={playerFormat}
+                      />
                     )}
                   </div>
                 )}
@@ -537,10 +349,12 @@ export default function MatchdayAvailability({
                   {viewMode === 'list' ? (
                     <TeamPillList confirmedIds={goingIds} players={players} />
                   ) : (
-                    <TeamFormation
+                    <FormationPitch
                       confirmedIds={goingIds}
                       players={players}
                       teamColor={team.color}
+                      ballType={ballType}
+                      playerFormat={playerFormat}
                     />
                   )}
                 </div>

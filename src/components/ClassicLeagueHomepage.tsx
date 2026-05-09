@@ -87,6 +87,13 @@ interface ClassicLeagueHomepageProps {
   submitGoalSlot?: ReactNode
   /** v1.75.4 — LeagueDetailsPanel slot, positioned between NextMatchdayBanner and MatchdayAvailability. */
   leagueDetailsPanelSlot?: ReactNode
+  /**
+   * v1.83.0 — league context for the formation visualization (catalog
+   * selection + slot-position vocabulary). Both optional; when absent
+   * MatchdayAvailability falls back to SOCCER + 9-aside.
+   */
+  ballType?: 'SOCCER' | 'FUTSAL' | null
+  playerFormat?: number | null
 }
 
 export default function ClassicLeagueHomepage({
@@ -103,6 +110,8 @@ export default function ClassicLeagueHomepage({
   leagueSlug,
   submitGoalSlot,
   leagueDetailsPanelSlot,
+  ballType,
+  playerFormat,
 }: ClassicLeagueHomepageProps) {
   const selectedMatchday =
     matchdays.find((m) => m.id === selectedMatchdayId) ?? matchdays[0]
@@ -131,6 +140,8 @@ export default function ClassicLeagueHomepage({
         availability={availability}
         availabilityStatuses={availabilityStatuses}
         played={played}
+        ballType={ballType}
+        playerFormat={playerFormat}
       />
     </>
   )
