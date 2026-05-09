@@ -38,6 +38,25 @@ const MESSAGES: Record<string, MessageConfig> = {
     title: 'Application submitted',
     description: 'The league admin will review your application and get back to you.',
   },
+  // v1.81.2 — invite-redemption + onboarding paths. All four redirect to
+  // /join/[code]/welcome, where this gate is mounted alongside the
+  // existing welcome card.
+  redeemInvite: {
+    title: 'Invite redeemed',
+    description: "You're now a member of the league.",
+  },
+  completeOnboardingWithId: {
+    title: 'Application submitted',
+    description: 'The league admin will review your application and get back to you.',
+  },
+  submitIdUpload: {
+    title: 'ID uploaded',
+    description: 'Your application is now complete.',
+  },
+  skipIdUpload: {
+    title: 'Application complete',
+    description: 'Admin will collect your ID separately.',
+  },
 }
 
 export default function SuccessConfirmationGate() {

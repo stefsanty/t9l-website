@@ -240,8 +240,12 @@ describe('v1.68.0 completeOnboardingWithId server action', () => {
   })
 
   it('redirects to /join/<code>/welcome on success (skipping /id-upload)', () => {
+    // v1.81.2 — redirect now appends `?submitted=completeOnboardingWithId`
+    // so the welcome page mounts the post-submit success popup.
     const fn = src.split('export async function completeOnboardingWithId')[1].split('export ')[0]
-    expect(fn).toMatch(/redirect\(`\/join\/\$\{input\.code\}\/welcome`\)/)
+    expect(fn).toMatch(
+      /redirect\(`\/join\/\$\{input\.code\}\/welcome\?submitted=completeOnboardingWithId`\)/,
+    )
   })
 })
 

@@ -1,8 +1,10 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
+import { Suspense } from 'react'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import SuccessConfirmationGate from '@/components/SuccessConfirmationGate'
 
 /**
  * v1.34.0 (PR ζ) — post-redemption landing page.
@@ -111,6 +113,17 @@ export default async function WelcomePage({ params }: Props) {
           Question or wrong slot? Contact your league admin.
         </p>
       </div>
+      {/*
+       * v1.81.2 — post-submit success popup gate. Reads
+       * `?submitted=<descriptor>` from the URL and mounts the matching
+       * confirmation modal. Wrapped in <Suspense> because
+       * SuccessConfirmationGate uses `useSearchParams()`, which Next.js
+       * requires to live under a Suspense boundary on a server-component
+       * page (otherwise the build wraps the entire page in suspense).
+       */}
+      <Suspense fallback={null}>
+        <SuccessConfirmationGate />
+      </Suspense>
     </main>
   )
 }

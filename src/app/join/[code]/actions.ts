@@ -235,13 +235,16 @@ export async function redeemInvite(input: RedeemInviteInput): Promise<RedeemInvi
   revalidate({ domain: 'public' })
 
   // Where does the user land?
-  //   - skipOnboarding=true → /join/[code]/welcome
-  //   - skipOnboarding=false → /join/[code]/onboarding (the form)
-  // Both routes resolve the user's now-bound Player and render
-  // accordingly. Using subroutes (not query params) keeps the URL
-  // shareable / refreshable in case the user closes the tab mid-flow.
+  //   - skipOnboarding=true → /join/[code]/welcome (terminal — user is
+  //     now a member; v1.81.2 appends `?submitted=redeemInvite` so the
+  //     welcome page mounts the post-submit success popup).
+  //   - skipOnboarding=false → /join/[code]/onboarding (continuation
+  //     form via `completeOnboardingWithId`; no popup at this step —
+  //     it fires after the user completes the form).
+  // Using subroutes (not query params) keeps the URL shareable /
+  // refreshable in case the user closes the tab mid-flow.
   const redirectTo = invite.skipOnboarding
-    ? `/join/${invite.code}/welcome`
+    ? `/join/${invite.code}/welcome?submitted=redeemInvite`
     : `/join/${invite.code}/onboarding`
 
   return {
@@ -402,6 +405,10 @@ export async function submitOnboarding(input: SubmitOnboardingInput): Promise<vo
   revalidate({ domain: 'admin', paths: [`/admin/leagues/${invite.leagueId}/players`] })
   revalidate({ domain: 'public' })
   redirect(`/join/${input.code}/id-upload`)
+  // submitOnboarding is dead code — no caller in src/ imports it.
+  // Pre-v1.68.0 multi-step flow, replaced by completeOnboardingWithId.
+  // Surfaced as a deletion candidate in v1.81.2; left wired here so the
+  // function still typechecks until the cleanup PR.
 }
 
 /**
@@ -518,7 +525,9 @@ export async function submitIdUpload(formData: FormData): Promise<void> {
   })
 
   revalidate({ domain: 'admin', paths: [`/admin/leagues/${invite.leagueId}/players`] })
-  redirect(`/join/${code}/welcome`)
+  // v1.81.2 — append `?submitted=submitIdUpload` so the welcome page's
+  // <SuccessConfirmationGate> mounts the post-submit popup.
+  redirect(`/join/${code}/welcome?submitted=submitIdUpload`)
 }
 
 function extOf(filename: string): string {
@@ -766,7 +775,9 @@ export async function completeOnboardingWithId(
     }),
   )
 
-  redirect(`/join/${input.code}/welcome`)
+  // v1.81.2 — append `?submitted=completeOnboardingWithId` so the welcome
+  // page's <SuccessConfirmationGate> mounts the post-submit popup.
+  redirect(`/join/${input.code}/welcome?submitted=completeOnboardingWithId`)
 }
 
 function isOwnedBlobUrl(url: string, expectedPrefix: string): boolean {
@@ -841,5 +852,7 @@ export async function skipIdUpload(input: { code: string; playerId: string }): P
   })
 
   revalidate({ domain: 'admin', paths: [`/admin/leagues/${invite.leagueId}/players`] })
-  redirect(`/join/${input.code}/welcome`)
+  // v1.81.2 — append `?submitted=skipIdUpload` so the welcome page's
+  // <SuccessConfirmationGate> mounts the post-submit popup.
+  redirect(`/join/${input.code}/welcome?submitted=skipIdUpload`)
 }
