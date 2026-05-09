@@ -240,6 +240,13 @@ export async function setLeaguePreseasonMode(leagueId: string, value: boolean) {
  * `preseasonMode` — both can be on simultaneously. Default false.
  *
  * Validation: rejects non-boolean values defensively.
+ *
+ * v1.84.0 — superseded by `setLeagueVisibility` for the banner gate.
+ * Kept during the transition: the public banner now reads
+ * `visibility === 'PUBLIC_OPEN'` (see `RecruitingBanner` in Dashboard),
+ * but admin SettingsTab still surfaces the legacy toggle so existing
+ * admin muscle memory keeps working. The next cycle drops both this
+ * action and the column once every read site has switched over.
  */
 export async function setLeagueRecruiting(leagueId: string, value: boolean) {
   await assertAdmin()
@@ -254,6 +261,42 @@ export async function setLeagueRecruiting(leagueId: string, value: boolean) {
     domain: 'admin',
     paths: [`/admin/leagues/${leagueId}/settings`, `/admin/leagues/${leagueId}`, '/admin'],
   })
+}
+
+/**
+ * v1.84.0 — homepage redesign phase 1a. Per-league visibility setter.
+ *
+ * Three valid values: 'PRIVATE' | 'PUBLIC_CLOSED' | 'PUBLIC_OPEN'.
+ * Validates against the literal set defensively (the admin radio is
+ * the affordance; this is the server contract).
+ *
+ * The banner-gate read site (`Dashboard.tsx` + `getLeagueFlags`) now
+ * gates on `visibility === 'PUBLIC_OPEN'`. Self-serve apply
+ * (`applyToLeague`) accepts when `visibility !== 'PRIVATE'`. PRIVATE
+ * leagues require an invite via `/join/<code>`.
+ */
+const ALLOWED_VISIBILITY = new Set(['PRIVATE', 'PUBLIC_CLOSED', 'PUBLIC_OPEN'] as const)
+type LeagueVisibilityLiteral = 'PRIVATE' | 'PUBLIC_CLOSED' | 'PUBLIC_OPEN'
+
+export async function setLeagueVisibility(
+  leagueId: string,
+  value: LeagueVisibilityLiteral,
+) {
+  await assertAdmin()
+  if (!ALLOWED_VISIBILITY.has(value)) {
+    throw new Error('visibility must be PRIVATE, PUBLIC_CLOSED, or PUBLIC_OPEN')
+  }
+  await prisma.league.update({
+    where: { id: leagueId },
+    data: { visibility: value },
+  })
+  revalidate({
+    domain: 'admin',
+    paths: [`/admin/leagues/${leagueId}/settings`, `/admin/leagues/${leagueId}`, '/admin'],
+  })
+  // Public bust — the banner gate + (future) directory both read this
+  // column via the cached `leagueFlags` helper.
+  revalidate({ domain: 'public' })
 }
 
 /**

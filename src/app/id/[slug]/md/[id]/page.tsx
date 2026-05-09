@@ -120,7 +120,8 @@ export default async function LeagueByIdMatchdayPage({ params }: Props) {
       initialMatchdayId={md.id}
       leagueSlug={normalizeLeagueSlug(slug)}
       preseasonMode={flags.preseasonMode}
-      recruiting={flags.recruiting}
+      // v1.84.0 — banner gate now reads `visibility === 'PUBLIC_OPEN'`.
+      recruiting={flags.visibility === 'PUBLIC_OPEN'}
       recruitingState={recruitingState}
       league={leagueRow ?? undefined}
       unpaidFee={unpaidFee ?? null}

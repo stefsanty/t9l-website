@@ -1,0 +1,55 @@
+# Phase 1a — Homepage redesign (schema foundation)
+
+Branch: claude/adoring-noyce-6d543c (worktree). Briefing: handover-homepage-ux.md (lives on the parallel `claude/nice-perlman-fae9ea` worktree, audit-only). Decisions baked in by the user from the audit's seven open questions; this PR ships the schema foundation only — directory + multi-league hub deferred to phase 1b/1c.
+
+## M1 — Schema audit
+
+**Legacy field naming.** The briefing uses `recruitingMode`; the actual schema field is `League.recruiting Boolean @default(false)`, added in v1.63.0. Standing reads:
+- `src/lib/leagueFlags.ts` (cached `{ preseasonMode, recruiting }` helper).
+- `src/components/Dashboard.tsx:329` — banner gate is `{recruiting && league && recruitingState && <RecruitingBanner>}`.
+- `src/app/page.tsx:148`, `id/[slug]/page.tsx:132`, `id/[slug]/md/[id]/page.tsx:123` — pass `flags.recruiting` as the `recruiting` prop into Dashboard.
+- `src/app/api/recruiting/actions.ts:125` — `applyToLeague` rejects when `!league.recruiting`.
+- `src/app/api/recruiting/actions.ts:428` — `registerToLeague` rejects when `!league.recruiting` (out of scope this phase).
+- `src/app/recruit/[slug]/page.tsx:65` — page-level "not recruiting" surface (out of scope this phase).
+- `src/components/admin/SettingsTab.tsx` — admin recruiting toggle (kept for the transition; visibility radio added alongside).
+
+**Visibility mapping (decision 1).**
+
+| Existing | Migration target |
+|---|---|
+| `recruiting = true` | `visibility = PUBLIC_OPEN` |
+| `recruiting = false` | `visibility = PUBLIC_CLOSED` |
+| New leagues | `visibility = PUBLIC_CLOSED` (column default) |
+
+**Behavioural deltas this phase:**
+- `RecruitingBanner` mounts iff `visibility === 'PUBLIC_OPEN'` (was: `recruiting === true`). Migration ensures parity for existing recruiting leagues.
+- `applyToLeague` accepts when `visibility !== 'PRIVATE'` (was: rejects when `!recruiting`). PUBLIC_CLOSED leagues now accept self-serve apply via the modal, even though the banner doesn't auto-mount. Per briefing item 4.
+- `registerToLeague` (the `/recruit/<slug>` server action) and the recruit page-level surface stay on `league.recruiting` this phase — narrow scope. Phase 1b can flip them.
+- `User.defaultLeagueId` ships nullable + no writes in this PR. Phase 1b/1c wires writes (decision 2).
+- `League.isDefault` keeps its column; new TODO comment marks it as no-longer-routing (decision 3).
+
+## M2 — Migration + admin toggle (done)
+
+- `prisma/schema.prisma`: added `LeagueVisibility` enum, `League.visibility` (default PUBLIC_CLOSED), `User.defaultLeagueId` nullable FK + back-relation, removal TODO on `League.isDefault`. `npx prisma format` + `npx prisma generate` clean.
+- `prisma/migrations/20260517000000_league_visibility_user_default_league/migration.sql`: enum create, ADD COLUMN with default + recruiting=true backfill, User FK + index. Pure additive — no DROP / ALTER COLUMN.
+- `src/app/admin/leagues/actions.ts`: `setLeagueVisibility(leagueId, value)` server action (asserts admin, validates the literal set, writes + revalidates admin AND public domain).
+- `src/components/admin/SettingsTab.tsx`: visibility radio with three buttons + static testids; rolls back optimistic state on server reject.
+
+## M3 — RecruitingBanner re-gated on visibility (done)
+
+- `src/lib/leagueFlags.ts`: `LeagueFlags` extended with `visibility`. Default flags fall back to `PUBLIC_CLOSED` on missing row / Prisma error.
+- `src/app/page.tsx` + `src/app/id/[slug]/page.tsx` + `src/app/id/[slug]/md/[id]/page.tsx`: `recruiting={flags.visibility === 'PUBLIC_OPEN'}`. Legacy `flags.recruiting` no longer threaded.
+- `src/app/api/recruiting/actions.ts`: `applyToLeague` accepts PUBLIC_OPEN + PUBLIC_CLOSED; rejects PRIVATE with "invitation-only" copy. The legacy `if (!league.recruiting)` rejection on this path is gone.
+
+`registerToLeague` + `/recruit/<slug>` page-level surface deliberately stay on `league.recruiting` this phase — narrow scope per briefing item 4.
+
+## M4 — Tests + suite passing (done)
+
+- `tests/unit/v184_homepage_phase1a.test.ts`: 28 regression-target tests covering schema, migration shape, flags helper, page wiring, admin radio, admin action, and `applyToLeague` runtime gate (PUBLIC_OPEN accepts, PUBLIC_CLOSED accepts, PRIVATE rejects, PRIVATE wins over stale recruiting=true).
+- Stash-pop sanity: 9/28 tests fail on the broken state when the gate change is reverted. Schema/migration pins stay green (load-bearing assertions are the gate flips on the executable code).
+- Updated existing structural tests:
+  - `tests/unit/preseasonRecruitingToggles.test.ts`: select clause + LeagueFlags shape + DEFAULT_FLAGS + page wiring assertions all updated to reflect the new visibility-derived gate.
+  - `tests/unit/v18010_admin_orthogonal_apply.test.ts`: bumped one slice window from 3000 → 4000 chars (the v1.84.0 visibility branch sits between the league lookup and the user-resolve block).
+- Full Vitest: 3008 passed / 2 skipped / 0 failed.
+- `tsc --noEmit`: only the pre-existing `@next/bundle-analyzer` typedef error from main; verified by stash + tsc on clean tree (same error). Not introduced by this PR.
+

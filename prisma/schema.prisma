@@ -13,6 +13,35 @@ enum Role {
   VIEWER
 }
 
+// v1.84.0 — homepage redesign phase 1a. Three-tier league visibility for
+// the upcoming `/leagues` directory + recruitment-banner gating. Replaces
+// the binary `League.recruiting` toggle as the canonical signal:
+//
+//   PRIVATE       — invitation-only. Hidden from the public directory.
+//                   Self-serve apply (`applyToLeague`) is rejected with
+//                   an "invite required" message; `/join/<code>` is the
+//                   sole entry path.
+//   PUBLIC_CLOSED — listed in the public directory but the recruitment
+//                   banner does NOT auto-mount on the league page.
+//                   Self-serve apply via the modal IS accepted; useful
+//                   for leagues that want to be discoverable but not
+//                   actively advertise mid-season.
+//   PUBLIC_OPEN   — listed in the directory AND the recruitment banner
+//                   auto-mounts on `/id/<slug>` (and `/`). Self-serve
+//                   apply accepted everywhere.
+//
+// Migration default for new and existing rows is PUBLIC_CLOSED; the
+// one-shot data migration upgrades existing `League.recruiting = true`
+// rows to PUBLIC_OPEN so the legacy banner-on leagues see no UX change.
+// `League.recruiting` stays during the transition (admin SettingsTab
+// keeps the toggle this phase) and is dropped in a later cycle once
+// every read site has switched over.
+enum LeagueVisibility {
+  PRIVATE
+  PUBLIC_CLOSED
+  PUBLIC_OPEN
+}
+
 model User {
   id              String   @id @default(cuid())
   lineId          String?  @unique
@@ -29,10 +58,10 @@ model User {
   // (LINE-specific from PR 6 trackLineLogin); the adapter writes `image`.
   // Both kept for the dual-population window. Stage 4 consolidates onto
   // `image` and drops `pictureUrl` once all read sites switch over.
-  image      String?
-  role       Role     @default(VIEWER)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  image           String?
+  role            Role     @default(VIEWER)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   // Stage 1 of account-player-rework (v1.27.0). 1:1 link to the canonical
   // Player profile this human is associated with. Nullable because:
@@ -77,6 +106,20 @@ model User {
   // MatchEvent side; relation declared here so Prisma's relation graph
   // compiles.
   authoredEvents MatchEvent[]
+
+  // v1.84.0 — homepage redesign phase 1a. Per-user preferred league for
+  // the persona-aware apex. Nullable; the column is purely additive in
+  // this phase (no writes yet — phase 1b wires the writes from the
+  // upcoming `/leagues` directory + LeagueSwitcher).
+  //
+  // ON DELETE SET NULL — when a league is removed the user's pin clears
+  // rather than orphaning. No `@relation` back-relation declared on
+  // `League` to keep the back-relation graph small; the Prisma client
+  // can read this via the explicit FK.
+  defaultLeagueId String?
+  defaultLeague   League? @relation("UserDefaultLeague", fields: [defaultLeagueId], references: [id], onDelete: SetNull)
+
+  @@index([defaultLeagueId])
 }
 
 // Stage α.5 of account-player-rework (v1.28.0). NextAuth adapter Account
@@ -150,9 +193,25 @@ model League {
   location     String
   startDate    DateTime
   endDate      DateTime?
+  // v1.84.0 — kept for the transition but no longer used as a routing
+  // signal. Pre-v1.84.0, `getDefaultLeagueId()` resolved `/` and the
+  // header brand title via `where: { isDefault: true }`. Phase 1b/1c
+  // moves persona-aware routing to `User.defaultLeagueId` (per-user
+  // preference) + the `/leagues` directory; this column will be dropped
+  // when the last reader is migrated.
+  // TODO(homepage-phase-1c): remove `isDefault` once `/` no longer
+  // resolves a global default league.
   isDefault    Boolean   @default(false)
   primaryColor String?
   accentColor  String?
+
+  // v1.84.0 — three-tier visibility. Default PUBLIC_CLOSED so a freshly
+  // created league appears in the directory but the recruitment banner
+  // does not auto-mount until the admin explicitly bumps it to
+  // PUBLIC_OPEN. Existing rows are remapped from `League.recruiting` by
+  // the one-shot migration: `recruiting = true` → PUBLIC_OPEN, else
+  // PUBLIC_CLOSED. See enum docs above for the per-state semantics.
+  visibility   LeagueVisibility @default(PUBLIC_CLOSED)
   // v1.73.0 — short display label for the header home button and page title.
   // Null means fall back to League.name. Backfilled for the default league.
   abbreviation String?
@@ -240,6 +299,11 @@ model League {
   playerStats  PlayerLeagueStat[]
   // v1.66.0 — per-position fee overrides (e.g. GK = 5000, FP = 4000).
   positionFees LeaguePositionFee[]
+
+  // v1.84.0 — back-relation for User.defaultLeagueId pins. Relation
+  // declared here only to satisfy Prisma's named-relation graph; no
+  // application code reads `League.usersWithDefault`.
+  usersWithDefault User[] @relation("UserDefaultLeague")
 
   @@index([isDefault])
 }
@@ -720,16 +784,16 @@ model Match {
 // deletes PlayerLeagueAssignment rows, not the Player itself, so this is
 // the documented intent.
 model MatchEvent {
-  id          String    @id @default(cuid())
-  matchId     String
-  kind        EventKind @default(GOAL)
+  id                String    @id @default(cuid())
+  matchId           String
+  kind              EventKind @default(GOAL)
   // Nullable so future EventKinds (cards, subs) don't carry GoalType.
   // For kind=GOAL we expect a non-null goalType in practice; runtime
   // guards live in the admin server actions, not in the schema.
-  goalType    GoalType?
-  scorerId    String
-  assisterId  String?
-  minute      Int?
+  goalType          GoalType?
+  scorerId          String
+  assisterId        String?
+  minute            Int?
   // v1.82.0 — explicit beneficiary team (the LeagueTeam.id the goal
   // counts toward in the score recompute). Pre-v1.82.0 the recompute
   // resolved beneficiary by mapping `scorerId → scorer's team` and
@@ -742,15 +806,15 @@ model MatchEvent {
   // Audit who entered the event — admin (their User.id) or the player
   // themselves (their User.id via session.user.playerId → the User who
   // owns that Player). NULL on backfilled rows from the Sheets import.
-  createdById String?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  createdById       String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
-  match            Match       @relation(fields: [matchId], references: [id], onDelete: Cascade)
-  scorer           Player      @relation("EventScorer", fields: [scorerId], references: [id])
-  assister         Player?     @relation("EventAssister", fields: [assisterId], references: [id])
-  beneficiaryTeam  LeagueTeam? @relation("EventBeneficiary", fields: [beneficiaryTeamId], references: [id])
-  createdBy        User?       @relation(fields: [createdById], references: [id])
+  match           Match       @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  scorer          Player      @relation("EventScorer", fields: [scorerId], references: [id])
+  assister        Player?     @relation("EventAssister", fields: [assisterId], references: [id])
+  beneficiaryTeam LeagueTeam? @relation("EventBeneficiary", fields: [beneficiaryTeamId], references: [id])
+  createdBy       User?       @relation(fields: [createdById], references: [id])
 
   @@index([matchId])
   @@index([scorerId])

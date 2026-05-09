@@ -145,7 +145,11 @@ export default async function Home() {
       nextMd={nextMd}
       leagueSlug={DEFAULT_LEAGUE_SLUG}
       preseasonMode={flags.preseasonMode}
-      recruiting={flags.recruiting}
+      // v1.84.0 — banner gate now reads `visibility === 'PUBLIC_OPEN'`.
+      // The legacy `flags.recruiting` boolean stays during the
+      // transition (admin SettingsTab still writes it) but is no
+      // longer the canonical signal for the public banner.
+      recruiting={flags.visibility === 'PUBLIC_OPEN'}
       recruitingState={recruitingState}
       league={leagueRow ?? undefined}
       unpaidFee={unpaidFee ?? null}

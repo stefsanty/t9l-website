@@ -12,6 +12,7 @@ import {
   setLeagueAllowSelfLink,
   setLeaguePreseasonMode,
   setLeagueRecruiting,
+  setLeagueVisibility,
 } from '@/app/admin/leagues/actions'
 import { formatJstDate } from '@/lib/jst'
 import LeagueDetailsEditor from './LeagueDetailsEditor'
@@ -32,6 +33,11 @@ interface League {
   // false; threaded from `getLeagueSettings` alongside `allowSelfLink`.
   preseasonMode: boolean
   recruiting: boolean
+  // v1.84.0 — homepage redesign phase 1a. Three-tier visibility radio.
+  // Surfaced alongside the legacy `recruiting` toggle this phase; the
+  // public banner gate now reads `visibility === 'PUBLIC_OPEN'` via
+  // `getLeagueFlags`. Threaded from `getLeagueSettings`.
+  visibility: 'PRIVATE' | 'PUBLIC_CLOSED' | 'PUBLIC_OPEN'
   // v1.66.0 — per-league fee defaults + per-position fee rows. Both
   // threaded from getLeagueSettings's include.
   defaultFee: number
@@ -65,6 +71,42 @@ function fmtDate(d: Date | null) {
   return formatJstDate(d)
 }
 
+// v1.84.0 — visibility radio labels. Order pinned to match the radio
+// render order (private first, public_closed in the middle, public_open
+// at the end so the most-permissive state is rightmost). Each option
+// carries its own literal testid so the value appears as a grep-able
+// static string in source — easier for downstream regression checks.
+const VISIBILITY_OPTIONS: ReadonlyArray<{
+  value: 'PRIVATE' | 'PUBLIC_CLOSED' | 'PUBLIC_OPEN'
+  label: string
+  helper: string
+  testId: string
+}> = [
+  {
+    value: 'PRIVATE',
+    label: 'Private',
+    helper: 'Hidden from the public directory. Apply by invite link only.',
+    testId: 'settings-tab-visibility-private',
+  },
+  {
+    value: 'PUBLIC_CLOSED',
+    label: 'Public — closed',
+    helper: 'Listed in the directory. Direct apply works; recruiting banner stays hidden.',
+    testId: 'settings-tab-visibility-public_closed',
+  },
+  {
+    value: 'PUBLIC_OPEN',
+    label: 'Public — open',
+    helper: 'Listed in the directory. Recruiting banner shows on the league page.',
+    testId: 'settings-tab-visibility-public_open',
+  },
+]
+const VISIBILITY_LABELS: Record<'PRIVATE' | 'PUBLIC_CLOSED' | 'PUBLIC_OPEN', string> = {
+  PRIVATE: 'Private',
+  PUBLIC_CLOSED: 'Public — closed',
+  PUBLIC_OPEN: 'Public — open',
+}
+
 // v1.55.0 — internal type alias kept as `SubdomainStatus` because the
 // underlying `League.subdomain` column is unchanged (column rename to
 // `slug` deferred). Externally-facing copy uses "URL slug".
@@ -80,8 +122,11 @@ export default function SettingsTab({ league }: SettingsTabProps) {
   const [allowSelfLink, setAllowSelfLinkState] = useState<boolean>(league.allowSelfLink)
   const [preseasonMode, setPreseasonModeState] = useState<boolean>(league.preseasonMode)
   const [recruiting, setRecruitingState] = useState<boolean>(league.recruiting)
+  const [visibility, setVisibilityState] = useState<'PRIVATE' | 'PUBLIC_CLOSED' | 'PUBLIC_OPEN'>(
+    league.visibility,
+  )
   const [savingToggle, setSavingToggle] = useState<
-    'allowSelfLink' | 'preseasonMode' | 'recruiting' | null
+    'allowSelfLink' | 'preseasonMode' | 'recruiting' | 'visibility' | null
   >(null)
 
   const [name, setName]             = useState(league.name)
@@ -212,6 +257,24 @@ export default function SettingsTab({ league }: SettingsTabProps) {
     } catch (err) {
       setRecruitingState(prev)
       toast(err instanceof Error ? err.message : 'Failed to set recruiting toggle')
+    } finally {
+      setSavingToggle(null)
+    }
+  }
+
+  // v1.84.0 — visibility radio handler. Optimistic flip with rollback on
+  // server rejection; same shape as the boolean toggles above.
+  async function handleVisibilityChange(value: 'PRIVATE' | 'PUBLIC_CLOSED' | 'PUBLIC_OPEN') {
+    if (value === visibility) return
+    setSavingToggle('visibility')
+    const prev = visibility
+    setVisibilityState(value)
+    try {
+      await setLeagueVisibility(league.id, value)
+      toast(`Visibility set to ${VISIBILITY_LABELS[value]}`)
+    } catch (err) {
+      setVisibilityState(prev)
+      toast(err instanceof Error ? err.message : 'Failed to set visibility')
     } finally {
       setSavingToggle(null)
     }
@@ -540,6 +603,63 @@ export default function SettingsTab({ league }: SettingsTabProps) {
           <div className="text-xs text-admin-text3 flex items-center gap-2">
             <Loader2 className="w-3 h-3 animate-spin" />
             Saving recruiting toggle…
+          </div>
+        )}
+      </section>
+
+      {/* v1.84.0 — League visibility radio. Three-tier control feeding the
+          upcoming public directory + the existing recruitment banner gate.
+          Replaces the legacy `recruiting` boolean as the canonical signal
+          for the banner; the `recruiting` toggle above stays during the
+          transition cycle and will be removed once every read site has
+          switched over. */}
+      <section
+        data-testid="settings-tab-visibility-section"
+        className="bg-admin-surface rounded-xl border border-admin-border p-5 space-y-5"
+      >
+        <div>
+          <h2 className="font-condensed font-bold text-admin-text text-lg">Visibility</h2>
+          <p className="text-xs text-admin-text3 mt-1 leading-relaxed">
+            Controls whether the league appears in the public directory and whether the
+            recruiting banner auto-mounts on the league page.
+          </p>
+        </div>
+
+        <div className="space-y-3">
+          <label className="text-xs font-medium text-admin-text2 uppercase tracking-wide block">
+            Visibility
+          </label>
+          <div className="grid grid-cols-1 gap-2">
+            {VISIBILITY_OPTIONS.map((opt) => {
+              const selected = visibility === opt.value
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  data-testid={opt.testId}
+                  disabled={savingToggle !== null}
+                  onClick={() => handleVisibilityChange(opt.value)}
+                  className={cn(
+                    'rounded-lg border px-4 py-3 text-left transition-colors disabled:opacity-50',
+                    selected
+                      ? 'border-admin-green bg-admin-green/10 text-admin-text'
+                      : 'border-admin-border bg-admin-surface2 text-admin-text2 hover:border-admin-border2 hover:text-admin-text',
+                  )}
+                >
+                  <div className="text-sm font-medium">{opt.label}</div>
+                  <div className="text-xs text-admin-text3 mt-0.5 leading-tight">
+                    {opt.helper}
+                  </div>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+
+        {savingToggle === 'visibility' && (
+          <div className="text-xs text-admin-text3 flex items-center gap-2">
+            <Loader2 className="w-3 h-3 animate-spin" />
+            Saving visibility…
           </div>
         )}
       </section>
