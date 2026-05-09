@@ -11,6 +11,7 @@ import {
   getFormationsFor,
   playerCodeFillsSlot,
 } from '@/lib/formations';
+import { positionPillColor } from '@/lib/positions';
 
 // ── Picker storage ────────────────────────────────────────────────────────
 //
@@ -94,14 +95,14 @@ function PitchBackground() {
 // shows [LM]). For depth-chart alternates and bench subs: shows the
 // player's own positions[0] — they are candidates, not yet placed.
 
-function PositionPill({ code, tone }: { code: string | null; tone: 'starter' | 'alternate' }) {
+function PositionPill({ code }: { code: string | null }) {
   if (!code) return null;
-  const className =
-    tone === 'starter'
-      ? 'text-[7px] font-black uppercase tracking-widest text-white/95 bg-black/55 px-1 py-[1px] rounded leading-none'
-      : 'text-[7px] font-black uppercase tracking-widest text-white/80 bg-white/10 px-[3px] py-[1px] rounded leading-none';
+  const colorClass = positionPillColor(code);
   return (
-    <span className={className} data-testid={`position-pill-${code}`}>
+    <span
+      className={`text-[7px] font-black uppercase tracking-widest ${colorClass} px-1 py-[1px] rounded leading-none`}
+      data-testid={`position-pill-${code}`}
+    >
       {code}
     </span>
   );
@@ -144,14 +145,11 @@ function SlotColumn({
               boxShadow: '0 0 0 2px rgba(255,255,255,0.85), 0 2px 6px rgba(0,0,0,0.5)',
             }}
           />
-          <div className="text-[7px] font-black text-white/90 uppercase tracking-wider leading-none">
-            {slotCode}
-          </div>
           <div
             className="flex items-center gap-[2px] px-1.5 py-[2px] rounded whitespace-nowrap"
             style={{ backgroundColor: 'rgba(0,0,0,0.62)' }}
           >
-            <PositionPill code={slotCode} tone="starter" />
+            <PositionPill code={slotCode} />
             <span
               className="text-[8px] font-black text-white text-center leading-tight"
               translate="no"
@@ -161,12 +159,7 @@ function SlotColumn({
           </div>
         </>
       ) : (
-        <>
-          <div className="w-5 h-5 rounded-full border-2 border-dashed border-white/40" />
-          <div className="text-[7px] font-black text-white/50 uppercase tracking-wider leading-none">
-            {slotCode}
-          </div>
-        </>
+        <div className="w-5 h-5 rounded-full border-2 border-dashed border-white/40" />
       )}
 
       {alternates.length > 0 && (
@@ -180,9 +173,9 @@ function SlotColumn({
               className="flex items-center gap-[2px] max-w-full"
               data-testid={`formation-alternate-${alt.id}`}
             >
-              <PositionPill code={primaryPositionCode(alt)} tone="alternate" />
+              <PositionPill code={primaryPositionCode(alt)} />
               <span
-                className="text-[7px] font-bold text-white/85 leading-none truncate"
+                className="text-[8px] font-black text-white/80 leading-none truncate italic"
                 translate="no"
               >
                 {alt.name}
@@ -583,8 +576,8 @@ export default function FormationPitch({
           return (
             <div
               key={idx}
-              className="absolute -translate-x-1/2 -translate-y-1/2"
-              style={{ top, left }}
+              className="absolute"
+              style={{ top, left, transform: 'translateX(-50%) translateY(-10px)' }}
             >
               <SlotColumn
                 slotCode={slot.code}
@@ -620,7 +613,7 @@ export default function FormationPitch({
                   className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-surface-md text-fg-mid border border-border-subtle"
                   translate="no"
                 >
-                  <PositionPill code={primaryPositionCode(p)} tone="alternate" />
+                  <PositionPill code={primaryPositionCode(p)} />
                   <span>{p.name}</span>
                 </span>
               ))}

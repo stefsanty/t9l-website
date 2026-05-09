@@ -190,6 +190,21 @@ export function joinPositions(positions: ReadonlyArray<string>): string {
   return positions.join('/')
 }
 
+/**
+ * Tailwind color classes for a position pill, keyed by coarse bucket.
+ *
+ * GK → yellow  |  DF → blue  |  MF → green  |  FW → red
+ * Futsal: GK → yellow, FIXO (DF) → blue, ALA (MF) → green, PIVOT (FW) → red
+ */
+export function positionPillColor(code: string): string {
+  switch (getPositionBucket(code)) {
+    case 'GK': return 'bg-yellow-500/20 text-yellow-300'
+    case 'DF': return 'bg-blue-500/20 text-blue-300'
+    case 'MF': return 'bg-green-500/20 text-green-300'
+    case 'FW': return 'bg-red-500/20 text-red-300'
+  }
+}
+
 // Futsal-specific codes that pass through groupedPositionLabel unchanged.
 const FUTSAL_SPECIFIC_CODES = new Set(['FIXO', 'ALA', 'PIVOT'])
 
