@@ -186,7 +186,7 @@ describe('getLeaguePlayers v1.10.0 4-tuple shape', () => {
     expect(result[4]).toEqual({})
   })
 
-  it('v1.38.0 (PR κ) — counts active PERSONAL invites per targetPlayerId', async () => {
+  it('v1.85.0 — returns first active PERSONAL invite object per targetPlayerId', async () => {
     findManyAssignmentsMock.mockResolvedValueOnce([])
     findManyLeagueTeamsMock.mockResolvedValueOnce([])
     findManyGameWeeksMock.mockResolvedValueOnce([])
@@ -194,25 +194,28 @@ describe('getLeaguePlayers v1.10.0 4-tuple shape', () => {
     const future = new Date(Date.now() + 86_400_000) // +1 day
     const past = new Date(Date.now() - 86_400_000) // -1 day
     findManyInvitesMock.mockResolvedValueOnce([
-      // active — counted
-      { targetPlayerId: 'p-alice', expiresAt: future, maxUses: 1, usedCount: 0 },
-      // active, no expiry — counted
-      { targetPlayerId: 'p-alice', expiresAt: null, maxUses: null, usedCount: 0 },
-      // expired — NOT counted
-      { targetPlayerId: 'p-alice', expiresAt: past, maxUses: 1, usedCount: 0 },
-      // used up — NOT counted
-      { targetPlayerId: 'p-bob', expiresAt: future, maxUses: 1, usedCount: 1 },
-      // null targetPlayerId — NOT counted (defensive)
-      { targetPlayerId: null, expiresAt: future, maxUses: 1, usedCount: 0 },
-      // active for charlie
-      { targetPlayerId: 'p-charlie', expiresAt: future, maxUses: 5, usedCount: 2 },
+      // active — first match wins for alice
+      { targetPlayerId: 'p-alice', code: 'ALICECODE1', expiresAt: future, maxUses: 1, usedCount: 0, skipOnboarding: false },
+      // second active invite for alice — ignored (first match wins)
+      { targetPlayerId: 'p-alice', code: 'ALICECODE2', expiresAt: null, maxUses: null, usedCount: 0, skipOnboarding: false },
+      // expired — NOT included
+      { targetPlayerId: 'p-alice', code: 'ALICEOLD', expiresAt: past, maxUses: 1, usedCount: 0, skipOnboarding: false },
+      // used up — NOT included
+      { targetPlayerId: 'p-bob', code: 'BOBCODE', expiresAt: future, maxUses: 1, usedCount: 1, skipOnboarding: false },
+      // null targetPlayerId — NOT included (defensive)
+      { targetPlayerId: null, code: 'NULLCODE', expiresAt: future, maxUses: 1, usedCount: 0, skipOnboarding: false },
+      // active for charlie, skipOnboarding true
+      { targetPlayerId: 'p-charlie', code: 'CHARLIECODE', expiresAt: future, maxUses: 5, usedCount: 2, skipOnboarding: true },
     ])
 
-    const [, , , , inviteCounts] = await getLeaguePlayers('l-spring')
+    const [, , , , activeInvites] = await getLeaguePlayers('l-spring')
 
-    expect(inviteCounts['p-alice']).toBe(2)
-    expect(inviteCounts['p-bob']).toBeUndefined()
-    expect(inviteCounts['p-charlie']).toBe(1)
+    // alice: first active invite returned; second ignored
+    expect(activeInvites['p-alice']).toMatchObject({ code: 'ALICECODE1', skipOnboarding: false })
+    // bob: used up — no entry
+    expect(activeInvites['p-bob']).toBeUndefined()
+    // charlie: one active invite with skipOnboarding: true
+    expect(activeInvites['p-charlie']).toMatchObject({ code: 'CHARLIECODE', skipOnboarding: true })
   })
 
   it('v1.38.0 (PR κ) — passes the right where-clause to leagueInvite.findMany', async () => {

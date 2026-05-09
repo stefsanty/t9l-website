@@ -167,9 +167,11 @@ export const getLeaguePlayers = unstable_cache(
         },
         select: {
           targetPlayerId: true,
+          code: true,
           expiresAt: true,
           maxUses: true,
           usedCount: true,
+          skipOnboarding: true,
         },
         take: 5000,
       }),
@@ -217,16 +219,23 @@ export const getLeaguePlayers = unstable_cache(
     // hasn't expired (expiresAt > now, or expiresAt null) AND isn't
     // revoked (filtered upstream). Admin pre-staged PERSONAL invites
     // typically have `maxUses: 1` so any usedCount ≥ 1 means consumed.
+    // Per-player at most one active PERSONAL invite can exist (the generate
+    // action rejects a second one), so the first match wins.
     const now = Date.now()
-    const activeInviteCountByPlayerId: Record<string, number> = {}
+    const activeInviteByPlayerId: Record<string, { code: string; expiresAt: string | null; skipOnboarding: boolean }> = {}
     for (const inv of activeInvites) {
       if (!inv.targetPlayerId) continue
       const usedUp = inv.maxUses !== null && inv.usedCount >= inv.maxUses
       if (usedUp) continue
       const expired = inv.expiresAt !== null && inv.expiresAt.getTime() <= now
       if (expired) continue
-      activeInviteCountByPlayerId[inv.targetPlayerId] =
-        (activeInviteCountByPlayerId[inv.targetPlayerId] ?? 0) + 1
+      if (!activeInviteByPlayerId[inv.targetPlayerId]) {
+        activeInviteByPlayerId[inv.targetPlayerId] = {
+          code: inv.code,
+          expiresAt: inv.expiresAt ? inv.expiresAt.toISOString() : null,
+          skipOnboarding: inv.skipOnboarding,
+        }
+      }
     }
     // v1.65.4 — pending applications come exclusively from PLM rows now.
     // The legacy Player.* source is gone; the merge step is unnecessary.
@@ -265,7 +274,7 @@ export const getLeaguePlayers = unstable_cache(
       leagueTeams,
       gameWeeks,
       lineLoginsByLineId,
-      activeInviteCountByPlayerId,
+      activeInviteByPlayerId,
       mergedPendingApplications,
       idDataByPlayerId,
     ] as const
