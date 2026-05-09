@@ -112,18 +112,22 @@ export async function applyToLeague(
   }
 
   // Verify the league exists and accepts applications.
-  // v1.81.0 — also pulls `subdomain` for the success-redirect fallback
-  // when `originPath` is missing/invalid.
-  // v1.82.0 — also pulls `ballType` for position-vocabulary validation.
+  // v1.81.0 — `subdomain` for success-redirect fallback.
+  // v1.82.0 — `ballType` for position-vocab validation.
+  // v1.84.0 — gate flips from `recruiting` to `visibility`. Only PRIVATE
+  // rejects; PUBLIC_CLOSED accepts via direct link.
   const league = await prisma.league.findUnique({
     where: { id: input.leagueId },
-    select: { id: true, recruiting: true, name: true, subdomain: true, ballType: true },
+    select: { id: true, visibility: true, name: true, subdomain: true, ballType: true },
   })
   if (!league) {
     return { ok: false, error: 'League not found' }
   }
-  if (!league.recruiting) {
-    return { ok: false, error: 'This league is not currently recruiting' }
+  if (league.visibility === 'PRIVATE') {
+    return {
+      ok: false,
+      error: 'This league is private — you need an invite to join',
+    }
   }
   // v1.81.0 — origin-path fallback: the league's own subdomain page is
   // the natural landing for the success popup when the caller didn't
@@ -422,11 +426,15 @@ export async function registerToLeague(
   const league = await prisma.league.findUnique({
     where: { id: input.leagueId },
     // v1.82.0 — also pulls `ballType` for position-vocabulary validation.
-    select: { id: true, recruiting: true, name: true, subdomain: true, ballType: true },
+    // v1.84.0 — gates on `visibility`; see `applyToLeague` for the rationale.
+    select: { id: true, visibility: true, name: true, subdomain: true, ballType: true },
   })
   if (!league) return { ok: false, error: 'League not found' }
-  if (!league.recruiting) {
-    return { ok: false, error: 'This league is not currently recruiting' }
+  if (league.visibility === 'PRIVATE') {
+    return {
+      ok: false,
+      error: 'This league is private — you need an invite to join',
+    }
   }
 
   // v1.82.0 — validate positions against the league's vocabulary.

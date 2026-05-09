@@ -18,30 +18,42 @@
  * without affecting the LeagueData consumers (the matchday + roster shape
  * doesn't change). Keeping them in a separate cached helper keeps the
  * LeagueData type stable and lets each consumer fetch only what it needs.
+ *
+ * v1.84.0 — recruiting banner gate now derives from `League.visibility`
+ * (`PUBLIC_OPEN` only). The legacy `recruiting` boolean stays in the DB
+ * as a one-cycle dual-write; reads no longer go through it. The
+ * `LeagueFlags.recruiting` field name is preserved so callers
+ * (Dashboard, page.tsx) don't churn — it just means "show the banner".
  */
 import { prisma } from '@/lib/prisma'
 import { unstable_cache } from 'next/cache'
 
 export interface LeagueFlags {
   preseasonMode: boolean
+  /** v1.84.0 — true when `League.visibility === 'PUBLIC_OPEN'`. */
   recruiting: boolean
+  /** v1.84.0 — raw visibility for callers that need the three-tier value. */
+  visibility: 'PRIVATE' | 'PUBLIC_CLOSED' | 'PUBLIC_OPEN'
 }
 
 const DEFAULT_FLAGS: LeagueFlags = {
   preseasonMode: false,
   recruiting: false,
+  visibility: 'PUBLIC_CLOSED',
 }
 
 async function readLeagueFlags(leagueId: string): Promise<LeagueFlags> {
   try {
     const row = await prisma.league.findUnique({
       where: { id: leagueId },
-      select: { preseasonMode: true, recruiting: true },
+      select: { preseasonMode: true, visibility: true },
     })
     if (!row) return DEFAULT_FLAGS
+    const visibility = row.visibility ?? 'PUBLIC_CLOSED'
     return {
       preseasonMode: row.preseasonMode ?? false,
-      recruiting: row.recruiting ?? false,
+      recruiting: visibility === 'PUBLIC_OPEN',
+      visibility,
     }
   } catch (err) {
     console.warn('[leagueFlags] read failed; defaulting OFF:', err)

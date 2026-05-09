@@ -92,7 +92,7 @@ beforeEach(() => {
   // Default: SOCCER league. Each test overrides ballType as needed.
   leagueFindUniqueMock.mockResolvedValue({
     id: 'league-1',
-    recruiting: true,
+    visibility: 'PUBLIC_OPEN',
     name: 'Test League',
     subdomain: 'test',
     ballType: 'SOCCER',
@@ -147,7 +147,7 @@ describe('v1.82.0 — applyToLeague positions[] vocabulary enforcement', () => {
   it('FUTSAL league accepts GK/FIXO/ALA/PIVOT', async () => {
     leagueFindUniqueMock.mockResolvedValue({
       id: 'league-futsal',
-      recruiting: true,
+      visibility: 'PUBLIC_OPEN',
       name: 'Futsal League',
       subdomain: 'futsal',
       ballType: 'FUTSAL',
@@ -171,7 +171,7 @@ describe('v1.82.0 — applyToLeague positions[] vocabulary enforcement', () => {
   it('FUTSAL league REJECTS soccer codes (CB, ST, FW)', async () => {
     leagueFindUniqueMock.mockResolvedValue({
       id: 'league-futsal',
-      recruiting: true,
+      visibility: 'PUBLIC_OPEN',
       name: 'Futsal League',
       subdomain: 'futsal',
       ballType: 'FUTSAL',

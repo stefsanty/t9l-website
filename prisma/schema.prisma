@@ -70,6 +70,16 @@ model User {
   idBackUrl    String?
   idUploadedAt DateTime?
 
+  // v1.84.0 — last league the user explicitly viewed/picked from the
+  // homepage hub. Null on signup; updated whenever the user lands on
+  // a league page from `/` (Phase 1c will wire the writes). Drives the
+  // "where do we route this user when they hit `/`" decision in the
+  // multi-league redesign. `onDelete: SetNull` so league deletion
+  // doesn't cascade-delete users. No index — single-row reads keyed
+  // by User.id, no need.
+  defaultLeagueId String?
+  defaultLeague   League? @relation("UserDefaultLeague", fields: [defaultLeagueId], references: [id], onDelete: SetNull)
+
   accounts Account[]
 
   // v1.42.0 (epic match events PR α) — audit trail for who entered each
@@ -150,6 +160,12 @@ model League {
   location     String
   startDate    DateTime
   endDate      DateTime?
+  // v1.84.0 — TODO: candidate for removal once the multi-league hub
+  // (`/`) fully replaces the current `isDefault`-based "what does the
+  // apex page render" routing. Today still consumed by
+  // `lib/leagueSlugServer.getDefaultLeagueId`, `matchday/[id]/page.tsx`
+  // gameweek disambiguation, `account/player/page.tsx` per-membership
+  // sort, and `lib/dbToPublicLeagueData.ts` legacy fallback.
   isDefault    Boolean   @default(false)
   primaryColor String?
   accentColor  String?
@@ -179,7 +195,29 @@ model League {
   // of `preseasonMode` — both can be on simultaneously, each off by
   // default. Click target is currently a no-op TODO; future PR wires
   // it to a per-league recruiting CTA target.
+  //
+  // v1.84.0 — superseded by `visibility` (the recruiting banner now
+  // gates on `visibility === 'PUBLIC_OPEN'`). Kept for one release
+  // cycle — `setLeagueVisibility` dual-writes this column so old reads
+  // (e.g. `getLeagueFlags` fallback path) stay consistent. Slated for
+  // removal in a follow-up PR once all read sites land on `visibility`.
   recruiting Boolean @default(false)
+
+  // v1.84.0 — three-tier public visibility. Drives both the recruiting
+  // banner gate (PUBLIC_OPEN only) and the homepage league directory
+  // (PUBLIC_OPEN + PUBLIC_CLOSED appear; PRIVATE is hidden, accessible
+  // only by direct slug link). Server actions `applyToLeague` /
+  // `registerToLeague` accept submissions for PUBLIC_OPEN + PUBLIC_CLOSED;
+  // PRIVATE leagues require an invite path (`/join/<code>`).
+  //
+  // Default `PUBLIC_CLOSED` for new leagues — admins explicitly opt in
+  // to PUBLIC_OPEN, mirroring the conservative default of the legacy
+  // `recruiting` flag.
+  //
+  // One-shot data migration on deploy:
+  //   recruiting = true  → visibility = PUBLIC_OPEN
+  //   recruiting = false → visibility = PUBLIC_CLOSED
+  visibility LeagueVisibility @default(PUBLIC_CLOSED)
 
   // v1.66.0 — per-league fee in JPY (no decimals). The fallback when
   // a player's PlayerLeagueMembership has no `feeOverride` and no
@@ -240,6 +278,9 @@ model League {
   playerStats  PlayerLeagueStat[]
   // v1.66.0 — per-position fee overrides (e.g. GK = 5000, FP = 4000).
   positionFees LeaguePositionFee[]
+
+  // v1.84.0 — back-relation for User.defaultLeague.
+  defaultForUsers User[] @relation("UserDefaultLeague")
 
   @@index([isDefault])
 }
@@ -646,6 +687,20 @@ enum ThrowInType {
 enum GoalKickType {
   THROW
   KICK
+}
+
+// v1.84.0 — three-tier public visibility for a League (see League.visibility).
+// PRIVATE        — hidden everywhere; reachable only by direct slug link.
+//                  Apply-flow rejects; users must redeem an invite.
+// PUBLIC_CLOSED  — listed in the multi-league directory; recruiting banner
+//                  hidden. Apply-flow still accepts (someone with a direct
+//                  link / a known invitee can submit).
+// PUBLIC_OPEN    — listed in the directory AND surfaces the
+//                  "RECRUITING NOW" banner on the league page.
+enum LeagueVisibility {
+  PRIVATE
+  PUBLIC_CLOSED
+  PUBLIC_OPEN
 }
 
 model GameWeek {

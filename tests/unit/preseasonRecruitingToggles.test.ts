@@ -200,8 +200,14 @@ describe('v1.63.0 — server actions exist with right shape', () => {
     expect(ACTIONS_SRC).toMatch(
       /setLeaguePreseasonMode[\s\S]+?prisma\.league\.update[\s\S]+?data:\s*\{\s*preseasonMode:\s*value\s*\}/,
     )
+    // v1.84.0 — `setLeagueRecruiting` now dual-writes both the legacy
+    // `recruiting` boolean AND the new `visibility` enum so callers
+    // that toggle it don't reset visibility back to PUBLIC_CLOSED.
     expect(ACTIONS_SRC).toMatch(
-      /setLeagueRecruiting[\s\S]+?prisma\.league\.update[\s\S]+?data:\s*\{\s*recruiting:\s*value\s*\}/,
+      /setLeagueRecruiting[\s\S]+?prisma\.league\.update[\s\S]+?data:\s*\{[\s\S]+?recruiting:\s*value/,
+    )
+    expect(ACTIONS_SRC).toMatch(
+      /setLeagueRecruiting[\s\S]+?prisma\.league\.update[\s\S]+?visibility:\s*value\s*\?\s*['"]PUBLIC_OPEN['"]\s*:\s*['"]PUBLIC_CLOSED['"]/,
     )
   })
 
@@ -231,8 +237,11 @@ describe('v1.63.0 — getLeagueFlags helper', () => {
   })
 
   it('selects only the two flag columns from Prisma', () => {
+    // v1.84.0 — recruiting is no longer a stored flag; the gate now
+    // derives from `visibility`. Helper selects `preseasonMode` +
+    // `visibility` from the league row.
     expect(HELPER_SRC).toMatch(
-      /select:\s*\{\s*preseasonMode:\s*true,\s*recruiting:\s*true\s*\}/,
+      /select:\s*\{\s*preseasonMode:\s*true,\s*visibility:\s*true\s*\}/,
     )
   })
 
@@ -247,19 +256,64 @@ describe('v1.63.0 — getLeagueFlags helper', () => {
       vi.resetModules()
     })
 
-    it('returns row values when row exists', async () => {
+    it('derives recruiting=true ONLY when visibility is PUBLIC_OPEN', async () => {
+      // v1.84.0 — `getLeagueFlags.recruiting` is now a derived flag:
+      // true iff `visibility === 'PUBLIC_OPEN'`. PUBLIC_CLOSED + PRIVATE
+      // both yield recruiting=false (banner stays hidden).
       vi.doMock('@/lib/prisma', () => ({
         prisma: {
           league: {
             findUnique: vi
               .fn()
-              .mockResolvedValue({ preseasonMode: true, recruiting: false }),
+              .mockResolvedValue({ preseasonMode: true, visibility: 'PUBLIC_OPEN' }),
           },
         },
       }))
       const { __readLeagueFlags_for_testing } = await import('../../src/lib/leagueFlags')
       const flags = await __readLeagueFlags_for_testing('l-foo')
-      expect(flags).toEqual({ preseasonMode: true, recruiting: false })
+      expect(flags).toEqual({
+        preseasonMode: true,
+        recruiting: true,
+        visibility: 'PUBLIC_OPEN',
+      })
+    })
+
+    it('PUBLIC_CLOSED → recruiting=false (banner hidden)', async () => {
+      vi.doMock('@/lib/prisma', () => ({
+        prisma: {
+          league: {
+            findUnique: vi
+              .fn()
+              .mockResolvedValue({ preseasonMode: false, visibility: 'PUBLIC_CLOSED' }),
+          },
+        },
+      }))
+      const { __readLeagueFlags_for_testing } = await import('../../src/lib/leagueFlags')
+      const flags = await __readLeagueFlags_for_testing('l-foo')
+      expect(flags).toEqual({
+        preseasonMode: false,
+        recruiting: false,
+        visibility: 'PUBLIC_CLOSED',
+      })
+    })
+
+    it('PRIVATE → recruiting=false (banner hidden)', async () => {
+      vi.doMock('@/lib/prisma', () => ({
+        prisma: {
+          league: {
+            findUnique: vi
+              .fn()
+              .mockResolvedValue({ preseasonMode: false, visibility: 'PRIVATE' }),
+          },
+        },
+      }))
+      const { __readLeagueFlags_for_testing } = await import('../../src/lib/leagueFlags')
+      const flags = await __readLeagueFlags_for_testing('l-foo')
+      expect(flags).toEqual({
+        preseasonMode: false,
+        recruiting: false,
+        visibility: 'PRIVATE',
+      })
     })
 
     it('defaults both flags false on missing row', async () => {
@@ -270,7 +324,11 @@ describe('v1.63.0 — getLeagueFlags helper', () => {
       }))
       const { __readLeagueFlags_for_testing } = await import('../../src/lib/leagueFlags')
       const flags = await __readLeagueFlags_for_testing('nope')
-      expect(flags).toEqual({ preseasonMode: false, recruiting: false })
+      expect(flags).toEqual({
+        preseasonMode: false,
+        recruiting: false,
+        visibility: 'PUBLIC_CLOSED',
+      })
     })
 
     it('defaults both flags false on Prisma rejection (does not throw)', async () => {
@@ -284,7 +342,11 @@ describe('v1.63.0 — getLeagueFlags helper', () => {
       const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
       const { __readLeagueFlags_for_testing } = await import('../../src/lib/leagueFlags')
       const flags = await __readLeagueFlags_for_testing('l-foo')
-      expect(flags).toEqual({ preseasonMode: false, recruiting: false })
+      expect(flags).toEqual({
+        preseasonMode: false,
+        recruiting: false,
+        visibility: 'PUBLIC_CLOSED',
+      })
       expect(warn).toHaveBeenCalled()
       warn.mockRestore()
     })
@@ -528,12 +590,18 @@ describe('v1.63.0 — /stats redirects to home when preseason on', () => {
 describe('v1.63.0 — SettingsTab wires both toggles', () => {
   it('imports both server actions', () => {
     expect(SETTINGS_TAB_SRC).toMatch(/setLeaguePreseasonMode/)
-    expect(SETTINGS_TAB_SRC).toMatch(/setLeagueRecruiting/)
+    // v1.84.0 — `setLeagueRecruiting` was replaced by `setLeagueVisibility`
+    // in the SettingsTab UI surface. The legacy action still exists in
+    // actions.ts for one cycle (dual-write) but no UI imports it.
+    expect(SETTINGS_TAB_SRC).toMatch(/setLeagueVisibility/)
   })
 
   it('League interface declares both flags', () => {
     expect(SETTINGS_TAB_SRC).toMatch(/preseasonMode:\s*boolean/)
+    // v1.84.0 — visibility added; legacy `recruiting: boolean` retained
+    // on the interface so callers still passing the row continue to type.
     expect(SETTINGS_TAB_SRC).toMatch(/recruiting:\s*boolean/)
+    expect(SETTINGS_TAB_SRC).toMatch(/visibility:\s*['"]PRIVATE['"]\s*\|\s*['"]PUBLIC_CLOSED['"]\s*\|\s*['"]PUBLIC_OPEN['"]/)
   })
 
   it('renders the pre-season toggle with the right testid', () => {
@@ -542,10 +610,11 @@ describe('v1.63.0 — SettingsTab wires both toggles', () => {
     expect(SETTINGS_TAB_SRC).toMatch(/data-testid="settings-tab-preseason-off"/)
   })
 
-  it('renders the recruiting toggle with the right testid', () => {
-    expect(SETTINGS_TAB_SRC).toMatch(/data-testid="settings-tab-recruiting-section"/)
-    expect(SETTINGS_TAB_SRC).toMatch(/data-testid="settings-tab-recruiting-on"/)
-    expect(SETTINGS_TAB_SRC).toMatch(/data-testid="settings-tab-recruiting-off"/)
+  it('renders the visibility radio with the right testid (v1.84.0 — replaces the binary recruiting toggle)', () => {
+    expect(SETTINGS_TAB_SRC).toMatch(/data-testid="settings-tab-visibility-section"/)
+    expect(SETTINGS_TAB_SRC).toMatch(/data-testid="settings-tab-visibility-private"/)
+    expect(SETTINGS_TAB_SRC).toMatch(/data-testid="settings-tab-visibility-public-closed"/)
+    expect(SETTINGS_TAB_SRC).toMatch(/data-testid="settings-tab-visibility-public-open"/)
   })
 
   it('both handlers follow the optimistic-flip-with-rollback pattern', () => {
@@ -554,14 +623,15 @@ describe('v1.63.0 — SettingsTab wires both toggles', () => {
     expect(SETTINGS_TAB_SRC).toMatch(
       /setPreseasonModeState\(value\)[\s\S]+?await\s+setLeaguePreseasonMode[\s\S]+?catch[\s\S]+?setPreseasonModeState\(prev\)/,
     )
+    // v1.84.0 — visibility handler uses the same shape.
     expect(SETTINGS_TAB_SRC).toMatch(
-      /setRecruitingState\(value\)[\s\S]+?await\s+setLeagueRecruiting[\s\S]+?catch[\s\S]+?setRecruitingState\(prev\)/,
+      /setVisibilityState\(value\)[\s\S]+?await\s+setLeagueVisibility[\s\S]+?catch[\s\S]+?setVisibilityState\(prev\)/,
     )
   })
 
   it('disables both buttons during save (savingToggle gate)', () => {
     expect(SETTINGS_TAB_SRC).toMatch(/savingToggle\s*===\s*['"]preseasonMode['"]/)
-    expect(SETTINGS_TAB_SRC).toMatch(/savingToggle\s*===\s*['"]recruiting['"]/)
+    expect(SETTINGS_TAB_SRC).toMatch(/savingToggle\s*===\s*['"]visibility['"]/)
   })
 })
 
@@ -584,8 +654,10 @@ describe('v1.63.0 — defaults preserve pre-v1.63.0 behavior', () => {
   })
 
   it('getLeagueFlags defaults both fields to false on missing row / failure', () => {
+    // v1.84.0 — DEFAULT_FLAGS gains `visibility: 'PUBLIC_CLOSED'` (the
+    // safest default — a missing row should NOT leak public visibility).
     expect(HELPER_SRC).toMatch(
-      /DEFAULT_FLAGS:\s*LeagueFlags\s*=\s*\{[\s\S]*?preseasonMode:\s*false[\s\S]*?recruiting:\s*false[\s\S]*?\}/,
+      /DEFAULT_FLAGS:\s*LeagueFlags\s*=\s*\{[\s\S]*?preseasonMode:\s*false[\s\S]*?recruiting:\s*false[\s\S]*?visibility:\s*['"]PUBLIC_CLOSED['"][\s\S]*?\}/,
     )
   })
 })

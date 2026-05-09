@@ -79,7 +79,11 @@ describe('v1.80.10 — applyToLeague admin-orthogonal-UX fix', () => {
       'export async function applyToLeague',
     )
     expect(applyIdx).toBeGreaterThan(0)
-    const block = RECRUITING_ACTIONS_SRC.slice(applyIdx, applyIdx + 3000)
+    // v1.84.0 — bumped from 3000 to 3500 to match `registerToLeague`'s
+    // window; the v1.84.0 visibility gate addition (5 lines vs 1 line
+    // for the old `recruiting` gate) pushed `prisma.user.findUnique`
+    // beyond the original 3000-char slice.
+    const block = RECRUITING_ACTIONS_SRC.slice(applyIdx, applyIdx + 3500)
     // Both identifiers pulled from session.
     expect(block).toMatch(/userId\s*=\s*\(session as[\s\S]*\.userId/)
     expect(block).toMatch(/lineId\s*=\s*session\.lineId\s*\|\|\s*null/)
@@ -91,7 +95,8 @@ describe('v1.80.10 — applyToLeague admin-orthogonal-UX fix', () => {
     const applyIdx = RECRUITING_ACTIONS_SRC.indexOf(
       'export async function applyToLeague',
     )
-    const block = RECRUITING_ACTIONS_SRC.slice(applyIdx, applyIdx + 3000)
+    // v1.84.0 — see slice-window note above.
+    const block = RECRUITING_ACTIONS_SRC.slice(applyIdx, applyIdx + 3500)
     // userId-first lookup.
     expect(block).toMatch(/prisma\.user\.findUnique\(\s*\{\s*where:\s*\{\s*id:\s*userId\s*\}/)
     // lineId fallback lookup.

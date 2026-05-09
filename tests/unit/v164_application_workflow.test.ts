@@ -160,9 +160,12 @@ describe("v1.64.0 — applyToLeague action", () => {
     expect(APPLY_ACTION_SRC).toMatch(/100 characters or fewer/)
   })
 
-  it('verifies the league exists and accepts applications (recruiting === true)', () => {
-    expect(APPLY_ACTION_SRC).toMatch(/league\.recruiting/)
-    expect(APPLY_ACTION_SRC).toMatch(/not currently recruiting/)
+  it('verifies the league exists and accepts applications (visibility !== PRIVATE)', () => {
+    // v1.84.0 — gate flipped from `!league.recruiting` to
+    // `league.visibility === 'PRIVATE'`. PRIVATE leagues require an
+    // invite path; PUBLIC_OPEN + PUBLIC_CLOSED both accept applications.
+    expect(APPLY_ACTION_SRC).toMatch(/league\.visibility\s*===\s*['"]PRIVATE['"]/)
+    expect(APPLY_ACTION_SRC).toMatch(/league is private/)
   })
 
   it('State D (v1.65.1) — already-has-Player → creates new PLM(PENDING) for the new league', () => {

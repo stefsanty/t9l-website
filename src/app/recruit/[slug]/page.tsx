@@ -58,11 +58,16 @@ export default async function RecruitPage({ params }: Props) {
     where: { id: leagueId },
     // v1.82.0 — `ballType` drives the position chip vocabulary in
     // RegistrationFields (SOCCER → 12 codes; FUTSAL → GK/FIXO/ALA/PIVOT).
-    select: { id: true, name: true, recruiting: true, subdomain: true, ballType: true },
+    // v1.84.0 — `visibility` gates the form: PRIVATE shows the
+    // not-recruiting surface (invite-only); PUBLIC_OPEN + PUBLIC_CLOSED
+    // both render the form. A PUBLIC_CLOSED league reachable by direct
+    // `/recruit/<slug>` link is intentional — that's the "warm intro"
+    // path where a member shares the URL out-of-band.
+    select: { id: true, name: true, visibility: true, subdomain: true, ballType: true },
   })
   if (!league) notFound()
 
-  if (!league.recruiting) {
+  if (league.visibility === 'PRIVATE') {
     return <NotRecruitingSurface leagueName={league.name} slug={slug} />
   }
 

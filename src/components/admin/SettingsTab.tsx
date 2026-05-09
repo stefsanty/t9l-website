@@ -11,7 +11,7 @@ import {
   deleteLeague,
   setLeagueAllowSelfLink,
   setLeaguePreseasonMode,
-  setLeagueRecruiting,
+  setLeagueVisibility,
 } from '@/app/admin/leagues/actions'
 import { formatJstDate } from '@/lib/jst'
 import LeagueDetailsEditor from './LeagueDetailsEditor'
@@ -32,6 +32,11 @@ interface League {
   // false; threaded from `getLeagueSettings` alongside `allowSelfLink`.
   preseasonMode: boolean
   recruiting: boolean
+  // v1.84.0 — three-tier public visibility (`PRIVATE` | `PUBLIC_CLOSED`
+  // | `PUBLIC_OPEN`). Drives the recruiting banner gate and the
+  // multi-league directory inclusion. Backfilled from `recruiting` on
+  // first deploy: true → PUBLIC_OPEN, false → PUBLIC_CLOSED.
+  visibility: 'PRIVATE' | 'PUBLIC_CLOSED' | 'PUBLIC_OPEN'
   // v1.66.0 — per-league fee defaults + per-position fee rows. Both
   // threaded from getLeagueSettings's include.
   defaultFee: number
@@ -79,9 +84,12 @@ export default function SettingsTab({ league }: SettingsTabProps) {
   const [pending, startTransition] = useTransition()
   const [allowSelfLink, setAllowSelfLinkState] = useState<boolean>(league.allowSelfLink)
   const [preseasonMode, setPreseasonModeState] = useState<boolean>(league.preseasonMode)
-  const [recruiting, setRecruitingState] = useState<boolean>(league.recruiting)
+  // v1.84.0 — visibility radio replaces the binary recruiting toggle.
+  const [visibility, setVisibilityState] = useState<
+    'PRIVATE' | 'PUBLIC_CLOSED' | 'PUBLIC_OPEN'
+  >(league.visibility)
   const [savingToggle, setSavingToggle] = useState<
-    'allowSelfLink' | 'preseasonMode' | 'recruiting' | null
+    'allowSelfLink' | 'preseasonMode' | 'visibility' | null
   >(null)
 
   const [name, setName]             = useState(league.name)
@@ -199,19 +207,28 @@ export default function SettingsTab({ league }: SettingsTabProps) {
     }
   }
 
-  // v1.63.0 — recruiting toggle handler. Surfaces the "RECRUITING NOW"
-  // banner at the top of the homepage when enabled.
-  async function handleRecruitingChange(value: boolean) {
-    if (value === recruiting) return
-    setSavingToggle('recruiting')
-    const prev = recruiting
-    setRecruitingState(value)
+  // v1.84.0 — visibility radio handler. PRIVATE hides the league from the
+  // multi-league directory and rejects apply-flow submissions; PUBLIC_CLOSED
+  // is listed but no recruiting banner; PUBLIC_OPEN surfaces the banner.
+  async function handleVisibilityChange(
+    value: 'PRIVATE' | 'PUBLIC_CLOSED' | 'PUBLIC_OPEN',
+  ) {
+    if (value === visibility) return
+    setSavingToggle('visibility')
+    const prev = visibility
+    setVisibilityState(value)
     try {
-      await setLeagueRecruiting(league.id, value)
-      toast(value ? 'Recruiting banner enabled' : 'Recruiting banner disabled')
+      await setLeagueVisibility(league.id, value)
+      toast(
+        value === 'PUBLIC_OPEN'
+          ? 'Visibility: Public — open (banner visible)'
+          : value === 'PUBLIC_CLOSED'
+          ? 'Visibility: Public — closed (banner hidden)'
+          : 'Visibility: Private (hidden, invite-only)',
+      )
     } catch (err) {
-      setRecruitingState(prev)
-      toast(err instanceof Error ? err.message : 'Failed to set recruiting toggle')
+      setVisibilityState(prev)
+      toast(err instanceof Error ? err.message : 'Failed to set visibility')
     } finally {
       setSavingToggle(null)
     }
@@ -480,66 +497,86 @@ export default function SettingsTab({ league }: SettingsTabProps) {
         )}
       </section>
 
-      {/* v1.63.0 — Recruiting toggle. When ON, surfaces a prominent
-          "RECRUITING NOW" banner at the top of the public homepage.
-          Independent of pre-season mode (both can be on simultaneously). */}
+      {/* v1.84.0 — Visibility radio. Three-tier replacement for the
+          v1.63.0 binary recruiting toggle. Drives both the multi-league
+          directory listing (Phase 1b) and the recruiting banner gate
+          (PUBLIC_OPEN only). PRIVATE leagues are hidden + apply-flow
+          rejects; PUBLIC_CLOSED is listed-but-quiet; PUBLIC_OPEN is the
+          full recruit-now experience. */}
       <section
-        data-testid="settings-tab-recruiting-section"
+        data-testid="settings-tab-visibility-section"
         className="bg-admin-surface rounded-xl border border-admin-border p-5 space-y-5"
       >
         <div>
-          <h2 className="font-condensed font-bold text-admin-text text-lg">Recruiting</h2>
+          <h2 className="font-condensed font-bold text-admin-text text-lg">Visibility</h2>
           <p className="text-xs text-admin-text3 mt-1 leading-relaxed">
-            Shows a &ldquo;RECRUITING NOW&rdquo; banner at the top of the homepage. Use during sign-up windows to invite new players.
+            Controls whether the league is listed in the public directory and whether the &ldquo;RECRUITING NOW&rdquo; banner shows on the league page.
           </p>
         </div>
 
         <div className="space-y-3">
           <label className="text-xs font-medium text-admin-text2 uppercase tracking-wide block">
-            Recruiting banner
+            Public visibility
           </label>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3">
             <button
               type="button"
-              data-testid="settings-tab-recruiting-on"
+              data-testid="settings-tab-visibility-private"
               disabled={savingToggle !== null}
-              onClick={() => handleRecruitingChange(true)}
+              onClick={() => handleVisibilityChange('PRIVATE')}
               className={cn(
                 'rounded-lg border px-4 py-3 text-left transition-colors disabled:opacity-50',
-                recruiting
+                visibility === 'PRIVATE'
                   ? 'border-admin-green bg-admin-green/10 text-admin-text'
                   : 'border-admin-border bg-admin-surface2 text-admin-text2 hover:border-admin-border2 hover:text-admin-text',
               )}
             >
-              <div className="text-sm font-medium">On</div>
+              <div className="text-sm font-medium">Private</div>
               <div className="text-xs text-admin-text3 mt-0.5 leading-tight">
-                Banner visible at top of homepage.
+                Hidden from the directory. No recruiting banner. Players can only join via invite.
               </div>
             </button>
             <button
               type="button"
-              data-testid="settings-tab-recruiting-off"
+              data-testid="settings-tab-visibility-public-closed"
               disabled={savingToggle !== null}
-              onClick={() => handleRecruitingChange(false)}
+              onClick={() => handleVisibilityChange('PUBLIC_CLOSED')}
               className={cn(
                 'rounded-lg border px-4 py-3 text-left transition-colors disabled:opacity-50',
-                !recruiting
+                visibility === 'PUBLIC_CLOSED'
                   ? 'border-admin-green bg-admin-green/10 text-admin-text'
                   : 'border-admin-border bg-admin-surface2 text-admin-text2 hover:border-admin-border2 hover:text-admin-text',
               )}
             >
-              <div className="text-sm font-medium">Off</div>
+              <div className="text-sm font-medium">Public — closed</div>
               <div className="text-xs text-admin-text3 mt-0.5 leading-tight">
-                No recruiting banner.
+                Listed in the directory. No recruiting banner. Direct-link applications still accepted.
+              </div>
+            </button>
+            <button
+              type="button"
+              data-testid="settings-tab-visibility-public-open"
+              disabled={savingToggle !== null}
+              onClick={() => handleVisibilityChange('PUBLIC_OPEN')}
+              className={cn(
+                'rounded-lg border px-4 py-3 text-left transition-colors disabled:opacity-50',
+                visibility === 'PUBLIC_OPEN'
+                  ? 'border-admin-green bg-admin-green/10 text-admin-text'
+                  : 'border-admin-border bg-admin-surface2 text-admin-text2 hover:border-admin-border2 hover:text-admin-text',
+              )}
+            >
+              <div className="text-sm font-medium">Public — open</div>
+              <div className="text-xs text-admin-text3 mt-0.5 leading-tight">
+                Listed in the directory and shows the &ldquo;RECRUITING NOW&rdquo; banner on the league page.
               </div>
             </button>
           </div>
         </div>
 
-        {savingToggle === 'recruiting' && (
+        {savingToggle === 'visibility' && (
           <div className="text-xs text-admin-text3 flex items-center gap-2">
             <Loader2 className="w-3 h-3 animate-spin" />
-            Saving recruiting toggle…
+            Saving visibility…
           </div>
         )}
       </section>

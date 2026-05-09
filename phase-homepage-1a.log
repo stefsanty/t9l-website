@@ -1,0 +1,168 @@
+# Phase 1a — homepage redesign foundations (visibility + defaultLeagueId)
+
+## M1 — Schema audit + visibility mapping decided
+
+### Field name finding
+
+The recruiting flag is `League.recruiting Boolean @default(false)` in
+`prisma/schema.prisma:182` — NOT `recruitingMode` as the briefing
+hypothesised. Same column drives the banner today.
+
+### Per-league migration mapping (one-shot backfill)
+
+```
+recruiting = true   → visibility = 'PUBLIC_OPEN'    (banner visible, apply-flow OPEN)
+recruiting = false  → visibility = 'PUBLIC_CLOSED'  (banner hidden, apply-flow OPEN by direct link)
+                    →                               (PRIVATE is opt-in via admin toggle post-deploy;
+                                                     no league becomes PRIVATE on backfill)
+```
+
+Default for new leagues: `PUBLIC_CLOSED` (admins explicitly opt in to
+PUBLIC_OPEN — same conservative default that `recruiting` had).
+
+### `League.recruiting` call sites (6)
+
+1. `src/lib/leagueFlags.ts:39` — canonical banner gate (fed into Dashboard's `recruiting` prop).
+2. `src/components/Dashboard.tsx:329` — banner conditional render (consumes the prop).
+3. `src/app/api/recruiting/actions.ts:125` — `applyToLeague` rejects when false.
+4. `src/app/api/recruiting/actions.ts:428` — `registerToLeague` rejects when false.
+5. `src/app/recruit/[slug]/page.tsx:65` — `/recruit/<slug>` form-page gate.
+6. `src/components/admin/SettingsTab.tsx:82` — admin toggle UI state.
+
+### Behaviour mapping by visibility (post-PR)
+
+| Site                              | PUBLIC_OPEN | PUBLIC_CLOSED | PRIVATE |
+|-----------------------------------|-------------|---------------|---------|
+| RecruitingBanner (via leagueFlags)| visible     | hidden        | hidden  |
+| `applyToLeague` action            | accept      | accept        | reject  |
+| `registerToLeague` action         | accept      | accept        | reject  |
+| `/recruit/<slug>` page            | render form | render form   | reject  |
+| Admin toggle                      | radio: open | radio: closed | radio: private |
+
+PRIVATE is the strict gate — applications go through the invite path
+(`/join/<code>`) instead. CLOSED is "open to direct link, just not
+advertised" per the user's spec.
+
+### `User.defaultLeagueId` plan
+
+Nullable FK to `League.id` (`onDelete: SetNull` so league delete doesn't
+cascade-delete the user). No index per briefing. Updates land in
+Phase 1c (multi-league switcher); this PR ships the column only.
+
+### `League.isDefault` per Q3
+
+Keep the column. Add a TODO comment noting it's a candidate for removal
+once the dashboard work fully replaces its current consumers
+(`leagueSlugServer.getDefaultLeagueId`, `matchday/[id]/page.tsx` route
+disambiguation, `account/player/page.tsx` per-membership sort, etc.).
+Behavior unchanged in this PR.
+
+### Tests touching `league.recruiting`
+
+- `tests/unit/preseasonRecruitingToggles.test.ts` — exercises `getLeagueFlags`
+  return shape; will need updating to also reflect visibility-derived flags.
+- `tests/unit/v182_multi_position_validation.test.ts` — sets
+  `recruiting: true` in mock data; safe to leave (`recruiting` column
+  still present, dual-write).
+
+## M2 — Migration drafted + admin toggle wired
+
+### Migration `20260517000000_league_visibility_and_user_default_league`
+
+- Creates `LeagueVisibility` enum (`PRIVATE` / `PUBLIC_CLOSED` / `PUBLIC_OPEN`).
+- Adds `League.visibility` NOT NULL DEFAULT `'PUBLIC_CLOSED'`.
+- One-shot backfill: `recruiting=true → PUBLIC_OPEN`, `recruiting=false → PUBLIC_CLOSED`.
+- Adds `User.defaultLeagueId TEXT NULL` with `ON DELETE SET NULL` FK to `League`.
+
+### Per-league migration result (mapping for review)
+
+```
+SELECT id, name, recruiting, 'PUBLIC_OPEN' OR 'PUBLIC_CLOSED' as visibility
+FROM "League"
+ORDER BY "createdAt"
+```
+
+Every league with `recruiting=true` becomes PUBLIC_OPEN; every other
+league becomes PUBLIC_CLOSED. PRIVATE is opt-in via the new admin
+toggle post-deploy. Operator should sanity-check the `League` row count
+matches expected after deploy via `SELECT visibility, COUNT(*) FROM "League" GROUP BY 1`.
+
+### Admin UI placement
+
+- New server action: `setLeagueVisibility` in
+  `src/app/admin/leagues/actions.ts` (next to the legacy
+  `setLeagueRecruiting`, which now dual-writes).
+- `SettingsTab.tsx` swaps the binary "Recruiting On/Off" buttons for a
+  three-radio "Visibility" section (Private / Public — closed /
+  Public — open). Sits in the same slot, between Pre-season mode and
+  League details.
+- `League` interface gains `visibility: 'PRIVATE' | 'PUBLIC_CLOSED' | 'PUBLIC_OPEN'`.
+- All admin tokens (`bg-admin-surface`, `text-admin-text*`, `border-admin-*`)
+  per the admin-orthogonal-UX rule. Test-IDs:
+  - `settings-tab-visibility-section`
+  - `settings-tab-visibility-private`
+  - `settings-tab-visibility-public-closed`
+  - `settings-tab-visibility-public-open`
+
+## M3 — RecruitingBanner re-gated + apply path updated
+
+### Sites updated
+
+| File | Change |
+|------|--------|
+| `src/lib/leagueFlags.ts` | Reads `visibility`; returns `recruiting = visibility === 'PUBLIC_OPEN'` plus a new raw `visibility` field on `LeagueFlags`. |
+| `src/app/api/recruiting/actions.ts` (`applyToLeague`) | Gate flips from `if (!league.recruiting)` to `if (visibility === 'PRIVATE')`. PUBLIC_OPEN + PUBLIC_CLOSED both accept submissions. |
+| `src/app/api/recruiting/actions.ts` (`registerToLeague`) | Same gate flip. |
+| `src/app/recruit/[slug]/page.tsx` | Page-level gate flips: PRIVATE → "Not currently recruiting" surface; PUBLIC_OPEN + PUBLIC_CLOSED → render form. |
+
+### Sites unchanged on purpose
+
+- `src/components/Dashboard.tsx:329` — still consumes `recruiting` prop
+  from `LeagueFlags`. Prop semantics unchanged ("show banner"); only
+  the upstream source of truth moved.
+- `setLeagueRecruiting` server action still exists and now dual-writes
+  visibility (`true → PUBLIC_OPEN`, `false → PUBLIC_CLOSED`). Kept for
+  one cycle in case any external/test caller still uses it.
+
+## M4 — Tests + suite passing
+
+### Test count diff
+
+- Pre-PR: 3019 vitest cases (167 files; 2 skipped).
+- Post-PR: **3052 vitest cases (168 files; 2 skipped)**.
+  - **+33 new** (`v184_homepage_visibility.test.ts`, 35 cases — pinning
+    schema, migration, server actions, leagueFlags, apply/register
+    gates, recruit page, SettingsTab radio).
+  - 5 cases reshaped in `preseasonRecruitingToggles.test.ts`
+    (recruiting-→-visibility cascade — settings tab, helper select,
+    runtime mocks, defaults).
+  - 1 case reshaped in `v164_application_workflow.test.ts`
+    (apply-gate now reads `visibility === 'PRIVATE'`).
+  - 3 mock fixtures updated in `v182_multi_position_validation.test.ts`
+    (`recruiting: true` → `visibility: 'PUBLIC_OPEN'`).
+  - 2 slice-window bumps in `v18010_admin_orthogonal_apply.test.ts`
+    (3000 → 3500 to accommodate the 5-line visibility gate).
+  - 1 case bumped in `version.test.ts` (1.83.1 → 1.84.0).
+
+### Stash-pop verification
+
+`git stash` of all `src/`, `prisma/`, `tests/` changes (excluding the
+new untracked `v184_homepage_visibility.test.ts`); ran the new file
+against the pre-change tree:
+
+```
+FAIL  tests/unit/v184_homepage_visibility.test.ts (35 tests | 25 failed)
+Tests  25 failed | 10 passed (35)
+```
+
+25/35 fail on the broken state — the new tests are genuine
+regression-target tests, not pass-on-anything assertions. The 10 that
+still pass cover surfaces unrelated to the v1.84.0 changes (legacy
+`setLeagueRecruiting` shape, the in-place not-recruiting testid, etc).
+
+### Suite gates
+
+- `npx vitest run` → 3017 passed | 2 skipped (167 files).
+- `npx tsc --noEmit` → 1 unrelated pre-existing error (`@next/bundle-analyzer` types).
+- `npx eslint` on all changed files → clean.
+

@@ -239,6 +239,10 @@ export async function setLeaguePreseasonMode(leagueId: string, value: boolean) {
  * "RECRUITING NOW" banner at the top of the homepage. Independent of
  * `preseasonMode` — both can be on simultaneously. Default false.
  *
+ * v1.84.0 — superseded by `setLeagueVisibility` below. Kept for one
+ * release cycle so any external caller that POSTs the legacy boolean
+ * still works; new UI surfaces use the three-tier visibility action.
+ *
  * Validation: rejects non-boolean values defensively.
  */
 export async function setLeagueRecruiting(leagueId: string, value: boolean) {
@@ -246,9 +250,48 @@ export async function setLeagueRecruiting(leagueId: string, value: boolean) {
   if (typeof value !== 'boolean') {
     throw new Error('recruiting must be a boolean')
   }
+  // v1.84.0 — dual-write the new visibility column so legacy callers
+  // don't reset visibility back to PUBLIC_CLOSED on a "turn recruiting
+  // off" press: false → PUBLIC_CLOSED, true → PUBLIC_OPEN.
   await prisma.league.update({
     where: { id: leagueId },
-    data: { recruiting: value },
+    data: {
+      recruiting: value,
+      visibility: value ? 'PUBLIC_OPEN' : 'PUBLIC_CLOSED',
+    },
+  })
+  revalidate({
+    domain: 'admin',
+    paths: [`/admin/leagues/${leagueId}/settings`, `/admin/leagues/${leagueId}`, '/admin'],
+  })
+}
+
+/**
+ * v1.84.0 — per-league three-tier public visibility. Replaces
+ * `setLeagueRecruiting` as the canonical write path. Dual-writes the
+ * legacy `recruiting` boolean for one release cycle so older readers
+ * (e.g. cached pages still on the previous deploy) stay coherent.
+ *
+ *   PRIVATE        → recruiting = false (hidden + apply rejects)
+ *   PUBLIC_CLOSED  → recruiting = false (listed + banner hidden + apply accepts)
+ *   PUBLIC_OPEN    → recruiting = true  (listed + banner visible + apply accepts)
+ *
+ * Validation: rejects values outside the enum.
+ */
+export async function setLeagueVisibility(
+  leagueId: string,
+  value: 'PRIVATE' | 'PUBLIC_CLOSED' | 'PUBLIC_OPEN',
+) {
+  await assertAdmin()
+  if (value !== 'PRIVATE' && value !== 'PUBLIC_CLOSED' && value !== 'PUBLIC_OPEN') {
+    throw new Error('visibility must be PRIVATE, PUBLIC_CLOSED, or PUBLIC_OPEN')
+  }
+  await prisma.league.update({
+    where: { id: leagueId },
+    data: {
+      visibility: value,
+      recruiting: value === 'PUBLIC_OPEN',
+    },
   })
   revalidate({
     domain: 'admin',
