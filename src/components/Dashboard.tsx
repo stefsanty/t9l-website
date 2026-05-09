@@ -12,6 +12,7 @@ import UserTeamBadge from './UserTeamBadge';
 import ClassicLeagueHomepage from './ClassicLeagueHomepage';
 import RecruitingBanner from './RecruitingBanner';
 import UnpaidFeeBanner from './UnpaidFeeBanner';
+import RegistrationCountdown from './RegistrationCountdown';
 import type { UnpaidFeeBannerData } from '@/lib/unpaidFeeBanner';
 import type { RecruitingViewerState } from '@/lib/recruitingViewerState';
 import type { PlannedRosterStats as PlannedRosterStatsData } from '@/lib/plannedRosterStats';
@@ -330,6 +331,17 @@ export default function Dashboard({
               league={league}
               viewer={recruitingState}
               leagueSlug={leagueSlug}
+            />
+          )}
+          {/* v1.83.1 — Pre-season-only "League registration closes in X days"
+              banner, rendered ABOVE LeagueDetailsPanel. Hides itself when
+              the deadline has passed or when no `registrationDeadline` is
+              configured on the league. Reads from the same plannedRosterStats
+              source LeagueDetailsPanel uses, so deadline shape is consistent
+              between the two surfaces. */}
+          {preseasonMode && (
+            <RegistrationCountdown
+              registrationDeadline={plannedRosterStats?.registrationDeadline ?? null}
             />
           )}
           {/* v1.75.1 — LeagueDetailsPanel consolidates league-rule rows +
