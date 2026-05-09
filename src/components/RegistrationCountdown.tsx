@@ -86,12 +86,22 @@ export default function RegistrationCountdown({ registrationDeadline }: Props) {
       data-testid="registration-countdown"
       data-unit={display.unit}
       data-value={display.value}
-      className="w-full mt-2 mb-3 rounded-2xl border border-vibrant-pink/60 bg-gradient-to-r from-vibrant-pink to-orange-500 px-4 py-4 text-center relative overflow-hidden"
+      className="w-full mt-2 mb-3 rounded-xl border border-border-default bg-surface-md px-4 py-3 flex items-center gap-3"
     >
-      <div className="absolute inset-0 bg-diagonal-pattern opacity-10 pointer-events-none" />
+      <svg
+        aria-hidden
+        className="w-5 h-5 shrink-0 text-fg-mid"
+        fill="none"
+        viewBox="0 0 24 24"
+        stroke="currentColor"
+        strokeWidth={2}
+      >
+        <circle cx="12" cy="12" r="9" strokeLinecap="round" strokeLinejoin="round" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M12 7v5l3 3" />
+      </svg>
       <p
         data-testid="registration-countdown-copy"
-        className="font-display text-2xl font-black uppercase tracking-tight text-white leading-tight tabular-nums relative"
+        className="font-display text-lg font-black uppercase tracking-tight text-fg-high leading-tight tabular-nums"
         translate="no"
       >
         {formatRegistrationCloseCopy(display)}
