@@ -598,7 +598,7 @@ export default function FormationPitch({
           as alternates above; this row catches the remainder. */}
       <div className="mt-2 space-y-1.5">
         {slotsShort > 0 && (
-          <p className="text-[10px] text-amber-300/90 px-1" data-testid="formation-shortage">
+          <p className="text-[10px] text-fg-low italic px-1" data-testid="formation-shortage">
             {`${slotsShort} slot${slotsShort === 1 ? '' : 's'} have no candidate available.`}
           </p>
         )}
