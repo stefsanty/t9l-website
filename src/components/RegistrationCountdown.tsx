@@ -1,17 +1,20 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import type { Matchday } from '@/types'
-import { jstIsoString } from '@/lib/jst'
 
 /**
- * v1.83.1 — Preseason "League starts in X days" banner above
- * `<LeagueDetailsPanel>`. Renders only while `now < firstMatchday.start`;
- * hides itself once the first matchday's kickoff has passed (the
- * matchday-level `<MatchdayCountdown>` takes over from there).
+ * v1.83.1 — Pre-season "League registration closes in X days" banner above
+ * `<LeagueDetailsPanel>`. Renders only while `now < registrationDeadline`;
+ * hides when the deadline has passed or when no deadline is configured on
+ * the league. The matchday-card-level `<MatchdayCountdown>` remains the
+ * surface for "Live"/in-progress signal once the season has started.
  *
  * Pure compute is split out so unit tests can pin behavior without
  * touching `useEffect` / `setInterval`.
+ *
+ * Data source: `League.registrationDeadline` (DateTime?), surfaced via
+ * `getPlannedRosterStats(...).registrationDeadline` and threaded through
+ * `<Dashboard plannedRosterStats={...}>`.
  */
 export type CountdownDisplay =
   | { unit: 'days'; value: number }
@@ -22,18 +25,11 @@ const MINUTE_MS = 60 * 1000
 const HOUR_MS = 60 * MINUTE_MS
 const DAY_MS = 24 * HOUR_MS
 
-export function firstMatchdayStartInstant(matchday: Matchday): Date | null {
-  if (!matchday.date) return null
-  const first = matchday.matches[0]
-  if (!first || !first.kickoff) return null
-  return new Date(jstIsoString(matchday.date, first.kickoff))
-}
-
-export function computeLeagueStartCountdown(
-  start: Date,
+export function computeRegistrationCountdown(
+  deadline: Date,
   now: Date,
 ): CountdownDisplay | null {
-  const diffMs = start.getTime() - now.getTime()
+  const diffMs = deadline.getTime() - now.getTime()
   if (diffMs <= 0) return null
   if (diffMs < HOUR_MS) {
     return { unit: 'minutes', value: Math.max(1, Math.ceil(diffMs / MINUTE_MS)) }
@@ -44,7 +40,7 @@ export function computeLeagueStartCountdown(
   return { unit: 'days', value: Math.max(1, Math.ceil(diffMs / DAY_MS)) }
 }
 
-export function formatLeagueStartCopy(d: CountdownDisplay): string {
+export function formatRegistrationCloseCopy(d: CountdownDisplay): string {
   const noun =
     d.unit === 'days'
       ? d.value === 1
@@ -57,14 +53,16 @@ export function formatLeagueStartCopy(d: CountdownDisplay): string {
         : d.value === 1
           ? 'minute'
           : 'minutes'
-  return `League starts in ${d.value} ${noun}`
+  return `League registration closes in ${d.value} ${noun}`
 }
 
 interface Props {
-  firstMatchday: Matchday | null
+  // Accepts Date or ISO string — Next.js serialization across server →
+  // client component boundaries can flatten Date to string in some build paths.
+  registrationDeadline: Date | string | null
 }
 
-export default function LeagueStartCountdown({ firstMatchday }: Props) {
+export default function RegistrationCountdown({ registrationDeadline }: Props) {
   // Re-render every 60s. Day-level resolution doesn't need a per-second tick
   // and a 1Hz interval is wasteful on mobile.
   const [now, setNow] = useState<Date>(() => new Date())
@@ -73,27 +71,30 @@ export default function LeagueStartCountdown({ firstMatchday }: Props) {
     return () => clearInterval(id)
   }, [])
 
-  if (!firstMatchday) return null
-  const start = firstMatchdayStartInstant(firstMatchday)
-  if (!start) return null
+  if (!registrationDeadline) return null
+  const deadline =
+    registrationDeadline instanceof Date
+      ? registrationDeadline
+      : new Date(registrationDeadline)
+  if (isNaN(deadline.getTime())) return null
 
-  const display = computeLeagueStartCountdown(start, now)
+  const display = computeRegistrationCountdown(deadline, now)
   if (!display) return null
 
   return (
     <section
-      data-testid="league-start-countdown"
+      data-testid="registration-countdown"
       data-unit={display.unit}
       data-value={display.value}
       className="w-full mt-2 mb-3 rounded-2xl border border-vibrant-pink/60 bg-gradient-to-r from-vibrant-pink to-orange-500 px-4 py-4 text-center relative overflow-hidden"
     >
       <div className="absolute inset-0 bg-diagonal-pattern opacity-10 pointer-events-none" />
       <p
-        data-testid="league-start-countdown-copy"
-        className="font-display text-3xl font-black uppercase tracking-tight text-white leading-tight tabular-nums relative"
+        data-testid="registration-countdown-copy"
+        className="font-display text-2xl font-black uppercase tracking-tight text-white leading-tight tabular-nums relative"
         translate="no"
       >
-        {formatLeagueStartCopy(display)}
+        {formatRegistrationCloseCopy(display)}
       </p>
     </section>
   )
