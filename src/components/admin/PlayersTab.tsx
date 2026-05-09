@@ -7,6 +7,7 @@ import AssignLineDialog from './AssignLineDialog'
 import AddPlayerDialog from './AddPlayerDialog'
 import LinkExistingPlayerDialog, { type LinkablePlayerRow } from './LinkExistingPlayerDialog'
 import GenerateInviteDialog from './GenerateInviteDialog'
+import ViewInviteDialog from './ViewInviteDialog'
 import IdViewerDialog from './IdViewerDialog'
 import AdminPlayerAvatar from './AdminPlayerAvatar'
 import SignInStatusBadge from './SignInStatusBadge'
@@ -84,9 +85,10 @@ interface PlayerRow {
   // v1.38.0 (PR κ) — Player.userId from PR β dual-write. Drives the
   // "Signed up" sign-in status badge.
   userId: string | null
-  // v1.38.0 (PR κ) — count of active PERSONAL invites for this player.
-  // Drives the "Invited" badge when userId is null.
-  activeInviteCount: number
+  // v1.85.0 — active PERSONAL invite for this player (null when none).
+  // Drives the "Invited" badge when userId is null; exposes the code so
+  // the admin can show the existing invite without regenerating.
+  activeInvite: { code: string; expiresAt: string | null; skipOnboarding: boolean } | null
   // v1.35.0 (PR η) — uploaded ID URLs + timestamp. All null until the
   // user completes the η ID-upload step (or admin purges via the per-row
   // affordance).
@@ -220,6 +222,9 @@ export default function PlayersTab({
   // - `selectedForBulk`: set of playerIds toggled via desktop checkbox column.
   // - `bulkInviteOpen`: when true, the bulk dialog is mounted with `selectedForBulk` as targets.
   const [inviteTargetPlayerId, setInviteTargetPlayerId] = useState<string | null>(null)
+  // v1.85.0 — "Show invite code": opens ViewInviteDialog for a player
+  // that already has an active invite (to retrieve without regenerating).
+  const [viewInvitePlayerId, setViewInvitePlayerId] = useState<string | null>(null)
   const [selectedForBulk, setSelectedForBulk] = useState<Set<string>>(new Set())
   const [bulkInviteOpen, setBulkInviteOpen] = useState(false)
   // v1.35.0 (PR η) — when non-null, IdViewerDialog opens for this player.
@@ -416,7 +421,7 @@ export default function PlayersTab({
           const hasPrevious = player.assignments.length > 1
           const signInStatus = pickSignInStatus({
             userId: player.userId,
-            activeInviteCount: player.activeInviteCount,
+            activeInviteCount: player.activeInvite ? 1 : 0,
           })
 
           return (
@@ -545,6 +550,7 @@ export default function PlayersTab({
                         onTransferToggle: () =>
                           setTransferPanelId(isTransferOpen ? null : player.id),
                         onInvite: () => setInviteTargetPlayerId(player.id),
+                        onShowInvite: () => setViewInvitePlayerId(player.id),
                         onViewId: () => setIdViewerPlayerId(player.id),
                         onResetOnboarding: () =>
                           handleResetOnboarding(player.id, player.name),
@@ -640,7 +646,7 @@ export default function PlayersTab({
           const isChecked = selectedForBulk.has(player.id)
           const signInStatus = pickSignInStatus({
             userId: player.userId,
-            activeInviteCount: player.activeInviteCount,
+            activeInviteCount: player.activeInvite ? 1 : 0,
           })
 
           return (
@@ -778,6 +784,7 @@ export default function PlayersTab({
                         onTransferToggle: () =>
                           setTransferPanelId(isTransferOpen ? null : player.id),
                         onInvite: () => setInviteTargetPlayerId(player.id),
+                        onShowInvite: () => setViewInvitePlayerId(player.id),
                         onViewId: () => setIdViewerPlayerId(player.id),
                         onResetOnboarding: () =>
                           handleResetOnboarding(player.id, player.name),
@@ -844,6 +851,22 @@ export default function PlayersTab({
           onClose={() => setRemapPlayerId(null)}
         />
       )}
+
+      {/* v1.85.0 — view existing active invite. Mounts when admin clicks
+          "Show invite code" for a player that already has one. */}
+      {viewInvitePlayerId && (() => {
+        const target = players.find((p) => p.id === viewInvitePlayerId)
+        if (!target || !target.activeInvite) return null
+        return (
+          <ViewInviteDialog
+            playerName={target.name}
+            code={target.activeInvite.code}
+            expiresAt={target.activeInvite.expiresAt}
+            skipOnboarding={target.activeInvite.skipOnboarding}
+            onClose={() => setViewInvitePlayerId(null)}
+          />
+        )
+      })()}
 
       {/* v1.33.0 (PR ε) — single-target invite dialog. Mounts when admin
           clicks the per-row Invite button (desktop or mobile). */}
@@ -945,6 +968,7 @@ interface BuildPlayerMenuArgs {
   handlers: {
     onTransferToggle: () => void
     onInvite: () => void
+    onShowInvite: () => void
     onViewId: () => void
     onResetOnboarding: () => Promise<void>
     onRemap: () => void
@@ -982,7 +1006,11 @@ function buildPlayerMenuItems(args: BuildPlayerMenuArgs) {
     })
   }
   if (!player.lineId) {
-    items.push({ label: 'Generate invite', onSelect: handlers.onInvite })
+    if (player.activeInvite) {
+      items.push({ label: 'Show invite code', onSelect: handlers.onShowInvite })
+    } else {
+      items.push({ label: 'Generate invite', onSelect: handlers.onInvite })
+    }
   }
   // Reset onboarding only surfaces when the assignment is COMPLETED —
   // for NOT_YET it's a no-op. Native window.confirm gates the

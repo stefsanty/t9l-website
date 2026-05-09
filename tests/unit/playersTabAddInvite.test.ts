@@ -59,10 +59,11 @@ describe('v1.33.0 (PR ε) — PlayersTab integration', () => {
   })
 
   it('per-row Generate Invite menu item is conditional on !player.lineId — only unlinked players (v1.38.0 / PR κ)', () => {
-    // PR κ collapsed inline action buttons into the OverflowMenu kebab.
-    // The conditional now lives inside `buildPlayerMenuItems`: a
-    // "Generate invite" item is pushed only when `!player.lineId`.
-    expect(cleaned).toMatch(/if\s*\(\s*!player\.lineId\s*\)\s*\{\s*items\.push\(\s*\{\s*label:\s*['"]Generate invite['"]/)
+    // v1.85.0 — the !player.lineId block now branches on player.activeInvite:
+    // players with an existing invite get "Show invite code"; others get
+    // "Generate invite". Both actions are only available to unlinked players.
+    expect(cleaned).toMatch(/if\s*\(\s*!player\.lineId\s*\)/)
+    expect(cleaned).toMatch(/label:\s*['"]Generate invite['"]/)
     // The single-target invite dialog still keys on inviteTargetPlayerId
     // — the kebab's onSelect calls `setInviteTargetPlayerId(player.id)`
     // via the `handlers.onInvite` thread-through.

@@ -539,9 +539,9 @@ describe('v1.64.0 — getLeaguePlayers fetches pending applications (v1.65.4 —
   })
 
   it('players page destructures the new tuple element', () => {
-    // v1.70.0 — destructure picks up the 7th element idDataByPlayerId.
+    // v1.85.0 — renamed from activeInviteCountByPlayerId to activeInviteByPlayerId.
     expect(PLAYERS_PAGE_SRC).toMatch(
-      /\[\s*assignments,\s*leagueTeams,\s*gameWeeks,\s*lineLoginsByLineId,\s*activeInviteCountByPlayerId,\s*pendingApplications,\s*idDataByPlayerId,?\s*\]/,
+      /\[\s*assignments,\s*leagueTeams,\s*gameWeeks,\s*lineLoginsByLineId,\s*activeInviteByPlayerId,\s*pendingApplications,\s*idDataByPlayerId,?\s*\]/,
     )
   })
 

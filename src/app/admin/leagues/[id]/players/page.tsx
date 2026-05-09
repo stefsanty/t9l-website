@@ -24,7 +24,7 @@ export default async function PlayersPage({ params }: Props) {
       leagueTeams,
       gameWeeks,
       lineLoginsByLineId,
-      activeInviteCountByPlayerId,
+      activeInviteByPlayerId,
       pendingApplications,
       idDataByPlayerId,
     ],
@@ -75,10 +75,11 @@ export default async function PlayersPage({ params }: Props) {
     // v1.38.0 (PR κ) — User binding from PR β / v1.29.0 dual-write.
     // Drives the "Signed up" sign-in status badge.
     userId: string | null
-    // v1.38.0 — count of active PERSONAL invites pre-bound to this
-    // player (not revoked, not used up, not expired). Drives the
-    // "Invited" badge when userId is null.
-    activeInviteCount: number
+    // v1.85.0 — active PERSONAL invite pre-bound to this player (not
+    // revoked, not used up, not expired). Drives the "Invited" badge
+    // when userId is null; code/expiresAt/skipOnboarding let the admin
+    // re-display the existing invite without regenerating.
+    activeInvite: { code: string; expiresAt: string | null; skipOnboarding: boolean } | null
     // v1.35.0 (PR η) — uploaded ID URLs + timestamp. Null when no upload yet.
     idFrontUrl: string | null
     idBackUrl: string | null
@@ -141,7 +142,7 @@ export default async function PlayersPage({ params }: Props) {
         profilePictureUrl: a.player.profilePictureUrl ?? null,
         pictureUrl: a.player.pictureUrl ?? null,
         userId: a.player.userId ?? null,
-        activeInviteCount: activeInviteCountByPlayerId[a.player.id] ?? 0,
+        activeInvite: activeInviteByPlayerId[a.player.id] ?? null,
         // v1.70.0 — ID images live on User now. `idDataByPlayerId` is
         // already-keyed-on-Player.id by the admin-data builder, with
         // `idUploadedAt` already serialized to an ISO string at the
@@ -200,7 +201,7 @@ export default async function PlayersPage({ params }: Props) {
       profilePictureUrl: p.profilePictureUrl ?? null,
       pictureUrl: p.pictureUrl ?? null,
       userId: p.userId ?? null,
-      activeInviteCount: activeInviteCountByPlayerId[p.id] ?? 0,
+      activeInvite: activeInviteByPlayerId[p.id] ?? null,
       // v1.70.0 — ID images live on User; pendingApplications still
       // surfaces them via the same lookup as APPROVED rows.
       idFrontUrl: idDataByPlayerId[p.id]?.idFrontUrl ?? null,

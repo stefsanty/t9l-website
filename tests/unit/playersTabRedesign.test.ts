@@ -134,8 +134,12 @@ describe('v1.38.0 (PR κ) — column structure changes', () => {
 })
 
 describe('v1.38.0 (PR κ) — kebab menu visibility rules', () => {
-  it('Generate invite is conditional on !player.lineId', () => {
-    expect(cleaned).toMatch(/if\s*\(\s*!player\.lineId\s*\)\s*\{\s*items\.push\(\s*\{\s*label:\s*['"]Generate invite['"]/)
+  it('Generate invite / Show invite code are both conditional on !player.lineId', () => {
+    // v1.85.0 — the !player.lineId block now branches: players with an
+    // active invite get "Show invite code"; others get "Generate invite".
+    expect(cleaned).toMatch(/if\s*\(\s*!player\.lineId\s*\)/)
+    expect(cleaned).toMatch(/label:\s*['"]Generate invite['"]/)
+    expect(cleaned).toMatch(/label:\s*['"]Show invite code['"]/)
   })
 
   it('Reset onboarding is conditional on current?.onboardingStatus === "COMPLETED"', () => {
