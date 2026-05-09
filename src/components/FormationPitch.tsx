@@ -90,9 +90,9 @@ function PitchBackground() {
 
 // ── Position pill ─────────────────────────────────────────────────────────
 //
-// Tiny chip showing the player's primary position code. Rendered next to
-// every player name on the pitch + alternates list, so it's visually
-// obvious when (e.g.) a CM is filling an LM slot.
+// For starters: shows the SLOT's primary position (so a CM in an LM slot
+// shows [LM]). For depth-chart alternates and bench subs: shows the
+// player's own positions[0] — they are candidates, not yet placed.
 
 function PositionPill({ code, tone }: { code: string | null; tone: 'starter' | 'alternate' }) {
   if (!code) return null;
@@ -151,7 +151,7 @@ function SlotColumn({
             className="flex items-center gap-[2px] px-1.5 py-[2px] rounded whitespace-nowrap"
             style={{ backgroundColor: 'rgba(0,0,0,0.62)' }}
           >
-            <PositionPill code={primaryPositionCode(starter)} tone="starter" />
+            <PositionPill code={slotCode} tone="starter" />
             <span
               className="text-[8px] font-black text-white text-center leading-tight"
               translate="no"
