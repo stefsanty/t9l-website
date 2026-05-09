@@ -115,15 +115,29 @@ export async function applyToLeague(
   // v1.81.0 — also pulls `subdomain` for the success-redirect fallback
   // when `originPath` is missing/invalid.
   // v1.82.0 — also pulls `ballType` for position-vocabulary validation.
+  // v1.84.0 — also pulls `visibility`. Self-serve apply is accepted on
+  // PUBLIC_OPEN + PUBLIC_CLOSED leagues; PRIVATE requires an invite via
+  // `/join/<code>` and rejects this path with a friendly message. The
+  // legacy `recruiting` boolean is no longer the gate.
   const league = await prisma.league.findUnique({
     where: { id: input.leagueId },
-    select: { id: true, recruiting: true, name: true, subdomain: true, ballType: true },
+    select: {
+      id: true,
+      recruiting: true,
+      visibility: true,
+      name: true,
+      subdomain: true,
+      ballType: true,
+    },
   })
   if (!league) {
     return { ok: false, error: 'League not found' }
   }
-  if (!league.recruiting) {
-    return { ok: false, error: 'This league is not currently recruiting' }
+  if (league.visibility === 'PRIVATE') {
+    return {
+      ok: false,
+      error: 'This league is invitation-only. Ask the league admin for an invite link.',
+    }
   }
   // v1.81.0 — origin-path fallback: the league's own subdomain page is
   // the natural landing for the success popup when the caller didn't

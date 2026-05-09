@@ -91,7 +91,10 @@ describe('v1.80.10 — applyToLeague admin-orthogonal-UX fix', () => {
     const applyIdx = RECRUITING_ACTIONS_SRC.indexOf(
       'export async function applyToLeague',
     )
-    const block = RECRUITING_ACTIONS_SRC.slice(applyIdx, applyIdx + 3000)
+    // v1.84.0 — slice window grew (was 3000) to accommodate the new
+    // visibility-gate comment block + branch added between the league
+    // lookup and the user-resolve block.
+    const block = RECRUITING_ACTIONS_SRC.slice(applyIdx, applyIdx + 4000)
     // userId-first lookup.
     expect(block).toMatch(/prisma\.user\.findUnique\(\s*\{\s*where:\s*\{\s*id:\s*userId\s*\}/)
     // lineId fallback lookup.

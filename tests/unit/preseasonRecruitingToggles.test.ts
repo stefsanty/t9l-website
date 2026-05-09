@@ -230,9 +230,9 @@ describe('v1.63.0 — getLeagueFlags helper', () => {
     expect(HELPER_SRC).toMatch(/revalidate:\s*30/)
   })
 
-  it('selects only the two flag columns from Prisma', () => {
+  it('selects only the flag columns from Prisma (v1.84.0 added `visibility`)', () => {
     expect(HELPER_SRC).toMatch(
-      /select:\s*\{\s*preseasonMode:\s*true,\s*recruiting:\s*true\s*\}/,
+      /select:\s*\{\s*preseasonMode:\s*true,\s*recruiting:\s*true,\s*visibility:\s*true\s*\}/,
     )
   })
 
@@ -253,16 +253,24 @@ describe('v1.63.0 — getLeagueFlags helper', () => {
           league: {
             findUnique: vi
               .fn()
-              .mockResolvedValue({ preseasonMode: true, recruiting: false }),
+              .mockResolvedValue({
+                preseasonMode: true,
+                recruiting: false,
+                visibility: 'PUBLIC_OPEN',
+              }),
           },
         },
       }))
       const { __readLeagueFlags_for_testing } = await import('../../src/lib/leagueFlags')
       const flags = await __readLeagueFlags_for_testing('l-foo')
-      expect(flags).toEqual({ preseasonMode: true, recruiting: false })
+      expect(flags).toEqual({
+        preseasonMode: true,
+        recruiting: false,
+        visibility: 'PUBLIC_OPEN',
+      })
     })
 
-    it('defaults both flags false on missing row', async () => {
+    it('defaults flags off / visibility PUBLIC_CLOSED on missing row', async () => {
       vi.doMock('@/lib/prisma', () => ({
         prisma: {
           league: { findUnique: vi.fn().mockResolvedValue(null) },
@@ -270,10 +278,14 @@ describe('v1.63.0 — getLeagueFlags helper', () => {
       }))
       const { __readLeagueFlags_for_testing } = await import('../../src/lib/leagueFlags')
       const flags = await __readLeagueFlags_for_testing('nope')
-      expect(flags).toEqual({ preseasonMode: false, recruiting: false })
+      expect(flags).toEqual({
+        preseasonMode: false,
+        recruiting: false,
+        visibility: 'PUBLIC_CLOSED',
+      })
     })
 
-    it('defaults both flags false on Prisma rejection (does not throw)', async () => {
+    it('defaults flags off on Prisma rejection (does not throw)', async () => {
       vi.doMock('@/lib/prisma', () => ({
         prisma: {
           league: {
@@ -284,7 +296,11 @@ describe('v1.63.0 — getLeagueFlags helper', () => {
       const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
       const { __readLeagueFlags_for_testing } = await import('../../src/lib/leagueFlags')
       const flags = await __readLeagueFlags_for_testing('l-foo')
-      expect(flags).toEqual({ preseasonMode: false, recruiting: false })
+      expect(flags).toEqual({
+        preseasonMode: false,
+        recruiting: false,
+        visibility: 'PUBLIC_CLOSED',
+      })
       expect(warn).toHaveBeenCalled()
       warn.mockRestore()
     })
@@ -301,21 +317,26 @@ describe('v1.63.0 — page wiring fetches + threads flags', () => {
     expect(PAGE_SRC).toMatch(/getLeagueFlags/)
   })
 
-  it('apex page passes preseasonMode + recruiting to Dashboard', () => {
+  it('apex page passes preseasonMode + visibility-derived recruiting to Dashboard', () => {
     expect(PAGE_SRC).toMatch(/preseasonMode=\{flags\.preseasonMode\}/)
-    expect(PAGE_SRC).toMatch(/recruiting=\{flags\.recruiting\}/)
+    // v1.84.0 — banner gate is now `visibility === 'PUBLIC_OPEN'`.
+    expect(PAGE_SRC).toMatch(/recruiting=\{flags\.visibility\s*===\s*['"]PUBLIC_OPEN['"]\}/)
   })
 
   it('/id/[slug] page fetches + threads flags', () => {
     expect(ID_SLUG_PAGE_SRC).toMatch(/getLeagueFlags/)
     expect(ID_SLUG_PAGE_SRC).toMatch(/preseasonMode=\{flags\.preseasonMode\}/)
-    expect(ID_SLUG_PAGE_SRC).toMatch(/recruiting=\{flags\.recruiting\}/)
+    expect(ID_SLUG_PAGE_SRC).toMatch(
+      /recruiting=\{flags\.visibility\s*===\s*['"]PUBLIC_OPEN['"]\}/,
+    )
   })
 
   it('/id/[slug]/md/[id] page fetches + threads flags', () => {
     expect(ID_SLUG_MD_PAGE_SRC).toMatch(/getLeagueFlags/)
     expect(ID_SLUG_MD_PAGE_SRC).toMatch(/preseasonMode=\{flags\.preseasonMode\}/)
-    expect(ID_SLUG_MD_PAGE_SRC).toMatch(/recruiting=\{flags\.recruiting\}/)
+    expect(ID_SLUG_MD_PAGE_SRC).toMatch(
+      /recruiting=\{flags\.visibility\s*===\s*['"]PUBLIC_OPEN['"]\}/,
+    )
   })
 
   it('apex + /id/[slug] fetch flags in parallel with public data (Promise.all)', () => {
@@ -583,9 +604,9 @@ describe('v1.63.0 — defaults preserve pre-v1.63.0 behavior', () => {
     expect(HEADER_SRC).toMatch(/hideStatsLink\s*=\s*false/)
   })
 
-  it('getLeagueFlags defaults both fields to false on missing row / failure', () => {
+  it('getLeagueFlags defaults flags off + visibility PUBLIC_CLOSED on missing row / failure', () => {
     expect(HELPER_SRC).toMatch(
-      /DEFAULT_FLAGS:\s*LeagueFlags\s*=\s*\{[\s\S]*?preseasonMode:\s*false[\s\S]*?recruiting:\s*false[\s\S]*?\}/,
+      /DEFAULT_FLAGS:\s*LeagueFlags\s*=\s*\{[\s\S]*?preseasonMode:\s*false[\s\S]*?recruiting:\s*false[\s\S]*?visibility:\s*['"]PUBLIC_CLOSED['"][\s\S]*?\}/,
     )
   })
 })
