@@ -46,6 +46,13 @@ import type { PrismaClient, Prisma, GoalType } from '@prisma/client'
 export type EventForScore = {
   scorerId: string
   goalType: GoalType | null
+  /**
+   * v1.82.0 — explicit beneficiary recorded at write time. When set, the
+   * score recompute trusts this directly. When null (legacy rows pre-
+   * v1.82.0), the recompute falls back to mapping scorer → scorer's team
+   * and flipping for OG.
+   */
+  beneficiaryTeamId?: string | null
 }
 
 export type ScoreCache = {
@@ -98,15 +105,27 @@ export function computeScoreFromEvents(
   let home = 0
   let away = 0
   for (const ev of events) {
-    const scorerTeam = scorerTeamLookup.get(ev.scorerId)
-    if (!scorerTeam) continue
-    if (scorerTeam !== homeTeamId && scorerTeam !== awayTeamId) continue
-    const isOwnGoal = ev.goalType === 'OWN_GOAL'
-    const beneficiaryTeam = isOwnGoal
-      ? scorerTeam === homeTeamId
-        ? awayTeamId
-        : homeTeamId
-      : scorerTeam
+    // v1.82.0 — prefer the explicit beneficiary recorded on the event.
+    // Legacy rows (null) fall back to the pre-v1.82.0 derivation off
+    // the scorer's team. A guest scorer (member of a third league team)
+    // has scorerTeam not in [home, away] and would have been silently
+    // dropped pre-v1.82.0; with an explicit beneficiary the goal lands.
+    let beneficiaryTeam: string | null = null
+    if (ev.beneficiaryTeamId) {
+      if (ev.beneficiaryTeamId === homeTeamId || ev.beneficiaryTeamId === awayTeamId) {
+        beneficiaryTeam = ev.beneficiaryTeamId
+      }
+    } else {
+      const scorerTeam = scorerTeamLookup.get(ev.scorerId)
+      if (!scorerTeam) continue
+      if (scorerTeam !== homeTeamId && scorerTeam !== awayTeamId) continue
+      const isOwnGoal = ev.goalType === 'OWN_GOAL'
+      beneficiaryTeam = isOwnGoal
+        ? scorerTeam === homeTeamId
+          ? awayTeamId
+          : homeTeamId
+        : scorerTeam
+    }
     if (beneficiaryTeam === homeTeamId) home++
     else if (beneficiaryTeam === awayTeamId) away++
   }
@@ -197,7 +216,7 @@ export async function recomputeMatchScore(
   const [events, assignments] = await Promise.all([
     prisma.matchEvent.findMany({
       where: { matchId, kind: 'GOAL' },
-      select: { scorerId: true, goalType: true },
+      select: { scorerId: true, goalType: true, beneficiaryTeamId: true },
     }),
     prisma.playerLeagueMembership.findMany({
       where: {
@@ -225,8 +244,12 @@ export async function recomputeMatchScore(
     lookup,
   )
   // Audit log for unresolved scorers — surfaces data bugs without
-  // silently dropping events from the cache.
+  // silently dropping events from the cache. v1.82.0 — events with an
+  // explicit beneficiary are excluded from the warning (cross-team
+  // scorers are now legal, so an unresolved scorer-team mapping is no
+  // longer a bug as long as beneficiary is recorded).
   const unresolved = events.filter((e) => {
+    if (e.beneficiaryTeamId) return false
     const t = lookup.get(e.scorerId)
     return !t || (t !== match.homeTeamId && t !== match.awayTeamId)
   })

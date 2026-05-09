@@ -117,6 +117,55 @@ describe('computeScoreFromEvents', () => {
       computeScoreFromEvents(HOME, AWAY, events, lookup(['p-a', HOME])),
     ).toEqual({ home: 1, away: 0 })
   })
+
+  it('v1.82.0 regression target: explicit beneficiaryTeamId attributes a cross-team scorer correctly', () => {
+    // Scorer is on STRANGER (a third league team — guesting for HOME).
+    // Pre-v1.82.0 (lookup-only path) this would have been silently
+    // dropped because STRANGER is not in [HOME, AWAY]. With explicit
+    // beneficiary on the event, the goal lands on HOME.
+    const events: EventForScore[] = [
+      { scorerId: 'p-guest', goalType: 'OPEN_PLAY', beneficiaryTeamId: HOME },
+    ]
+    expect(
+      computeScoreFromEvents(
+        HOME,
+        AWAY,
+        events,
+        lookup(['p-guest', STRANGER]),
+      ),
+    ).toEqual({ home: 1, away: 0 })
+  })
+
+  it('v1.82.0: explicit beneficiaryTeamId on OG attributes to that team directly (no flip)', () => {
+    // For OWN_GOAL with explicit beneficiary, we trust the form's
+    // selection. Pre-v1.82.0 this would have flipped to opposing-of-
+    // scorer's-team; v1.82.0 just uses the recorded beneficiary.
+    const events: EventForScore[] = [
+      { scorerId: 'p-x', goalType: 'OWN_GOAL', beneficiaryTeamId: AWAY },
+    ]
+    expect(
+      computeScoreFromEvents(HOME, AWAY, events, lookup(['p-x', HOME])),
+    ).toEqual({ home: 0, away: 1 })
+  })
+
+  it('v1.82.0: legacy events (null beneficiaryTeamId) still fall back to scorer-team derivation', () => {
+    const events: EventForScore[] = [
+      { scorerId: 'p-old', goalType: 'OPEN_PLAY', beneficiaryTeamId: null },
+      { scorerId: 'p-old', goalType: 'OWN_GOAL' /* undefined → treated as null */ },
+    ]
+    expect(
+      computeScoreFromEvents(HOME, AWAY, events, lookup(['p-old', HOME])),
+    ).toEqual({ home: 1, away: 1 })
+  })
+
+  it('v1.82.0: an explicit beneficiary not in [HOME, AWAY] is dropped (defensive against bad data)', () => {
+    const events: EventForScore[] = [
+      { scorerId: 'p-x', goalType: 'OPEN_PLAY', beneficiaryTeamId: STRANGER },
+    ]
+    expect(
+      computeScoreFromEvents(HOME, AWAY, events, lookup(['p-x', HOME])),
+    ).toEqual({ home: 0, away: 0 })
+  })
 })
 
 describe('parseScoreOverride', () => {

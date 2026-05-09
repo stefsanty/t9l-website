@@ -297,6 +297,8 @@ model LeagueTeam {
   homeMatches       Match[]                  @relation("HomeTeam")
   awayMatches       Match[]                  @relation("AwayTeam")
   goals             Goal[]
+  // v1.82.0 — back-relation for MatchEvent.beneficiaryTeamId.
+  beneficiaryEvents MatchEvent[]             @relation("EventBeneficiary")
 
   @@unique([leagueId, teamId])
 }
@@ -728,6 +730,15 @@ model MatchEvent {
   scorerId    String
   assisterId  String?
   minute      Int?
+  // v1.82.0 — explicit beneficiary team (the LeagueTeam.id the goal
+  // counts toward in the score recompute). Pre-v1.82.0 the recompute
+  // resolved beneficiary by mapping `scorerId → scorer's team` and
+  // flipping for OG, which assumed the scorer was on one of the match's
+  // teams. Cross-team (guest) scorers break that derivation, so writes
+  // post-v1.82.0 record beneficiary explicitly. Nullable for backward
+  // compat with legacy rows: when null, the recompute falls back to the
+  // scorer-team derivation. Indexed for the team-stats read paths.
+  beneficiaryTeamId String?
   // Audit who entered the event — admin (their User.id) or the player
   // themselves (their User.id via session.user.playerId → the User who
   // owns that Player). NULL on backfilled rows from the Sheets import.
@@ -735,14 +746,16 @@ model MatchEvent {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
-  match     Match   @relation(fields: [matchId], references: [id], onDelete: Cascade)
-  scorer    Player  @relation("EventScorer", fields: [scorerId], references: [id])
-  assister  Player? @relation("EventAssister", fields: [assisterId], references: [id])
-  createdBy User?   @relation(fields: [createdById], references: [id])
+  match            Match       @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  scorer           Player      @relation("EventScorer", fields: [scorerId], references: [id])
+  assister         Player?     @relation("EventAssister", fields: [assisterId], references: [id])
+  beneficiaryTeam  LeagueTeam? @relation("EventBeneficiary", fields: [beneficiaryTeamId], references: [id])
+  createdBy        User?       @relation(fields: [createdById], references: [id])
 
   @@index([matchId])
   @@index([scorerId])
   @@index([assisterId])
+  @@index([beneficiaryTeamId])
 }
 
 enum EventKind {

@@ -28,15 +28,21 @@ const VALID_GOAL_TYPES = new Set<GoalType>([
  * for audit; `scorerId` is now driven by the form input. Admin CRUD
  * (PR γ) handles cleanup if abuse appears.
  *
+ * v1.82.0 — cross-team scorers/assisters. Casual leagues let players
+ * guest for other teams; the scorer/assister are no longer required to
+ * be on a participating match team. Scope loosens to "any active member
+ * of this league" (PlayerLeagueMembership with leagueTeamId set).
+ * Beneficiary team is now passed from the form rather than derived from
+ * the scorer's team — guest players break the implicit derivation.
+ *
  * Re-evaluates every gate the page-level CTA enforces (defense in depth):
  *   1. session is set + has linked playerId (caller — any linked player)
  *   2. matchPublicId resolves to a Match in the caller's resolved league
  *   3. now (JST) >= earliest kickoff in the matchday
- *   4. scorerPlayerSlug resolves to a real Player with an assignment in
- *      one of the match's two teams (cross-league rejection AND not on
- *      the participating teams = reject)
- *   5. for OWN_GOAL the beneficiary is the OPPOSITE of the scorer's team
- *   6. assister, when supplied, must be on the scorer's team and ≠ scorer
+ *   4. beneficiaryTeamId is one of the match's two teams
+ *   5. scorerPlayerSlug resolves to a real Player with an active league
+ *      membership (any team, OR the league directly via leagueId)
+ *   6. assister, when supplied, is also a league member and ≠ scorer
  *
  * Auto-approved per user's brief — `MatchEvent.createdById` records the
  * submitting User so admins can grep audit history in case of abuse.
@@ -45,9 +51,18 @@ export async function submitOwnMatchEvent(input: {
   matchPublicId: string // e.g. "md3-m2"
   goalType: GoalType
   /**
+   * v1.82.0 — beneficiary team (the one the goal counts for). Required
+   * since cross-team scorers break the pre-v1.82.0 derivation. Must be
+   * one of the match's two teams.
+   */
+  beneficiaryTeamId: string
+  /**
    * v1.48.0 — public slug of the player who scored the goal. ANY player
    * in the resolved league. Pre-v1.48.0 this was forced to equal the
    * caller's session.playerId; that restriction is gone.
+   *
+   * v1.82.0 — no longer required to be on a participating match team;
+   * any active league member is eligible (guest players in casual leagues).
    */
   scorerPlayerSlug: string
   assisterPlayerSlug?: string | null
@@ -126,32 +141,38 @@ export async function submitOwnMatchEvent(input: {
     throw new Error(`Cannot submit (${gate})`)
   }
 
-  // v1.48.0 — resolve scorer from form input. Must exist + have an
-  // assignment on one of the match's two teams in the SAME league.
+  // v1.82.0 — beneficiary is now an explicit input. Must be one of the
+  // match's two teams. The implicit pre-v1.82.0 derivation (= scorer's
+  // team for non-OG, opposite for OG) was correct only when the scorer
+  // was a member of one of the match teams; cross-team scorers (guest
+  // players) broke that, so the form has to send it explicitly.
+  const beneficiaryTeamId = input.beneficiaryTeamId?.trim()
+  if (!beneficiaryTeamId) throw new Error('Beneficiary team is required')
+  if (beneficiaryTeamId !== match.homeTeamId && beneficiaryTeamId !== match.awayTeamId) {
+    throw new Error('Beneficiary team is not part of this match')
+  }
+
+  // v1.48.0 / v1.82.0 — resolve scorer from form input. Must be a player
+  // with an active league membership (any team, including teams not
+  // playing in this match — casual leagues let players guest).
   const scorerSlug = input.scorerPlayerSlug?.trim()
   if (!scorerSlug) throw new Error('Scorer is required')
   const scorerId = slugToPlayerId(scorerSlug)
   const scorerAssignment = await prisma.playerLeagueMembership.findFirst({
     where: {
       playerId: scorerId,
-      leagueTeamId: { in: [match.homeTeamId, match.awayTeamId] },
+      leagueId,
+      leagueTeamId: { not: null },
     },
-    select: { leagueTeamId: true },
+    select: { id: true },
   })
   if (!scorerAssignment) {
-    throw new Error('Scorer is not on either of the match teams')
+    throw new Error('Scorer is not a member of this league')
   }
-  const scorerLeagueTeamId = scorerAssignment.leagueTeamId
 
-  // Beneficiary derived from goalType.
-  const beneficiaryTeamId =
-    input.goalType === 'OWN_GOAL'
-      ? scorerLeagueTeamId === match.homeTeamId
-        ? match.awayTeamId
-        : match.homeTeamId
-      : scorerLeagueTeamId
-
-  // Assister gate — must be on the scorer's team and ≠ scorer.
+  // Assister gate — must be a league member and ≠ scorer. v1.82.0 drops
+  // the "must be on scorer's team" requirement (cross-team assists are
+  // legal in casual leagues, same logic as the scorer change).
   const assisterPublicSlug = input.assisterPlayerSlug?.trim() || null
   let assisterId: string | null = null
   if (assisterPublicSlug) {
@@ -162,12 +183,13 @@ export async function submitOwnMatchEvent(input: {
     const assisterAssignment = await prisma.playerLeagueMembership.findFirst({
       where: {
         playerId: assisterCandidateId,
-        leagueTeamId: scorerLeagueTeamId,
+        leagueId,
+        leagueTeamId: { not: null },
       },
       select: { id: true },
     })
     if (!assisterAssignment) {
-      throw new Error("Assister must be on the scorer's team")
+      throw new Error('Assister is not a member of this league')
     }
     assisterId = assisterCandidateId
   }
@@ -181,11 +203,11 @@ export async function submitOwnMatchEvent(input: {
         scorerId,
         assisterId,
         minute: input.minute ?? null,
+        beneficiaryTeamId,
         createdById: userId,
       },
       select: { id: true },
     })
-    void beneficiaryTeamId // beneficiary is implicit via scorer's team + goalType
     await recomputeMatchScore(tx, match.id)
     return ev
   })

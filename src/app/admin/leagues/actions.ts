@@ -1933,34 +1933,28 @@ export async function adminCreateMatchEvent(input: {
   ) {
     throw new Error('beneficiaryTeamId is not part of this match')
   }
-  const opposingTeamId =
-    beneficiaryTeamId === match.homeTeamId ? match.awayTeamId : match.homeTeamId
-
-  // Confirm scorer is on the right team for the goalType.
-  // - For non-OG: scorer must be on beneficiaryTeamId.
-  // - For OG: scorer must be on opposingTeamId.
-  const requiredScorerTeamId =
-    goalType === 'OWN_GOAL' ? opposingTeamId : beneficiaryTeamId
-  const scorerOnTeam = await prisma.playerLeagueMembership.findFirst({
-    where: { playerId: scorerId, leagueTeamId: requiredScorerTeamId },
+  // v1.82.0 — scorer/assister scope: any active member of this league.
+  // Pre-v1.82.0 the scorer was forced to be on the beneficiary team
+  // (or the opposing team for OG) and the assister on the beneficiary
+  // team; casual leagues let players guest for other teams (a member of
+  // Team C can score for Team A while temporarily filling in). Identity
+  // of the scoring/assisting Player is what matters for stats; team
+  // attribution lives on `beneficiaryTeamId`.
+  const scorerInLeague = await prisma.playerLeagueMembership.findFirst({
+    where: { playerId: scorerId, leagueId, leagueTeamId: { not: null } },
     select: { id: true },
   })
-  if (!scorerOnTeam) {
-    throw new Error(
-      goalType === 'OWN_GOAL'
-        ? 'Scorer (own goal) must be on the OPPOSING team'
-        : 'Scorer must be on the beneficiary team',
-    )
+  if (!scorerInLeague) {
+    throw new Error('Scorer is not a member of this league')
   }
 
-  // Assister, when supplied, must be on the beneficiary team.
   if (assisterId) {
-    const assisterOnTeam = await prisma.playerLeagueMembership.findFirst({
-      where: { playerId: assisterId, leagueTeamId: beneficiaryTeamId },
+    const assisterInLeague = await prisma.playerLeagueMembership.findFirst({
+      where: { playerId: assisterId, leagueId, leagueTeamId: { not: null } },
       select: { id: true },
     })
-    if (!assisterOnTeam) {
-      throw new Error('Assister must be on the beneficiary team')
+    if (!assisterInLeague) {
+      throw new Error('Assister is not a member of this league')
     }
   }
 
@@ -1973,6 +1967,7 @@ export async function adminCreateMatchEvent(input: {
         scorerId,
         assisterId,
         minute: input.minute ?? null,
+        beneficiaryTeamId,
         createdById: userId,
       },
       select: { id: true },
@@ -2046,29 +2041,22 @@ export async function adminUpdateMatchEvent(input: {
   ) {
     throw new Error('beneficiaryTeamId is not part of this match')
   }
-  const opposingTeamId =
-    beneficiaryTeamId === match.homeTeamId ? match.awayTeamId : match.homeTeamId
-  const requiredScorerTeamId =
-    goalType === 'OWN_GOAL' ? opposingTeamId : beneficiaryTeamId
-
-  const scorerOnTeam = await prisma.playerLeagueMembership.findFirst({
-    where: { playerId: scorerId, leagueTeamId: requiredScorerTeamId },
+  // v1.82.0 — same scope-loosening as adminCreateMatchEvent: scorer +
+  // assister are any active league member, regardless of team.
+  const scorerInLeague = await prisma.playerLeagueMembership.findFirst({
+    where: { playerId: scorerId, leagueId, leagueTeamId: { not: null } },
     select: { id: true },
   })
-  if (!scorerOnTeam) {
-    throw new Error(
-      goalType === 'OWN_GOAL'
-        ? 'Scorer (own goal) must be on the OPPOSING team'
-        : 'Scorer must be on the beneficiary team',
-    )
+  if (!scorerInLeague) {
+    throw new Error('Scorer is not a member of this league')
   }
   if (assisterId) {
-    const assisterOnTeam = await prisma.playerLeagueMembership.findFirst({
-      where: { playerId: assisterId, leagueTeamId: beneficiaryTeamId },
+    const assisterInLeague = await prisma.playerLeagueMembership.findFirst({
+      where: { playerId: assisterId, leagueId, leagueTeamId: { not: null } },
       select: { id: true },
     })
-    if (!assisterOnTeam) {
-      throw new Error('Assister must be on the beneficiary team')
+    if (!assisterInLeague) {
+      throw new Error('Assister is not a member of this league')
     }
   }
 
@@ -2080,6 +2068,7 @@ export async function adminUpdateMatchEvent(input: {
         scorerId,
         assisterId,
         minute: input.minute ?? null,
+        beneficiaryTeamId,
       },
     })
     await recomputeMatchScore(tx, existing.matchId)
