@@ -595,25 +595,33 @@ export interface AssignmentResult {
  * automatically on roster change because the function is pure: re-running
  * with the new player set produces the new placement (no internal state).
  *
+ * v1.85.2 — 5-pass algorithm respects positions[] order (positions[0] =
+ * primary, positions[1..] = secondary). See positions.ts for the convention.
+ *
  * Algorithm:
  *   0. Players with empty `positions[]` → `playersWithoutPositions` bucket.
- *   1. **Pass 1 (primary).** For each slot, candidate set = unplaced
- *      players whose positions ∩ slot.PRIMARY ≠ ∅. Run scarcity-first:
- *      pick the unfilled slot with the fewest primary candidates; within
- *      that slot, pick the player with the fewest other primary-eligible
- *      slots. Tie-break by player id. Repeat until no primary candidate
- *      remains.
- *   2. **Pass 2 (fallback).** For each STILL-unfilled slot, candidate set
- *      = unplaced players whose positions ∩ slot.FALLBACK ≠ ∅. Run the
- *      same scarcity heuristic. Repeat until exhausted.
- *   3. **Pass 3 (overflow).** Anyone unplaced → `unassignedPlayers` (subs).
+ *   1a. **Pass 1a (primary→slot-primary).** Candidate = unplaced players
+ *       whose positions[0] ∈ slot.PRIMARY. Scarcity-first within pass.
+ *   1b. **Pass 1b (secondary→slot-primary).** Candidate = unplaced players
+ *       whose positions[1..] ∩ slot.PRIMARY ≠ ∅.
+ *   2a. **Pass 2a (primary→slot-fallback).** Candidate = unplaced players
+ *       whose positions[0] ∈ slot.FALLBACK.
+ *   2b. **Pass 2b (secondary→slot-fallback).** Candidate = unplaced players
+ *       whose positions[1..] ∩ slot.FALLBACK ≠ ∅.
+ *   3.  **Pass 3 (overflow).** Anyone unplaced → `unassignedPlayers` (subs).
  *
- * Re-balance scenario: 3 CMs roster → CM gets primary, LM/RM via fallback.
- * Add a real ST → re-running picks CM at CM (primary), ST at ST (primary),
- * LM/RM still via fallback. The new ST never displaces a primary match;
- * only fallback placements yield to incoming primaries.
+ * Worked example: A=[CM,ST], B=[GK], slots=[GK,CM,ST]
+ *   Pass 1a: B→GK (B.positions[0]=GK ∈ GK.primary), A→CM (A.positions[0]=CM ∈ CM.primary)
+ *   Pass 1b: ST slot — no unplaced players with ST as secondary (A is placed)
+ *   Passes 2a/2b: ST fallback=[CAM,LW,RW] — no remaining players match
+ *   Pass 3: ST stays empty → subs.
  *
- * Complexity: O(slots² × players). Runs in microseconds for typical sizes.
+ * Re-balance scenario: 3 CMs roster → CM gets primary (pass 1a), LM/RM
+ * via fallback (pass 2a). Add a real ST → re-running picks ST at ST (1a),
+ * CMs still at CM/LM/RM. New ST never displaces a primary match.
+ *
+ * Complexity: O(slots² × players) per pass. Runs in microseconds for
+ * typical sizes (≤11 slots, ≤20 players).
  */
 export function assignPlayersToFormation(
   ballType: BallType | null | undefined,
@@ -696,18 +704,33 @@ export function assignPlayersToFormation(
     }
   }
 
-  // Pass 1: primary-only
-  runPass((positions, slotCode) => playerFillsSlotPrimary(ballType, positions, slotCode))
+  // Pass 1a: player's primary position (positions[0]) matches slot.primary
+  runPass((positions, slotCode) =>
+    playerCodeFillsSlotPrimary(ballType, positions[0] ?? '', slotCode),
+  )
 
-  // Pass 2: fallback-only (positions that match the slot's fallback list,
-  // EXCLUDING positions that match its primary — the latter would have
-  // been picked up in Pass 1 already, so excluding is a wash).
+  // Pass 1b: any secondary position (positions[1..]) matches slot.primary
+  runPass((positions, slotCode) => {
+    for (let i = 1; i < positions.length; i++) {
+      if (playerCodeFillsSlotPrimary(ballType, positions[i]!, slotCode)) return true
+    }
+    return false
+  })
+
+  // Pass 2a: player's primary position matches slot.fallback
   runPass((positions, slotCode) => {
     const compat = compatFor(ballType, slotCode)
     if (!compat) return false
-    for (const code of positions) {
-      const upper = code.toUpperCase()
-      if (compat.fallback.includes(upper)) return true
+    const upper = (positions[0] ?? '').toUpperCase()
+    return compat.fallback.includes(upper)
+  })
+
+  // Pass 2b: any secondary position matches slot.fallback
+  runPass((positions, slotCode) => {
+    const compat = compatFor(ballType, slotCode)
+    if (!compat) return false
+    for (let i = 1; i < positions.length; i++) {
+      if (compat.fallback.includes(positions[i]!.toUpperCase())) return true
     }
     return false
   })

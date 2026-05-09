@@ -67,9 +67,11 @@
       "Bash(jest:*)"
     ],
     "deny": [
-      "Bash(git push --force*)",
+      "Bash(git push --force)",
+      "Bash(git push --force-push*)",
       "Bash(git push -f*)",
-      "Bash(git push *--force*)",
+      "Bash(git push *--force)",
+      "Bash(git push *--force-push*)",
       "Bash(git reset --hard*)",
       "Bash(git clean -f*)",
       "Bash(git clean -fd*)",

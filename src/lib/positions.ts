@@ -1,6 +1,20 @@
 /**
  * v1.82.0 — Per-format position vocabulary.
  *
+ * ## positions[] array convention (v1.85.2)
+ *
+ * `PlayerLeagueMembership.positions` is an ordered array:
+ *   positions[0]   = primary position (drives formation assignment pass 1a/2a)
+ *   positions[1..] = secondary positions (drives pass 1b/2b)
+ *
+ * **Important:** `PositionMultiSelect` stores codes in canonical vocabulary
+ * order (GK → LB → CB → … → RW), NOT click order. So `positions[0]` is
+ * always the vocab-earliest code the player selected, which correlates with
+ * the most defensive/structural role — a reasonable proxy for "primary" but
+ * NOT an explicit user intent. If explicit user-expressed primacy is ever
+ * needed, add `primaryPosition: String?` to the schema and surface a
+ * separate "set as primary" UI rather than inferring from array order.
+ *
  * Soccer leagues (`ballType = SOCCER`) use a 12-role vocabulary with
  * left/center/right specificity. Futsal leagues (`ballType = FUTSAL`)
  * use the four canonical futsal roles: GK (Goleiro), FIXO (Defender),
@@ -174,4 +188,37 @@ export function readPositions(input: {
 /** Join positions as `"GK/CB"` for compact single-cell display. */
 export function joinPositions(positions: ReadonlyArray<string>): string {
   return positions.join('/')
+}
+
+// Futsal-specific codes that pass through groupedPositionLabel unchanged.
+const FUTSAL_SPECIFIC_CODES = new Set(['FIXO', 'ALA', 'PIVOT'])
+
+/**
+ * Coarse grouped label for a positions array — suitable for list-view cells
+ * (admin table, SquadList, player profile cards) where 12-code soccer
+ * precision is noise rather than signal.
+ *
+ * Grouping (soccer): GK→"GK", LB/CB/RB→"DF", LM/DM/CM/CAM/RM→"MF",
+ * LW/ST/RW→"FW". Dedupes within the same group so [CM,CAM]→"MF" not
+ * "MF / MF". Mixed groups like [CB,LW]→"DF / FW".
+ *
+ * Futsal-specific codes (FIXO, ALA, PIVOT) pass through unchanged since
+ * they already carry meaning at their code level. GK is the same in both.
+ *
+ * Empty array → "".
+ */
+export function groupedPositionLabel(positions: ReadonlyArray<string>): string {
+  if (positions.length === 0) return ''
+  const seen = new Set<string>()
+  const labels: string[] = []
+  for (const code of positions) {
+    const upper = code.trim().toUpperCase()
+    if (!upper) continue
+    const label = FUTSAL_SPECIFIC_CODES.has(upper) ? upper : getPositionBucket(upper)
+    if (!seen.has(label)) {
+      seen.add(label)
+      labels.push(label)
+    }
+  }
+  return labels.join(' / ')
 }

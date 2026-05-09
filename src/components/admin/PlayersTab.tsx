@@ -26,6 +26,7 @@ import {
   updateMembershipPaidStatus,
 } from '@/app/admin/leagues/actions'
 import { formatJpyFee } from '@/lib/playerFee'
+import { groupedPositionLabel } from '@/lib/positions'
 import PositionMultiSelect from '@/components/PositionMultiSelect'
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -472,12 +473,13 @@ export default function PlayersTab({
                         : player.position
                           ? [player.position]
                           : []
-                      return codes.length > 0 ? (
+                      const label = groupedPositionLabel(codes)
+                      return label ? (
                         <span
                           className="text-admin-text3 font-mono uppercase"
                           data-testid={`player-position-mobile-${player.id}`}
                         >
-                          · {codes.join('/')}
+                          · {label}
                         </span>
                       ) : null
                     })()}
@@ -731,13 +733,13 @@ export default function PlayersTab({
                   data-testid={`player-position-${player.id}`}
                 >
                   {(() => {
-                    // v1.82.0 — multi-position display.
                     const codes = player.positions.length > 0
                       ? player.positions
                       : player.position
                         ? [player.position]
                         : []
-                    return codes.length > 0 ? codes.join('/') : <span className="text-admin-text3">—</span>
+                    const label = groupedPositionLabel(codes)
+                    return label || <span className="text-admin-text3">—</span>
                   })()}
                 </span>
 

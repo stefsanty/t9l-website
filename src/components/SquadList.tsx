@@ -4,7 +4,7 @@ import { useState } from 'react';
 import Image from 'next/image';
 import PlayerAvatar from './PlayerAvatar';
 import type { Team, Player, Availability, AvailabilityStatuses } from '@/types';
-import { getPositionBucket } from '@/lib/positions';
+import { getPositionBucket, groupedPositionLabel } from '@/lib/positions';
 
 interface SquadListProps {
   teams: Team[];
@@ -163,7 +163,7 @@ export default function SquadList({
                               {player.name}
                             </span>
                             <span className={`inline-flex items-center justify-center w-14 py-0.5 rounded text-[9px] font-black uppercase tracking-wider border ${getPositionColor(player.position)}`} translate="no">
-                              {player.position || "—"}
+                              {groupedPositionLabel(player.position ? player.position.split('/') : []) || "—"}
                             </span>
                           </div>
                         </div>
