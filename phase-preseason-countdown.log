@@ -262,3 +262,11 @@ M4 count because the new component doesn't need the
 `firstMatchdayStartInstant` helper that the original had four tests for.
 
 ## M7 — Amended PR pushed
+
+Commit `33fbc14` pushed to `claude/optimistic-dijkstra-696c7f`. PR #238
+title + body updated to reflect the registrationDeadline anchor and the
+spec-change note.
+
+PR: https://github.com/stefsanty/t9l-website/pull/238
+Branch HEAD: 33fbc14 — "v1.83.1: re-target countdown to League.registrationDeadline"
+Files changed (this commit only): 5. +280/-249.
