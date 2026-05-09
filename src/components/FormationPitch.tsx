@@ -168,19 +168,21 @@ function SlotColumn({
           data-testid={`formation-alternates-${slotCode}`}
         >
           {alternates.map((alt) => (
-            <span
+            <div
               key={alt.id}
-              className="flex items-center gap-[2px] max-w-full"
+              className="flex items-center gap-[2px] px-1.5 py-[2px] rounded whitespace-nowrap"
+              style={{ backgroundColor: 'rgba(0,0,0,0.62)' }}
               data-testid={`formation-alternate-${alt.id}`}
+              aria-label={`${alt.name} (alternate)`}
             >
               <PositionPill code={primaryPositionCode(alt)} />
               <span
-                className="text-[8px] font-black text-white/80 leading-none truncate italic"
+                className="text-[8px] font-black text-white text-center leading-tight"
                 translate="no"
               >
                 {alt.name}
               </span>
-            </span>
+            </div>
           ))}
         </div>
       )}
