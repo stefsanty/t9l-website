@@ -22,6 +22,7 @@ Topical docs live under `docs/`. Read the relevant one before working in that ar
 | Known infra issues (Neon-Vercel race, Vercel body cap, V8 TZ trap) | [docs/known-infra-issues.md](docs/known-infra-issues.md) |
 | Domain migration runbook | [docs/domain-migration-runbook.md](docs/domain-migration-runbook.md) |
 | Ledger archive (older PRs, snapshot table, ops events) | [docs/ledger-archive.md](docs/ledger-archive.md) |
+| Migration SQL rules + v1.86.0 post-mortem (@@map foot-gun) | [docs/migration-sql-lessons.md](docs/migration-sql-lessons.md) |
 
 ## Stale-worktree protocol — FIRST ACTION OF EVERY FRESH SESSION
 
@@ -70,6 +71,10 @@ Keep each line short. Long explanations live in PR descriptions, not chat.
 **No exports from `'use server'` files.** Never `export const` (or any non-async value) from a file with `'use server'` at the top — Next.js converts every export into a server-action proxy on the client side, and constants become functions that crash on first use. Constants/types/interfaces shared between server actions and client components live in a separate neutral module. Standing since v1.59.2.
 
 **Cache invalidation canonical.** Cache busts go through [`src/lib/revalidate.ts#revalidate({ domain })`](src/lib/revalidate.ts). Direct `revalidateTag` / `revalidatePath` / `updateTag` calls outside that file are forbidden; the lint guard at [`tests/unit/revalidatePrimitivesGuard.test.ts`](tests/unit/revalidatePrimitivesGuard.test.ts) fails CI if any new primitive call leaks. See [docs/cache-invalidation.md](docs/cache-invalidation.md).
+
+**Migration SQL authoring.** NEVER hand-author migration SQL from scratch. Always use `npx prisma migrate dev --create-only --name <name>` to generate the file — Prisma resolves `@@map` / `@map` to the correct SQL table/column names; hand-authored SQL does not. Permitted exception: pure-data `UPDATE`/`INSERT` statements appended after the generated DDL, provided all table and column names are verified against `@@map` directives. See [docs/migration-sql-lessons.md](docs/migration-sql-lessons.md) for the v1.86.0 post-mortem.
+
+**Post-deploy verification.** After every prod deploy, run the three mandatory checks in [docs/release-and-ship.md](docs/release-and-ship.md#post-deploy-verification-mandatory-after-every-prod-deploy): (1) `curl -sI https://t9l.me/ | head -1` must return `HTTP/2 200`; (2) `Account`, `User`, and `League` counts must all be > 0; (3) `_prisma_migrations` must have no rows with `finished_at IS NULL`. Any failure is P0 — surface immediately and initiate rollback before doing anything else.
 
 **Bash discipline.** Never chain bash commands. Use separate Bash tool calls for each step instead of `cmd1 && cmd2`, `cmd1; cmd2`, or `cmd1 $(cmd2)`. Chained commands match the allow-list matcher against the full string and frequently trigger permission prompts that block the agent in a waiting loop. For directory scoping, use `git -C /path/to/repo` instead of `cd /path && git ...`.
 
