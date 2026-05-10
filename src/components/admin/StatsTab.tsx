@@ -52,8 +52,13 @@ interface EventRow {
   matchId: string
   goalType: GoalType | null
   minute: number | null
-  scorer: { id: string; name: string | null }
+  // v1.88.0 — scorer/assister Player relation is nullable when
+  // isGuestScorer / isGuestAssister is true (the player isn't in our DB).
+  scorer: { id: string; name: string | null } | null
+  isGuestScorer: boolean
   assister: { id: string; name: string | null } | null
+  isGuestAssister: boolean
+  beneficiaryTeamId: string | null
   match: {
     id: string
     homeTeamId: string
@@ -103,6 +108,12 @@ interface StatsTabProps {
 // Own goals are excluded from individual goal totals (scorer is on the
 // opposing team and the goal benefits the OTHER side; counting it as the
 // scorer's "goal" would be misleading). Assists from non-OG events count.
+//
+// v1.88.0 — guest events (`isGuestScorer` / `isGuestAssister`) never
+// inflate any individual leaderboard row — the guest is off-roster and
+// has no Player record to credit. Guest team-level counts come from
+// the end-of-season query `WHERE isGuestScorer=true AND
+// beneficiaryTeamId=<lt>`, not from this leaderboard.
 export function buildScorerStatsFromEvents(
   events: EventRow[],
   matchdayFilter: number | null,
@@ -115,24 +126,24 @@ export function buildScorerStatsFromEvents(
 
   for (const ev of filtered) {
     const isOG = ev.goalType === 'OWN_GOAL'
-    if (!isOG) {
+    if (!isOG && !ev.isGuestScorer && ev.scorer) {
       const key = ev.scorer.id
       if (!map.has(key)) {
         map.set(key, { name: maybeName(ev.scorer.name), team: '', goals: 0, assists: 0 })
       }
       map.get(key)!.goals++
-      if (ev.assister) {
-        const aKey = ev.assister.id
-        if (!map.has(aKey)) {
-          map.set(aKey, { name: maybeName(ev.assister.name), team: '', goals: 0, assists: 0 })
-        }
-        map.get(aKey)!.assists++
-      }
     }
-    // OWN_GOAL: scorer's individual stats don't get inflated; we don't
-    // record a goal or assist credit. The match's beneficiary team
-    // tally is handled by recomputeMatchScore — this is an admin
-    // leaderboard, not a per-team scoreline.
+    // Assist credit attaches to the goal's beneficiary side, not the OG
+    // scorer's team — but per v1.44.0 OG events skip assist credit too
+    // (the assist for an OG would be on the opposing-team's side which
+    // is conceptually weird; left out for simplicity).
+    if (!isOG && !ev.isGuestAssister && ev.assister) {
+      const aKey = ev.assister.id
+      if (!map.has(aKey)) {
+        map.set(aKey, { name: maybeName(ev.assister.name), team: '', goals: 0, assists: 0 })
+      }
+      map.get(aKey)!.assists++
+    }
   }
 
   return Array.from(map.values()).sort((a, b) => b.goals - a.goals || b.assists - a.assists)
@@ -202,6 +213,8 @@ const GOAL_TYPE_LABELS: Record<GoalType, { short: string; full: string; tone: st
 }
 
 // Pure: filter events by an optional matchday + free-text search.
+// v1.88.0 — guest events match search "guest" and skip the
+// scorer/assister name lookup since those are null.
 export function filterEvents(
   events: EventRow[],
   matchdayFilter: number | null,
@@ -211,8 +224,9 @@ export function filterEvents(
   return events.filter((ev) => {
     if (matchdayFilter && ev.match.gameWeek.weekNumber !== matchdayFilter) return false
     if (!q) return true
+    if ((ev.isGuestScorer || ev.isGuestAssister) && 'guest'.includes(q)) return true
     return (
-      (ev.scorer.name?.toLowerCase().includes(q) ?? false) ||
+      (ev.scorer?.name?.toLowerCase().includes(q) ?? false) ||
       (ev.assister?.name?.toLowerCase().includes(q) ?? false) ||
       ev.match.homeTeam.team.name.toLowerCase().includes(q) ||
       ev.match.awayTeam.team.name.toLowerCase().includes(q)
@@ -517,8 +531,12 @@ function EventRowDisplay({
       >
         {tone.short}
       </span>
-      <span className="text-admin-text font-semibold truncate">{maybeName(ev.scorer.name)}</span>
-      <span className="text-admin-text2 truncate">{ev.assister ? maybeName(ev.assister.name) : '—'}</span>
+      <span className="text-admin-text font-semibold truncate">
+        {ev.isGuestScorer ? 'Guest' : maybeName(ev.scorer?.name ?? null)}
+      </span>
+      <span className="text-admin-text2 truncate">
+        {ev.isGuestAssister ? 'Guest' : ev.assister ? maybeName(ev.assister.name) : '—'}
+      </span>
       <span className="text-admin-text3 text-xs truncate">{matchLabel}</span>
       <div className="flex items-center justify-end gap-2">
         <button
@@ -573,21 +591,26 @@ function EventEditor({
 
   const match = eventMatches.find((m) => m.id === matchId) ?? null
 
-  // Beneficiary defaults: when editing, derive from existing event's
-  // scorer/goalType. When creating, default to home team.
+  // Beneficiary defaults: when editing, prefer the explicit
+  // `beneficiaryTeamId` recorded on the event (post-v1.82.0). Fall back
+  // to derivation from the scorer's team for legacy rows. When
+  // creating, default to home team.
+  // v1.88.0 — guest events always have beneficiaryTeamId set, so the
+  // explicit-prefer branch handles them with no scorer lookup.
   function deriveBeneficiary(): string {
     if (!match) return ''
     if (existing) {
-      // Look up scorer's team via the assignment lookup.
-      const scorerLT = eventLeagueTeams.find((lt) =>
-        lt.playerAssignments.some((a) => a.player.id === existing.scorer.id),
-      )
-      if (scorerLT) {
-        if (existing.goalType === 'OWN_GOAL') {
-          // OG benefits the OPPOSITE team.
-          return scorerLT.id === match.homeTeamId ? match.awayTeamId : match.homeTeamId
+      if (existing.beneficiaryTeamId) return existing.beneficiaryTeamId
+      if (existing.scorer) {
+        const scorerLT = eventLeagueTeams.find((lt) =>
+          lt.playerAssignments.some((a) => a.player.id === existing.scorer!.id),
+        )
+        if (scorerLT) {
+          if (existing.goalType === 'OWN_GOAL') {
+            return scorerLT.id === match.homeTeamId ? match.awayTeamId : match.homeTeamId
+          }
+          return scorerLT.id
         }
-        return scorerLT.id
       }
     }
     return match.homeTeamId
@@ -595,7 +618,12 @@ function EventEditor({
 
   const [beneficiaryTeamId, setBeneficiaryTeamId] = useState(() => deriveBeneficiary())
   const [goalType, setGoalType] = useState<GoalType>(existing?.goalType ?? 'OPEN_PLAY')
-  const [scorerId, setScorerId] = useState(existing?.scorer.id ?? '')
+  // v1.88.0 — guest-scorer / guest-assister flags. When checked, hides
+  // the scorer/assister picker and the event records isGuestScorer=true
+  // (or isGuestAssister=true) with scorerId/assisterId NULL.
+  const [isGuestScorer, setIsGuestScorer] = useState<boolean>(existing?.isGuestScorer ?? false)
+  const [scorerId, setScorerId] = useState(existing?.scorer?.id ?? '')
+  const [isGuestAssister, setIsGuestAssister] = useState<boolean>(existing?.isGuestAssister ?? false)
   const [assisterId, setAssisterId] = useState(existing?.assister?.id ?? '')
   const [minute, setMinute] = useState<string>(existing?.minute != null ? String(existing.minute) : '')
 
@@ -655,10 +683,13 @@ function EventEditor({
       setError('Minute must be between 0 and 200, or empty.')
       return
     }
-    if (!scorerId) {
-      setError('Pick a scorer.')
+    if (!isGuestScorer && !scorerId) {
+      setError('Pick a scorer (or check "Scored by guest").')
       return
     }
+    // v1.88.0 — XOR shape: guest flag set ⇒ id null; flag unset ⇒ id required.
+    const submitScorerId = isGuestScorer ? null : scorerId
+    const submitAssisterId = isGuestAssister ? null : (assisterId || null)
     startTransition(async () => {
       try {
         if (existing) {
@@ -667,8 +698,10 @@ function EventEditor({
             leagueId,
             goalType,
             beneficiaryTeamId,
-            scorerId,
-            assisterId: assisterId || null,
+            scorerId: submitScorerId,
+            isGuestScorer,
+            assisterId: submitAssisterId,
+            isGuestAssister,
             minute: minuteValue,
           })
         } else {
@@ -677,8 +710,10 @@ function EventEditor({
             leagueId,
             goalType,
             beneficiaryTeamId,
-            scorerId,
-            assisterId: assisterId || null,
+            scorerId: submitScorerId,
+            isGuestScorer,
+            assisterId: submitAssisterId,
+            isGuestAssister,
             minute: minuteValue,
           })
         }
@@ -759,64 +794,106 @@ function EventEditor({
         <label className="block">
           <span className="text-admin-text3 text-xs uppercase tracking-wider">
             Scorer
-            {goalType === 'OWN_GOAL' && (
+            {goalType === 'OWN_GOAL' && !isGuestScorer && (
               <span className="text-admin-amber ml-2 normal-case">— OG: pick from the OPPOSING team</span>
             )}
           </span>
-          <select
-            data-testid="event-editor-scorer"
-            value={scorerId}
-            onChange={(e) => setScorerId(e.target.value)}
-            className="mt-1 w-full bg-admin-surface2 border border-admin-border rounded px-3 py-2 text-sm text-admin-text"
-          >
-            <option value="">— select —</option>
-            {scorerGroups.map((g) => (
-              <optgroup key={g.key} label={g.label}>
-                {g.players.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
+          {/* v1.88.0 — guest-scorer toggle. Hides the picker; the event
+              records isGuestScorer=true with scorerId=NULL. Composes
+              with goalType=OWN_GOAL (= a guest scored an OG). */}
+          <div className="mt-1 flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="event-editor-is-guest-scorer"
+              data-testid="event-editor-is-guest-scorer"
+              checked={isGuestScorer}
+              onChange={(e) => {
+                setIsGuestScorer(e.target.checked)
+                if (e.target.checked) setScorerId('')
+              }}
+            />
+            <label htmlFor="event-editor-is-guest-scorer" className="text-admin-text2 text-xs">
+              Scored by guest (off-roster)
+            </label>
+          </div>
+          {!isGuestScorer && (
+            <>
+              <select
+                data-testid="event-editor-scorer"
+                value={scorerId}
+                onChange={(e) => setScorerId(e.target.value)}
+                className="mt-1 w-full bg-admin-surface2 border border-admin-border rounded px-3 py-2 text-sm text-admin-text"
+              >
+                <option value="">— select —</option>
+                {scorerGroups.map((g) => (
+                  <optgroup key={g.key} label={g.label}>
+                    {g.players.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </optgroup>
                 ))}
-              </optgroup>
-            ))}
-          </select>
-          {scorerGuestTeamName ? (
-            <span
-              data-testid="event-editor-scorer-guest-hint"
-              className="mt-1 block text-admin-text3 text-[11px]"
-            >
-              (guest from {scorerGuestTeamName})
-            </span>
-          ) : null}
+              </select>
+              {scorerGuestTeamName ? (
+                <span
+                  data-testid="event-editor-scorer-guest-hint"
+                  className="mt-1 block text-admin-text3 text-[11px]"
+                >
+                  (guest from {scorerGuestTeamName})
+                </span>
+              ) : null}
+            </>
+          )}
         </label>
 
         <label className="block">
           <span className="text-admin-text3 text-xs uppercase tracking-wider">Assister (optional)</span>
-          <select
-            data-testid="event-editor-assister"
-            value={assisterId}
-            onChange={(e) => setAssisterId(e.target.value)}
-            className="mt-1 w-full bg-admin-surface2 border border-admin-border rounded px-3 py-2 text-sm text-admin-text"
-          >
-            <option value="">— no assist —</option>
-            {assisterGroups.map((g) => (
-              <optgroup key={g.key} label={g.label}>
-                {g.players.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
+          {/* v1.88.0 — guest-assister toggle, same shape as scorer. */}
+          <div className="mt-1 flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="event-editor-is-guest-assister"
+              data-testid="event-editor-is-guest-assister"
+              checked={isGuestAssister}
+              onChange={(e) => {
+                setIsGuestAssister(e.target.checked)
+                if (e.target.checked) setAssisterId('')
+              }}
+            />
+            <label htmlFor="event-editor-is-guest-assister" className="text-admin-text2 text-xs">
+              Assisted by guest (off-roster)
+            </label>
+          </div>
+          {!isGuestAssister && (
+            <>
+              <select
+                data-testid="event-editor-assister"
+                value={assisterId}
+                onChange={(e) => setAssisterId(e.target.value)}
+                className="mt-1 w-full bg-admin-surface2 border border-admin-border rounded px-3 py-2 text-sm text-admin-text"
+              >
+                <option value="">— no assist —</option>
+                {assisterGroups.map((g) => (
+                  <optgroup key={g.key} label={g.label}>
+                    {g.players.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </optgroup>
                 ))}
-              </optgroup>
-            ))}
-          </select>
-          {assisterGuestTeamName ? (
-            <span
-              data-testid="event-editor-assister-guest-hint"
-              className="mt-1 block text-admin-text3 text-[11px]"
-            >
-              (guest from {assisterGuestTeamName})
-            </span>
-          ) : null}
+              </select>
+              {assisterGuestTeamName ? (
+                <span
+                  data-testid="event-editor-assister-guest-hint"
+                  className="mt-1 block text-admin-text3 text-[11px]"
+                >
+                  (guest from {assisterGuestTeamName})
+                </span>
+              ) : null}
+            </>
+          )}
         </label>
 
         <label className="block">

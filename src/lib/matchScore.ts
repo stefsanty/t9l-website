@@ -44,7 +44,13 @@ import type { PrismaClient, Prisma, GoalType } from '@prisma/client'
  */
 
 export type EventForScore = {
-  scorerId: string
+  /**
+   * v1.88.0 — nullable when the event was scored by an off-roster
+   * guest (`isGuestScorer: true`). The recompute uses
+   * `beneficiaryTeamId` directly in that case and never consults
+   * `scorerTeamLookup`.
+   */
+  scorerId: string | null
   goalType: GoalType | null
   /**
    * v1.82.0 — explicit beneficiary recorded at write time. When set, the
@@ -116,6 +122,10 @@ export function computeScoreFromEvents(
         beneficiaryTeam = ev.beneficiaryTeamId
       }
     } else {
+      // v1.88.0 — guest events always write beneficiaryTeamId at create
+      // time; if we got here with no beneficiary AND no scorerId, the
+      // event has no team attribution to resolve, so skip.
+      if (!ev.scorerId) continue
       const scorerTeam = scorerTeamLookup.get(ev.scorerId)
       if (!scorerTeam) continue
       if (scorerTeam !== homeTeamId && scorerTeam !== awayTeamId) continue
@@ -250,6 +260,10 @@ export async function recomputeMatchScore(
   // longer a bug as long as beneficiary is recorded).
   const unresolved = events.filter((e) => {
     if (e.beneficiaryTeamId) return false
+    // v1.88.0 — null scorerId means the event was a guest goal; no
+    // unresolved-scorer warning to log (the absence of a beneficiary
+    // would be the bug here, but guest events always write it).
+    if (!e.scorerId) return false
     const t = lookup.get(e.scorerId)
     return !t || (t !== match.homeTeamId && t !== match.awayTeamId)
   })

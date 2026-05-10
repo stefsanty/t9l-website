@@ -1939,21 +1939,43 @@ export async function adminCreateMatchEvent(input: {
   leagueId: string
   goalType: GoalType
   beneficiaryTeamId: string
-  scorerId: string
+  // v1.88.0 — `scorerId` is nullable when the goal was scored by an
+  // off-roster guest (`isGuestScorer: true`); same shape for assister.
+  // The form sends one of {scorerId} OR {isGuestScorer:true}; the
+  // server enforces the XOR.
+  scorerId?: string | null
+  isGuestScorer?: boolean
   assisterId?: string | null
+  isGuestAssister?: boolean
   minute?: number | null
 }): Promise<{ id: string }> {
   await assertAdmin()
   const session = await getServerSession(authOptions)
   const userId = session?.userId ?? null
 
-  const { matchId, leagueId, goalType, beneficiaryTeamId, scorerId } = input
+  const { matchId, leagueId, goalType, beneficiaryTeamId } = input
+  const isGuestScorer = input.isGuestScorer === true
+  const isGuestAssister = input.isGuestAssister === true
+  const scorerId = isGuestScorer ? null : (input.scorerId ?? null)
+  const assisterId = isGuestAssister ? null : (input.assisterId ?? null)
+
   if (!matchId) throw new Error('matchId is required')
   if (!leagueId) throw new Error('leagueId is required')
-  if (!scorerId) throw new Error('scorerId is required')
   if (!beneficiaryTeamId) throw new Error('beneficiaryTeamId is required')
   if (!VALID_GOAL_TYPES.has(goalType)) {
     throw new Error(`Invalid goalType: ${goalType}`)
+  }
+  // v1.88.0 — scorer XOR guest. Exactly one must hold: either a real
+  // playerId is supplied, or the isGuestScorer flag is set. Both unset
+  // is a missing-scorer error; both set is a contradiction.
+  if (isGuestScorer && input.scorerId) {
+    throw new Error('Cannot pass scorerId when isGuestScorer is true')
+  }
+  if (!isGuestScorer && !scorerId) {
+    throw new Error('scorerId is required (or set isGuestScorer)')
+  }
+  if (isGuestAssister && input.assisterId) {
+    throw new Error('Cannot pass assisterId when isGuestAssister is true')
   }
   if (
     input.minute !== undefined &&
@@ -1962,8 +1984,7 @@ export async function adminCreateMatchEvent(input: {
   ) {
     throw new Error('minute out of range')
   }
-  const assisterId = input.assisterId ?? null
-  if (assisterId && assisterId === scorerId) {
+  if (assisterId && scorerId && assisterId === scorerId) {
     throw new Error('Assister cannot be the scorer')
   }
 
@@ -1983,18 +2004,17 @@ export async function adminCreateMatchEvent(input: {
     throw new Error('beneficiaryTeamId is not part of this match')
   }
   // v1.82.0 — scorer/assister scope: any active member of this league.
-  // Pre-v1.82.0 the scorer was forced to be on the beneficiary team
-  // (or the opposing team for OG) and the assister on the beneficiary
-  // team; casual leagues let players guest for other teams (a member of
-  // Team C can score for Team A while temporarily filling in). Identity
-  // of the scoring/assisting Player is what matters for stats; team
-  // attribution lives on `beneficiaryTeamId`.
-  const scorerInLeague = await prisma.playerLeagueMembership.findFirst({
-    where: { playerId: scorerId, leagueId, leagueTeamId: { not: null } },
-    select: { id: true },
-  })
-  if (!scorerInLeague) {
-    throw new Error('Scorer is not a member of this league')
+  // v1.88.0 — guest scorer/assister bypasses the membership check
+  // entirely (the player isn't in the DB; only the beneficiary team
+  // attribution matters for the score recompute + end-of-season query).
+  if (scorerId) {
+    const scorerInLeague = await prisma.playerLeagueMembership.findFirst({
+      where: { playerId: scorerId, leagueId, leagueTeamId: { not: null } },
+      select: { id: true },
+    })
+    if (!scorerInLeague) {
+      throw new Error('Scorer is not a member of this league')
+    }
   }
 
   if (assisterId) {
@@ -2014,7 +2034,9 @@ export async function adminCreateMatchEvent(input: {
         kind: 'GOAL',
         goalType,
         scorerId,
+        isGuestScorer,
         assisterId,
+        isGuestAssister,
         minute: input.minute ?? null,
         beneficiaryTeamId,
         createdById: userId,
@@ -2049,18 +2071,36 @@ export async function adminUpdateMatchEvent(input: {
   leagueId: string
   goalType: GoalType
   beneficiaryTeamId: string
-  scorerId: string
+  // v1.88.0 — same XOR shape as adminCreateMatchEvent: a real
+  // scorerId OR isGuestScorer:true; a real assisterId OR
+  // isGuestAssister:true (or no assist at all).
+  scorerId?: string | null
+  isGuestScorer?: boolean
   assisterId?: string | null
+  isGuestAssister?: boolean
   minute?: number | null
 }): Promise<void> {
   await assertAdmin()
-  const { eventId, leagueId, goalType, beneficiaryTeamId, scorerId } = input
+  const { eventId, leagueId, goalType, beneficiaryTeamId } = input
+  const isGuestScorer = input.isGuestScorer === true
+  const isGuestAssister = input.isGuestAssister === true
+  const scorerId = isGuestScorer ? null : (input.scorerId ?? null)
+  const assisterId = isGuestAssister ? null : (input.assisterId ?? null)
+
   if (!eventId) throw new Error('eventId is required')
   if (!VALID_GOAL_TYPES.has(goalType)) {
     throw new Error(`Invalid goalType: ${goalType}`)
   }
-  const assisterId = input.assisterId ?? null
-  if (assisterId && assisterId === scorerId) {
+  if (isGuestScorer && input.scorerId) {
+    throw new Error('Cannot pass scorerId when isGuestScorer is true')
+  }
+  if (!isGuestScorer && !scorerId) {
+    throw new Error('scorerId is required (or set isGuestScorer)')
+  }
+  if (isGuestAssister && input.assisterId) {
+    throw new Error('Cannot pass assisterId when isGuestAssister is true')
+  }
+  if (assisterId && scorerId && assisterId === scorerId) {
     throw new Error('Assister cannot be the scorer')
   }
   if (
@@ -2090,14 +2130,16 @@ export async function adminUpdateMatchEvent(input: {
   ) {
     throw new Error('beneficiaryTeamId is not part of this match')
   }
-  // v1.82.0 — same scope-loosening as adminCreateMatchEvent: scorer +
-  // assister are any active league member, regardless of team.
-  const scorerInLeague = await prisma.playerLeagueMembership.findFirst({
-    where: { playerId: scorerId, leagueId, leagueTeamId: { not: null } },
-    select: { id: true },
-  })
-  if (!scorerInLeague) {
-    throw new Error('Scorer is not a member of this league')
+  // v1.82.0 — scope-loosened to any active league member.
+  // v1.88.0 — guest scorer/assister bypasses the membership check.
+  if (scorerId) {
+    const scorerInLeague = await prisma.playerLeagueMembership.findFirst({
+      where: { playerId: scorerId, leagueId, leagueTeamId: { not: null } },
+      select: { id: true },
+    })
+    if (!scorerInLeague) {
+      throw new Error('Scorer is not a member of this league')
+    }
   }
   if (assisterId) {
     const assisterInLeague = await prisma.playerLeagueMembership.findFirst({
@@ -2115,7 +2157,9 @@ export async function adminUpdateMatchEvent(input: {
       data: {
         goalType,
         scorerId,
+        isGuestScorer,
         assisterId,
+        isGuestAssister,
         minute: input.minute ?? null,
         beneficiaryTeamId,
       },

@@ -32,7 +32,10 @@ function ev(overrides: Record<string, unknown>) {
     goalType: 'OPEN_PLAY' as const,
     minute: 47,
     scorer: { id: 'p-stefan', name: 'Stefan Santos' },
+    isGuestScorer: false,
     assister: { id: 'p-alex', name: 'Alex' },
+    isGuestAssister: false,
+    beneficiaryTeamId: 'lt-h',
     match: baseMatch,
     ...overrides,
   }

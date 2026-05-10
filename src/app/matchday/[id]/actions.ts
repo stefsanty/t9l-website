@@ -63,9 +63,15 @@ export async function submitOwnMatchEvent(input: {
    *
    * v1.82.0 — no longer required to be on a participating match team;
    * any active league member is eligible (guest players in casual leagues).
+   *
+   * v1.88.0 — when the goal was scored by an off-roster guest (someone
+   * who isn't in our DB at all), pass `null` here and `isGuestScorer:
+   * true` instead. The two are mutually exclusive.
    */
-  scorerPlayerSlug: string
+  scorerPlayerSlug?: string | null
+  isGuestScorer?: boolean
   assisterPlayerSlug?: string | null
+  isGuestAssister?: boolean
   minute?: number | null
 }): Promise<{ id: string }> {
   const session = await getServerSession(authOptions)
@@ -83,6 +89,19 @@ export async function submitOwnMatchEvent(input: {
     (input.minute < 0 || input.minute > 200)
   ) {
     throw new Error('minute out of range')
+  }
+  // v1.88.0 — XOR gate. Either a real scorer OR isGuestScorer:true,
+  // never both, never neither.
+  const isGuestScorer = input.isGuestScorer === true
+  if (isGuestScorer && input.scorerPlayerSlug) {
+    throw new Error('Cannot pass scorerPlayerSlug when isGuestScorer is true')
+  }
+  if (!isGuestScorer && !input.scorerPlayerSlug) {
+    throw new Error('Scorer is required (or set isGuestScorer)')
+  }
+  const isGuestAssister = input.isGuestAssister === true
+  if (isGuestAssister && input.assisterPlayerSlug) {
+    throw new Error('Cannot pass assisterPlayerSlug when isGuestAssister is true')
   }
 
   // Resolve match. The matchPublicId is `md<wk>-m<idx+1>` from the
@@ -155,29 +174,34 @@ export async function submitOwnMatchEvent(input: {
   // v1.48.0 / v1.82.0 — resolve scorer from form input. Must be a player
   // with an active league membership (any team, including teams not
   // playing in this match — casual leagues let players guest).
-  const scorerSlug = input.scorerPlayerSlug?.trim()
-  if (!scorerSlug) throw new Error('Scorer is required')
-  const scorerId = slugToPlayerId(scorerSlug)
-  const scorerAssignment = await prisma.playerLeagueMembership.findFirst({
-    where: {
-      playerId: scorerId,
-      leagueId,
-      leagueTeamId: { not: null },
-    },
-    select: { id: true },
-  })
-  if (!scorerAssignment) {
-    throw new Error('Scorer is not a member of this league')
+  // v1.88.0 — when isGuestScorer:true the scorer isn't in our DB at
+  // all; skip the membership lookup and store NULL on the event.
+  let scorerId: string | null = null
+  if (!isGuestScorer) {
+    const scorerSlug = input.scorerPlayerSlug!.trim()
+    scorerId = slugToPlayerId(scorerSlug)
+    const scorerAssignment = await prisma.playerLeagueMembership.findFirst({
+      where: {
+        playerId: scorerId,
+        leagueId,
+        leagueTeamId: { not: null },
+      },
+      select: { id: true },
+    })
+    if (!scorerAssignment) {
+      throw new Error('Scorer is not a member of this league')
+    }
   }
 
   // Assister gate — must be a league member and ≠ scorer. v1.82.0 drops
   // the "must be on scorer's team" requirement (cross-team assists are
   // legal in casual leagues, same logic as the scorer change).
+  // v1.88.0 — when isGuestAssister:true, skip the lookup and store NULL.
   const assisterPublicSlug = input.assisterPlayerSlug?.trim() || null
   let assisterId: string | null = null
-  if (assisterPublicSlug) {
+  if (!isGuestAssister && assisterPublicSlug) {
     const assisterCandidateId = slugToPlayerId(assisterPublicSlug)
-    if (assisterCandidateId === scorerId) {
+    if (scorerId && assisterCandidateId === scorerId) {
       throw new Error('Assister cannot be the scorer')
     }
     const assisterAssignment = await prisma.playerLeagueMembership.findFirst({
@@ -201,7 +225,9 @@ export async function submitOwnMatchEvent(input: {
         kind: 'GOAL',
         goalType: input.goalType,
         scorerId,
+        isGuestScorer,
         assisterId,
+        isGuestAssister,
         minute: input.minute ?? null,
         beneficiaryTeamId,
         createdById: userId,

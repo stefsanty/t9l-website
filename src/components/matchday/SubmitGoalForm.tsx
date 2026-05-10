@@ -129,6 +129,11 @@ function SubmitGoalModal({
     matches[0]?.homeTeamId ?? '',
   )
   const [scorerSlug, setScorerSlug] = useState('')
+  // v1.88.0 — guest-scorer / guest-assister toggles. When checked, the
+  // picker is hidden and the event records isGuestScorer=true (or
+  // isGuestAssister=true) with scorerSlug/assisterSlug omitted.
+  const [isGuestScorer, setIsGuestScorer] = useState(false)
+  const [isGuestAssister, setIsGuestAssister] = useState(false)
   const [goalType, setGoalType] = useState<GoalType>('OPEN_PLAY')
   const [assisterSlug, setAssisterSlug] = useState('')
   const [minute, setMinute] = useState('')
@@ -259,6 +264,18 @@ function SubmitGoalModal({
     setAssisterSlug('')
   }
 
+  // v1.88.0 — toggling the guest-scorer flag clears the picker (and
+  // vice-versa); same for assister.
+  function toggleGuestScorer(checked: boolean) {
+    setIsGuestScorer(checked)
+    if (checked) setScorerSlug('')
+  }
+
+  function toggleGuestAssister(checked: boolean) {
+    setIsGuestAssister(checked)
+    if (checked) setAssisterSlug('')
+  }
+
   // Portal target lives on document.body; only mount on client.
   useEffect(() => {
     setMounted(true)
@@ -280,8 +297,8 @@ function SubmitGoalModal({
 
   function submit() {
     setError(null)
-    if (!scorerSlug) {
-      setError('Pick a scorer.')
+    if (!isGuestScorer && !scorerSlug) {
+      setError('Pick a scorer (or check "Scored by guest").')
       return
     }
     const minuteValue = minute.trim() === '' ? null : parseInt(minute, 10)
@@ -301,15 +318,19 @@ function SubmitGoalModal({
         await submitOwnMatchEvent({
           matchPublicId,
           beneficiaryTeamId,
-          scorerPlayerSlug: scorerSlug,
+          scorerPlayerSlug: isGuestScorer ? null : scorerSlug,
+          isGuestScorer,
           goalType,
-          assisterPlayerSlug: assisterSlug || null,
+          assisterPlayerSlug: isGuestAssister ? null : (assisterSlug || null),
+          isGuestAssister,
           minute: minuteValue,
         })
         // Reset form state for a possible second submission.
         setScorerSlug('')
+        setIsGuestScorer(false)
         setGoalType('OPEN_PLAY')
         setAssisterSlug('')
+        setIsGuestAssister(false)
         setMinute('')
         router.refresh()
         onSuccess()
@@ -416,64 +437,100 @@ function SubmitGoalModal({
           </select>
         </label>
 
-        <label className="block">
+        <div className="block">
           <span className="text-fg-low text-[10px] uppercase tracking-widest">Scorer</span>
-          <select
-            data-testid="submit-goal-scorer"
-            value={scorerSlug}
-            onChange={(e) => changeScorer(e.target.value)}
-            className="mt-1 w-full bg-background border border-border-subtle rounded px-3 py-2 text-sm text-fg-high"
-          >
-            <option value="">— pick a scorer —</option>
-            {scorerGroups.map((g) => (
-              <optgroup key={g.key} label={g.label}>
-                {g.players.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
+          {/* v1.88.0 — guest-scorer toggle. When checked, hides the
+              picker; the event records isGuestScorer=true with
+              scorerPlayerSlug=null. Composes naturally with OG. */}
+          <div className="mt-1 flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="submit-goal-is-guest-scorer"
+              data-testid="submit-goal-is-guest-scorer"
+              checked={isGuestScorer}
+              onChange={(e) => toggleGuestScorer(e.target.checked)}
+            />
+            <label htmlFor="submit-goal-is-guest-scorer" className="text-fg-mid text-xs">
+              Scored by guest (off-roster)
+            </label>
+          </div>
+          {!isGuestScorer && (
+            <>
+              <select
+                data-testid="submit-goal-scorer"
+                value={scorerSlug}
+                onChange={(e) => changeScorer(e.target.value)}
+                className="mt-1 w-full bg-background border border-border-subtle rounded px-3 py-2 text-sm text-fg-high"
+              >
+                <option value="">— pick a scorer —</option>
+                {scorerGroups.map((g) => (
+                  <optgroup key={g.key} label={g.label}>
+                    {g.players.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </optgroup>
                 ))}
-              </optgroup>
-            ))}
-          </select>
-          {scorerTeamLabel ? (
-            <span
-              data-testid="submit-goal-scorer-guest-hint"
-              className="mt-1 block text-fg-mid text-[11px]"
-            >
-              (guest from {scorerTeamLabel})
-            </span>
-          ) : null}
-        </label>
+              </select>
+              {scorerTeamLabel ? (
+                <span
+                  data-testid="submit-goal-scorer-guest-hint"
+                  className="mt-1 block text-fg-mid text-[11px]"
+                >
+                  (guest from {scorerTeamLabel})
+                </span>
+              ) : null}
+            </>
+          )}
+        </div>
 
-        <label className="block">
+        <div className="block">
           <span className="text-fg-low text-[10px] uppercase tracking-widest">Assister (optional)</span>
-          <select
-            data-testid="submit-goal-assister"
-            value={assisterSlug}
-            onChange={(e) => setAssisterSlug(e.target.value)}
-            disabled={!scorerSlug}
-            className="mt-1 w-full bg-background border border-border-subtle rounded px-3 py-2 text-sm text-fg-high disabled:opacity-50"
-          >
-            <option value="">— no assist —</option>
-            {assisterGroups.map((g) => (
-              <optgroup key={g.key} label={g.label}>
-                {g.players.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
+          {/* v1.88.0 — guest-assister toggle, same pattern as scorer. */}
+          <div className="mt-1 flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="submit-goal-is-guest-assister"
+              data-testid="submit-goal-is-guest-assister"
+              checked={isGuestAssister}
+              onChange={(e) => toggleGuestAssister(e.target.checked)}
+            />
+            <label htmlFor="submit-goal-is-guest-assister" className="text-fg-mid text-xs">
+              Assisted by guest (off-roster)
+            </label>
+          </div>
+          {!isGuestAssister && (
+            <>
+              <select
+                data-testid="submit-goal-assister"
+                value={assisterSlug}
+                onChange={(e) => setAssisterSlug(e.target.value)}
+                disabled={!isGuestScorer && !scorerSlug}
+                className="mt-1 w-full bg-background border border-border-subtle rounded px-3 py-2 text-sm text-fg-high disabled:opacity-50"
+              >
+                <option value="">— no assist —</option>
+                {assisterGroups.map((g) => (
+                  <optgroup key={g.key} label={g.label}>
+                    {g.players.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </optgroup>
                 ))}
-              </optgroup>
-            ))}
-          </select>
-          {assisterTeamLabel ? (
-            <span
-              data-testid="submit-goal-assister-guest-hint"
-              className="mt-1 block text-fg-mid text-[11px]"
-            >
-              (guest from {assisterTeamLabel})
-            </span>
-          ) : null}
-        </label>
+              </select>
+              {assisterTeamLabel ? (
+                <span
+                  data-testid="submit-goal-assister-guest-hint"
+                  className="mt-1 block text-fg-mid text-[11px]"
+                >
+                  (guest from {assisterTeamLabel})
+                </span>
+              ) : null}
+            </>
+          )}
+        </div>
 
         <label className="block">
           <span className="text-fg-low text-[10px] uppercase tracking-widest">Minute (optional)</span>
@@ -509,7 +566,7 @@ function SubmitGoalModal({
           <button
             type="button"
             data-testid="submit-goal-submit"
-            disabled={pending || !scorerSlug}
+            disabled={pending || (!isGuestScorer && !scorerSlug)}
             onClick={submit}
             className="bg-[#06C755] hover:bg-[#05b34c] text-white text-sm font-black uppercase tracking-wider px-4 py-2 rounded-lg disabled:opacity-50 transition-colors"
           >

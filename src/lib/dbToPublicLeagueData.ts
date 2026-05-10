@@ -1,7 +1,17 @@
 import { prisma } from './prisma'
 import { formatJstDate, formatJstTime } from './jst'
-import { GUEST_ID, playerIdToSlug, teamIdToSlug } from './ids'
+import { PLAYER_ID_PREFIX, playerIdToSlug, teamIdToSlug } from './ids'
 import { resolveDisplayScore } from './matchScore'
+
+// v1.88.0 — Guest pseudo-players seeded by the v1.46.x Sheets backfill
+// have ids `p-guest` (legacy single) or `p-guest-<lt-id>` (per-team).
+// They are no longer rostered post-v1.88.0; events that referenced
+// them have been migrated to `isGuestScorer=true`. Filter them out of
+// any public read until `scripts/v188CleanupGuestPseudoPlayers.ts`
+// runs and removes the rows entirely.
+function isGuestPseudoPlayerId(id: string): boolean {
+  return id.startsWith(`${PLAYER_ID_PREFIX}guest`)
+}
 import type {
   Team,
   Player,
@@ -140,7 +150,10 @@ export async function dbToPublicLeagueData(
 
   const players: Player[] = []
   for (const pla of plas) {
-    if (pla.player.id === GUEST_ID) continue
+    // v1.88.0 — covers both the legacy single `p-guest` and the
+    // per-team `p-guest-<lt-id>` ids; pre-v1.88.0 the GUEST_ID
+    // exact-equals filter only matched the legacy single.
+    if (isGuestPseudoPlayerId(pla.player.id)) continue
     // v1.65.0 — defensive: leagueTeamId is nullable post-rework. The
     // outer where-filter restricts to leagueTeam.leagueId, which already
     // excludes null-leagueTeam rows, but TS can't narrow that.
@@ -245,6 +258,10 @@ export async function dbToPublicLeagueData(
       // v1.65.0 — only members with a leagueTeam contribute. PENDING
       // applicants (null leagueTeamId) cannot have scored a goal.
       if (pla.leagueTeamId === null) continue
+      // v1.88.0 — guest pseudo-players (pre-cleanup) shouldn't
+      // contribute to score derivation; guest events use
+      // beneficiaryTeamId directly.
+      if (isGuestPseudoPlayerId(pla.playerId)) continue
       playerToLt.set(pla.playerId, pla.leagueTeamId)
     }
 
@@ -253,31 +270,53 @@ export async function dbToPublicLeagueData(
       const homeSlug = ltToSlug.get(m.homeTeamId) ?? ''
       const awaySlug = ltToSlug.get(m.awayTeamId) ?? ''
       for (const ev of m.events) {
-        const scorerLt = playerToLt.get(ev.scorerId)
-        // Skip events whose scorer is not on either match team (data bug;
-        // admin should review). Mirrors the structured-warning path in
-        // `recomputeMatchScore`.
-        if (!scorerLt || (scorerLt !== m.homeTeamId && scorerLt !== m.awayTeamId)) {
-          continue
+        // v1.88.0 — beneficiary team resolution.
+        // Guest events (`isGuestScorer=true` → scorerId=null) always
+        // have `beneficiaryTeamId` set at write time; trust it
+        // directly. Real-scorer events derive via the playerToLt
+        // lookup, flipping for OG (matches `computeScoreFromEvents`).
+        let beneficiaryLt: string | null = null
+        if (ev.isGuestScorer || !ev.scorerId) {
+          if (
+            ev.beneficiaryTeamId &&
+            (ev.beneficiaryTeamId === m.homeTeamId || ev.beneficiaryTeamId === m.awayTeamId)
+          ) {
+            beneficiaryLt = ev.beneficiaryTeamId
+          }
+        } else {
+          const scorerLt = playerToLt.get(ev.scorerId)
+          if (!scorerLt || (scorerLt !== m.homeTeamId && scorerLt !== m.awayTeamId)) {
+            // Skip events whose scorer is not on either match team
+            // (data bug; admin should review).
+            continue
+          }
+          const isOwnGoal = ev.goalType === 'OWN_GOAL'
+          beneficiaryLt = isOwnGoal
+            ? scorerLt === m.homeTeamId
+              ? m.awayTeamId
+              : m.homeTeamId
+            : scorerLt
         }
-        const isOwnGoal = ev.goalType === 'OWN_GOAL'
-        // Beneficiary team (the side the goal counts toward).
-        const beneficiaryLt = isOwnGoal
-          ? scorerLt === m.homeTeamId
-            ? m.awayTeamId
-            : m.homeTeamId
-          : scorerLt
+        if (!beneficiaryLt) continue
         const beneficiarySlug = ltToSlug.get(beneficiaryLt) ?? ''
         const concedingSlug = beneficiarySlug === homeSlug ? awaySlug : homeSlug
+        // v1.88.0 — guest scorer renders as "Guest"; guest assister
+        // renders as "Guest" too. Real-scorer events keep the existing
+        // ev.scorer.name fallback. Player relation is now nullable.
+        const scorerLabel = ev.isGuestScorer
+          ? 'Guest'
+          : (ev.scorer?.name ?? 'TBD')
+        const assisterLabel = ev.isGuestAssister
+          ? 'Guest'
+          : (ev.assister?.name ?? null)
         goals.push({
           id: ev.id,
           matchId: publicMatchId,
           matchdayId: mdId,
           scoringTeamId: beneficiarySlug,
           concedingTeamId: concedingSlug,
-          // v1.33.0 (PR ε) — defensive fallback for nullable Player.name.
-          scorer: ev.scorer.name ?? 'TBD',
-          assister: ev.assister?.name ?? null,
+          scorer: scorerLabel,
+          assister: assisterLabel,
           minute: ev.minute,
           goalType: ev.goalType,
         })
