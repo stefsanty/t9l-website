@@ -607,23 +607,41 @@ export interface AssignmentResult {
  * v1.85.2 — 5-pass algorithm respects positions[] order (positions[0] =
  * primary, positions[1..] = secondary). See positions.ts for the convention.
  *
+ * v1.89.1 — 6-pass algorithm. New pass 2.5 places players with no positions
+ * on file ("empty-positions") into back-most non-GK empty slots, taking
+ * precedence over going-to-subs. GK slot is sacred — never auto-filled by
+ * an empty-positions player.
+ *
  * Algorithm:
- *   0. Players with empty `positions[]` → `playersWithoutPositions` bucket.
- *   1a. **Pass 1a (primary→slot-primary).** Candidate = unplaced players
- *       whose positions[0] ∈ slot.PRIMARY. Scarcity-first within pass.
- *   1b. **Pass 1b (secondary→slot-primary).** Candidate = unplaced players
- *       whose positions[1..] ∩ slot.PRIMARY ≠ ∅.
- *   2a. **Pass 2a (primary→slot-fallback).** Candidate = unplaced players
- *       whose positions[0] ∈ slot.FALLBACK.
- *   2b. **Pass 2b (secondary→slot-fallback).** Candidate = unplaced players
- *       whose positions[1..] ∩ slot.FALLBACK ≠ ∅.
- *   3.  **Pass 3 (overflow).** Anyone unplaced → `unassignedPlayers` (subs).
+ *   0. Bucket: empty-positions (preferred=[] AND secondary=[]) →
+ *      `playersWithoutPositions`. Positioned players → `eligible`.
+ *   1a. **Pass 1a (primary→slot-primary).** Candidate = unplaced positioned
+ *       players whose positions[0] ∈ slot.PRIMARY. Scarcity-first within pass.
+ *   1b. **Pass 1b (secondary→slot-primary).** Candidate = unplaced positioned
+ *       players whose positions[1..] ∩ slot.PRIMARY ≠ ∅.
+ *   2a. **Pass 2a (primary→slot-fallback).** Candidate = unplaced positioned
+ *       players whose positions[0] ∈ slot.FALLBACK.
+ *   2b. **Pass 2b (secondary→slot-fallback).** Candidate = unplaced positioned
+ *       players whose positions[1..] ∩ slot.FALLBACK ≠ ∅.
+ *   2.5. **Pass 2.5 (empty-positions → back-most non-GK).** Empty-positions
+ *       players fill remaining empty non-GK slots in back-most-first order
+ *       (Soccer: CB > LB/RB > DM > CM > CAM > LM/RM > LW/ST/RW; Futsal:
+ *       FIXO > ALA > PIVOT). GK is excluded — stays empty if no GK candidate.
+ *   3.  **Pass 3 (overflow).** Anyone unplaced (positioned OR empty-positions
+ *       that couldn't fit a non-GK slot) → `unassignedPlayers` (subs).
  *
  * Worked example: A=[CM,ST], B=[GK], slots=[GK,CM,ST]
  *   Pass 1a: B→GK (B.positions[0]=GK ∈ GK.primary), A→CM (A.positions[0]=CM ∈ CM.primary)
  *   Pass 1b: ST slot — no unplaced players with ST as secondary (A is placed)
  *   Passes 2a/2b: ST fallback=[CAM,LW,RW] — no remaining players match
+ *   Pass 2.5: no empty-positions players in this example.
  *   Pass 3: ST stays empty → subs.
+ *
+ * Pass 2.5 worked example: A=[CM], B=[] (empty), slots=[GK,CB,CM]
+ *   Pass 1a: A→CM (A.positions[0]=CM ∈ CM.primary)
+ *   Passes 1b/2a/2b: no candidates.
+ *   Pass 2.5: empty non-GK slots = [CB]. B→CB (highest priority back-most).
+ *   GK stays empty (excluded from pass 2.5).
  *
  * Re-balance scenario: 3 CMs roster → CM gets primary (pass 1a), LM/RM
  * via fallback (pass 2a). Add a real ST → re-running picks ST at ST (1a),
@@ -759,12 +777,72 @@ export function assignPlayersToFormation(
     return false
   })
 
+  // Pass 2.5 (v1.89.1): empty-positions players → back-most non-GK empty slots.
+  // Iteration order is input order (deterministic for a given input). Each
+  // empty-positions player takes the highest-priority remaining non-GK slot;
+  // GK is excluded so a player without a position never lands at goalkeeper.
+  if (playersWithoutPositions.length > 0) {
+    const emptyNonGkSlots = formation.slots
+      .map((slot, idx) => ({ idx, code: slot.code }))
+      .filter(({ idx, code }) => slotAssignments[idx] === null && code.toUpperCase() !== 'GK')
+      .sort((a, b) => {
+        const pa = emptySlotFillPriority(a.code)
+        const pb = emptySlotFillPriority(b.code)
+        if (pa !== pb) return pa - pb
+        return a.idx - b.idx
+      })
+    let cursor = 0
+    for (const playerId of playersWithoutPositions) {
+      if (cursor >= emptyNonGkSlots.length) break
+      const slot = emptyNonGkSlots[cursor]
+      slotAssignments[slot.idx] = playerId
+      placedPlayers.add(playerId)
+      cursor++
+    }
+  }
+
   const unassignedPlayers: string[] = []
   for (const p of eligible) {
     if (!placedPlayers.has(p.id)) unassignedPlayers.push(p.id)
   }
+  // Empty-positions players that pass 2.5 couldn't fit (e.g. only GK slot
+  // available, or fewer non-GK slots than empty-positions players) overflow
+  // into subs alongside the positioned-but-displaced players.
+  for (const id of playersWithoutPositions) {
+    if (!placedPlayers.has(id)) unassignedPlayers.push(id)
+  }
 
   return { slotAssignments, unassignedPlayers, playersWithoutPositions }
+}
+
+/**
+ * Pass-2.5 fill priority for empty-positions players. Lower number = higher
+ * priority (placed first). Back-most defensive slots win.
+ *
+ * Soccer: CB > LB/RB > DM > CM > CAM > LM/RM > LW/ST/RW
+ * Futsal: FIXO > ALA > PIVOT
+ *
+ * GK is intentionally absent from the table — caller must filter GK slots
+ * out before invoking this. Unknown codes get +∞ so they sort last.
+ */
+function emptySlotFillPriority(slotCode: string): number {
+  switch (slotCode.toUpperCase()) {
+    case 'CB': return 1
+    case 'LB': return 2
+    case 'RB': return 2
+    case 'DM': return 3
+    case 'CM': return 4
+    case 'CAM': return 5
+    case 'LM': return 6
+    case 'RM': return 6
+    case 'LW': return 7
+    case 'ST': return 7
+    case 'RW': return 7
+    case 'FIXO': return 1
+    case 'ALA': return 2
+    case 'PIVOT': return 3
+    default: return Number.POSITIVE_INFINITY
+  }
 }
 
 // ── Sub-as-alternate (depth chart) assignment ───────────────────────────
