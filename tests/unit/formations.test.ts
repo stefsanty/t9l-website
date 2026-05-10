@@ -284,7 +284,12 @@ describe('[regression] assignPlayersToFormation — multi-role players', () => {
 })
 
 describe('[regression] assignPlayersToFormation — edge cases', () => {
-  it('players with empty positions go to playersWithoutPositions, not the slot pool', () => {
+  it('players with empty positions are still flagged in playersWithoutPositions (v1.89.1: also placed via pass 2.5)', () => {
+    // v1.89.1 changed pass-2.5 behavior: empty-positions players are now
+    // placed in back-most non-GK empty slots before falling through to subs.
+    // The metadata flag `playersWithoutPositions` still surfaces them so the
+    // UI can hint "fill in your profile". 4-3-3 has CB slots, so ghost
+    // lands at CB (highest pass-2.5 priority).
     const f = findFormation('SOCCER', 11, '4-3-3')!
     const ps = players(
       ['gk', ['GK']],
@@ -292,8 +297,11 @@ describe('[regression] assignPlayersToFormation — edge cases', () => {
     )
     const result = assignPlayersToFormation('SOCCER', f, ps)
     expect(result.playersWithoutPositions).toContain('ghost')
-    expect(result.slotAssignments).not.toContain('ghost')
+    expect(result.slotAssignments).toContain('ghost')
     expect(result.unassignedPlayers).not.toContain('ghost')
+    // Specifically: ghost lands in CB (back-most non-GK by pass-2.5 priority).
+    const cbSlotIdx = f.slots.findIndex((s) => s.code === 'CB')
+    expect(result.slotAssignments[cbSlotIdx]).toBe('ghost')
   })
 
   it('fewer eligible players than slots → leftover slots remain null', () => {
