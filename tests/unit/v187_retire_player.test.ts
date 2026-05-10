@@ -29,6 +29,11 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import {
+  getMembershipStatus,
+  isRetired,
+  isActive,
+} from '@/lib/membership'
 
 const REPO_ROOT = join(__dirname, '..', '..')
 const SCHEMA = readFileSync(join(REPO_ROOT, 'prisma/schema.prisma'), 'utf8')
@@ -289,30 +294,97 @@ describe('v1.87.0 — PlayersTab admin kebab + row badge', () => {
   })
 
   it('kebab menu item label flips between "Retire from league" and "Unretire"', () => {
+    // The label is driven by the unified membership status, not by the
+    // raw retiredAt boolean — single source of truth for tri-state.
     expect(PLAYERS_TAB_SRC).toMatch(
-      /label:\s*current\.retiredAt\s*\?\s*'Unretire'\s*:\s*'Retire from league'/,
+      /label:\s*status\s*===\s*'RETIRED'\s*\?\s*'Unretire'\s*:\s*'Retire from league'/,
     )
   })
 
-  it('kebab item only surfaces for APPROVED players with a current assignment', () => {
-    const block = PLAYERS_TAB_SRC.match(
-      /if\s*\(\s*current\s*&&\s*player\.applicationStatus\s*===\s*'APPROVED'\s*\)\s*\{[\s\S]*?onToggleRetire[\s\S]*?\}/,
-    )
-    expect(block).not.toBeNull()
+  it('kebab item only surfaces for ACTIVE or RETIRED status (PENDING excluded)', () => {
+    const builderBlock = PLAYERS_TAB_SRC.match(
+      /function\s+buildPlayerMenuItems[\s\S]*?\n\}/,
+    )!
+    // The gate uses the helper output so PENDING never gets the
+    // Retire item — verified by checking the conditional shape.
+    expect(builderBlock[0]).toMatch(/status\s*===\s*'ACTIVE'\s*\|\|\s*status\s*===\s*'RETIRED'/)
+    expect(builderBlock[0]).toMatch(/onToggleRetire/)
   })
 
-  it('row containers gain opacity-60 when retired (mobile + desktop)', () => {
-    // Both row keys (mobile + desktop) gate opacity-60 on current?.retiredAt.
-    const mobileMatches = PLAYERS_TAB_SRC.match(
-      /current\?\.retiredAt\s*\?\s*'opacity-60'/g,
+  it('row containers gain opacity-60 when membershipStatus === RETIRED (mobile + desktop)', () => {
+    // Both row keys (mobile + desktop) gate opacity-60 on the unified
+    // status. Two occurrences expected — one per layout branch.
+    const matches = PLAYERS_TAB_SRC.match(
+      /membershipStatus\s*===\s*'RETIRED'\s*\?\s*'opacity-60'/g,
     )
-    expect(mobileMatches).not.toBeNull()
-    expect(mobileMatches!.length).toBeGreaterThanOrEqual(1)
+    expect(matches).not.toBeNull()
+    expect(matches!.length).toBeGreaterThanOrEqual(2)
   })
 
   it('RETIRED admin pill renders for both mobile + desktop rows', () => {
     expect(PLAYERS_TAB_SRC).toMatch(/data-testid=\{`retired-badge-mobile-\$\{player\.id\}`\}/)
     expect(PLAYERS_TAB_SRC).toMatch(/data-testid=\{`retired-badge-\$\{player\.id\}`\}/)
+  })
+})
+
+describe('v1.87.0 — getMembershipStatus tri-state helper', () => {
+  it('PENDING applicationStatus yields PENDING regardless of retiredAt', () => {
+    expect(getMembershipStatus({ applicationStatus: 'PENDING', retiredAt: null })).toBe('PENDING')
+    // Defensive: even if a malformed row had retiredAt set on a PENDING
+    // PLM, status still reads PENDING because pending takes precedence.
+    expect(getMembershipStatus({ applicationStatus: 'PENDING', retiredAt: new Date() })).toBe('PENDING')
+  })
+
+  it('APPROVED + null retiredAt yields ACTIVE', () => {
+    expect(getMembershipStatus({ applicationStatus: 'APPROVED', retiredAt: null })).toBe('ACTIVE')
+    expect(getMembershipStatus({ applicationStatus: 'APPROVED', retiredAt: undefined })).toBe('ACTIVE')
+  })
+
+  it('APPROVED + non-null retiredAt yields RETIRED', () => {
+    expect(getMembershipStatus({ applicationStatus: 'APPROVED', retiredAt: new Date() })).toBe('RETIRED')
+    expect(getMembershipStatus({ applicationStatus: 'APPROVED', retiredAt: '2026-05-10T00:00:00Z' })).toBe('RETIRED')
+  })
+
+  it('isRetired and isActive are consistent with getMembershipStatus', () => {
+    const cases = [
+      { applicationStatus: 'PENDING', retiredAt: null },
+      { applicationStatus: 'PENDING', retiredAt: new Date() },
+      { applicationStatus: 'APPROVED', retiredAt: null },
+      { applicationStatus: 'APPROVED', retiredAt: new Date() },
+    ] as const
+    for (const c of cases) {
+      const status = getMembershipStatus(c)
+      expect(isRetired(c)).toBe(status === 'RETIRED')
+      expect(isActive(c)).toBe(status === 'ACTIVE')
+    }
+  })
+})
+
+describe('v1.87.0 — PENDING players cannot be retired (kebab gate)', () => {
+  it('Retire kebab item is gated on ACTIVE or RETIRED status (not raw applicationStatus check)', () => {
+    // Codebase invariant: the kebab predicate must use the helper or
+    // an equivalent predicate that excludes PENDING. A regression that
+    // dropped the gate would let admins retire pending applicants —
+    // the helper-based gate guards against that.
+    expect(PLAYERS_TAB_SRC).toMatch(/getMembershipStatus\s*\(/)
+    // Within the kebab builder block, status must be ACTIVE or RETIRED
+    // before the Retire item is pushed.
+    const builderBlock = PLAYERS_TAB_SRC.match(
+      /function\s+buildPlayerMenuItems[\s\S]*?\n\}/,
+    )!
+    expect(builderBlock[0]).toMatch(/status\s*===\s*'ACTIVE'\s*\|\|\s*status\s*===\s*'RETIRED'/)
+  })
+
+  it('badges + opacity-60 row dim derive from membershipStatus, not raw fields', () => {
+    // Both row branches (mobile + desktop) compute `membershipStatus`
+    // and switch on it. Two occurrences of the local const + four
+    // strict-equality checks against 'PENDING' / 'RETIRED'.
+    const localDecls = PLAYERS_TAB_SRC.match(/const\s+membershipStatus\s*=\s*getMembershipStatus\(/g) ?? []
+    expect(localDecls.length).toBeGreaterThanOrEqual(2)
+    const pendingChecks = PLAYERS_TAB_SRC.match(/membershipStatus\s*===\s*'PENDING'/g) ?? []
+    expect(pendingChecks.length).toBeGreaterThanOrEqual(2)
+    const retiredChecks = PLAYERS_TAB_SRC.match(/membershipStatus\s*===\s*'RETIRED'/g) ?? []
+    expect(retiredChecks.length).toBeGreaterThanOrEqual(2)
   })
 })
 

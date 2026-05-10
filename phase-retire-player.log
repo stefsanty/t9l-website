@@ -115,4 +115,34 @@ direct toast (no confirm) because it's a non-destructive flip.
 - **Retired player still in stats:** `matchScore.recomputeMatchScore` reads PLM regardless of `retiredAt`; MatchEvent rows are immutable; historical goals continue to attribute to their team.
 - **Retired player still visible in squad list at bottom:** `dbToPublicLeagueData` populates `Player.retiredAt`; `SquadList.getTeamPlayers` sort key sends retired players last.
 
+## M5b — Tri-state status helper (clarification follow-up)
+
+User clarified: player statuses are tri-state — **pending / active / retired**. Picked option (a) — keep `applicationStatus` + `retiredAt`, derive unified status via helper.
+
+### REJECTED handling — confirmed unchanged
+
+`adminRejectApplication` DELETEs the PENDING PLM (and the Player row when no other APPROVED PLM exists for that Player). There is no stored REJECTED state on PLM. The retirement work doesn't touch this path. The unified status is exactly `PENDING | ACTIVE | RETIRED`; no fourth state.
+
+### Cannot retire PENDING — confirmed
+
+Kebab "Retire from league" item gates on `getMembershipStatus(...) === 'ACTIVE' || === 'RETIRED'`. PENDING applicants never see the Retire item. Matches the user's expectation: pending must first be approved or rejected, then active can be retired.
+
+### Wired
+
+- `src/lib/membership.ts` (new) — `getMembershipStatus({ applicationStatus, retiredAt })` returns `'PENDING' | 'ACTIVE' | 'RETIRED'`. Pending takes precedence (defensive against malformed rows where retiredAt is set on PENDING). Plus convenience predicates `isRetired()` + `isActive()`.
+- `src/components/admin/PlayersTab.tsx` — both row branches compute `membershipStatus` once via the helper and switch on it. Badge rendering (`'PENDING'` → Application pill, `'RETIRED'` → Retired pill), row dim (`opacity-60` when `'RETIRED'`), and kebab gate (`'ACTIVE' || 'RETIRED'`) all read from the unified value. Impossible state (PENDING + retiredAt) becomes unrepresentable in the UI.
+- `src/components/SquadList.tsx` — sort key already uses raw `retiredAt` boolean; the public `Player` type doesn't carry `applicationStatus` (PENDING never makes it into the public squad list — `dbToPublicLeagueData` filters by `leagueTeam.leagueId` which excludes the no-team PENDING rows). Boolean check left as-is — the helper would force unnecessary plumbing through the public type.
+
+### Tests
+
+6 new tests added to `tests/unit/v187_retire_player.test.ts` (39 total now, up from 33):
+- `getMembershipStatus` tri-state matrix (4 cases × 3 sub-tests = pending precedence, ACTIVE for both null/undefined retiredAt, RETIRED for both Date and ISO string).
+- `isRetired` + `isActive` consistency with `getMembershipStatus`.
+- PlayersTab kebab gate uses helper-based predicate (PENDING players cannot be retired — regression target).
+- Row badges + opacity dim derive from `membershipStatus`, not raw fields (regression target — guards against re-introducing the impossible PENDING+retiredAt visual state).
+
+3 existing tests updated to match the helper-based wiring (kebab label flip + gate + opacity-60).
+
+`npx vitest run` — 172 files / 3187 tests passing. `npx tsc --noEmit` clean.
+
 
