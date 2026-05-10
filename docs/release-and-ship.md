@@ -101,6 +101,59 @@ A markdown table tracking the most recent ~10 PR merge commits, git tags, prod d
 
 One-shot ops on shared systems (Redis cleanup, manual DB writes outside a migration) get a dated line in [docs/ledger-archive.md](ledger-archive.md). Most-recent-5 retained; older entries live in git history.
 
+## Post-deploy verification (mandatory after every prod deploy)
+
+After every merge to `main` and confirmed Vercel prod deploy, the executor **must** run these three checks before declaring the deploy successful. Any failure is a P0 — stop, surface immediately, and initiate rollback.
+
+### 1. HTTP 200 on the homepage
+
+```bash
+curl -sI https://t9l.me/ | head -1
+```
+
+Expected: `HTTP/2 200`. Anything else (5xx, redirect chain ending in error, connection refused) is a deploy regression. Roll back immediately via Layer 2 (Vercel promote prior deploy).
+
+### 2. Production tables remain populated
+
+```bash
+node -e "
+const { neon } = require('./node_modules/@neondatabase/serverless');
+const sql = neon(process.env.DATABASE_URL_UNPOOLED);
+sql\`SELECT (SELECT COUNT(*) FROM \"Account\") AS accounts,
+           (SELECT COUNT(*) FROM \"User\") AS users,
+           (SELECT COUNT(*) FROM \"League\") AS leagues\`
+  .then(r => console.log(JSON.stringify(r[0])))
+  .catch(e => { console.error(e.message); process.exit(1); });
+"
+```
+
+All three counts must be **> 0**. If any return 0:
+- `Account` = 0 → catastrophic: NextAuth provider rows are gone. Initiate PITR immediately (Layer 3).
+- `User` = 0 → catastrophic: all user rows gone. Initiate PITR immediately.
+- `League` = 0 → P0: no leagues visible. Initiate PITR or Vercel rollback depending on whether schema changed.
+
+### 3. `_prisma_migrations` has no failed rows
+
+```bash
+node -e "
+const { neon } = require('./node_modules/@neondatabase/serverless');
+const sql = neon(process.env.DATABASE_URL_UNPOOLED);
+sql\`SELECT migration_name, finished_at FROM _prisma_migrations WHERE finished_at IS NULL\`
+  .then(r => { console.log('Pending/failed rows:', r.length); r.forEach(x => console.log(' ', x.migration_name)); })
+  .catch(e => { console.error(e.message); process.exit(1); });
+"
+```
+
+Expected: `Pending/failed rows: 0`. Any row with `finished_at IS NULL` means a migration started and didn't finish — resolve before the next deploy via `prisma migrate resolve --rolled-back <name>` or fix and re-run.
+
+### Rollback decision tree
+
+```
+HTTP 200? → NO  → Layer 2 (vercel promote <prior-deploy-url>)
+Tables > 0? → NO → Layer 3 (neonctl branches restore production --source pre-pr-<N>-<slug>)
+No failed migrations? → NO → prisma migrate resolve --rolled-back <name>, then fix + re-ship
+```
+
 ## Working with subagents
 
 Practices that keep the main session's context lean and let subagents do most of the work:

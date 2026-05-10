@@ -5,10 +5,10 @@
 -- secondary by editing their account page).
 -- secondaryPositions starts empty for all existing rows.
 
-ALTER TABLE "PlayerLeagueMembership"
+ALTER TABLE "PlayerLeagueAssignment"
   ADD COLUMN "preferredPositions" TEXT[] NOT NULL DEFAULT '{}',
   ADD COLUMN "secondaryPositions" TEXT[] NOT NULL DEFAULT '{}';
 
-UPDATE "PlayerLeagueMembership"
+UPDATE "PlayerLeagueAssignment"
   SET "preferredPositions" = "positions"
   WHERE array_length("positions", 1) IS NOT NULL;
