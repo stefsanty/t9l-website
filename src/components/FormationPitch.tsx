@@ -12,6 +12,7 @@ import {
   playerCodeFillsSlot,
 } from '@/lib/formations';
 import { positionPillColor } from '@/lib/positions';
+import { isGuestPseudoId } from '@/lib/guestSynthesis';
 
 // ── Picker storage ────────────────────────────────────────────────────────
 //
@@ -460,8 +461,15 @@ export default function FormationPitch({
     () => confirmedPlayers.filter((p) => !assignedSet.has(p.id) && playerPositions(p).length > 0),
     [confirmedPlayers, assignedSet],
   );
+  // v1.91.0 — Add Guests: synthetic guest pseudo-players are positionless
+  // by design (they're externals or cross-team fill-ins with no profile
+  // here). Excluded from the "fill in your profile" hint so the user
+  // doesn't get nagged about a guest. Real positionless rostered players
+  // remain surfaced in the hint.
   const playersWithoutPositions: Player[] = useMemo(
-    () => confirmedPlayers.filter((p) => !p.position || p.position.trim() === ''),
+    () => confirmedPlayers.filter(
+      (p) => (!p.position || p.position.trim() === '') && !isGuestPseudoId(p.id),
+    ),
     [confirmedPlayers],
   );
 

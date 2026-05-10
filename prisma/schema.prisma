@@ -107,6 +107,11 @@ model User {
   // compiles.
   authoredEvents MatchEvent[]
 
+  // v1.91.0 — audit trail for who recorded a MatchdayGuestEntry. Nullable
+  // on the entry side (FK ON DELETE SET NULL) so deleting a User keeps
+  // their guest entries with `createdById = NULL`.
+  authoredGuestEntries MatchdayGuestEntry[]
+
   // v1.84.0 — homepage redesign phase 1a. Per-user preferred league for
   // the persona-aware apex. Nullable; the column is purely additive in
   // this phase (no writes yet — phase 1b wires the writes from the
@@ -365,6 +370,8 @@ model LeagueTeam {
   // lives on MatchEvent now (see beneficiaryEvents below).
   // v1.82.0 — back-relation for MatchEvent.beneficiaryTeamId.
   beneficiaryEvents MatchEvent[]             @relation("EventBeneficiary")
+  // v1.91.0 — per-matchday guest counts for this team (Add Guests feature).
+  guestEntries      MatchdayGuestEntry[]
 
   @@unique([leagueId, teamId])
 }
@@ -753,6 +760,8 @@ model GameWeek {
   venue        Venue?         @relation(fields: [venueId], references: [id])
   matches      Match[]
   availability Availability[]
+  // v1.91.0 — per-team guest counts for this matchday (Add Guests feature).
+  guestEntries MatchdayGuestEntry[]
 
   @@unique([leagueId, weekNumber])
   @@index([leagueId])
@@ -1005,4 +1014,34 @@ model LeagueInvite {
 enum InviteKind {
   CODE
   PERSONAL
+}
+
+// v1.91.0 — Add Guests feature. Each team can record N external guests
+// (non-T9L people) and N league guests (T9L users not on this team's
+// roster) per matchday. Counts increase the team's "going" tally and
+// flow through to the formation pitch (synthesized as positionless
+// pseudo-players that pass 2.5 places into back-most non-GK slots) and
+// the list view (rendered in a dedicated "Guests" subsection).
+//
+// Scope: any authenticated user can submit; no admin or team-membership
+// gate. Upsert-by-(gameWeekId, leagueTeamId) means a single row per
+// team per matchday — re-submission overwrites counts and updates
+// createdById/updatedAt to the latest submitter.
+model MatchdayGuestEntry {
+  id            String   @id @default(cuid())
+  gameWeekId    String
+  leagueTeamId  String
+  externalCount Int      @default(0)
+  leagueCount   Int      @default(0)
+  createdById   String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  gameWeek   GameWeek   @relation(fields: [gameWeekId], references: [id], onDelete: Cascade)
+  leagueTeam LeagueTeam @relation(fields: [leagueTeamId], references: [id], onDelete: Cascade)
+  createdBy  User?      @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@unique([gameWeekId, leagueTeamId])
+  @@index([gameWeekId])
+  @@index([leagueTeamId])
 }

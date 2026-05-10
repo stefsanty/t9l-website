@@ -10,6 +10,7 @@ import type {
   Availability,
   AvailabilityStatuses,
   PlayedStatus,
+  MatchdayGuestCounts,
 } from '@/types'
 import NextMatchdayBanner from './NextMatchdayBanner'
 
@@ -94,6 +95,11 @@ interface ClassicLeagueHomepageProps {
    */
   ballType?: 'SOCCER' | 'FUTSAL' | null
   playerFormat?: number | null
+  /**
+   * v1.91.0 — Add Guests counts threaded into MatchdayAvailability so each
+   * team's "+ Guests" button can prefill the modal with current counts.
+   */
+  guestCounts?: MatchdayGuestCounts
 }
 
 export default function ClassicLeagueHomepage({
@@ -112,6 +118,7 @@ export default function ClassicLeagueHomepage({
   leagueDetailsPanelSlot,
   ballType,
   playerFormat,
+  guestCounts,
 }: ClassicLeagueHomepageProps) {
   const selectedMatchday =
     matchdays.find((m) => m.id === selectedMatchdayId) ?? matchdays[0]
@@ -142,6 +149,8 @@ export default function ClassicLeagueHomepage({
         played={played}
         ballType={ballType}
         playerFormat={playerFormat}
+        guestCounts={guestCounts}
+        leagueSlug={leagueSlug}
       />
     </>
   )

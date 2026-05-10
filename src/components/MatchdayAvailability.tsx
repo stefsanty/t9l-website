@@ -1,9 +1,27 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import type { Matchday, Team, Player, Availability, AvailabilityStatuses, PlayedStatus } from '@/types';
+import { useEffect, useMemo, useState } from 'react';
+import dynamic from 'next/dynamic';
+import { useSession } from 'next-auth/react';
+import type {
+  Matchday,
+  Team,
+  Player,
+  Availability,
+  AvailabilityStatuses,
+  PlayedStatus,
+  MatchdayGuestCounts,
+} from '@/types';
 import { getPositionBucket } from '@/lib/positions';
+import { synthesizeGuestPlayers, isGuestPseudoId } from '@/lib/guestSynthesis';
 import FormationPitch from './FormationPitch';
+
+// v1.91.0 — Add Guests modal. Lazy-loaded so the auth-modal pattern from
+// v1.80.8 carries over: only fetched on first click, keeping the public-
+// route first-load JS unchanged for users who never open the dialog.
+const AddGuestsModal = dynamic(() => import('./AddGuestsModal'), {
+  loading: () => null,
+});
 
 // -- View mode --
 
@@ -34,26 +52,32 @@ export function getPositionPillColor(pos: string | null | undefined): string {
 //
 // Groups confirmed players by coarse position bucket for the list view.
 // English labels used for all formats (futsal FIXO→Defense, PIVOT→Forwards).
-// Empty buckets are omitted by the caller; the order is always GK→DF→MF→FW.
+// Empty buckets are omitted by the caller; the order is always GK→DF→MF→FW
+// followed by GUEST (v1.91.0 Add Guests). Guests are aggregated into their
+// own subsection at the bottom regardless of position (they have none).
 
-const BUCKET_ORDER: ReadonlyArray<'GK' | 'DF' | 'MF' | 'FW'> = ['GK', 'DF', 'MF', 'FW'];
+export type ListBucket = 'GK' | 'DF' | 'MF' | 'FW' | 'GUEST';
 
-export const BUCKET_LABEL: Record<'GK' | 'DF' | 'MF' | 'FW', string> = {
+const BUCKET_ORDER: ReadonlyArray<ListBucket> = ['GK', 'DF', 'MF', 'FW', 'GUEST'];
+
+export const BUCKET_LABEL: Record<ListBucket, string> = {
   GK: 'Goalkeepers',
   DF: 'Defense',
   MF: 'Midfield',
   FW: 'Forwards',
+  GUEST: 'Guests',
 };
 
-export const BUCKET_DOT: Record<'GK' | 'DF' | 'MF' | 'FW', string> = {
+export const BUCKET_DOT: Record<ListBucket, string> = {
   GK: 'bg-yellow-400',
   DF: 'bg-blue-400',
   MF: 'bg-green-400',
   FW: 'bg-red-400',
+  GUEST: 'bg-fg-low',
 };
 
 export interface BucketGroup {
-  bucket: 'GK' | 'DF' | 'MF' | 'FW';
+  bucket: ListBucket;
   players: Player[];
 }
 
@@ -66,17 +90,26 @@ export function bucketConfirmedPlayers(
     .map((id) => players.find((p) => p.id === id))
     .filter((p): p is Player => !!p);
 
-  const map = new Map<'GK' | 'DF' | 'MF' | 'FW', Player[]>([
-    ['GK', []], ['DF', []], ['MF', []], ['FW', []],
+  const map = new Map<ListBucket, Player[]>([
+    ['GK', []], ['DF', []], ['MF', []], ['FW', []], ['GUEST', []],
   ]);
 
   for (const p of resolved) {
+    if (isGuestPseudoId(p.id)) {
+      map.get('GUEST')!.push(p);
+      continue;
+    }
     const first = (p.position ?? '').split('/')[0]?.toUpperCase() ?? '';
     const bucket = getPositionBucket(first);
     map.get(bucket)!.push(p);
   }
 
-  // Sort within each bucket alphabetically by name.
+  // Sort within each bucket alphabetically by name. Guest names are
+  // already "Guest #N" with N 1-indexed; alphabetical sort keeps them
+  // in numeric order through #9 (string lex on a single digit). For
+  // teams with ≥10 guests the order would be "#1, #10, #11, ..., #2"
+  // — acceptable trade-off for keeping the helper purely alphabetical
+  // (guest counts >9 per team are extreme).
   for (const group of map.values()) group.sort((a, b) => a.name.localeCompare(b.name));
 
   return BUCKET_ORDER
@@ -115,19 +148,26 @@ function TeamPillList({
             <div className="h-px flex-1 bg-border-subtle" />
           </div>
           <div className="flex flex-wrap gap-1.5">
-            {groupPlayers.map((p) => (
-              <span
-                key={p.id}
-                className={`text-[11px] font-bold px-2 py-1 rounded-full border ${getPositionPillColor(p.position)}`}
-                translate="no"
-                data-testid={`availability-pill-${p.id}`}
-              >
-                <span className="text-[9px] font-black uppercase tracking-wider opacity-80 mr-1">
-                  {p.position || '—'}
+            {groupPlayers.map((p) => {
+              const isGuest = bucket === 'GUEST';
+              return (
+                <span
+                  key={p.id}
+                  className={
+                    isGuest
+                      ? 'text-[11px] font-bold px-2 py-1 rounded-full border bg-surface-md text-fg-mid border-border-default'
+                      : `text-[11px] font-bold px-2 py-1 rounded-full border ${getPositionPillColor(p.position)}`
+                  }
+                  translate="no"
+                  data-testid={`availability-pill-${p.id}`}
+                >
+                  <span className="text-[9px] font-black uppercase tracking-wider opacity-80 mr-1">
+                    {isGuest ? 'GUEST' : (p.position || '—')}
+                  </span>
+                  {p.name}
                 </span>
-                {p.name}
-              </span>
-            ))}
+              );
+            })}
           </div>
         </div>
       ))}
@@ -199,6 +239,17 @@ interface MatchdayAvailabilityProps {
    */
   ballType?: 'SOCCER' | 'FUTSAL' | null;
   playerFormat?: number | null;
+  /**
+   * v1.91.0 — Add Guests feature. Per-(matchday, team) external/league
+   * guest counts. Empty when no guests are recorded; the "+ Add Guests"
+   * button still renders so authenticated users can record the first
+   * guest. Optional because some legacy preview paths render this
+   * component without league context — in that case the button stays
+   * hidden (no leagueSlug ⇒ no submit target).
+   */
+  guestCounts?: MatchdayGuestCounts;
+  /** v1.91.0 — league subdomain, target for the Add Guests server action. */
+  leagueSlug?: string;
 }
 
 export default function MatchdayAvailability({
@@ -210,7 +261,19 @@ export default function MatchdayAvailability({
   played,
   ballType,
   playerFormat,
+  guestCounts,
+  leagueSlug,
 }: MatchdayAvailabilityProps) {
+  const { data: session } = useSession();
+  const canAddGuests = Boolean(session?.user) && Boolean(leagueSlug);
+
+  const [guestModalTeamId, setGuestModalTeamId] = useState<string | null>(null);
+  const guestModalTeam = guestModalTeamId
+    ? teams.find((t) => t.id === guestModalTeamId) ?? null
+    : null;
+  const guestModalEntry = guestModalTeamId
+    ? guestCounts?.[matchday.id]?.[guestModalTeamId]
+    : undefined;
     const isNext = matchday.matches[0].homeGoals === null;
   const playingTeams = teams.filter((t) => t.id !== matchday.sittingOutTeamId);
 
@@ -255,9 +318,67 @@ export default function MatchdayAvailability({
   const mdAvailability = availability[matchday.id] || {};
   const mdPlayed = played[matchday.id] || {};
 
+  // v1.91.0 — Per-team guest synthesis. Memoised across the matchday so the
+  // list of synthesised pseudo-Player objects is stable per render — passing
+  // a fresh object every render would force FormationPitch to recompute the
+  // assignment unnecessarily.
+  function getTeamGuestEntry(teamId: string): { externalCount: number; leagueCount: number } {
+    const e = guestCounts?.[matchday.id]?.[teamId];
+    return {
+      externalCount: e?.externalCount ?? 0,
+      leagueCount: e?.leagueCount ?? 0,
+    };
+  }
+  function getTeamGuestTotal(teamId: string): number {
+    const e = getTeamGuestEntry(teamId);
+    return e.externalCount + e.leagueCount;
+  }
+  // One synthesised pool, per (matchday, all teams). Each team only
+  // references its own guest IDs in `confirmedIds`, so a single shared
+  // `players` array containing every team's guest pseudo-Player is safe.
+  const playersWithGuests = useMemo(() => {
+    const out: Player[] = [...players];
+    for (const t of playingTeams) {
+      const total = getTeamGuestTotal(t.id);
+      if (total > 0) out.push(...synthesizeGuestPlayers(t.id, total));
+    }
+    return out;
+    // Track guest counts JSON for stability when guestCounts identity changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [players, playingTeams, JSON.stringify(guestCounts?.[matchday.id] ?? {})]);
+
+  function guestIdsForTeam(teamId: string): string[] {
+    const total = getTeamGuestTotal(teamId);
+    if (total <= 0) return [];
+    const out: string[] = [];
+    for (let i = 1; i <= total; i++) {
+      out.push(`guest-pseudo-${teamId}-${i}`);
+    }
+    return out;
+  }
+
+  // Single modal node, mounted in both the past-matchday and upcoming-
+  // matchday return paths. Only renders when the user has clicked an
+  // "+ Guests" trigger — `guestModalTeam` is null otherwise.
+  const guestModalNode = guestModalTeam && leagueSlug ? (
+    <AddGuestsModal
+      open
+      onClose={() => setGuestModalTeamId(null)}
+      leagueSlug={leagueSlug}
+      matchdayPublicId={matchday.id}
+      teamPublicId={guestModalTeam.id}
+      teamName={guestModalTeam.name}
+      matchdayLabel={matchday.label}
+      initialExternalCount={guestModalEntry?.externalCount ?? 0}
+      initialLeagueCount={guestModalEntry?.leagueCount ?? 0}
+    />
+  ) : null;
+
   if (!isNext) {
     // Past matchday — show who played
-    const anyPlayed = playingTeams.some((t) => (mdPlayed[t.id] || []).length > 0);
+    const anyPlayed = playingTeams.some(
+      (t) => (mdPlayed[t.id] || []).length > 0 || getTeamGuestTotal(t.id) > 0,
+    );
     if (!anyPlayed) return null;
 
     return (
@@ -274,6 +395,9 @@ export default function MatchdayAvailability({
           {playingTeams.map((team) => {
             const playedIds = mdPlayed[team.id] || [];
             const isExpanded = expandedTeams.has(team.id);
+            const guestIds = guestIdsForTeam(team.id);
+            const confirmedIds = [...playedIds, ...guestIds];
+            const total = confirmedIds.length;
 
             return (
               <div
@@ -282,19 +406,41 @@ export default function MatchdayAvailability({
                   isExpanded ? 'bg-surface-md border-border-default' : 'bg-surface border-border-subtle hover:border-border-default'
                 }`}
               >
-                <button
+                <div
+                  role="button"
+                  tabIndex={0}
                   onClick={() => toggleTeam(team.id)}
-                  className="w-full flex items-center justify-between px-4 py-2 text-left"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      toggleTeam(team.id);
+                    }
+                  }}
+                  className="w-full flex items-center justify-between px-4 py-2 text-left cursor-pointer select-none"
                 >
                   <div className="flex items-center gap-3">
                     <div className="w-3 h-3 rounded-full" style={{ backgroundColor: team.color }} />
                     <span className="text-[15px] font-black tracking-tight uppercase" translate="no">{team.name}</span>
                   </div>
                   <div className="flex items-center gap-3">
+                    {canAddGuests && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setGuestModalTeamId(team.id);
+                        }}
+                        className="text-[10px] font-black uppercase tracking-widest text-fg-mid hover:text-fg-high px-2 py-1 rounded border border-border-default bg-background"
+                        data-testid={`add-guests-trigger-${team.id}`}
+                        aria-label={`Add guests for ${team.name}`}
+                      >
+                        + Guests
+                      </button>
+                    )}
                     <span className={`text-[11px] font-black px-2 py-0.5 rounded ${
-                      playedIds.length > 0 ? 'bg-electric-violet/10 text-electric-violet' : 'bg-surface-md text-fg-mid'
-                    }`}>
-                      {playedIds.length} {"played"}
+                      total > 0 ? 'bg-electric-violet/10 text-electric-violet' : 'bg-surface-md text-fg-mid'
+                    }`} data-testid={`played-count-${team.id}`}>
+                      {total} {"played"}
                     </span>
                     <svg
                       className={`w-4 h-4 text-fg-mid transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`}
@@ -303,15 +449,15 @@ export default function MatchdayAvailability({
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M19 9l-7 7-7-7" />
                     </svg>
                   </div>
-                </button>
+                </div>
                 {isExpanded && (
                   <div className="px-4 pb-4 pt-0 border-t border-border-subtle animate-in">
                     {viewMode === 'list' ? (
-                      <TeamPillList confirmedIds={playedIds} players={players} />
+                      <TeamPillList confirmedIds={confirmedIds} players={playersWithGuests} />
                     ) : (
                       <FormationPitch
-                        confirmedIds={playedIds}
-                        players={players}
+                        confirmedIds={confirmedIds}
+                        players={playersWithGuests}
                         teamColor={team.color}
                         ballType={ballType}
                         playerFormat={playerFormat}
@@ -323,6 +469,7 @@ export default function MatchdayAvailability({
             );
           })}
         </div>
+        {guestModalNode}
       </section>
     );
   }
@@ -359,6 +506,9 @@ export default function MatchdayAvailability({
             return s === 'GOING' || s === 'Y';
           });
           const isExpanded = expandedTeams.has(team.id);
+          const guestIds = guestIdsForTeam(team.id);
+          const confirmedIds = [...goingIds, ...guestIds];
+          const total = confirmedIds.length;
 
           return (
             <div
@@ -367,9 +517,17 @@ export default function MatchdayAvailability({
                 isExpanded ? 'bg-surface-md border-border-default' : 'bg-surface border-border-subtle hover:border-border-default'
               }`}
             >
-              <button
+              <div
+                role="button"
+                tabIndex={0}
                 onClick={() => toggleTeam(team.id)}
-                className="w-full flex items-center justify-between px-4 py-3 text-left"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    toggleTeam(team.id);
+                  }
+                }}
+                className="w-full flex items-center justify-between px-4 py-3 text-left cursor-pointer select-none"
               >
                 <div className="flex items-center gap-3">
                   <div
@@ -381,8 +539,22 @@ export default function MatchdayAvailability({
                   </span>
                 </div>
                 <div className="flex items-center gap-3">
-                  <span className="text-[11px] font-semibold text-fg-mid">
-                    {goingIds.length} {"going"}
+                  {canAddGuests && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setGuestModalTeamId(team.id);
+                      }}
+                      className="text-[10px] font-black uppercase tracking-widest text-fg-mid hover:text-fg-high px-2 py-1 rounded border border-border-default bg-background"
+                      data-testid={`add-guests-trigger-${team.id}`}
+                      aria-label={`Add guests for ${team.name}`}
+                    >
+                      + Guests
+                    </button>
+                  )}
+                  <span className="text-[11px] font-semibold text-fg-mid" data-testid={`going-count-${team.id}`}>
+                    {total} {"going"}
                   </span>
                   <svg
                     className={`w-4 h-4 text-fg-mid transition-transform duration-300 ${
@@ -400,16 +572,16 @@ export default function MatchdayAvailability({
                     />
                   </svg>
                 </div>
-              </button>
+              </div>
 
               {isExpanded && (
                 <div className="px-4 pb-4 pt-0 border-t border-border-subtle animate-in">
                   {viewMode === 'list' ? (
-                    <TeamPillList confirmedIds={goingIds} players={players} />
+                    <TeamPillList confirmedIds={confirmedIds} players={playersWithGuests} />
                   ) : (
                     <FormationPitch
-                      confirmedIds={goingIds}
-                      players={players}
+                      confirmedIds={confirmedIds}
+                      players={playersWithGuests}
                       teamColor={team.color}
                       ballType={ballType}
                       playerFormat={playerFormat}
@@ -421,6 +593,8 @@ export default function MatchdayAvailability({
           );
         })}
       </div>
+
+      {guestModalNode}
     </section>
   );
 }

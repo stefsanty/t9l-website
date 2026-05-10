@@ -5,6 +5,7 @@ import dynamic from 'next/dynamic';
 import { useSession } from 'next-auth/react';
 import type {
   Team, Player, Matchday, Goal, Availability, AvailabilityStatuses, PlayedStatus,
+  MatchdayGuestCounts,
 } from '@/types';
 import GuestLoginBanner from './GuestLoginBanner';
 import Header from './Header';
@@ -197,6 +198,12 @@ interface DashboardProps {
    * existing call sites compile unchanged.
    */
   topSlot?: ReactNode;
+  /**
+   * v1.91.0 — Add Guests counts. Threaded into ClassicLeagueHomepage →
+   * MatchdayAvailability so each team's "+ Guests" trigger prefills the
+   * modal with current counts. Optional; absence is treated as zero.
+   */
+  guestCounts?: MatchdayGuestCounts;
 }
 
 /**
@@ -233,6 +240,7 @@ export default function Dashboard({
   plannedRosterStats,
   leagueDetails,
   topSlot,
+  guestCounts,
 }: DashboardProps) {
   const { data: session } = useSession();
   const [selectedMatchdayId, setSelectedMatchdayId] = useState(
@@ -399,6 +407,7 @@ export default function Dashboard({
                   submitGoalSlot={submitGoalSlot}
                   ballType={league?.ballType ?? leagueDetails?.ballType ?? null}
                   playerFormat={leagueDetails?.playerFormat ?? null}
+                  guestCounts={guestCounts}
                   leagueDetailsPanelSlot={leagueDetails ? (
                     <LeagueDetailsPanel
                       data={leagueDetails}
