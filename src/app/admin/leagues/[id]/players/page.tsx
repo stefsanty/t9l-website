@@ -116,6 +116,10 @@ export default async function PlayersPage({ params }: Props) {
       // v1.36.0 (PR θ) — surface the assignment's onboarding state so
       // PlayersTab can conditionally render the "Reset onboarding" button.
       onboardingStatus: 'NOT_YET' | 'COMPLETED'
+      // v1.87.0 — per-league retirement marker. ISO string when retired;
+      // null when active. Drives the "Retire from league" / "Unretire"
+      // kebab item + the row-level RETIRED pill.
+      retiredAt: string | null
     }[]
   }>()
 
@@ -125,7 +129,22 @@ export default async function PlayersPage({ params }: Props) {
     // null-leagueTeam rows but TS can't narrow that. PENDING-application
     // memberships from v1.65.1+ come through `pendingApplications` below.
     if (!a.leagueTeam) continue
-    const aWithTeam = a as typeof a & { leagueTeam: NonNullable<typeof a.leagueTeam> }
+    // v1.87.0 — flatten retiredAt to ISO string | null for the
+    // cache-safe client payload (mirrors the v1.17.1 pattern used for
+    // lastSeenAt / idUploadedAt). The cache JSON-round-trips Dates so
+    // `a.retiredAt` is actually a string at runtime even though TS
+    // infers Date from the Prisma model — coerce defensively.
+    const rawRetiredAt = a.retiredAt as unknown
+    const retiredAtIso =
+      rawRetiredAt instanceof Date
+        ? rawRetiredAt.toISOString()
+        : typeof rawRetiredAt === 'string' && rawRetiredAt.length > 0
+          ? rawRetiredAt
+          : null
+    const aWithTeam = {
+      ...(a as typeof a & { leagueTeam: NonNullable<typeof a.leagueTeam> }),
+      retiredAt: retiredAtIso,
+    }
     const existing = playerMap.get(a.playerId)
     if (existing) {
       existing.assignments.push(aWithTeam)

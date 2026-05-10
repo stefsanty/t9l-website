@@ -16,6 +16,15 @@ export interface Player {
   /** v1.86.0 — secondary positions. */
   secondaryPositions?: string[];
   picture: string | null;
+  /**
+   * v1.87.0 — per-league retirement marker. ISO string when the admin
+   * has retired this player from this league; null/undefined when active.
+   * Retired players still appear in the public squad list (sorted to
+   * the bottom of their team, greyed out, with a "RETIRED" pill) and
+   * keep their historical stats. Excluded by default from upcoming-
+   * matchday formation/availability pickers (`MatchdayAvailability`).
+   */
+  retiredAt?: string | null;
 }
 
 export interface Match {

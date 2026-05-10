@@ -24,9 +24,12 @@ import {
   adminApproveApplication,
   adminRejectApplication,
   updateMembershipPaidStatus,
+  retirePlayer,
+  unretirePlayer,
 } from '@/app/admin/leagues/actions'
 import { formatJpyFee } from '@/lib/playerFee'
 import { groupedPositionLabel } from '@/lib/positions'
+import { getMembershipStatus } from '@/lib/membership'
 import PositionMultiSelect from '@/components/PositionMultiSelect'
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -59,6 +62,11 @@ interface Assignment {
   // here so PR θ's "Reset onboarding" button can be conditionally rendered
   // (only meaningful when the current assignment is COMPLETED).
   onboardingStatus?: 'NOT_YET' | 'COMPLETED'
+  // v1.87.0 — per-league retirement marker. Non-null ISO string when the
+  // admin has retired this player; null when active. Drives the
+  // "Retire from league" / "Unretire" kebab choice + the row-level
+  // RETIRED pill.
+  retiredAt?: string | null
 }
 
 interface PlayerRow {
@@ -319,6 +327,35 @@ export default function PlayersTab({
     }
   }
 
+  // v1.87.0 — Toggle retiredAt on a player's active PLM. Retired players
+  // keep their team + stats but no longer count toward roster size.
+  // Reversible. The kebab label flips ("Retire from league" → "Unretire")
+  // based on the current `current.retiredAt` value.
+  async function handleToggleRetire(player: PlayerRow, current: Assignment | null) {
+    if (!current) return
+    const isRetiring = !current.retiredAt
+    if (
+      isRetiring &&
+      typeof window !== 'undefined' &&
+      !window.confirm(
+        `Retire ${nameOrPlaceholder(player.name)} from this league? They'll stay on the roster and keep their stats but no longer count toward roster size. Reversible.`,
+      )
+    ) {
+      return
+    }
+    try {
+      if (isRetiring) {
+        await retirePlayer({ membershipId: current.id, leagueId })
+        toast(`Retired ${nameOrPlaceholder(player.name)} from this league.`)
+      } else {
+        await unretirePlayer({ membershipId: current.id, leagueId })
+        toast(`Unretired ${nameOrPlaceholder(player.name)}.`)
+      }
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Failed to update retirement status', 'error')
+    }
+  }
+
   // v1.66.0 — Toggle paidStatus on a player's active PLM. Both directions
   // (PAID → UNPAID and UNPAID → PAID) handled in one handler; the kebab
   // item label flips based on current state.
@@ -424,9 +461,20 @@ export default function PlayersTab({
             userId: player.userId,
             activeInviteCount: player.activeInvite ? 1 : 0,
           })
+          // v1.87.0 — unified PENDING / ACTIVE / RETIRED status. Drives
+          // both the row-level badge (Application vs Retired) and the
+          // opacity-60 retired-row dim.
+          const membershipStatus = getMembershipStatus({
+            applicationStatus: player.applicationStatus,
+            retiredAt: current?.retiredAt ?? null,
+          })
 
           return (
-            <div key={player.id} data-testid={`player-row-mobile-${player.id}`}>
+            <div
+              key={player.id}
+              data-testid={`player-row-mobile-${player.id}`}
+              className={membershipStatus === 'RETIRED' ? 'opacity-60' : undefined}
+            >
               <div className="flex items-start gap-3 px-4 py-3.5">
                 <AdminPlayerAvatar
                   name={player.name}
@@ -489,13 +537,22 @@ export default function PlayersTab({
                       status={signInStatus}
                       testid={`signin-status-mobile-${player.id}`}
                     />
-                    {player.applicationStatus === 'PENDING' && (
+                    {membershipStatus === 'PENDING' && (
                       <span
                         data-testid={`application-status-mobile-${player.id}`}
                         className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 border border-amber-500/40 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-400"
                       >
                         <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
                         Application
+                      </span>
+                    )}
+                    {membershipStatus === 'RETIRED' && (
+                      <span
+                        data-testid={`retired-badge-mobile-${player.id}`}
+                        className="inline-flex items-center gap-1 rounded-full bg-admin-surface2 border border-admin-border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-admin-text3"
+                      >
+                        <span className="w-1.5 h-1.5 rounded-full bg-admin-text3" />
+                        Retired
                       </span>
                     )}
                   </div>
@@ -563,6 +620,7 @@ export default function PlayersTab({
                         onRejectApplication: () =>
                           handleRejectApplication(player.id, player.name),
                         onTogglePaid: () => handleTogglePaid(player),
+                        onToggleRetire: () => handleToggleRetire(player, current),
                       },
                     })}
                   />
@@ -650,9 +708,19 @@ export default function PlayersTab({
             userId: player.userId,
             activeInviteCount: player.activeInvite ? 1 : 0,
           })
+          // v1.87.0 — unified PENDING / ACTIVE / RETIRED status; same
+          // helper as the mobile branch.
+          const membershipStatus = getMembershipStatus({
+            applicationStatus: player.applicationStatus,
+            retiredAt: current?.retiredAt ?? null,
+          })
 
           return (
-            <div key={player.id} className="border-b border-admin-border last:border-b-0" data-testid={`player-row-${player.id}`}>
+            <div
+              key={player.id}
+              className={`border-b border-admin-border last:border-b-0 ${membershipStatus === 'RETIRED' ? 'opacity-60' : ''}`}
+              data-testid={`player-row-${player.id}`}
+            >
               <div
                 className="grid items-center px-5 py-3 hover:bg-admin-surface2/50 transition-colors gap-3"
                 style={{ gridTemplateColumns: '32px 40px 1fr 140px 60px 110px 80px' }}
@@ -748,13 +816,22 @@ export default function PlayersTab({
                     status={signInStatus}
                     testid={`signin-status-${player.id}`}
                   />
-                  {player.applicationStatus === 'PENDING' && (
+                  {membershipStatus === 'PENDING' && (
                     <span
                       data-testid={`application-status-${player.id}`}
                       className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 border border-amber-500/40 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-400"
                     >
                       <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
                       Application
+                    </span>
+                  )}
+                  {membershipStatus === 'RETIRED' && (
+                    <span
+                      data-testid={`retired-badge-${player.id}`}
+                      className="inline-flex items-center gap-1 rounded-full bg-admin-surface2 border border-admin-border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-admin-text3"
+                    >
+                      <span className="w-1.5 h-1.5 rounded-full bg-admin-text3" />
+                      Retired
                     </span>
                   )}
                 </span>
@@ -797,6 +874,7 @@ export default function PlayersTab({
                         onRejectApplication: () =>
                           handleRejectApplication(player.id, player.name),
                         onTogglePaid: () => handleTogglePaid(player),
+                        onToggleRetire: () => handleToggleRetire(player, current),
                       },
                     })}
                   />
@@ -984,6 +1062,10 @@ interface BuildPlayerMenuArgs {
     // active membership (membershipId set) — pre-staged or no-PLM
     // applicants can't have a paid status to toggle.
     onTogglePaid: () => Promise<void>
+    // v1.87.0 — per-league retire/unretire toggle. Only surfaces when
+    // the player has a current assignment (`current` non-null) —
+    // PENDING applicants with no team have nothing to retire.
+    onToggleRetire: () => Promise<void>
   }
 }
 
@@ -1043,6 +1125,22 @@ function buildPlayerMenuItems(args: BuildPlayerMenuArgs) {
       label: player.paidStatus === 'PAID' ? 'Mark unpaid' : 'Mark paid',
       onSelect: handlers.onTogglePaid,
     })
+  }
+  // v1.87.0 — Retire / Unretire. Only surfaces when the unified
+  // membership status is ACTIVE or RETIRED (i.e. APPROVED + has a
+  // current team assignment). PENDING applicants must be approved
+  // first; their kebab surfaces Approve / Reject above.
+  if (current) {
+    const status = getMembershipStatus({
+      applicationStatus: player.applicationStatus,
+      retiredAt: current.retiredAt ?? null,
+    })
+    if (status === 'ACTIVE' || status === 'RETIRED') {
+      items.push({
+        label: status === 'RETIRED' ? 'Unretire' : 'Retire from league',
+        onSelect: handlers.onToggleRetire,
+      })
+    }
   }
   items.push({
     label: isTransferOpen ? 'Cancel transfer' : 'Transfer to team…',

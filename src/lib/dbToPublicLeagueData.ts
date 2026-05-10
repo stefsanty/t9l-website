@@ -174,6 +174,10 @@ export async function dbToPublicLeagueData(
         ? [...pla.secondaryPositions]
         : undefined,
       picture: pla.player.pictureUrl ?? null,
+      // v1.87.0 — per-league retirement marker. SquadList sorts retired
+      // players to the bottom of their team and greys them out;
+      // MatchdayAvailability filters them out of upcoming goingIds.
+      retiredAt: pla.retiredAt ? pla.retiredAt.toISOString() : null,
     })
   }
 

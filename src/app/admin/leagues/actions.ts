@@ -2439,3 +2439,87 @@ export async function updateMembershipFeeOverride(input: {
   })
   revalidate({ domain: 'public' })
 }
+
+/**
+ * v1.87.0 — admin "Retire from league" / "Unretire" toggle. Sets or
+ * clears `PlayerLeagueMembership.retiredAt`. Retired players keep their
+ * roster slot, team assignment, and historical stats but are excluded
+ * from roster-size calculations (planned-roster `currentPlayers`,
+ * admin teams-all `playerCount`, the unpaid-fee banner). The public
+ * squad list still renders them at the bottom of their team, greyed
+ * out, with a "RETIRED" pill.
+ *
+ * IDOR check mirrors `updateMembershipPaidStatus` — verifies the PLM
+ * belongs to the supplied league via direct `leagueId` (v1.65.0+) OR
+ * via `leagueTeam.leagueId` (legacy backfilled rows).
+ *
+ * Reversible: `unretirePlayer` flips `retiredAt` back to null.
+ * Historical stats (MatchEvent rows) are immutable; the recompute
+ * paths read PLM regardless of `retiredAt` so past goals continue to
+ * attribute correctly to their team.
+ */
+export async function retirePlayer(input: {
+  membershipId: string
+  leagueId: string
+}): Promise<void> {
+  await assertAdmin()
+  if (!input.membershipId) throw new Error('membershipId is required')
+  if (!input.leagueId) throw new Error('leagueId is required')
+
+  const plm = await prisma.playerLeagueMembership.findUnique({
+    where: { id: input.membershipId },
+    select: {
+      leagueId: true,
+      leagueTeam: { select: { leagueId: true } },
+    },
+  })
+  if (!plm) throw new Error('Membership not found')
+  const plmLeagueId = plm.leagueId ?? plm.leagueTeam?.leagueId ?? null
+  if (plmLeagueId !== input.leagueId) {
+    throw new Error('Membership does not belong to this league')
+  }
+
+  await prisma.playerLeagueMembership.update({
+    where: { id: input.membershipId },
+    data: { retiredAt: new Date() },
+  })
+
+  revalidate({
+    domain: 'admin',
+    paths: [`/admin/leagues/${input.leagueId}/players`],
+  })
+  revalidate({ domain: 'public' })
+}
+
+export async function unretirePlayer(input: {
+  membershipId: string
+  leagueId: string
+}): Promise<void> {
+  await assertAdmin()
+  if (!input.membershipId) throw new Error('membershipId is required')
+  if (!input.leagueId) throw new Error('leagueId is required')
+
+  const plm = await prisma.playerLeagueMembership.findUnique({
+    where: { id: input.membershipId },
+    select: {
+      leagueId: true,
+      leagueTeam: { select: { leagueId: true } },
+    },
+  })
+  if (!plm) throw new Error('Membership not found')
+  const plmLeagueId = plm.leagueId ?? plm.leagueTeam?.leagueId ?? null
+  if (plmLeagueId !== input.leagueId) {
+    throw new Error('Membership does not belong to this league')
+  }
+
+  await prisma.playerLeagueMembership.update({
+    where: { id: input.membershipId },
+    data: { retiredAt: null },
+  })
+
+  revalidate({
+    domain: 'admin',
+    paths: [`/admin/leagues/${input.leagueId}/players`],
+  })
+  revalidate({ domain: 'public' })
+}
