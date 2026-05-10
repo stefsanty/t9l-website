@@ -101,9 +101,16 @@ describe('v1.42.0 PR α — schema deltas', () => {
     expect(block[0]).toMatch(/authoredEvents\s+MatchEvent\[\]/)
   })
 
-  it('Goal + Assist models are still in the schema (PR α does not remove them)', () => {
-    expect(SCHEMA).toMatch(/model Goal\s*\{/)
-    expect(SCHEMA).toMatch(/model Assist\s*\{/)
+  // v1.90.0 — the original v1.42.0 assertion ("Goal + Assist models are
+  // still in the schema") flipped: step 2 of the legacy table cleanup
+  // dropped both models. The companion regression test lives in
+  // `tests/unit/v190_legacy_goal_assist_tables_dropped.test.ts`; this
+  // assertion is kept here (rather than deleted) because PR α's
+  // file is the natural record of how the MatchEvent / legacy-table
+  // boundary moved over time.
+  it('Goal + Assist models are gone from the schema (v1.90.0)', () => {
+    expect(SCHEMA).not.toMatch(/^\s*model\s+Goal\s*\{/m)
+    expect(SCHEMA).not.toMatch(/^\s*model\s+Assist\s*\{/m)
   })
 })
 
