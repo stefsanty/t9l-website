@@ -1,0 +1,118 @@
+# phase-retire-player — implementation log
+
+Targets v1.87.0 (feature with schema change).
+
+## M1 — Schema + roster-size audit
+
+### Schema change
+
+`PlayerLeagueMembership.retiredAt: DateTime?` added (nullable timestamp).
+- `null` ⇒ active membership.
+- non-null ⇒ retired (timestamp records when admin retired the player).
+
+Additive migration `20260516000000_plm_retired_at` adds the column with no
+backfill (every existing row defaults to null = active).
+
+### Roster-size code-path audit
+
+| # | Site                                                               | Today                                                                                | Decision        |
+| - | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------ | --------------- |
+| 1 | `src/lib/plannedRosterStats.ts:85`                                 | `prisma.playerLeagueMembership.count({ where: { …, toGameWeek: null } })` for `currentPlayers` (drives "spots left" on `/id/<slug>` LeagueDetailsPanel). | **FILTER `retiredAt: null`** — retired players must not consume a roster slot. |
+| 2 | `src/lib/admin-data.ts:914-919` (`getAllTeamsForAdmin`)            | `_count.playerAssignments` per LeagueTeam → summed for admin teams-all `playerCount`. | **FILTER `retiredAt: null`** via `_count.select.playerAssignments.where`. |
+| 3 | `src/app/admin/teams-all/actions.ts:133` (`adminDeleteTeam`)       | `count({ where: { leagueTeam: { teamId } } })` blocks delete when any membership exists. | **NO FILTER** — retired data still references the team; delete must remain blocked. |
+| 4 | `src/lib/unpaidFeeBanner.ts:54`                                    | `findFirst({ where: { playerId, …, toGameWeek: null } })` for unpaid-fee banner.     | **FILTER `retiredAt: null`** — retired players do not owe the league fee. |
+
+### Roster-related code-paths NOT requiring filtering
+
+- `src/lib/matchScore.ts:221` — scorer→team lookup for goal recompute. **KEEP** — immutable history; a retired player's past goals still count toward their old team's score.
+- `src/lib/dbToPublicLeagueData.ts:135` — public players[] for squad list. **KEEP** — retired players are intentionally surfaced (bottom-of-list, greyed) per spec. The new `retiredAt` field is added to the public `Player` type for the renderer.
+- `src/lib/recruitingViewerState.ts` (`approved_this` check) — **KEEP** — retired users still see "you're in this league" rather than a recruiting CTA. Refining the retiree banner state is a deferred follow-up.
+- `src/lib/homepageRouting.ts` / `src/lib/userDefaultLeague.ts` / `src/components/homepage/actions.ts` — **KEEP** — retired memberships still count for routing/multi-league hub/last-selected pin.
+- `src/lib/auth.ts` `pickAssignmentMapping` — **KEEP** — JWT mapping for retired players still resolves to their last team (no harm, used for display).
+- `src/app/account/player/page.tsx` activeMemberships filter — **KEEP** — retired memberships render as a card with a RETIRED badge so the user can still see their data and unretire requests routed via admin.
+- `src/components/MatchdayAvailability.tsx` — formation pitch / list view receives `goingIds` (upcoming) or `playedIds` (past). For past matchdays we keep retired (they actually played); for upcoming we filter retired out of `goingIds` since a retired player's stale Redis RSVP must not appear in the formation picker.
+
+### Edge cases noted (do not block M1)
+
+- A player retired from League A can still be APPROVED in League B (per-league semantics — the new `retiredAt` lives on PLM, not Player).
+- Captain/role assignments: no schema field for captain today; deferred.
+- Re-applying a retired player to the same league: a new `applyToLeague` call against an existing retired PLM should NOT create a duplicate; the existing retired PLM should be unretired (or the admin re-approves manually). For v1, the existing PLM row stays put and admin uses the kebab "Unretire" action — no auto-unretire on re-apply. Surface to user in M2 if it materially blocks anything.
+
+## M2 — Server actions + filtering
+
+### Wired
+
+- `retirePlayer({ membershipId, leagueId })` and `unretirePlayer(...)` exported from `src/app/admin/leagues/actions.ts` (under `assertAdmin()` + IDOR check identical to `updateMembershipPaidStatus`). Both revalidate admin + public domains.
+- `src/lib/plannedRosterStats.ts` — `currentPlayers` count adds `retiredAt: null`.
+- `src/lib/admin-data.ts` — `_count.playerAssignments` swapped to `{ where: { retiredAt: null } }` so the admin teams-all per-team count drops retired members.
+- `src/lib/unpaidFeeBanner.ts` — active PLM lookup adds `retiredAt: null` (retired players don't owe the league fee).
+- `src/lib/dbToPublicLeagueData.ts` — exposes `retiredAt` (ISO string) on the public `Player` type so renderers can grey + sort retired players at the bottom of their team's squad list.
+- `src/types/index.ts` — `Player.retiredAt?: string | null` added.
+- `src/components/MatchdayAvailability.tsx` — UPCOMING-matchday `goingIds` filtered to exclude retired-player ids (defensive against stale Redis RSVPs from before retirement). Past-matchday `playedIds` deliberately untouched — retired players who actually played past matchdays still appear in the "Who Played" view.
+
+### Edge cases worth user input (none blocking)
+
+- A player retiring while still RSVPed GOING for a future matchday: the matchday banner / RSVP UI still surfaces them on /account, but the formation pitch and "going" tally on the homepage exclude them per the upcoming-matchday filter above. We do NOT auto-clear their Redis RSVP. Acceptable for v1 (the admin who retired them can ask them to set RSVP to NOT_GOING manually).
+- A retired player who unretires re-enters formation pickers automatically (no Redis touch needed — the public-data path re-reads PLM on its standard 300s TTL after the `revalidate({ domain: 'public' })` bust).
+- Retired-player visibility in `/account/player`: retired memberships still render as a card on the per-league list (v1 scope keeps the surface unchanged so the user can see their data). A "RETIRED" badge on the card is a deferred polish — surface in a follow-up if user wants.
+
+## M3 — Admin kebab menu + row badge
+
+### Confirmation dialog copy
+
+> Retire {Name} from this league? They'll stay on the roster and keep
+> their stats but no longer count toward roster size. Reversible.
+
+Confirmation only fires on the retire path; the unretire path is a
+direct toast (no confirm) because it's a non-destructive flip.
+
+### Wiring
+
+- Kebab item label: **"Retire from league"** when active, **"Unretire"** when retired.
+- Item only renders for `applicationStatus === 'APPROVED'` rows that have a current `Assignment` (PENDING applicants and pre-staged-no-team rows are filtered out — they have no membership to retire).
+- Both mobile and desktop OverflowMenu sites share `buildPlayerMenuItems`, so one wiring point lights both.
+- Mobile + desktop row containers gain `opacity-60` when `current.retiredAt` is set.
+- A small "RETIRED" pill (admin-token styled — `bg-admin-surface2 border-admin-border text-admin-text3`) sits next to the SignInStatusBadge in both row layouts (`data-testid={"retired-badge-mobile-${id}"}` / `retired-badge-${id}`).
+- Server actions `retirePlayer` / `unretirePlayer` exported from `src/app/admin/leagues/actions.ts` (M2).
+
+## M4 — Public squad list
+
+- `src/components/SquadList.tsx#getTeamPlayers` sort orders retired players AFTER active (sort key: `retiredAt ? 1 : 0` first, then existing position-bucket / alphabetical).
+- Retired rows: `opacity-50` on the row container, plus an inline "RETIRED" pill (public-token styled — `bg-surface-md border-border-subtle text-fg-low`).
+- Retired rows do NOT show the availability badge (the `GOING / NOT GOING / etc.` chip), since they're not part of the active matchday roster.
+- Team header count "{N} SQUAD MEMBERS" uses the **active** count only — retired players don't inflate the visible team size while still being listed below.
+- No "Active" / "Retired" section header — empty by-design when no team has retirees, so the list looks clean for normal teams.
+
+## M5 — Tests + suite passing + PR pushed
+
+### Test count diff
+
+- New file `tests/unit/v187_retire_player.test.ts` — **33 tests** total covering:
+  - APP_VERSION + CLAUDE.md current-release header (2)
+  - Schema: PLM.retiredAt nullable DateTime (1)
+  - Migration is additive only — no DROP/TRUNCATE/DELETE FROM (2)
+  - Server actions: retirePlayer/unretirePlayer assertAdmin + IDOR + revalidate + retiredAt set/clear semantics (6)
+  - Roster-size readers: plannedRosterStats, admin-data _count, unpaidFeeBanner all filter retiredAt: null; teams-all delete-blocker explicitly does NOT filter (4)
+  - Public Player type carries retiredAt + dbToPublicLeagueData populates it (2)
+  - SquadList sorts retired to bottom + grey + RETIRED pill + activeMemberCount header + availability-badge hidden (4)
+  - MatchdayAvailability filters upcoming goingIds via retiredIds set (2)
+  - PlayersTab kebab menu wiring: imports, Assignment.retiredAt, handleToggleRetire shape, confirm copy, label flip, kebab gating, opacity-60 row, RETIRED admin pill (8)
+  - Admin Players page surfaces retiredAt to PlayersTab via cache-safe coercion (2)
+
+- `tests/unit/version.test.ts` — pin updated 1.86.0 → 1.87.0 (still 2 tests).
+
+- Stash-pop sanity: stashing `src/` (keeping schema/migration intact) made **28/33 new tests fail** on the v1.86.0 baseline — every load-bearing assertion (server actions, type fields, kebab wiring, sort key, filter clauses) catches the broken state. The 5 that pass on baseline are the schema-only checks (the schema diff hadn't been stashed).
+
+### Suite results
+
+- `npx vitest run` — **172 test files, 3181 tests, all passing** (1 skipped, 2 skipped tests from older suites).
+- `npx tsc --noEmit` — clean (only pre-existing `next.config.ts: Cannot find module '@next/bundle-analyzer'` error from the v1.86.0 baseline; not introduced by this PR).
+
+### Confirmation: round-trip + stats + visibility
+
+- **Retire/unretire round-trip:** `retirePlayer` writes `new Date()`, `unretirePlayer` writes `null`. Both go through the same IDOR check and revalidate the same domains.
+- **Retired player excluded from roster count:** `plannedRosterStats.currentPlayers`, admin teams-all `playerCount`, unpaid-fee-banner all filter `retiredAt: null`.
+- **Retired player still in stats:** `matchScore.recomputeMatchScore` reads PLM regardless of `retiredAt`; MatchEvent rows are immutable; historical goals continue to attribute to their team.
+- **Retired player still visible in squad list at bottom:** `dbToPublicLeagueData` populates `Player.retiredAt`; `SquadList.getTeamPlayers` sort key sends retired players last.
+
+

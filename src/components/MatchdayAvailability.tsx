@@ -344,7 +344,17 @@ export default function MatchdayAvailability({
           const allAvailIds = mdAvailability[team.id] || [];
           const teamStatuses = availabilityStatuses[matchday.id]?.[team.id] || {};
 
+          // v1.87.0 — exclude retired players from upcoming-matchday
+          // formation/availability pickers. A retired player's stale
+          // Redis RSVP must not show up as "going" or land in a
+          // formation slot. Past matchdays (the `!isNext` branch) keep
+          // retired players visible because they reflect historical
+          // participation.
+          const retiredIds = new Set(
+            players.filter((p) => p.retiredAt).map((p) => p.id),
+          );
           const goingIds = allAvailIds.filter((id) => {
+            if (retiredIds.has(id)) return false;
             const s = teamStatuses[id];
             return s === 'GOING' || s === 'Y';
           });

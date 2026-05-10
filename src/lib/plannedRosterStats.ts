@@ -81,7 +81,10 @@ export async function getPlannedRosterStats(
         },
       }),
       // Active memberships only (toGameWeek = null). Includes PENDING
-      // applications, per the spec.
+      // applications, per the spec. v1.87.0 — exclude retired
+      // memberships (retiredAt non-null) from the roster count; retired
+      // players keep their slot for stats but no longer consume a
+      // "spots left" slot.
       prisma.playerLeagueMembership.count({
         where: {
           OR: [
@@ -89,6 +92,7 @@ export async function getPlannedRosterStats(
             { leagueTeam: { leagueId } },
           ],
           toGameWeek: null,
+          retiredAt: null,
         },
       }),
       prisma.gameWeek.count({ where: { leagueId } }),

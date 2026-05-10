@@ -58,9 +58,17 @@ export default function SquadList({
       if (!first) return 99;
       return bucketOrder[getPositionBucket(first)] ?? 99;
     };
+    // v1.87.0 — retired players go to the bottom of their team's list
+    // (rendered greyed-out with a "RETIRED" pill). Within the active
+    // group + within the retired group, the existing position-bucket +
+    // name sort applies. The sort is stable on retiredAt first so all
+    // retired entries cluster at the end regardless of position.
     return players
       .filter((p) => p.teamId === teamId)
       .sort((a, b) => {
+        const aRetired = a.retiredAt ? 1 : 0;
+        const bRetired = b.retiredAt ? 1 : 0;
+        if (aRetired !== bRetired) return aRetired - bRetired;
         const posA = sortKey(a.position);
         const posB = sortKey(b.position);
         if (posA !== posB) return posA - posB;
@@ -80,6 +88,10 @@ export default function SquadList({
         {teams.map((team) => {
           const isExpanded = expandedTeamId === team.id;
           const teamPlayers = getTeamPlayers(team.id);
+          // v1.87.0 — header count shows ACTIVE members only; retired
+          // players still render in the expanded list (greyed-out at the
+          // bottom) but don't inflate the team's roster size.
+          const activeMemberCount = teamPlayers.filter((p) => !p.retiredAt).length;
 
           return (
             <div
@@ -114,7 +126,7 @@ export default function SquadList({
                     <div className="flex items-center gap-2 mt-1">
                       <div className="h-[1px] w-4 bg-surface-md" />
                       <span className="text-[10px] font-black uppercase tracking-[0.2em] text-fg-mid">
-                        {teamPlayers.length} {"SQUAD MEMBERS"}
+                        {activeMemberCount} {"SQUAD MEMBERS"}
                       </span>
                       {hasAvailabilityData && (
                         <>
@@ -151,10 +163,12 @@ export default function SquadList({
                       if (status === 'PLAYED') return { label: "PLAYED", cls: 'bg-secondary/10 border-secondary/20 text-secondary', dotCls: 'bg-secondary' };
                       return { label: "NOT GOING", cls: 'bg-surface border-border-subtle text-fg-mid', dotCls: 'bg-surface-md' };
                     })();
+                    const isRetired = !!player.retiredAt;
                     return (
                       <div
                         key={player.id}
-                        className="px-5 py-3 flex items-center justify-between group hover:bg-surface-md transition-colors"
+                        data-testid={isRetired ? `squad-row-retired-${player.id}` : `squad-row-${player.id}`}
+                        className={`px-5 py-3 flex items-center justify-between group hover:bg-surface-md transition-colors ${isRetired ? 'opacity-50' : ''}`}
                       >
                         <div className="flex items-center gap-4">
                           <PlayerAvatar playerName={player.name} pictureUrl={playerPictures[player.id]} size="md" className="ring-2 ring-border-subtle group-hover:ring-secondary/20 transition-all" />
@@ -162,12 +176,22 @@ export default function SquadList({
                             <span className="text-sm font-black uppercase tracking-tight text-fg-high group-hover:text-secondary transition-colors" translate="no">
                               {player.name}
                             </span>
-                            <span className={`inline-flex items-center justify-center w-14 py-0.5 rounded text-[9px] font-black uppercase tracking-wider border ${getPositionColor(player.position)}`} translate="no">
-                              {groupedPositionLabel(player.position ? player.position.split('/') : []) || "—"}
-                            </span>
+                            <div className="flex items-center gap-1.5">
+                              <span className={`inline-flex items-center justify-center w-14 py-0.5 rounded text-[9px] font-black uppercase tracking-wider border ${getPositionColor(player.position)}`} translate="no">
+                                {groupedPositionLabel(player.position ? player.position.split('/') : []) || "—"}
+                              </span>
+                              {isRetired && (
+                                <span
+                                  data-testid={`retired-pill-${player.id}`}
+                                  className="inline-flex items-center justify-center px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider border border-border-subtle bg-surface-md text-fg-low"
+                                >
+                                  Retired
+                                </span>
+                              )}
+                            </div>
                           </div>
                         </div>
-                        {hasAvailabilityData && (
+                        {hasAvailabilityData && !isRetired && (
                           <div className={`flex items-center gap-2 px-3 py-1 rounded-full border transition-all ${badgeProps.cls}`}>
                             <div className={`w-1.5 h-1.5 rounded-full ${badgeProps.dotCls}`} />
                             <span className="text-[9px] font-black uppercase tracking-widest">{badgeProps.label}</span>

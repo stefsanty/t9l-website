@@ -51,10 +51,13 @@ export async function getUnpaidFeeBannerData(
     // Find the active PLM for this user in this league. Match by direct
     // leagueId column (v1.65.0 + dual-write) OR via leagueTeam.leagueId
     // (legacy backfilled rows). toGameWeek=null restricts to active.
+    // v1.87.0 — exclude retired memberships; retired players no longer
+    // owe the league fee.
     const plm = await prisma.playerLeagueMembership.findFirst({
       where: {
         playerId: user.playerId,
         toGameWeek: null,
+        retiredAt: null,
         OR: [{ leagueId }, { leagueTeam: { leagueId } }],
       },
       select: {

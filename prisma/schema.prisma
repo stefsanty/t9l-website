@@ -613,6 +613,16 @@ model PlayerLeagueMembership {
   // TEXT type — no varchar cap.
   comments String?
 
+  // v1.87.0 — per-league retirement marker. Null = active member; non-null =
+  // retired (timestamp records when the admin retired this player from this
+  // league). Retired memberships stay attached to their team and keep their
+  // historical stats but are excluded from roster-size calculations
+  // (`plannedRosterStats.currentPlayers`, the admin teams-all `playerCount`,
+  // the unpaid-fee banner). The public squad list still renders them at
+  // the bottom, greyed out, with a "RETIRED" pill. Reversible via the
+  // admin kebab "Unretire" action.
+  retiredAt DateTime?
+
   player     Player      @relation(fields: [playerId], references: [id], onDelete: Cascade)
   leagueTeam LeagueTeam? @relation(fields: [leagueTeamId], references: [id], onDelete: Cascade)
   league     League?     @relation(fields: [leagueId], references: [id], onDelete: Cascade)

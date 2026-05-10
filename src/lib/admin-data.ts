@@ -913,7 +913,11 @@ export async function getAllTeamsForAdmin(): Promise<TeamsAllRow[]> {
           league: { select: { id: true, name: true } },
           _count: {
             select: {
-              playerAssignments: true,
+              // v1.87.0 — retired memberships keep their leagueTeam link
+              // (so historical match-event scorer→team resolution still
+              // works) but don't count toward the team's `playerCount`
+              // shown on /admin/teams-all.
+              playerAssignments: { where: { retiredAt: null } },
               homeMatches: true,
               awayMatches: true,
             },
