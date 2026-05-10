@@ -816,7 +816,11 @@ model MatchEvent {
   // For kind=GOAL we expect a non-null goalType in practice; runtime
   // guards live in the admin server actions, not in the schema.
   goalType          GoalType?
-  scorerId          String
+  // v1.87.0 — scorerId is nullable so guest goals (scored by an
+  // off-roster player who is not in our DB) can be recorded with
+  // scorerId=NULL + isGuestScorer=TRUE. Real-player events keep
+  // scorerId set and isGuestScorer=FALSE.
+  scorerId          String?
   assisterId        String?
   minute            Int?
   // v1.82.0 — explicit beneficiary team (the LeagueTeam.id the goal
@@ -827,7 +831,20 @@ model MatchEvent {
   // post-v1.82.0 record beneficiary explicitly. Nullable for backward
   // compat with legacy rows: when null, the recompute falls back to the
   // scorer-team derivation. Indexed for the team-stats read paths.
+  // v1.87.0 — REQUIRED in practice when isGuestScorer=TRUE (the
+  // recompute has no scorer-team to derive from). Runtime guard lives
+  // in the server actions; schema stays nullable for legacy rows.
   beneficiaryTeamId String?
+  // v1.87.0 — guest flags. `isGuestScorer=TRUE` means the goal was
+  // scored by an off-roster player (scorerId=NULL,
+  // beneficiaryTeamId=set). `isGuestAssister=TRUE` means the assist
+  // came from an off-roster player (assisterId=NULL); a separate flag
+  // disambiguates "no assist" (isGuestAssister=FALSE, assisterId=NULL)
+  // from "guest assist" (isGuestAssister=TRUE, assisterId=NULL).
+  // Composes naturally with goalType=OWN_GOAL — a guest scoring an OG
+  // is `isGuestScorer=TRUE + goalType=OWN_GOAL`.
+  isGuestScorer   Boolean @default(false)
+  isGuestAssister Boolean @default(false)
   // Audit who entered the event — admin (their User.id) or the player
   // themselves (their User.id via session.user.playerId → the User who
   // owns that Player). NULL on backfilled rows from the Sheets import.
@@ -836,7 +853,7 @@ model MatchEvent {
   updatedAt         DateTime  @updatedAt
 
   match           Match       @relation(fields: [matchId], references: [id], onDelete: Cascade)
-  scorer          Player      @relation("EventScorer", fields: [scorerId], references: [id])
+  scorer          Player?     @relation("EventScorer", fields: [scorerId], references: [id])
   assister        Player?     @relation("EventAssister", fields: [assisterId], references: [id])
   beneficiaryTeam LeagueTeam? @relation("EventBeneficiary", fields: [beneficiaryTeamId], references: [id])
   createdBy       User?       @relation(fields: [createdById], references: [id])

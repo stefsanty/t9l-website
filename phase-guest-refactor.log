@@ -1,0 +1,433 @@
+# v1.87.0 — Guest stats refactor
+
+Tracking: refactor "Guest" from a per-team pseudo-player on the roster to an
+event-level concept on `MatchEvent`. Stale-worktree protocol ran clean
+(parent fast-forward + worktree rebase onto `origin/main` v1.86.0).
+
+## M1 — Own-goal model surfaced + plan refined
+
+### Existing own-goal model
+
+**Schema** ([prisma/schema.prisma:801-849](prisma/schema.prisma)):
+- `MatchEvent.goalType: GoalType?` (line 808). Enum values
+  `OPEN_PLAY | SET_PIECE | PENALTY | OWN_GOAL`.
+- `MatchEvent.beneficiaryTeamId: String?` (line 820, FK to `LeagueTeam`,
+  ON DELETE SET NULL, indexed) — added in v1.82.0 to record which team the
+  goal counts toward, decoupling team attribution from scorer team.
+- `MatchEvent.scorerId: String` — currently **NOT NULL**. Will need to
+  become nullable for guest goals.
+- `MatchEvent.assisterId: String?` — already nullable.
+- Legacy `Goal.isOwnGoal Boolean` column (line 865) is the pre-v1.42.0
+  model and is no longer the canonical store. New work uses
+  `MatchEvent.goalType`.
+
+**Score recompute** ([src/lib/matchScore.ts:99-133](src/lib/matchScore.ts)):
+For a non-OG event, the goal counts toward the scorer's team (or the
+explicit `beneficiaryTeamId` post-v1.82.0). For `goalType: 'OWN_GOAL'`,
+the scorer is a player on the team that conceded; the goal flips to the
+OPPOSITE team. When `beneficiaryTeamId` is set, the recompute trusts it
+directly; when null (legacy rows), it falls back to the scorer-team
+derivation (and flip-on-OG).
+
+**Stats leaderboard**
+([src/components/admin/StatsTab.tsx:106-139](src/components/admin/StatsTab.tsx)):
+`buildScorerStatsFromEvents()` filters out OG events from individual goal
+totals (`if (!isOG) ...`). The match-level scoreline is handled by
+`recomputeMatchScore`; this is the per-player leaderboard only. **OG
+assists are not credited either** (the assist increment is inside the
+`if (!isOG)` branch).
+
+**UI surfaces** — admin event editor and player goal-submit form both
+have a goal-type dropdown with "Own goal" as the fourth option, and a
+contextual hint "OG: pick from the OPPOSING team":
+- Admin: [src/components/admin/StatsTab.tsx:741-790](src/components/admin/StatsTab.tsx)
+- Player: [src/components/matchday/SubmitGoalForm.tsx:404-417](src/components/matchday/SubmitGoalForm.tsx)
+
+Both UIs flip the scorer dropdown's primary-team grouping when goal type
+is OWN_GOAL: `scorerPrimaryTeamId = goalType === 'OWN_GOAL' ?
+opposingTeamId : beneficiaryTeamId` ([SubmitGoalForm.tsx:176](src/components/matchday/SubmitGoalForm.tsx),
+[StatsTab.tsx:621](src/components/admin/StatsTab.tsx)).
+
+### Existing Guest pseudo-player situation (live prod data)
+
+Read-only inspection of prod (`scripts/_temp_inspect_guests.ts`,
+`DATABASE_URL` from `.env.production`):
+
+```
+[audit] Guest pseudo-players: 5
+  p-guest-lt-minato-2025-mariners-fc  PLMs=1  team=Mariners FC  league=l-minato-2025
+  p-guest-lt-minato-2025-fenix-fc     PLMs=1  team=Fenix FC     league=l-minato-2025
+  p-guest-lt-minato-2025-hygge-sc     PLMs=1  team=Hygge SC     league=l-minato-2025
+  p-guest-lt-minato-2025-fc-torpedo   PLMs=1  team=FC Torpedo   league=l-minato-2025
+  p-guest                             PLMs=0   (legacy single-record from v1.46 backfill)
+
+MatchEvent rows where SCORER is a guest:   3   (all OPEN_PLAY, all beneficiaryTeamId=NULL)
+MatchEvent rows where ASSISTER is a guest: 0
+```
+
+The 4 per-team Guests come from the v1.46.1 Sheets backfill
+([scripts/_archive/backfillMatchEventsFromSheet.ts:368](scripts/_archive/backfillMatchEventsFromSheet.ts)).
+The single legacy `p-guest` is from the older v1.46.0 backfill
+([scripts/_archive/sheetsToDbBackfill.ts:234](scripts/_archive/sheetsToDbBackfill.ts))
+and currently has no PLM. Per-team Guests are NOT filtered by the
+existing `if (pla.player.id === GUEST_ID) continue` in
+[src/lib/dbToPublicLeagueData.ts:143](src/lib/dbToPublicLeagueData.ts) —
+that's an exact-equals match against the legacy `p-guest`, so the new
+per-team Guests appear in the public Squad list AND in scorer/assister
+dropdowns. This is the user-visible bug that motivated the refactor.
+
+### Plan refinements vs. the brief
+
+1. **Two flags, not one.** The brief proposes a single
+   `MatchEvent.isGuest: Boolean`. That's ambiguous when an event has a
+   real scorer + a guest assister vs. a guest scorer + a real assister
+   vs. both — `assisterId IS NULL` already means "no assist", so we
+   can't reuse null-assister to encode "guest assist". Going with two
+   booleans for clean disambiguation:
+   - `MatchEvent.isGuestScorer Boolean @default(false)` — when true,
+     `scorerId` MUST be null and `beneficiaryTeamId` MUST be set.
+   - `MatchEvent.isGuestAssister Boolean @default(false)` — when true,
+     `assisterId` MUST be null. (Self-documenting; a future read can tell
+     a "no assist" event apart from "guest assist" event without
+     consulting `isGuestScorer`.)
+   - Composes naturally with `goalType=OWN_GOAL` for the four
+     combinations the user described.
+
+2. **`scorerId` becomes nullable.** Currently NOT NULL with a non-cascade
+   FK to `Player`. Migration alters to nullable; FK stays in place
+   (still ON DELETE non-cascade). `assisterId` was already nullable. New
+   write paths set `scorerId = null` whenever `isGuestScorer = true`.
+
+3. **Migration shape for the 3 affected MatchEvent rows.** All three are
+   non-OG and have `beneficiaryTeamId = NULL`. The recompute today maps
+   each to the guest's PLM team (which IS the team they "scored for"),
+   so post-migration we set `beneficiaryTeamId = <guest's PLM
+   leagueTeamId>` for each. After the rewrite, the same recompute path
+   produces the same scoreline. For OG rows (none in current data, but
+   the migration code must handle them defensively), we'd flip:
+   `beneficiaryTeamId = <opposing match team>`. Then null out
+   `scorerId`, set `isGuestScorer=true`. After all rows updated, delete
+   the 4 PLM rows pointing at guest playerIds, then delete the 5 guest
+   Player rows.
+
+4. **OG + guest interaction (no schema change beyond #1).** A guest
+   scoring an OG is just `isGuestScorer=true + goalType=OWN_GOAL` — the
+   recompute already handles the team-tally flip via `goalType`. The
+   "team the guest was filling in for" can be derived from the match:
+   non-OG → that's the beneficiary team; OG → the OTHER match team.
+   No third FK needed. End-of-season query for "guest OGs against Team
+   A's defense" is `WHERE isGuestScorer=true AND goalType=OWN_GOAL AND
+   beneficiaryTeamId = <opponent of Team A in that match>`.
+
+5. **Cleanup of legacy filters.** `src/lib/ids.ts:21 GUEST_ID = 'p-guest'`
+   and `src/lib/dbToPublicLeagueData.ts:143 if (pla.player.id ===
+   GUEST_ID) continue` are no longer needed once Guest player rows are
+   gone — remove both. Legacy `Goal`-table-based filters in
+   `src/lib/stats.ts` (4 sites checking `=== "Guest"`) are dead code
+   relative to the MatchEvent path; leave alone (out of scope, would
+   muddy the diff). Same for the `"Guest"` UI label in
+   `src/components/AssignPlayerClient.tsx:234` (a fallback label, not
+   tied to any pseudo-player).
+
+6. **Scope of `recomputeMatchScore`'s scorer-team lookup.** Today the
+   lookup uses `scorerTeamLookup` (PLM-derived). For a guest event with
+   `scorerId=null`, the lookup is irrelevant (the new code path uses
+   `beneficiaryTeamId` directly). The existing v1.82.0 logic already
+   trusts `beneficiaryTeamId` first when present, so the only change
+   needed is letting `scorerId` be null without crashing the
+   destructure — already safe (it's a string field on
+   `EventForScore`, just becomes `null`). One-line typing tweak in
+   `EventForScore.scorerId: string | null`.
+
+Plan locked in. Proceeding to M2.
+
+## M2 — Migration drafted; STOP for operator review (prod-DB drift)
+
+### Migration files written (ready, not applied)
+
+- [prisma/schema.prisma](prisma/schema.prisma) — `MatchEvent.scorerId`
+  flipped to nullable; `isGuestScorer` + `isGuestAssister` booleans
+  added with `@default(false)`; `scorer Player?` relation matches.
+- [prisma/migrations/20260518000000_match_event_guest_flags_drop_guest_pseudo_players/migration.sql](prisma/migrations/20260518000000_match_event_guest_flags_drop_guest_pseudo_players/migration.sql)
+  — schema ALTERs (additive boolean columns + drop NOT NULL) + FK
+  rebuild (Prisma's default ON DELETE policy depends on nullability,
+  so nullable scorerId becomes ON DELETE SET NULL) + data backfill +
+  PLM/Player deletion.
+
+The schema diff `npx prisma migrate diff --from-url <prod> --to-schema-datamodel`
+confirms the migration's MatchEvent changes match the schema delta:
+
+```
+ALTER TABLE "MatchEvent" DROP CONSTRAINT "MatchEvent_scorerId_fkey";
+ADD COLUMN "isGuestAssister" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN "isGuestScorer"   BOOLEAN NOT NULL DEFAULT false,
+ALTER COLUMN "scorerId" DROP NOT NULL;
+ADD CONSTRAINT "MatchEvent_scorerId_fkey" FOREIGN KEY ("scorerId")
+  REFERENCES "Player"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+```
+
+### STOP — production-DB schema drift surfaces during M2 audit
+
+A read-only audit against the Neon `production` branch (
+`ep-steep-bonus-aol2051y`, the endpoint stamped in `.env.production`
+AND in `vercel env pull production`) returns a state that contradicts
+the codebase migration history:
+
+- `_prisma_migrations` tracking table **does not exist** on the prod
+  branch. So Prisma never recorded a migration as applied there.
+- `MatchEvent` columns present: `id, matchId, kind, goalType,
+  scorerId, assisterId, minute, createdById, createdAt, updatedAt`.
+  Missing: `beneficiaryTeamId` (added in v1.82.0 by
+  `20260515000000_match_event_beneficiary`).
+- `PlayerLeagueAssignment` columns present: `id, playerId,
+  leagueTeamId, fromGameWeek, toGameWeek, createdAt, onboardingStatus,
+  joinSource`. Missing: `applicationStatus`, `position`, `positions`,
+  `preferredPositions`, `secondaryPositions`, `comments`, `idShared`,
+  `pictureUrl`, `name`, etc. (all added in v1.65.x → v1.86.0).
+- `League` columns present: `id, name, location, startDate, endDate,
+  createdAt, updatedAt, description, subdomain`. Missing every column
+  added in v1.5x → v1.86.0 (recruiting, visibility, ballType,
+  playerFormat, abbreviation, defaultLeague pointer, etc.).
+- Live website `https://t9l.me/id/minato-2025` returns the
+  `NEXT_HTTP_ERROR_FALLBACK;404` template — consistent with a
+  schema-mismatch crash falling back to a stub page.
+- The version footer `https://t9l.me/` shows `v1.85.5` — but the
+  v1.85.x feature surface depends on schema columns that don't exist
+  on the connected DB.
+
+**Even more confusing:** an EARLIER read (within this same session,
+~15 min before this audit) against the same connection string returned
+5 Guest pseudo-players + 3 MatchEvents with non-null
+`beneficiaryTeamId` selectable — the schema state I needed.
+Re-running the audit with raw SQL now confirms 0 guests + the
+beneficiary column missing. Something restored or replaced the
+`production` branch state in between, OR the connection string is now
+landing on a different physical compute endpoint than it did earlier.
+
+### Why this stops M2
+
+The migration's data-backfill UPDATE references
+`me."beneficiaryTeamId"`. If the column doesn't exist on the prod DB
+at deploy time, the entire migration aborts mid-run, leaving the new
+boolean columns added but the Guest cleanup not applied — a partial
+state that's harder to roll back than either extreme.
+
+Two possible explanations the operator can resolve:
+
+1. **The `_prisma_migrations` chain has been broken for weeks** and
+   the next `prisma migrate deploy` on prod will need to apply ALL
+   32 migrations in sequence. In that case, my migration sits at the
+   end of the chain and works correctly because every prior migration
+   runs first. But it also means the deploy is high-risk: 32 unapplied
+   migrations including v1.84.0's `LeagueVisibility` enum + `User.defaultLeagueId`
+   FK + `PlayerLeagueAssignment.preferredPositions[]` array + many
+   data-shape changes the live site already expects. We'd want a Neon
+   snapshot first and a careful per-migration sanity check.
+
+2. **The connection string in `.env.production` / Vercel env is
+   stale** and the actual live prod DB is at a different Neon endpoint
+   that DOES have the recent migrations applied. In that case the
+   audit numbers I recorded for M1 (5 guests + 3 events) reflect the
+   "real" prod state, and my migration would compose cleanly. We'd
+   want to find the live endpoint, re-confirm the audit, and proceed.
+
+### Hard constraints invoked
+
+Per CLAUDE.md "Plan-then-ship" stop conditions:
+- "data destruction" — the migration deletes 5 Player rows + 4 PLM
+  rows; user authorized this against the *seeded* Guest pseudo-players,
+  but the prod-DB I can audit doesn't even contain those rows in the
+  shape M1 documented. Authorization was for a known data shape.
+- "schema irreversibility" — `DROP NOT NULL` is additive, but the FK
+  rebuild + the conditional data backfill against a column that may
+  not exist is not.
+- "ambiguity that's actually a product decision" — operator needs to
+  decide which state is canonical before any migration ships.
+
+Per CLAUDE.md Layer 3 (Neon snapshot) on a non-additive PR: snapshot
+required before merge. The Neon free-tier branch limit (10) is
+currently hit; `neonctl branches create` returns "branches limit
+exceeded" and `neonctl branches delete` is in the agent's deny list.
+An operator would need to either retire an old `pre-pr-N-<slug>` /
+`preview/feat/migration-*` branch OR confirm the additive-only path
+without a snapshot.
+
+### Surfaced for operator decision; M3-M5 paused
+
+The migration files are written and committed locally to the worktree
+but NOT pushed. Schema edits to `prisma/schema.prisma` and the new
+migration directory under `prisma/migrations/` are the only changes so
+far. Awaiting operator guidance on:
+
+1. Which Neon endpoint reflects "live prod" today.
+2. Whether to retire one of the existing Neon branches to free a slot
+   for a v1.87.0 pre-PR snapshot.
+3. Whether to proceed assuming `prisma migrate deploy` will catch up
+   the entire chain on next deploy (rolling forward from a much-older
+   schema state).
+
+## M2 (resumed) — operator confirmed v1.86.0 incident resolved
+
+Operator clarified: the prod-DB drift I observed was the v1.86.0 failed
+deploy window — `20260510000000_plm_preferred_secondary_positions` shipped
+with `"PlayerLeagueMembership"` (Prisma model name) instead of
+`"PlayerLeagueAssignment"` (the @@map'd SQL table name). v1.86.1 hotfix
+corrected the SQL; v1.87.0 (per-league player retirement) merged
+cleanly post-fix. Worktree rebased onto `origin/main` at v1.87.0
+(commit `3a44f19`). Version bumped to v1.88.0.
+
+New CLAUDE.md rule + post-mortem at
+[docs/migration-sql-lessons.md](docs/migration-sql-lessons.md):
+- Never hand-author migration SQL — always
+  `prisma migrate dev --create-only`.
+- Migrations should not contain `DROP TABLE`, `TRUNCATE`, or
+  `DELETE FROM` outside the bootstrap `new_schema` migration.
+- `UPDATE` / `INSERT` are permitted exceptions, but table names must
+  use the `@@map` name.
+
+### Migration regenerated and split
+
+- Schema changes regenerated via
+  `npx prisma migrate diff --from-schema-datamodel <prev> --to-schema-datamodel <new> --script`
+  (Prisma-authored SQL, identical to what `migrate dev --create-only`
+  would emit). Output verified to reference only `MatchEvent` (no
+  `@@map` model in scope).
+- UPDATE backfills hand-authored but use the `@@map` name
+  `"PlayerLeagueAssignment"` per the post-mortem checklist (verified
+  by grepping `@@map` in `prisma/schema.prisma`: only
+  `PlayerLeagueMembership @@map("PlayerLeagueAssignment")` matters
+  for this migration).
+- DESTRUCTIVE deletion of seeded Guest Player + PLM rows MOVED OUT of
+  the migration into a separate operator-run script
+  [scripts/v188CleanupGuestPseudoPlayers.ts](scripts/v188CleanupGuestPseudoPlayers.ts).
+  --dry-run by default, --apply gated behind two safety checks:
+  (a) `MatchEvent.isGuestScorer` column must exist (i.e. migration
+  applied), (b) no `MatchEvent.scorerId` / `assisterId` may still
+  point at a guest playerId (i.e. UPDATE backfill ran).
+- Migration directory renamed to
+  `20260519000000_match_event_guest_flags` to avoid date collision
+  with v1.87.0's `20260518000000_plm_retired_at`.
+
+### Re-audit against now-healthy prod DB (raw SQL only)
+
+Latest applied migrations on prod (from `_prisma_migrations`):
+
+```
+20260518000000_plm_retired_at                         finished 2026-05-10T07:19Z   (v1.87.0)
+20260510000000_plm_preferred_secondary_positions      finished 2026-05-10T06:53Z   (v1.86.1 hotfix re-apply)
+20260517000000_league_visibility_user_default_league  finished 2026-05-09T05:11Z   (v1.84.0)
+20260515000000_match_event_beneficiary                finished 2026-05-09T00:33Z   (v1.82.0)
+20260516000000_plm_positions                          finished 2026-05-08T23:12Z   (v1.82.0 cont.)
+```
+
+`MatchEvent` columns confirmed: includes `beneficiaryTeamId`. Guest
+audit (matches the M1 numbers exactly):
+
+```
+Guest Player rows:                          5
+  p-guest                          (legacy single, no PLM)
+  p-guest-lt-minato-2025-fc-torpedo
+  p-guest-lt-minato-2025-fenix-fc
+  p-guest-lt-minato-2025-hygge-sc
+  p-guest-lt-minato-2025-mariners-fc
+Guest PLM rows:                             4   (one per per-team guest)
+MatchEvent rows where scorer is guest:      3   (all OPEN_PLAY, all beneficiaryTeamId=null)
+MatchEvent rows where assister is guest:    0
+```
+
+For each of the 3 guest-scorer events, the migration's UPDATE backfill
+will set `beneficiaryTeamId = scorer's PlayerLeagueAssignment.leagueTeamId`
+(non-OG branch). Spot-check matches expectation:
+
+| event           | match home | match away  | scorer's PLM team | derived beneficiary |
+|-----------------|------------|-------------|-------------------|---------------------|
+| cmopwvnzx...    | hygge-sc   | fenix-fc    | hygge-sc          | hygge-sc (home)     |
+| cmopwvow0...    | fc-torpedo | fenix-fc    | fc-torpedo        | fc-torpedo (home)   |
+| cmopwvpco...    | fenix-fc   | mariners-fc | mariners-fc       | mariners-fc (away)  |
+
+All three derive cleanly. No OG rows in current data, but the migration
+handles the OG branch defensively (flips beneficiary to opposing team).
+
+Migration ready to ship. Proceeding to M3.
+
+## M3 — schema applied + server validation
+
+### Schema delta
+
+`prisma/schema.prisma#MatchEvent`:
+- `scorerId String` → `scorerId String?`
+- `scorer Player @relation("EventScorer", ...)` → `scorer Player?`
+- `+ isGuestScorer Boolean @default(false)`
+- `+ isGuestAssister Boolean @default(false)`
+
+### Server actions updated
+
+| File | Change |
+|------|--------|
+| [src/app/admin/leagues/actions.ts](src/app/admin/leagues/actions.ts) | `adminCreateMatchEvent` + `adminUpdateMatchEvent` accept `isGuestScorer?` + `isGuestAssister?`. XOR validation — guest flag set ⇒ id null + beneficiary required. Membership lookup gated on `if (scorerId) {...}`. |
+| [src/app/matchday/[id]/actions.ts](src/app/matchday/[id]/actions.ts) | `submitOwnMatchEvent` mirrors the same XOR shape. Skips slug → id lookup when `isGuestScorer:true`. |
+| [src/lib/matchScore.ts](src/lib/matchScore.ts) | `EventForScore.scorerId` widened to `string \| null`. Score recompute treats null-scorer + null-beneficiary as a skip. Unresolved-scorer warning excludes null scorerId. |
+| [src/lib/dbToPublicLeagueData.ts](src/lib/dbToPublicLeagueData.ts) | New `isGuestPseudoPlayerId()` helper (covers both legacy `p-guest` and per-team `p-guest-<lt-id>`). Filters Squad list. Renders `Guest` as scorer/assister label. Guest pseudo-Players excluded from `playerToLt` lookup. |
+| [src/lib/ids.ts](src/lib/ids.ts) | Removed unused `GUEST_ID` constant. |
+| [src/components/admin/StatsTab.tsx](src/components/admin/StatsTab.tsx) | `EventRow.scorer` typed nullable; `isGuestScorer`/`isGuestAssister`/`beneficiaryTeamId` added. `buildScorerStatsFromEvents` skips guest events. `filterEvents` matches `"guest"` text. Event-row rendering uses guest labels. `deriveBeneficiary` prefers explicit beneficiary. |
+
+## M4 — client scorer/assist pickers
+
+Both UIs gain a "Scored by guest (off-roster)" + "Assisted by guest (off-roster)" checkbox above their respective pickers. When checked, the picker is hidden and the event records `isGuestScorer:true` (or `isGuestAssister:true`) with `scorerId` / `assisterId` NULL. Submit-button disable gates updated to `!isGuestScorer && !scorerSlug` so guest-only submits are allowed.
+
+- Admin: [src/components/admin/StatsTab.tsx](src/components/admin/StatsTab.tsx) — `data-testid="event-editor-is-guest-scorer"` + `event-editor-is-guest-assister`.
+- Player: [src/components/matchday/SubmitGoalForm.tsx](src/components/matchday/SubmitGoalForm.tsx) — `data-testid="submit-goal-is-guest-scorer"` + `submit-goal-is-guest-assister`.
+
+The toggles compose with the existing `goalType=OWN_GOAL` selector — a guest scoring an OG is `isGuestScorer=true + goalType=OWN_GOAL`. The OG hint "OG: pick from the OPPOSING team" is suppressed when the guest checkbox is on (no picker to point at).
+
+## M5 — tests + suite + push
+
+### New regression-target tests
+
+[tests/unit/v188_guest_event_refactor.test.ts](tests/unit/v188_guest_event_refactor.test.ts) — 44 tests covering:
+
+1. **Version bump.** `APP_VERSION` is `1.88.0`; CLAUDE.md current-release header lists `v1.88.0`.
+2. **Schema deltas.** `scorerId String?`, `scorer Player?`, `isGuestScorer Boolean @default(false)`, `isGuestAssister Boolean @default(false)`.
+3. **Migration shape.** Migration file exists; ALTER + DROP NOT NULL + FK rebuild present; UPDATE backfills present; uses `"PlayerLeagueAssignment"` (NEVER `"PlayerLeagueMembership"`); contains NO `DELETE FROM` / `DROP TABLE` / `TRUNCATE` per the post-mortem checklist.
+4. **Admin server-action XOR.** Input shape accepts the flags; XOR-violation messages present; flags persisted on `matchEvent.create`; membership lookup wrapped in `if (scorerId)`.
+5. **Player server-action XOR.** Same shape on `submitOwnMatchEvent`.
+6. **`computeScoreFromEvents`** — 4 behavior tests:
+   - guest goal (`scorerId=null`) tallies for explicit `beneficiaryTeamId`
+   - guest OG tallies per the WRITTEN beneficiary (caller flips for OG)
+   - two guests scoring against each other in the same match works
+   - guest event with NO beneficiaryTeamId is skipped (covers the `if (!ev.scorerId) continue` branch)
+7. **`buildScorerStatsFromEvents`** — 4 behavior tests:
+   - real-scorer goal credits the scorer + assister leaderboard rows
+   - guest goal does NOT increment any leaderboard row (regression-target: covers user spec criterion (b) "guest goal does NOT increment any player's stats")
+   - guest OG also doesn't credit any row (covers spec criterion (c) variant)
+   - guest assist on a real-scorer goal credits the scorer but NOT the assist
+8. **`dbToPublicLeagueData` filtering + labels.** `isGuestPseudoPlayerId()` exists; uses `PLAYER_ID_PREFIX + 'guest'`; filter applied in Squad-list loop AND `playerToLt` build; guest scorer/assister rendered as `'Guest'`.
+9. **EventEditor + SubmitGoalForm wiring.** Both UIs have the guest-scorer + guest-assister checkboxes with the expected `data-testid`s; both pass the flags to the server actions.
+10. **Cleanup script gates.** Script file exists; `--dry-run` default; `--apply` flag; schema gate fails when `isGuestScorer` column missing; dangling-reference gate refuses to delete if any MatchEvent still points at a guest playerId.
+
+### Sanity check (stash-pop)
+
+Stashed all v1.88.0 implementation files (schema, migration dir, all server/lib/component changes, cleanup script). Re-ran `npx vitest run tests/unit/v188_guest_event_refactor.test.ts`:
+
+```
+FAIL tests/unit/v188_guest_event_refactor.test.ts [Error: ENOENT: no such file or directory, open '...20260519000000_match_event_guest_flags/migration.sql']
+Test Files  1 failed (1)
+Tests  no tests
+```
+
+Suite fails to load — categorical regression signal (the migration file is the load-bearing piece). Restored impl + suite passes 44/44.
+
+### Full suite
+
+`npm run test:run`: `Test Files 173 passed | 1 skipped (174); Tests 3231 passed | 2 skipped (3233)`. `tsc --noEmit`: clean (one `next.config.ts` `@next/bundle-analyzer` import warning is pre-existing).
+
+### Coverage of brief's hard test criteria
+
+| User-spec criterion | Test |
+|---------------------|------|
+| (a) guest goal increments team's guest-goals count | `guest goal (scorerId=null) tallies for the explicit beneficiaryTeamId` (computeScoreFromEvents) |
+| (b) guest goal does NOT increment any player's stats | `a guest goal does NOT increment any leaderboard row` (buildScorerStatsFromEvents) |
+| (c) guest own goal increments guest-own-goals counter not regular guest-goals | The score-tally counts toward the OPPOSING team (per OWN_GOAL semantics + write-side flip), and `buildScorerStatsFromEvents` excludes it from any individual leaderboard. End-of-season query for "guest OGs against team X" is `WHERE isGuestScorer=true AND goalType=OWN_GOAL AND beneficiaryTeamId=<X's opponent>`. Covered by `a guest OG also does not credit any leaderboard row` + `guest OG (scorerId=null + goalType=OWN_GOAL) tallies per the WRITTEN beneficiary`. |
+| (d) two guests scoring against each other in same match works correctly | `two guests scoring against each other in the same match works` (computeScoreFromEvents) |
+
+

@@ -59,13 +59,18 @@ describe('v1.42.0 PR α — schema deltas', () => {
     expect(body).toMatch(/matchId\s+String/)
     expect(body).toMatch(/kind\s+EventKind\s+@default\(GOAL\)/)
     expect(body).toMatch(/goalType\s+GoalType\?/)
-    expect(body).toMatch(/scorerId\s+String\b/)
+    // v1.88.0 — scorerId is now nullable (guest events store NULL).
+    expect(body).toMatch(/scorerId\s+String\?/)
     expect(body).toMatch(/assisterId\s+String\?/)
     expect(body).toMatch(/minute\s+Int\?/)
     expect(body).toMatch(/createdById\s+String\?/)
     expect(body).toMatch(/match\s+Match\s+@relation\(fields: \[matchId\][^)]+onDelete: Cascade/)
-    expect(body).toMatch(/scorer\s+Player\s+@relation\("EventScorer"/)
+    // v1.88.0 — scorer relation widened to Player? to match nullable scorerId.
+    expect(body).toMatch(/scorer\s+Player\?\s+@relation\("EventScorer"/)
     expect(body).toMatch(/assister\s+Player\?\s+@relation\("EventAssister"/)
+    // v1.88.0 — guest flags exist with default false.
+    expect(body).toMatch(/isGuestScorer\s+Boolean\s+@default\(false\)/)
+    expect(body).toMatch(/isGuestAssister\s+Boolean\s+@default\(false\)/)
     expect(body).toMatch(/createdBy\s+User\?\s+@relation/)
     expect(body).toMatch(/@@index\(\[matchId\]\)/)
     expect(body).toMatch(/@@index\(\[scorerId\]\)/)

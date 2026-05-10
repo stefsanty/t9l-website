@@ -328,7 +328,10 @@ describe('v1.48.0 SubmitGoalForm — green CTA + scorer dropdown', () => {
 
   it('still calls submitOwnMatchEvent — passing scorerPlayerSlug from form input', () => {
     expect(FORM).toMatch(/submitOwnMatchEvent\(/)
-    expect(FORM).toMatch(/scorerPlayerSlug:\s*scorerSlug/)
+    // v1.88.0 — scorerPlayerSlug is conditionally null when isGuestScorer
+    // is true (guest goals carry no scorer id). Match either the legacy
+    // direct pass-through or the new ternary.
+    expect(FORM).toMatch(/scorerPlayerSlug:\s*(?:isGuestScorer\s*\?\s*null\s*:\s*)?scorerSlug/)
   })
 })
 

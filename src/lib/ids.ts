@@ -18,7 +18,6 @@
 
 export const PLAYER_ID_PREFIX = 'p-'
 export const TEAM_ID_PREFIX = 't-'
-export const GUEST_ID = 'p-guest'
 
 /**
  * Strip a known prefix from an id if present. Idempotent on already-bare ids.
