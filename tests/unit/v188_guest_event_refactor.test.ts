@@ -76,12 +76,14 @@ const CLEANUP_SCRIPT_PATH = join(
 )
 
 describe('v1.88.0 — version bump', () => {
-  it('APP_VERSION constant is 1.88.0', () => {
-    expect(VERSION_SRC).toMatch(/APP_VERSION\s*=\s*'1\.88\.0'/)
+  it('APP_VERSION constant is at least 1.88.0', () => {
+    // v1.88.1 patched the cleanup-script scope; both 1.88.0 and 1.88.x
+    // are valid for this PR's load-bearing change.
+    expect(VERSION_SRC).toMatch(/APP_VERSION\s*=\s*'1\.88\.\d+'/)
   })
 
-  it('CLAUDE.md current-release header lists v1.88.0', () => {
-    expect(CLAUDE_MD).toMatch(/Current release.*v?1\.88\.0/i)
+  it('CLAUDE.md current-release header lists v1.88.x', () => {
+    expect(CLAUDE_MD).toMatch(/Current release.*v?1\.88\.\d+/i)
   })
 })
 
