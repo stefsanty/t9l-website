@@ -86,6 +86,20 @@ export interface PlayedStatus {
   };
 }
 
+/**
+ * v1.91.0 — Per-(matchday, team) external/league guest counts (Add Guests
+ * feature). Guests are positionless pseudo-participants that bump the
+ * "going" count, render as "Guest #N" tiles in the formation pitch (filled
+ * into back-most non-GK slots via the v1.89.1 pass 2.5), and appear in a
+ * dedicated "Guests" subsection of the list view. Empty teams/matchdays
+ * are absent from the map (treated as zero).
+ */
+export interface MatchdayGuestCounts {
+  [matchdayId: string]: {
+    [teamId: string]: { externalCount: number; leagueCount: number };
+  };
+}
+
 export interface LeagueTableRow {
   team: Team;
   played: number;
@@ -134,4 +148,6 @@ export interface LeagueData {
   availability: Availability;
   availabilityStatuses: AvailabilityStatuses;
   played: PlayedStatus;
+  /** v1.91.0 — Add Guests feature. Empty when no guests are recorded. */
+  guestCounts: MatchdayGuestCounts;
 }

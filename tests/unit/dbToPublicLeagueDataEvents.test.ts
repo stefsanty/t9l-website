@@ -20,11 +20,15 @@ import { describe, expect, it, vi, beforeEach } from 'vitest'
 
 const findFirstMock = vi.fn()
 const plaFindManyMock = vi.fn()
+const guestFindManyMock = vi.fn().mockResolvedValue([])
 
 vi.mock('@/lib/prisma', () => ({
   prisma: {
     league: { findFirst: findFirstMock },
     playerLeagueMembership: { findMany: plaFindManyMock },
+    // v1.91.0 — MatchdayGuestEntry fetch added; tests don't exercise it,
+    // so a default empty resolution keeps existing assertions unchanged.
+    matchdayGuestEntry: { findMany: guestFindManyMock },
   },
 }))
 

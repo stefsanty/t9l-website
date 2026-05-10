@@ -19,6 +19,7 @@ import type {
   Matchday,
   Goal,
   LeagueData,
+  MatchdayGuestCounts,
 } from '@/types'
 
 /**
@@ -48,6 +49,7 @@ const EMPTY_RESULT: DbToPublicLeagueDataResult = {
     availability: {},
     availabilityStatuses: {},
     played: {},
+    guestCounts: {},
   },
   gameWeeks: [],
 }
@@ -346,6 +348,36 @@ export async function dbToPublicLeagueData(
     startDate: gw.startDate,
   }))
 
+  // v1.91.0 — Add Guests feature. Per-(matchday, team) external/league
+  // guest counts. One round-trip indexed by gameWeekId; only this league's
+  // game weeks are fetched.
+  const gwIdToMdId = new Map<string, string>(
+    league.gameWeeks.map((gw) => [gw.id, `md${gw.weekNumber}`]),
+  )
+  const guestCounts: MatchdayGuestCounts = {}
+  if (league.gameWeeks.length > 0) {
+    const guestRows = await prisma.matchdayGuestEntry.findMany({
+      where: { gameWeekId: { in: league.gameWeeks.map((gw) => gw.id) } },
+      select: {
+        gameWeekId: true,
+        leagueTeamId: true,
+        externalCount: true,
+        leagueCount: true,
+      },
+    })
+    for (const row of guestRows) {
+      const mdId = gwIdToMdId.get(row.gameWeekId)
+      const teamSlug = ltToSlug.get(row.leagueTeamId)
+      if (!mdId || !teamSlug) continue
+      if (row.externalCount === 0 && row.leagueCount === 0) continue
+      if (!guestCounts[mdId]) guestCounts[mdId] = {}
+      guestCounts[mdId][teamSlug] = {
+        externalCount: row.externalCount,
+        leagueCount: row.leagueCount,
+      }
+    }
+  }
+
   return {
     data: {
       teams,
@@ -355,6 +387,7 @@ export async function dbToPublicLeagueData(
       availability: {},
       availabilityStatuses: {},
       played: {},
+      guestCounts,
     },
     gameWeeks,
   }
