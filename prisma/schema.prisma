@@ -360,7 +360,9 @@ model LeagueTeam {
   playerAssignments PlayerLeagueMembership[]
   homeMatches       Match[]                  @relation("HomeTeam")
   awayMatches       Match[]                  @relation("AwayTeam")
-  goals             Goal[]
+  // v1.90.0 — back-relation `goals Goal[]` removed; the Goal table was
+  // dropped in v1.90.0 (writers/readers gone in v1.89.0). All goal data
+  // lives on MatchEvent now (see beneficiaryEvents below).
   // v1.82.0 — back-relation for MatchEvent.beneficiaryTeamId.
   beneficiaryEvents MatchEvent[]             @relation("EventBeneficiary")
 
@@ -428,8 +430,10 @@ model Player {
   // through this PR; rename to `leagueMemberships` is deferred to v1.65.4
   // (the cleanup PR) to keep this stage purely additive.
   leagueAssignments PlayerLeagueMembership[]
-  goals             Goal[]
-  assists           Assist[]
+  // v1.90.0 — back-relations `goals Goal[]` and `assists Assist[]`
+  // removed; the Goal + Assist tables were dropped in v1.90.0 (writers/
+  // readers gone in v1.89.0). Goal/assist participation now lives on
+  // MatchEvent via `scoredEvents` / `assistedEvents` below.
   availability      Availability[]
   playerStats       PlayerLeagueStat[]
 
@@ -786,8 +790,9 @@ model Match {
   homeTeam LeagueTeam   @relation("HomeTeam", fields: [homeTeamId], references: [id])
   awayTeam LeagueTeam   @relation("AwayTeam", fields: [awayTeamId], references: [id])
   venue    Venue?       @relation(fields: [venueId], references: [id])
-  goals    Goal[]
-  assists  Assist[]
+  // v1.90.0 — back-relations `goals Goal[]` and `assists Assist[]`
+  // removed; the Goal + Assist tables were dropped in v1.90.0 (writers/
+  // readers gone in v1.89.0). All goal data is on `events` (MatchEvent).
   events   MatchEvent[]
 
   @@unique([gameWeekId, homeTeamId, awayTeamId])
@@ -883,39 +888,15 @@ enum MatchStatus {
   POSTPONED
 }
 
-model Goal {
-  id            String   @id @default(cuid())
-  matchId       String
-  playerId      String
-  scoringTeamId String
-  minute        Int?
-  isOwnGoal     Boolean  @default(false)
-  createdAt     DateTime @default(now())
-
-  match       Match      @relation(fields: [matchId], references: [id], onDelete: Cascade)
-  player      Player     @relation(fields: [playerId], references: [id])
-  scoringTeam LeagueTeam @relation(fields: [scoringTeamId], references: [id])
-  assist      Assist?
-
-  @@index([matchId])
-  @@index([playerId])
-  @@index([scoringTeamId])
-}
-
-model Assist {
-  id        String   @id @default(cuid())
-  matchId   String
-  playerId  String
-  goalId    String   @unique
-  createdAt DateTime @default(now())
-
-  match  Match  @relation(fields: [matchId], references: [id], onDelete: Cascade)
-  player Player @relation(fields: [playerId], references: [id])
-  goal   Goal   @relation(fields: [goalId], references: [id])
-
-  @@index([matchId])
-  @@index([playerId])
-}
+// v1.90.0 — `model Goal` and `model Assist` REMOVED (step 2 of the legacy
+// table cleanup begun in v1.89.0). Step 1 dropped every writer + reader,
+// confirming the tables were orphaned; this PR drops them via the matching
+// `drop_legacy_goal_assist` migration. All goal/assist data has lived on
+// MatchEvent since v1.42.0; the legacy tables only ever held the Sheets-
+// import backfill mirror, which became dead weight after v1.46.1 made
+// MatchEvent the canonical source. Acknowledged orphan rows that vanish:
+// `wk1-mariners-fc-vs-fenix-fc-7` Goal + 4 mirror Goals + 3 mirror Assists
+// pointing at the legacy `p-guest` Player (intentional — see PR description).
 
 model Availability {
   id           String              @id @default(cuid())
