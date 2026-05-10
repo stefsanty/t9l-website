@@ -2052,7 +2052,6 @@ export async function adminCreateMatchEvent(input: {
     paths: [
       `/admin/leagues/${leagueId}/stats`,
       `/admin/leagues/${leagueId}/schedule`,
-      `/admin/matches/${matchId}`,
     ],
   })
   return created
@@ -2172,7 +2171,6 @@ export async function adminUpdateMatchEvent(input: {
     paths: [
       `/admin/leagues/${leagueId}/stats`,
       `/admin/leagues/${leagueId}/schedule`,
-      `/admin/matches/${existing.matchId}`,
     ],
   })
 }
@@ -2207,7 +2205,6 @@ export async function adminDeleteMatchEvent(input: {
     paths: [
       `/admin/leagues/${leagueId}/stats`,
       `/admin/leagues/${leagueId}/schedule`,
-      `/admin/matches/${existing.matchId}`,
     ],
   })
 }
@@ -2245,7 +2242,6 @@ export async function adminSetMatchScoreOverride(input: {
     paths: [
       `/admin/leagues/${leagueId}/stats`,
       `/admin/leagues/${leagueId}/schedule`,
-      `/admin/matches/${matchId}`,
     ],
   })
 }

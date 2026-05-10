@@ -283,19 +283,18 @@ export const getLeaguePlayers = unstable_cache(
   { revalidate: 30, tags: ['leagues'] },
 )
 
+/**
+ * v1.43.0 — admin Stats page data fetch (excluding the events-first surface,
+ * which `getLeagueEvents` covers).
+ *
+ * v1.89.0 — `prisma.goal.findMany` dropped: the legacy `Goal` table is being
+ * decommissioned, and `StatsTab` already consumes `events` (MatchEvent rows)
+ * for the leaderboard/scorer stats. The remaining tuple feeds the league
+ * table + matchday filter; `getLeagueEvents` covers events + roster.
+ */
 export const getLeagueStats = unstable_cache(
   async (leagueId: string) =>
     Promise.all([
-      prisma.goal.findMany({
-        where: { match: { leagueId } },
-        include: {
-          player: true,
-          scoringTeam: { include: { team: true } },
-          match: { include: { gameWeek: true } },
-          assist: { include: { player: true } },
-        },
-        take: 5000,
-      }),
       prisma.match.findMany({
         where: { leagueId },
         include: { gameWeek: { select: { weekNumber: true } } },
@@ -454,30 +453,6 @@ export async function getAllPlayers() {
       },
     },
     orderBy: { name: 'asc' },
-  })
-}
-
-export async function getMatchesWithGoals() {
-  return prisma.match.findMany({
-    include: {
-      gameWeek: true,
-      homeTeam: { include: { team: true } },
-      awayTeam: { include: { team: true } },
-      goals: { include: { player: true, assist: { include: { player: true } } } },
-    },
-    orderBy: [{ gameWeek: { weekNumber: 'asc' } }, { id: 'asc' }],
-  })
-}
-
-export async function getMatch(id: string) {
-  return prisma.match.findUnique({
-    where: { id },
-    include: {
-      gameWeek: true,
-      homeTeam: { include: { team: true } },
-      awayTeam: { include: { team: true } },
-      goals: { include: { player: true, assist: { include: { player: true } } } },
-    },
   })
 }
 

@@ -169,12 +169,16 @@ describe('adminCreateMatchEvent', () => {
     expect(recomputeMock).toHaveBeenCalledWith(expect.anything(), MATCH)
     expect(revalidateMock).toHaveBeenCalledTimes(1)
     expect(revalidateMock.mock.calls[0][0].domain).toBe('admin')
+    // v1.89.0 — `/admin/matches/${MATCH}` removed from revalidate paths
+    // (route deleted; only the stats + schedule pages remain).
     expect(revalidateMock.mock.calls[0][0].paths).toEqual(
       expect.arrayContaining([
         `/admin/leagues/${LEAGUE}/stats`,
         `/admin/leagues/${LEAGUE}/schedule`,
-        `/admin/matches/${MATCH}`,
       ]),
+    )
+    expect(revalidateMock.mock.calls[0][0].paths).not.toContain(
+      `/admin/matches/${MATCH}`,
     )
   })
 

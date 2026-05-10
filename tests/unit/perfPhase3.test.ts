@@ -87,17 +87,16 @@ describe('perf phase 3 — H1 part 2: every <Image fill /> declares sizes=', () 
 describe('perf phase 3 — M2: defensive take on admin-data findMany hot paths', () => {
   const adminData = read('src/lib/admin-data.ts')
 
-  it('goal.findMany has take: 5000', () => {
-    // Pre-fix: `prisma.goal.findMany({ where: { match: { leagueId } }, ... })`
-    // had no take. A league accruing several seasons of goals could grow
-    // this query unboundedly; the cached payload then balloons too. The
-    // defensive ceiling caps the foot-gun at a hard error rather than a
-    // slow page.
+  it('goal.findMany no longer present (v1.89.0 — legacy Goal reader removed)', () => {
+    // v1.80.4 — `prisma.goal.findMany` was capped at `take: 5000` to bound
+    // a previously unbounded reader inside `getLeagueStats`. v1.89.0 — the
+    // call is removed outright as part of the legacy `Goal` table cleanup;
+    // `StatsTab` reads MatchEvent rows for the leaderboard, and the only
+    // consumer of the goals prop (`void goals`) was already dead.
     const goalCall = adminData.match(
       /prisma\.goal\.findMany\(\{[\s\S]*?\}\)/m,
     )
-    expect(goalCall, 'goal.findMany block not found').not.toBeNull()
-    expect(goalCall![0]).toMatch(/take:\s*5000\b/)
+    expect(goalCall, 'goal.findMany should be removed in v1.89.0').toBeNull()
   })
 
   it('matchEvent.findMany has take: 5000', () => {

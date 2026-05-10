@@ -76,12 +76,20 @@ const CLEANUP_SCRIPT_PATH = join(
 )
 
 describe('v1.88.0 — version bump', () => {
-  it('APP_VERSION constant is 1.88.0', () => {
-    expect(VERSION_SRC).toMatch(/APP_VERSION\s*=\s*'1\.88\.0'/)
+  // Forward-compat shape (mirrors v1.87.0 pin) — passes for any APP_VERSION
+  // ≥ 1.88.0 so subsequent PRs don't have to touch this file just to keep
+  // the suite green. The v1.88.0 ship event itself is recorded in the
+  // CLAUDE.md ledger.
+  it('APP_VERSION is 1.88.0 or higher', () => {
+    expect(VERSION_SRC).toMatch(
+      /APP_VERSION\s*=\s*['"]1\.(8[8-9]|9\d?)\.\d+['"]/,
+    )
   })
 
-  it('CLAUDE.md current-release header lists v1.88.0', () => {
-    expect(CLAUDE_MD).toMatch(/Current release.*v?1\.88\.0/i)
+  it('CLAUDE.md current-release header lists v1.88.0 or higher', () => {
+    expect(CLAUDE_MD).toMatch(
+      /\*\*Current release:\*\*\s+v1\.(8[8-9]|9\d?)\.\d+\./,
+    )
   })
 })
 
