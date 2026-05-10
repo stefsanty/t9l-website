@@ -15,18 +15,6 @@ import { groupPlayersByPrimaryTeam } from '@/lib/playerOrdering'
 
 type GoalType = 'OPEN_PLAY' | 'SET_PIECE' | 'PENALTY' | 'OWN_GOAL'
 
-interface GoalRow {
-  id: string
-  playerId: string
-  scoringTeamId: string
-  isOwnGoal: boolean
-  matchId: string
-  player: { id: string; name: string | null }
-  scoringTeam: { id: string; team: { name: string } }
-  match: { gameWeek: { weekNumber: number } }
-  assist: { player: { id: string; name: string | null } } | null
-}
-
 function maybeName(name: string | null): string {
   return name ?? 'Unnamed'
 }
@@ -93,7 +81,6 @@ interface EventLeagueTeam {
 
 interface StatsTabProps {
   leagueId: string
-  goals: GoalRow[]
   matches: MatchRow[]
   leagueTeams: LeagueTeamRef[]
   gameWeekCount: number
@@ -142,30 +129,6 @@ export function buildScorerStatsFromEvents(
       if (!map.has(aKey)) {
         map.set(aKey, { name: maybeName(ev.assister.name), team: '', goals: 0, assists: 0 })
       }
-      map.get(aKey)!.assists++
-    }
-  }
-
-  return Array.from(map.values()).sort((a, b) => b.goals - a.goals || b.assists - a.assists)
-}
-
-// Legacy helper retained for backward compat with any caller still passing
-// Goal[] in. New callers prefer `buildScorerStatsFromEvents`.
-function buildScorerStats(goals: GoalRow[], matchdayFilter: number | null) {
-  const filtered = matchdayFilter
-    ? goals.filter((g) => g.match.gameWeek.weekNumber === matchdayFilter)
-    : goals
-
-  const map = new Map<string, { name: string; team: string; goals: number; assists: number }>()
-
-  for (const g of filtered) {
-    if (g.isOwnGoal) continue
-    const key = g.player.id
-    if (!map.has(key)) map.set(key, { name: maybeName(g.player.name), team: g.scoringTeam.team.name, goals: 0, assists: 0 })
-    map.get(key)!.goals++
-    if (g.assist) {
-      const aKey = g.assist.player.id
-      if (!map.has(aKey)) map.set(aKey, { name: maybeName(g.assist.player.name), team: '', goals: 0, assists: 0 })
       map.get(aKey)!.assists++
     }
   }
@@ -270,7 +233,6 @@ export function allLeaguePlayers(
 
 export default function StatsTab({
   leagueId,
-  goals,
   matches,
   leagueTeams,
   gameWeekCount,
@@ -286,17 +248,10 @@ export default function StatsTab({
   const [editorOpen, setEditorOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
 
-  // v1.44.0 (PR δ) — leaderboard reads from MatchEvent. The legacy
-  // `buildScorerStats` is kept exported so any future caller wanting the
-  // Goal/Assist-backed shape can still reach it; the StatsTab itself
-  // prefers events. `_legacyScorers` left as a dev-only sanity reference
-  // (compiles out under tree-shake).
-  void buildScorerStats
   const scorers = useMemo(
     () => buildScorerStatsFromEvents(events, matchdayFilter),
     [events, matchdayFilter],
   )
-  void goals // retained on the props surface for backward compat
   const table = useMemo(() => buildLeagueTable(leagueTeams, matches, matchdayFilter), [leagueTeams, matches, matchdayFilter])
   const filteredEvents = useMemo(() => filterEvents(events, matchdayFilter, search), [events, matchdayFilter, search])
   const editingEvent = editingId ? events.find((e) => e.id === editingId) ?? null : null

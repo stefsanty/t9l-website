@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { LayoutDashboard, Users, Calendar, Settings, Menu, ArrowLeft } from 'lucide-react'
+import { LayoutDashboard, Users, Settings, Menu, ArrowLeft } from 'lucide-react'
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -11,7 +11,6 @@ import { cn } from '@/lib/utils'
 const links = [
   { href: '/admin',          label: 'Dashboard',       icon: LayoutDashboard },
   { href: '/admin/players',  label: 'Players',          icon: Users },
-  { href: '/admin/matches',  label: 'Matches',          icon: Calendar },
   { href: '/admin/settings', label: 'League Settings',  icon: Settings },
 ]
 
