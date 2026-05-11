@@ -19,7 +19,7 @@ import type {
   Matchday,
   Goal,
   LeagueData,
-  MatchdayGuestCounts,
+  MatchdayGuests,
 } from '@/types'
 
 /**
@@ -49,7 +49,7 @@ const EMPTY_RESULT: DbToPublicLeagueDataResult = {
     availability: {},
     availabilityStatuses: {},
     played: {},
-    guestCounts: {},
+    guests: {},
   },
   gameWeeks: [],
 }
@@ -432,33 +432,43 @@ export async function dbToPublicLeagueData(
     startDate: gw.startDate,
   }))
 
-  // v1.91.0 — Add Guests feature. Per-(matchday, team) external/league
-  // guest counts. One round-trip indexed by gameWeekId; only this league's
-  // game weeks are fetched.
+  // v1.93.0 — per-row typed guest entries (replaces v1.91.0 counts).
+  // One round-trip indexed by gameWeekId; only this league's game weeks
+  // are fetched. Ordered server-side: EXTERNAL rows asc by displayOrder,
+  // then LEAGUE rows asc by displayOrder. Consumers iterate without re-sort.
   const gwIdToMdId = new Map<string, string>(
     league.gameWeeks.map((gw) => [gw.id, `md${gw.weekNumber}`]),
   )
-  const guestCounts: MatchdayGuestCounts = {}
+  const guests: MatchdayGuests = {}
   if (league.gameWeeks.length > 0) {
-    const guestRows = await prisma.matchdayGuestEntry.findMany({
+    const guestRows = await prisma.matchdayGuest.findMany({
       where: { gameWeekId: { in: league.gameWeeks.map((gw) => gw.id) } },
+      orderBy: [{ type: 'asc' }, { displayOrder: 'asc' }],
       select: {
+        id: true,
         gameWeekId: true,
         leagueTeamId: true,
-        externalCount: true,
-        leagueCount: true,
+        type: true,
+        positions: true,
+        displayOrder: true,
       },
     })
+    // `type: 'asc'` puts EXTERNAL before LEAGUE alphabetically. The
+    // brief asks LEAGUE first in the modal UI, but the public-data
+    // shape preserves the data order (EXTERNAL, LEAGUE) — the UI
+    // re-orders presentationally per its sectioning rules.
     for (const row of guestRows) {
       const mdId = gwIdToMdId.get(row.gameWeekId)
       const teamSlug = ltToSlug.get(row.leagueTeamId)
       if (!mdId || !teamSlug) continue
-      if (row.externalCount === 0 && row.leagueCount === 0) continue
-      if (!guestCounts[mdId]) guestCounts[mdId] = {}
-      guestCounts[mdId][teamSlug] = {
-        externalCount: row.externalCount,
-        leagueCount: row.leagueCount,
-      }
+      if (!guests[mdId]) guests[mdId] = {}
+      if (!guests[mdId][teamSlug]) guests[mdId][teamSlug] = []
+      guests[mdId][teamSlug].push({
+        id: row.id,
+        type: row.type as 'EXTERNAL' | 'LEAGUE',
+        positions: row.positions,
+        displayOrder: row.displayOrder,
+      })
     }
   }
 
@@ -471,7 +481,7 @@ export async function dbToPublicLeagueData(
       availability: {},
       availabilityStatuses: {},
       played: {},
-      guestCounts,
+      guests,
     },
     gameWeeks,
   }

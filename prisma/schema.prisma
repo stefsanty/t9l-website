@@ -42,6 +42,17 @@ enum LeagueVisibility {
   PUBLIC_OPEN
 }
 
+// v1.93.0 — Guest type for the per-(matchday, team) MatchdayGuest rows
+// that replaced the v1.91.0 count-only `MatchdayGuestEntry` model.
+// EXTERNAL = non-T9L people; LEAGUE = T9L users from another team
+// filling in for this match. Used by the table-based AddGuestsModal
+// (two sectioned lists) and by the synthesised pseudo-Player labels
+// in the pitch + list views ("Ext Guest N" / "League Guest N").
+enum GuestType {
+  EXTERNAL
+  LEAGUE
+}
+
 model User {
   id              String   @id @default(cuid())
   lineId          String?  @unique
@@ -107,10 +118,12 @@ model User {
   // compiles.
   authoredEvents MatchEvent[]
 
-  // v1.91.0 — audit trail for who recorded a MatchdayGuestEntry. Nullable
-  // on the entry side (FK ON DELETE SET NULL) so deleting a User keeps
-  // their guest entries with `createdById = NULL`.
-  authoredGuestEntries MatchdayGuestEntry[]
+  // v1.93.0 — audit trail for who created a MatchdayGuest row. Nullable
+  // on the guest side (FK ON DELETE SET NULL) so deleting a User keeps
+  // their guest rows with `createdById = NULL`. Renamed from
+  // `authoredGuestEntries` (v1.91.0) when the count-only model was
+  // replaced with per-row guest entries.
+  authoredGuests MatchdayGuest[]
 
   // v1.84.0 — homepage redesign phase 1a. Per-user preferred league for
   // the persona-aware apex. Nullable; the column is purely additive in
@@ -370,8 +383,9 @@ model LeagueTeam {
   // lives on MatchEvent now (see beneficiaryEvents below).
   // v1.82.0 — back-relation for MatchEvent.beneficiaryTeamId.
   beneficiaryEvents MatchEvent[]             @relation("EventBeneficiary")
-  // v1.91.0 — per-matchday guest counts for this team (Add Guests feature).
-  guestEntries      MatchdayGuestEntry[]
+  // v1.93.0 — per-matchday guest rows for this team. Replaces the
+  // count-only `guestEntries` back-relation from v1.91.0.
+  guests            MatchdayGuest[]
 
   @@unique([leagueId, teamId])
 }
@@ -760,8 +774,9 @@ model GameWeek {
   venue        Venue?         @relation(fields: [venueId], references: [id])
   matches      Match[]
   availability Availability[]
-  // v1.91.0 — per-team guest counts for this matchday (Add Guests feature).
-  guestEntries MatchdayGuestEntry[]
+  // v1.93.0 — per-team guest rows for this matchday. Replaces the
+  // count-only `guestEntries` back-relation from v1.91.0.
+  guests       MatchdayGuest[]
 
   @@unique([leagueId, weekNumber])
   @@index([leagueId])
@@ -1016,32 +1031,41 @@ enum InviteKind {
   PERSONAL
 }
 
-// v1.91.0 — Add Guests feature. Each team can record N external guests
-// (non-T9L people) and N league guests (T9L users not on this team's
-// roster) per matchday. Counts increase the team's "going" tally and
-// flow through to the formation pitch (synthesized as positionless
-// pseudo-players that pass 2.5 places into back-most non-GK slots) and
-// the list view (rendered in a dedicated "Guests" subsection).
+// v1.93.0 — per-guest rows replacing the v1.91.0 count-only
+// `MatchdayGuestEntry` model. Each row represents a single guest
+// joining a team on a matchday, with a `type` (EXTERNAL = non-T9L
+// people, LEAGUE = T9L users from another team) and their own
+// `positions[]` so the formation pitch + list view can treat each
+// guest like any other player.
 //
-// Scope: any authenticated user can submit; no admin or team-membership
-// gate. Upsert-by-(gameWeekId, leagueTeamId) means a single row per
-// team per matchday — re-submission overwrites counts and updates
-// createdById/updatedAt to the latest submitter.
-model MatchdayGuestEntry {
-  id            String   @id @default(cuid())
-  gameWeekId    String
-  leagueTeamId  String
-  externalCount Int      @default(0)
-  leagueCount   Int      @default(0)
-  createdById   String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+// `displayOrder` (0..N within each type) drives stable row ordering
+// in the modal table and the synthesised pseudo-Player labels
+// ("Ext Guest 1", "Ext Guest 2", ...). The label numbering is purely
+// presentational — `displayOrder` itself is rebuilt server-side on
+// every `setMatchdayGuests` call so the modal "delete row N" path
+// can't leave gaps.
+//
+// Scope: any authenticated user can submit; no admin or team-
+// membership gate. Replacement-by-set means each call wipes all
+// existing rows for (gameWeekId, leagueTeamId) and inserts the
+// submitted list in one transaction — the same semantics the
+// upsert-by-key MatchdayGuestEntry shape carried, but row-shaped.
+model MatchdayGuest {
+  id           String   @id @default(cuid())
+  gameWeekId   String
+  leagueTeamId String
+  type         GuestType
+  positions    String[] @default([])
+  displayOrder Int      @default(0)
+  createdById  String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   gameWeek   GameWeek   @relation(fields: [gameWeekId], references: [id], onDelete: Cascade)
   leagueTeam LeagueTeam @relation(fields: [leagueTeamId], references: [id], onDelete: Cascade)
   createdBy  User?      @relation(fields: [createdById], references: [id], onDelete: SetNull)
 
-  @@unique([gameWeekId, leagueTeamId])
+  @@index([gameWeekId, leagueTeamId, type])
   @@index([gameWeekId])
   @@index([leagueTeamId])
 }

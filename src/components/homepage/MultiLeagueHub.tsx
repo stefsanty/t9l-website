@@ -79,7 +79,7 @@ export default async function MultiLeagueHub({
       plannedRosterStats={bundle.plannedRosterStats ?? null}
       leagueDetails={bundle.leagueDetails ?? null}
       topSlot={topSlot}
-      guestCounts={bundle.data.guestCounts}
+      guests={bundle.data.guests}
     />
   )
 }

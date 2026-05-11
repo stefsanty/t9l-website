@@ -52,13 +52,15 @@ const AVAILABILITY_SRC = readFileSync(
   'utf8',
 )
 
-describe('v1.92.0 — version bump', () => {
-  it('APP_VERSION is 1.92.2', () => {
-    expect(VERSION_SRC).toMatch(/APP_VERSION\s*=\s*'1\.92\.2'/)
+describe('v1.92.0 — version bump (sanity check; later PRs may bump higher)', () => {
+  it('APP_VERSION is 1.92.0 or higher', () => {
+    expect(VERSION_SRC).toMatch(
+      /APP_VERSION\s*=\s*['"]1\.(9[2-9]|[1-9]\d{2,})\.\d+['"]/,
+    )
   })
 
-  it('CLAUDE.md current-release header lists v1.92.2', () => {
-    expect(CLAUDE_MD).toMatch(/Current release.*v?1\.92\.2/i)
+  it('CLAUDE.md current-release header lists a v1.9x.x release', () => {
+    expect(CLAUDE_MD).toMatch(/Current release.*v?1\.9\d+\.\d+/i)
   })
 })
 
@@ -202,17 +204,22 @@ describe('v1.92.0 — bucketConfirmedPlayers (MatchdayAvailability) uses score-b
     expect(groups[0]!.bucket).toBe('GK')
   })
 
-  it('guest pseudo-players land in GUEST bucket, never UNB even though they have no positions', () => {
+  it('guest pseudo-players land in a guest sub-bucket, never UNB even when positions empty', () => {
+    // v1.93.0 — GUEST bucket split into LEAGUE_GUEST / EXTERNAL_GUEST.
+    // Synthesised guest carries type via name prefix.
     const real = mkPlayer({ id: 'p1', name: 'Real', preferredPositions: ['ST'] })
-    const [guest] = synthesizeGuestPlayers('t', 1)
+    const [guest] = synthesizeGuestPlayers('t', [
+      { id: 'g1', type: 'EXTERNAL', positions: [], displayOrder: 0 },
+    ])
     const groups = bucketConfirmedPlayers([real.id, guest!.id], [real, guest!])
     const buckets = groups.map((g) => g.bucket)
     expect(buckets).toContain('FW')
-    expect(buckets).toContain('GUEST')
+    expect(buckets).toContain('EXTERNAL_GUEST')
     expect(buckets).not.toContain('UNB')
   })
 
-  it('bucket-order in output respects GK→DF→MF→FW→UNB→GUEST', () => {
+  it('bucket-order in output respects GK→DF→MF→FW→UNB→LEAGUE_GUEST→EXTERNAL_GUEST', () => {
+    // v1.93.0 — guests now ordered LEAGUE_GUEST first, EXTERNAL_GUEST second.
     const players: Player[] = [
       mkPlayer({ id: 'fw', name: 'F', preferredPositions: ['ST'] }),
       mkPlayer({ id: 'df', name: 'D', preferredPositions: ['CB'] }),
@@ -220,13 +227,18 @@ describe('v1.92.0 — bucketConfirmedPlayers (MatchdayAvailability) uses score-b
       mkPlayer({ id: 'mf', name: 'M', preferredPositions: ['CM'] }),
       mkPlayer({ id: 'unb', name: 'U', preferredPositions: [], position: null }),
     ]
-    const [guest] = synthesizeGuestPlayers('t', 1)
-    players.push(guest!)
+    const [leagueGuest, extGuest] = synthesizeGuestPlayers('t', [
+      { id: 'g1', type: 'LEAGUE', positions: [], displayOrder: 0 },
+      { id: 'g2', type: 'EXTERNAL', positions: [], displayOrder: 0 },
+    ])
+    players.push(leagueGuest!, extGuest!)
     const groups = bucketConfirmedPlayers(
       players.map((p) => p.id),
       players,
     )
-    expect(groups.map((g) => g.bucket)).toEqual(['GK', 'DF', 'MF', 'FW', 'UNB', 'GUEST'])
+    expect(groups.map((g) => g.bucket)).toEqual([
+      'GK', 'DF', 'MF', 'FW', 'UNB', 'LEAGUE_GUEST', 'EXTERNAL_GUEST',
+    ])
   })
 
   it('BUCKET_LABEL["UNB"] is "Other" (renders as a human-readable section)', () => {
@@ -321,8 +333,13 @@ describe('v1.92.0 — list-view pill renders avatar (and skips for guests)', () 
     expect(AVAILABILITY_SRC).toMatch(/inline-flex items-center gap-1\.5/)
   })
 
-  it('synthesised guest players have image: undefined (no avatar rendered)', () => {
-    const [guest] = synthesizeGuestPlayers('t', 1)
-    expect(guest!.image).toBeUndefined()
+  it('synthesised guest players have image: null (no avatar rendered)', () => {
+    // v1.93.0 — guests now carry explicit `image: null` (was `undefined`)
+    // for type-consistency with the public Player shape. The avatar
+    // gate in PlayerPillAvatar accepts both null and undefined.
+    const [guest] = synthesizeGuestPlayers('t', [
+      { id: 'g1', type: 'EXTERNAL', positions: [], displayOrder: 0 },
+    ])
+    expect(guest!.image).toBeNull()
   })
 })
