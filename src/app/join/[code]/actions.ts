@@ -14,6 +14,7 @@ import { applicationReceivedEmail } from '@/lib/emailTemplates'
 import {
   legacyPositionFromArray,
   normalizePositions,
+  validatePreferredSecondary,
   type BallType,
 } from '@/lib/positions'
 
@@ -583,8 +584,13 @@ export interface CompleteOnboardingWithIdInput {
   /**
    * v1.82.0 — multi-position. Validated server-side against the
    * league's `ballType` vocabulary.
+   * @deprecated v1.93.0 — prefer `preferredPositions` + `secondaryPositions`.
    */
   positions?: ReadonlyArray<string>
+  /** v1.93.0 — preferred positions (≤ 3). */
+  preferredPositions?: ReadonlyArray<string>
+  /** v1.93.0 — secondary positions (uncapped, disjoint from preferred). */
+  secondaryPositions?: ReadonlyArray<string>
   idFrontUrl: string
   idBackUrl: string
   profilePictureUrl?: string | null
@@ -639,18 +645,6 @@ export async function completeOnboardingWithId(
     throw new Error('Please enter a valid email address')
   }
 
-  const idPrefix = `/player-id/${input.playerId}/`
-  const picPrefix = `/player-profile/${input.playerId}/`
-  if (!isOwnedBlobUrl(input.idFrontUrl, idPrefix)) {
-    throw new Error('Front of ID is required')
-  }
-  if (!isOwnedBlobUrl(input.idBackUrl, idPrefix)) {
-    throw new Error('Back of ID is required')
-  }
-  if (input.profilePictureUrl && !isOwnedBlobUrl(input.profilePictureUrl, picPrefix)) {
-    throw new Error('profilePictureUrl is not for this player')
-  }
-
   const player = await prisma.player.findUnique({
     where: { id: input.playerId },
     select: { id: true, userId: true },
@@ -665,19 +659,45 @@ export async function completeOnboardingWithId(
     // v1.79.0 — `league.name` is needed for the application-received
     // email queued below. Cheap join (LeagueInvite → League is 1:1).
     // v1.82.0 — also pull `ballType` for position-vocabulary validation.
+    // v1.93.0 — also pull `idRequired` so the ID gate honours the
+    // per-league setting (server-side trust; the form prop is hint-only).
     select: {
       leagueId: true,
-      league: { select: { name: true, ballType: true } },
+      league: { select: { name: true, ballType: true, idRequired: true } },
     },
   })
   if (!invite) throw new Error('Invite not found')
 
+  const idPrefix = `/player-id/${input.playerId}/`
+  const picPrefix = `/player-profile/${input.playerId}/`
+  if (invite.league?.idRequired ?? true) {
+    if (!isOwnedBlobUrl(input.idFrontUrl, idPrefix)) {
+      throw new Error('Front of ID is required')
+    }
+    if (!isOwnedBlobUrl(input.idBackUrl, idPrefix)) {
+      throw new Error('Back of ID is required')
+    }
+  }
+  if (input.profilePictureUrl && !isOwnedBlobUrl(input.profilePictureUrl, picPrefix)) {
+    throw new Error('profilePictureUrl is not for this player')
+  }
+
   // v1.82.0 — validate positions against the league's vocabulary.
-  const validatedPositions = normalizePositions(
-    input.positions,
+  // v1.93.0 — preferred + secondary split with cap on preferred.
+  const usingNewShape =
+    input.preferredPositions !== undefined ||
+    input.secondaryPositions !== undefined
+  const positionsResult = validatePreferredSecondary(
+    usingNewShape ? input.preferredPositions ?? [] : input.positions ?? [],
+    usingNewShape ? input.secondaryPositions ?? [] : [],
     invite.league?.ballType as BallType | null,
   )
-  const legacyPosition = legacyPositionFromArray(validatedPositions)
+  if (!positionsResult.ok) {
+    throw new Error(positionsResult.error)
+  }
+  const validatedPreferred = positionsResult.preferred
+  const validatedSecondary = positionsResult.secondary
+  const legacyPosition = legacyPositionFromArray(validatedPreferred)
 
   // v1.78.0 — only WRITE the submitted email if `User.email` is currently
   // null. Mirrors `registerToLeague` — verified pre-existing addresses
@@ -703,22 +723,33 @@ export async function completeOnboardingWithId(
       await tx.user.update({
         where: { id: userId },
         data: {
-          idFrontUrl: input.idFrontUrl,
-          idBackUrl: input.idBackUrl,
-          idUploadedAt: new Date(),
+          // v1.93.0 — only persist ID-upload columns when the league
+          // required ID. When `league.idRequired === false` the form
+          // sends empty URLs; we leave the columns unchanged.
+          ...((invite.league?.idRequired ?? true)
+            ? {
+                idFrontUrl: input.idFrontUrl,
+                idBackUrl: input.idBackUrl,
+                idUploadedAt: new Date(),
+              }
+            : {}),
           // v1.78.0 — conditionally write email; do not overwrite a
           // pre-existing verified address.
           ...(shouldWriteEmail ? { email: trimmedEmail } : {}),
         },
       })
       // v1.82.0 — dual-write positions[] + legacy enum.
-      // v1.86.0 — also dual-write preferredPositions; secondaryPositions stays [].
+      // v1.86.0 — preferredPositions / secondaryPositions populated
+      // independently when the new shape is supplied.
+      // v1.93.0 — `positions[]` mirrors preferred (matches the v1.93.0
+      // convention that positions[] = preferred for legacy single-array
+      // readers).
       await tx.playerLeagueMembership.updateMany({
         where: { playerId: input.playerId, toGameWeek: null },
         data: {
-          positions: validatedPositions,
-          preferredPositions: validatedPositions,
-          secondaryPositions: [],
+          positions: validatedPreferred,
+          preferredPositions: validatedPreferred,
+          secondaryPositions: validatedSecondary,
           position: legacyPosition,
         },
       })

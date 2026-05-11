@@ -122,8 +122,10 @@ describe('v1.33.0 (PR ε) — AddPlayerDialog wiring', () => {
     expect(cleaned).toMatch(/data-testid="add-player-name"/)
     expect(cleaned).toMatch(/data-testid="add-player-team"/)
     // v1.82.0 — Position dropdown replaced with the chip
-    // PositionMultiSelect component using `testIdPrefix="add-player-position"`.
-    expect(cleaned).toMatch(/testIdPrefix=['"]add-player-position['"]/)
+    // PositionMultiSelect component.
+    // v1.93.0 — split into preferred (capped) + secondary pickers.
+    expect(cleaned).toMatch(/testIdPrefix=['"]add-player-preferred['"]/)
+    expect(cleaned).toMatch(/testIdPrefix=['"]add-player-secondary['"]/)
   })
 
   it('v1.82.0 — wires PositionMultiSelect with the league ballType', () => {

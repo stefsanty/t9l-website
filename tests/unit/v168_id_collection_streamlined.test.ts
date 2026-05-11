@@ -42,12 +42,14 @@ describe('v1.68.0 shared RegistrationFields component', () => {
     expect(src).toMatch(/'use client'/)
   })
 
-  it('exposes the four field testids (name + position + ID front + ID back)', () => {
+  it('exposes the field testids (name + preferred/secondary + ID front + ID back)', () => {
     expect(src).toMatch(/data-testid="registration-fields"/)
     expect(src).toMatch(/data-testid="registration-name"/)
     // v1.82.0 — Position dropdown replaced with the chip
-    // PositionMultiSelect component using `testIdPrefix="registration-position"`.
-    expect(src).toMatch(/testIdPrefix="registration-position"/)
+    // PositionMultiSelect component.
+    // v1.93.0 — split into preferred (capped) + secondary pickers.
+    expect(src).toMatch(/testIdPrefix="registration-preferred"/)
+    expect(src).toMatch(/testIdPrefix="registration-secondary"/)
     expect(src).toMatch(/(?:data-)?testid="registration-id-front"/)
     expect(src).toMatch(/(?:data-)?testid="registration-id-back"/)
   })
@@ -60,16 +62,16 @@ describe('v1.68.0 shared RegistrationFields component', () => {
     expect(picBlock.length).toBeGreaterThan(1)
   })
 
-  it('blocks submit until name + idFront + idBack present (regression target — picture is NOT in the gate)', () => {
+  it('blocks submit until name + (when idRequired) idFront + idBack present, picture stays optional', () => {
     const code = stripComments(src)
-    expect(code).toMatch(/submitDisabled\s*=[\s\S]*!name\.trim\(\)/)
-    expect(code).toMatch(/submitDisabled\s*=[\s\S]*!idFrontFile/)
-    expect(code).toMatch(/submitDisabled\s*=[\s\S]*!idBackFile/)
-    const submitDisabledLine = code
-      .split('\n')
-      .find((l) => l.includes('submitDisabled'))
-    expect(submitDisabledLine).toBeDefined()
-    expect(submitDisabledLine).not.toMatch(/!picFile/)
+    // v1.93.0 — submitDisabled now spans multiple lines (preferred-cap +
+    // conditional ID gate); match against the multi-line expression
+    // rather than a single line.
+    expect(code).toMatch(/submitDisabled\s*=[\s\S]*?!name\.trim\(\)/)
+    // v1.93.0 — idFront/idBack gating only when `idRequired` is true.
+    expect(code).toMatch(/idRequired && \(!idFrontFile \|\| !idBackFile\)/)
+    // Picture is NOT in the gate (regression target).
+    expect(code).not.toMatch(/!picFile/)
   })
 
   it('caps file sizes (8MB ID, 5MB picture)', () => {

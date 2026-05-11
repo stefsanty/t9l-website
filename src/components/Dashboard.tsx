@@ -150,6 +150,23 @@ interface DashboardProps {
    */
   recruiting?: boolean;
   /**
+   * v1.94.0 — when true, the recruiting banner mounts regardless of the
+   * `recruiting` prop's value. Used by the new `/id/<slug>/join` route
+   * (which gates on `League.privateJoinLinkEnabled`) to force the banner
+   * on for PRIVATE / PUBLIC_CLOSED leagues without flipping the league's
+   * visibility. The `recruitingState` + `league` props are still required
+   * for the banner to render anything meaningful; this just bypasses the
+   * `visibility !== 'PUBLIC_OPEN'` gate at the call site.
+   */
+  forceRecruitingBanner?: boolean;
+  /**
+   * v1.94.0 — when true, render a subtle "Private join link" indicator
+   * above the recruiting banner so the admin (and curious visitors)
+   * know this is the privileged path. Visible only on the
+   * `/id/<slug>/join` route.
+   */
+  showPrivateJoinIndicator?: boolean;
+  /**
    * v1.64.0 — context-aware recruiting state. When `recruiting === true`,
    * the page-level RSC computes the viewer's relationship to this league
    * via `getRecruitingViewerState(leagueId)` and threads the result
@@ -235,6 +252,8 @@ export default function Dashboard({
   leagueSlug,
   preseasonMode = false,
   recruiting = false,
+  forceRecruitingBanner = false,
+  showPrivateJoinIndicator = false,
   recruitingState,
   league,
   unpaidFee,
@@ -351,11 +370,21 @@ export default function Dashboard({
               actionable for an existing roster member; recruiting is
               for prospective members. */}
           <UnpaidFeeBanner data={unpaidFee ?? null} />
-          {recruiting && league && recruitingState && (
+          {showPrivateJoinIndicator && (
+            <div
+              className="mb-2 inline-flex items-center gap-1.5 rounded-full bg-surface-md/80 border border-border-default px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-fg-mid"
+              data-testid="private-join-indicator"
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-fg-mid" />
+              Private join link
+            </div>
+          )}
+          {(recruiting || forceRecruitingBanner) && league && recruitingState && (
             <RecruitingBanner
               league={league}
               viewer={recruitingState}
               leagueSlug={leagueSlug}
+              forceRecruitingBanner={forceRecruitingBanner}
             />
           )}
           {/* v1.83.1 — Pre-season-only "League registration closes in X days"

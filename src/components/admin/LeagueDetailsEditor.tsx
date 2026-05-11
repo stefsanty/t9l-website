@@ -58,6 +58,15 @@ interface Props {
   initialUnlimitedSubstitutions: boolean
   initialOrganizerMessage: string | null
   initialShowLeagueDetails: boolean
+  // v1.93.0 — per-league ID-document requirement on onboarding.
+  initialIdRequired: boolean
+  // v1.94.0 — admin-toggleable "private join link" — when on, the route
+  // at `/id/<slug>/join` mounts the league page with the recruiting
+  // banner forced on regardless of `visibility`. `leagueSubdomain` is
+  // needed so the editor can render the resulting URL with a
+  // copy-to-clipboard affordance.
+  initialPrivateJoinLinkEnabled: boolean
+  leagueSubdomain: string | null
   // v1.75.5 — Fee fields (absorbed from LeagueFeesEditor).
   initialDefaultFee: number
   initialPositionFees: ReadonlyArray<FeeRow>
@@ -85,6 +94,9 @@ export default function LeagueDetailsEditor({
   initialUnlimitedSubstitutions,
   initialOrganizerMessage,
   initialShowLeagueDetails,
+  initialIdRequired,
+  initialPrivateJoinLinkEnabled,
+  leagueSubdomain,
   initialDefaultFee,
   initialPositionFees,
   initialPlannedPlayersPerTeam,
@@ -116,6 +128,11 @@ export default function LeagueDetailsEditor({
   const [showLeagueDetails, setShowLeagueDetails] = useState<boolean>(
     initialShowLeagueDetails,
   )
+  const [idRequired, setIdRequired] = useState<boolean>(initialIdRequired)
+  const [privateJoinLinkEnabled, setPrivateJoinLinkEnabled] = useState<boolean>(
+    initialPrivateJoinLinkEnabled,
+  )
+  const [copied, setCopied] = useState<boolean>(false)
 
   // Fee fields (absorbed from LeagueFeesEditor)
   const [defaultFee, setDefaultFee] = useState<number>(initialDefaultFee)
@@ -174,6 +191,8 @@ export default function LeagueDetailsEditor({
             unlimitedSubstitutions,
             organizerMessage: organizerMessage.trim() === '' ? null : organizerMessage,
             showLeagueDetails,
+            idRequired,
+            privateJoinLinkEnabled,
           }),
           updateLeagueFeeSettings({
             leagueId,
@@ -539,6 +558,105 @@ export default function LeagueDetailsEditor({
         >
           {unlimitedSubstitutions ? 'On' : 'Off'}
         </button>
+      </div>
+
+      {/* v1.93.0 — ID-required toggle. Default-on preserves the legacy
+          ID-mandatory behavior; admins flip off for leagues that don't
+          need ID-on-file for venue booking. */}
+      <div
+        className="flex items-center justify-between gap-3 pt-2"
+        data-testid="league-details-id-required-toggle"
+      >
+        <div>
+          <p className="text-sm font-medium text-admin-text">Require ID document on onboarding</p>
+          <p className="text-xs text-admin-text3">When off, applicants and invitees can submit without uploading an ID.</p>
+        </div>
+        <button
+          type="button"
+          aria-pressed={idRequired}
+          onClick={() => setIdRequired(!idRequired)}
+          className={cn(
+            'rounded-full px-4 py-1.5 text-xs font-bold uppercase tracking-widest border transition-colors',
+            idRequired
+              ? 'border-admin-green bg-admin-green/15 text-admin-text'
+              : 'border-admin-border bg-admin-surface2 text-admin-text3',
+          )}
+          data-testid="league-details-id-required-button"
+        >
+          {idRequired ? 'On' : 'Off'}
+        </button>
+      </div>
+
+      {/* v1.94.0 — Private join link. Toggle + (when on) URL display
+          with a copy-to-clipboard affordance. The URL persists across
+          page refreshes via `initialPrivateJoinLinkEnabled`; the live
+          state mirrors the toggle so the URL appears as soon as the
+          admin flips it on (no Save round-trip required to preview). */}
+      <div className="space-y-2" data-testid="league-details-private-join-link-section">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-medium text-admin-text">Enable Private Join Link</p>
+            <p className="text-xs text-admin-text3">
+              Exposes a slug-based URL that forces the recruiting banner on, even for
+              PRIVATE or PUBLIC_CLOSED leagues. Share with intended recipients.
+            </p>
+          </div>
+          <button
+            type="button"
+            aria-pressed={privateJoinLinkEnabled}
+            onClick={() => {
+              setPrivateJoinLinkEnabled(!privateJoinLinkEnabled)
+              setCopied(false)
+            }}
+            className={cn(
+              'rounded-full px-4 py-1.5 text-xs font-bold uppercase tracking-widest border transition-colors',
+              privateJoinLinkEnabled
+                ? 'border-admin-green bg-admin-green/15 text-admin-text'
+                : 'border-admin-border bg-admin-surface2 text-admin-text3',
+            )}
+            data-testid="league-details-private-join-link-button"
+          >
+            {privateJoinLinkEnabled ? 'On' : 'Off'}
+          </button>
+        </div>
+        {privateJoinLinkEnabled && leagueSubdomain && (
+          <div
+            className="flex items-center gap-2 bg-admin-surface2 border border-admin-border rounded-md px-3 py-2"
+            data-testid="league-details-private-join-link-url-row"
+          >
+            <code
+              className="flex-1 truncate font-mono text-xs text-admin-text"
+              data-testid="league-details-private-join-link-url"
+            >
+              t9l.me/id/{leagueSubdomain}/join
+            </code>
+            <button
+              type="button"
+              onClick={async () => {
+                const url = `https://t9l.me/id/${leagueSubdomain}/join`
+                try {
+                  await navigator.clipboard.writeText(url)
+                  setCopied(true)
+                  setTimeout(() => setCopied(false), 1500)
+                } catch {
+                  // Clipboard API can fail on insecure contexts / older browsers; ignore.
+                }
+              }}
+              className="inline-flex items-center gap-1 rounded border border-admin-border bg-admin-surface px-2 py-1 text-xs font-medium text-admin-text2 hover:border-admin-border2 hover:text-admin-text transition-colors"
+              data-testid="league-details-private-join-link-copy"
+            >
+              {copied ? 'Copied!' : 'Copy'}
+            </button>
+          </div>
+        )}
+        {privateJoinLinkEnabled && !leagueSubdomain && (
+          <p
+            className="text-xs text-admin-red"
+            data-testid="league-details-private-join-link-no-subdomain"
+          >
+            Set a league subdomain first — the join URL needs a slug to resolve.
+          </p>
+        )}
       </div>
 
       {/* 13 — Show on homepage toggle */}

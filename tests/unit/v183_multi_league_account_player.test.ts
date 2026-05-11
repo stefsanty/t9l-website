@@ -122,7 +122,11 @@ describe('v1.83.0 — server actions split into profile + per-league', () => {
 
   it('updatePlayerLeague validates positions per the league ballType', () => {
     const src = stripComments(read(ACTIONS))
-    expect(src).toMatch(/normalizePositions/)
+    // v1.93.0 — `normalizePositions` no longer called directly; the
+    // legacy + new shapes both funnel through `validatePreferredSecondary`
+    // which internally uses `normalizePositions`. The dual-write of the
+    // legacy enum still goes through `legacyPositionFromArray`.
+    expect(src).toMatch(/validatePreferredSecondary/)
     expect(src).toMatch(/legacyPositionFromArray/)
   })
 

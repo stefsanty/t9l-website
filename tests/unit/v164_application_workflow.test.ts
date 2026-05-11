@@ -406,17 +406,20 @@ describe('v1.64.0 — ApplyToLeagueModal', () => {
     expect(APPLY_MODAL_SRC).toMatch(/aria-modal="true"/)
   })
 
-  it('exposes form testids (name + position + submit + error)', () => {
+  it('exposes form testids (name + position pickers + submit + error)', () => {
     expect(APPLY_MODAL_SRC).toMatch(/data-testid="apply-name"/)
     // v1.82.0 — Position dropdown replaced with the chip
-    // PositionMultiSelect component using `testIdPrefix="apply-position"`.
-    expect(APPLY_MODAL_SRC).toMatch(/testIdPrefix="apply-position"/)
+    // PositionMultiSelect component.
+    // v1.93.0 — split into preferred (capped) + secondary pickers.
+    expect(APPLY_MODAL_SRC).toMatch(/testIdPrefix="apply-preferred"/)
+    expect(APPLY_MODAL_SRC).toMatch(/testIdPrefix="apply-secondary"/)
     expect(APPLY_MODAL_SRC).toMatch(/data-testid="apply-submit"/)
     expect(APPLY_MODAL_SRC).toMatch(/data-testid="apply-error"/)
   })
 
-  it('v1.82.0 — calls applyToLeague with leagueId + name + positions[]', () => {
-    expect(APPLY_MODAL_SRC).toMatch(/applyToLeague\(\{[\s\S]*?leagueId[\s\S]*?name[\s\S]*?positions/)
+  it('v1.93.0 — calls applyToLeague with leagueId + name + preferredPositions + secondaryPositions', () => {
+    expect(APPLY_MODAL_SRC).toMatch(/applyToLeague\(\{[\s\S]*?leagueId[\s\S]*?name[\s\S]*?preferredPositions/)
+    expect(APPLY_MODAL_SRC).toMatch(/applyToLeague\(\{[\s\S]*?secondaryPositions/)
   })
 
   // v1.81.0 — `applyToLeague` now redirects server-side to

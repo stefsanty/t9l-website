@@ -30,6 +30,7 @@ import { applicationApprovedEmail } from '@/lib/emailTemplates'
 import {
   legacyPositionFromArray,
   normalizePositions,
+  validatePreferredSecondary,
   type BallType,
 } from '@/lib/positions'
 
@@ -420,6 +421,18 @@ export async function updateLeagueDetails(input: {
   unlimitedSubstitutions?: boolean
   organizerMessage?: string | null
   showLeagueDetails?: boolean
+  /**
+   * v1.93.0 — per-league ID-document requirement during onboarding. When
+   * false, the recruit + invite forms render without the ID upload
+   * section and accept submissions without files.
+   */
+  idRequired?: boolean
+  /**
+   * v1.94.0 — admin-toggleable private join link. When true,
+   * `/id/<slug>/join` renders the league page with the recruiting
+   * banner forced on, regardless of `visibility`.
+   */
+  privateJoinLinkEnabled?: boolean
 }): Promise<void> {
   await assertAdmin()
   if (!input.leagueId) throw new Error('leagueId is required')
@@ -505,6 +518,18 @@ export async function updateLeagueDetails(input: {
       throw new Error('showLeagueDetails must be a boolean')
     }
     data.showLeagueDetails = input.showLeagueDetails
+  }
+  if (input.idRequired !== undefined) {
+    if (typeof input.idRequired !== 'boolean') {
+      throw new Error('idRequired must be a boolean')
+    }
+    data.idRequired = input.idRequired
+  }
+  if (input.privateJoinLinkEnabled !== undefined) {
+    if (typeof input.privateJoinLinkEnabled !== 'boolean') {
+      throw new Error('privateJoinLinkEnabled must be a boolean')
+    }
+    data.privateJoinLinkEnabled = input.privateJoinLinkEnabled
   }
 
   await prisma.league.update({
@@ -953,8 +978,14 @@ export async function adminUpdatePlayerPosition(input: {
    * v1.82.0 — multi-position. Validated against the league's
    * `ballType` vocabulary. Empty array clears the player's positions
    * for every membership of theirs in this league.
+   * @deprecated v1.93.0 — prefer `preferredPositions` + `secondaryPositions`.
+   *   Legacy callers may still pass `positions`; treated as preferred.
    */
-  positions: ReadonlyArray<string>
+  positions?: ReadonlyArray<string>
+  /** v1.93.0 — preferred positions (≤ 3). */
+  preferredPositions?: ReadonlyArray<string>
+  /** v1.93.0 — secondary positions (uncapped, disjoint from preferred). */
+  secondaryPositions?: ReadonlyArray<string>
 }): Promise<void> {
   await assertAdmin()
   const { playerId, leagueId } = input
@@ -968,23 +999,37 @@ export async function adminUpdatePlayerPosition(input: {
   })
   if (!league) throw new Error('League not found')
 
-  const validatedPositions = normalizePositions(
-    input.positions,
+  // v1.93.0 — accept either the legacy single-array shape or the new
+  // preferred/secondary split. `validatePreferredSecondary` enforces
+  // the ≤ MAX_PREFERRED_POSITIONS cap server-side.
+  const usingNewShape =
+    input.preferredPositions !== undefined ||
+    input.secondaryPositions !== undefined
+  const positionsResult = validatePreferredSecondary(
+    usingNewShape ? input.preferredPositions ?? [] : input.positions ?? [],
+    usingNewShape ? input.secondaryPositions ?? [] : [],
     league.ballType as BallType | null,
   )
-  const legacyPosition = legacyPositionFromArray(validatedPositions)
+  if (!positionsResult.ok) {
+    throw new Error(positionsResult.error)
+  }
+  const validatedPreferred = positionsResult.preferred
+  const validatedSecondary = positionsResult.secondary
+  const legacyPosition = legacyPositionFromArray(validatedPreferred)
 
   // v1.65.4 — position now lives on PlayerLeagueMembership, not on
   // Player. Update every PLM for this player in this league (typically
   // one — the active assignment; players rarely have multiple PLMs in
   // the same league at once).
-  // v1.86.0 — also dual-write preferredPositions; secondaryPositions stays [].
+  // v1.86.0 — preferredPositions + secondaryPositions populated
+  // independently. v1.93.0 — `positions[]` mirrors preferred (matches
+  // v1.93.0 convention for legacy single-array readers).
   await prisma.playerLeagueMembership.updateMany({
     where: { playerId, leagueId },
     data: {
-      positions: validatedPositions,
-      preferredPositions: validatedPositions,
-      secondaryPositions: [],
+      positions: validatedPreferred,
+      preferredPositions: validatedPreferred,
+      secondaryPositions: validatedSecondary,
       position: legacyPosition,
     },
   })
@@ -1362,8 +1407,13 @@ export async function adminCreatePlayer(input: {
    * `ballType` vocabulary. Empty array means "no position recorded".
    * Legacy `position?: string | null` callers are still accepted via
    * the single-string normalisation in the helper.
+   * @deprecated v1.93.0 — prefer `preferredPositions` + `secondaryPositions`.
    */
   positions?: ReadonlyArray<string> | null
+  /** v1.93.0 — preferred positions (≤ 3). */
+  preferredPositions?: ReadonlyArray<string> | null
+  /** v1.93.0 — secondary positions (uncapped, disjoint from preferred). */
+  secondaryPositions?: ReadonlyArray<string> | null
   leagueTeamId?: string | null
   fromGameWeek?: number | null
 }): Promise<{ id: string }> {
@@ -1388,11 +1438,21 @@ export async function adminCreatePlayer(input: {
   })
   if (!leagueRow) throw new Error('League not found')
 
-  const validatedPositions = normalizePositions(
-    input.positions ?? [],
+  // v1.93.0 — accept preferred/secondary split or legacy single-array.
+  const usingNewShape =
+    input.preferredPositions !== undefined ||
+    input.secondaryPositions !== undefined
+  const positionsResult = validatePreferredSecondary(
+    usingNewShape ? input.preferredPositions ?? [] : input.positions ?? [],
+    usingNewShape ? input.secondaryPositions ?? [] : [],
     leagueRow.ballType as BallType | null,
   )
-  const legacyPosition = legacyPositionFromArray(validatedPositions)
+  if (!positionsResult.ok) {
+    throw new Error(positionsResult.error)
+  }
+  const validatedPreferred = positionsResult.preferred
+  const validatedSecondary = positionsResult.secondary
+  const legacyPosition = legacyPositionFromArray(validatedPreferred)
 
   // If an assignment is requested, the leagueTeam must belong to this league
   // (else admin in League A could pre-stage a player on a team in League B).
@@ -1427,10 +1487,11 @@ export async function adminCreatePlayer(input: {
           fromGameWeek,
           joinSource: 'ADMIN',
           // v1.82.0 — dual-write positions[] + legacy enum.
-          // v1.86.0 — also dual-write preferredPositions.
-          positions: validatedPositions,
-          preferredPositions: validatedPositions,
-          secondaryPositions: [],
+          // v1.86.0 — preferredPositions / secondaryPositions populated
+          // independently. v1.93.0 — `positions[]` mirrors preferred.
+          positions: validatedPreferred,
+          preferredPositions: validatedPreferred,
+          secondaryPositions: validatedSecondary,
           position: legacyPosition,
         },
       })

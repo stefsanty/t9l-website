@@ -107,11 +107,11 @@ describe('v1.78.0 — RegistrationFields component', () => {
     expect(REG_FIELDS).toMatch(/await onSubmit\(\{[\s\S]*email:\s*trimmedEmail/)
   })
 
-  it('email field renders BEFORE the position field (order check)', () => {
+  it('email field renders BEFORE the preferred-position picker (order check)', () => {
     const emailIdx = REG_FIELDS.indexOf('data-testid="registration-email"')
-    // v1.82.0 — Position dropdown replaced with the chip
-    // PositionMultiSelect using `testIdPrefix="registration-position"`.
-    const positionIdx = REG_FIELDS.indexOf('testIdPrefix="registration-position"')
+    // v1.82.0 — Position dropdown replaced with the chip PositionMultiSelect.
+    // v1.93.0 — split into preferred + secondary; preferred renders first.
+    const positionIdx = REG_FIELDS.indexOf('testIdPrefix="registration-preferred"')
     expect(emailIdx).toBeGreaterThan(-1)
     expect(positionIdx).toBeGreaterThan(-1)
     expect(emailIdx).toBeLessThan(positionIdx)

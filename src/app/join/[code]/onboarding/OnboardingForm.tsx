@@ -33,6 +33,12 @@ interface Props {
   initialPositions?: ReadonlyArray<string>
   /** v1.82.0 — league format. Drives the position chip vocabulary. */
   ballType?: BallType | null
+  /**
+   * v1.93.0 — when false, the league has disabled the ID-upload
+   * requirement on onboarding. Threaded down so RegistrationFields can
+   * hide the ID front/back section. Server action re-checks.
+   */
+  idRequired?: boolean
 }
 
 export default function OnboardingForm({
@@ -42,6 +48,7 @@ export default function OnboardingForm({
   initialEmail,
   initialPositions = [],
   ballType = null,
+  idRequired = true,
 }: Props) {
   async function handleSubmit(input: RegistrationFieldsSubmit) {
     await completeOnboardingWithId({
@@ -49,7 +56,8 @@ export default function OnboardingForm({
       playerId,
       name: input.name,
       email: input.email,
-      positions: input.positions,
+      preferredPositions: input.preferredPositions,
+      secondaryPositions: input.secondaryPositions,
       idFrontUrl: input.idFrontUrl,
       idBackUrl: input.idBackUrl,
       profilePictureUrl: input.profilePictureUrl,
@@ -66,6 +74,7 @@ export default function OnboardingForm({
         initialEmail={initialEmail}
         initialPositions={initialPositions}
         ballType={ballType}
+        idRequired={idRequired}
         submitLabel="Save and finish"
         uploadPathPrefix={`player-id/${playerId}`}
         picturePathPrefix={`player-profile/${playerId}`}

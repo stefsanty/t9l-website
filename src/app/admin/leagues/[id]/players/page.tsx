@@ -68,6 +68,11 @@ export default async function PlayersPage({ params }: Props) {
     // v1.82.0 — multi-position canonical field. Empty array == "no
     // position recorded".
     positions: string[]
+    // v1.93.0 — preferred + secondary split surfaced for the admin
+    // Edit panel's split-picker. Falls back to positions[] when the
+    // PLM has not been re-saved since v1.86.0 (legacy dual-write).
+    preferredPositions: string[]
+    secondaryPositions: string[]
     // v1.37.0 (PR ι) — user-uploaded profile picture (Vercel Blob URL).
     profilePictureUrl: string | null
     // Legacy LINE-CDN mirror written on /assign-player link.
@@ -156,8 +161,11 @@ export default async function PlayersPage({ params }: Props) {
         // v1.65.4 — position now lives on PLM, not Player. Read from the
         // PLM row (a.position) directly.
         // v1.82.0 — also propagate the canonical positions[] array.
+        // v1.93.0 — propagate the preferred/secondary split.
         position: a.position ?? null,
         positions: a.positions ?? [],
+        preferredPositions: a.preferredPositions ?? [],
+        secondaryPositions: a.secondaryPositions ?? [],
         profilePictureUrl: a.player.profilePictureUrl ?? null,
         pictureUrl: a.player.pictureUrl ?? null,
         userId: a.player.userId ?? null,
@@ -217,6 +225,9 @@ export default async function PlayersPage({ params }: Props) {
       position: p.position ?? null,
       // v1.82.0 — multi-position from the PLM row.
       positions: p.positions ?? [],
+      // v1.93.0 — preferred + secondary split.
+      preferredPositions: p.preferredPositions ?? [],
+      secondaryPositions: p.secondaryPositions ?? [],
       profilePictureUrl: p.profilePictureUrl ?? null,
       pictureUrl: p.pictureUrl ?? null,
       userId: p.userId ?? null,
