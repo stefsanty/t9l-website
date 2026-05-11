@@ -1,0 +1,266 @@
+# v1.93.0 — Guest feature rework (per-row + typed + positions)
+
+Source brief: replace v1.91.0 `MatchdayGuestEntry` (single row per
+(matchday, team) with `externalCount + leagueCount` integers) with
+per-guest rows on a new `MatchdayGuest` model. Each guest gets a
+`type` (EXTERNAL or LEAGUE), their own `positions[]`, and a
+`displayOrder` for stable per-section ordering. UI swings from
+two-number-input modal to a table-based modal with per-row position
+multi-select, "+ Add row" buttons per section, and per-row delete.
+Pitch + list views treat each `MatchdayGuest` as a pseudo-Player with
+positions, so the 6-pass formation algorithm places guests with
+chosen positions through passes 1–2b and guests without positions
+through pass 2.5 (v1.89.1 back-most non-GK fill).
+
+## M1 — Schema + migration
+
+### Schema deltas (`prisma/schema.prisma`)
+
+1. New `GuestType` enum next to `LeagueVisibility`:
+   ```
+   enum GuestType {
+     EXTERNAL
+     LEAGUE
+   }
+   ```
+2. `MatchdayGuestEntry` model REPLACED by `MatchdayGuest`:
+   - `id String @id @default(cuid())`
+   - `gameWeekId String` (FK GameWeek, ON DELETE CASCADE)
+   - `leagueTeamId String` (FK LeagueTeam, ON DELETE CASCADE)
+   - `type GuestType`
+   - `positions String[] @default([])` — chosen preferred positions for
+     this guest at this matchday; codes per league's `ballType` vocab
+     (12-code soccer or 4-code futsal), validated server-side at write.
+   - `displayOrder Int @default(0)` — 0..N-1 per (gameWeekId, leagueTeamId, type)
+     section; drives "Ext Guest 1 / 2 / 3" labels and stable modal-row
+     ordering.
+   - `createdById String?` (FK User, ON DELETE SET NULL — audit trail)
+   - `createdAt DateTime @default(now())` + `updatedAt DateTime @updatedAt`
+   - `@@index([gameWeekId, leagueTeamId, type])` — primary fast-filter for
+     "all guests for this team's matchday, sectioned by type"
+   - `@@index([gameWeekId])`, `@@index([leagueTeamId])` — single-leg indexes
+     kept for cascade-delete scans (matches v1.91.0 shape).
+3. Back-relation renames:
+   - `User.authoredGuestEntries MatchdayGuestEntry[]` → `User.authoredGuests MatchdayGuest[]`
+   - `LeagueTeam.guestEntries MatchdayGuestEntry[]` → `LeagueTeam.guests MatchdayGuest[]`
+   - `GameWeek.guestEntries MatchdayGuestEntry[]` → `GameWeek.guests MatchdayGuest[]`
+4. No `@@unique` constraint on the new model — multiple rows per (gameWeekId,
+   leagueTeamId, type) by design (one row per guest). The replacement-by-set
+   semantic in `setMatchdayGuests` doesn't rely on a unique key — it does
+   `deleteMany` + `createMany` in one transaction.
+
+### Migration SQL (`prisma/migrations/20260522000000_add_matchday_guest_rows_replace_counts/migration.sql`)
+
+DDL generated via `prisma migrate diff --from-schema-datamodel <pre> --to-schema-datamodel <post> --script`
+(offline; per `docs/migration-sql-lessons.md` rule — NEVER hand-author
+migration SQL). Prisma's natural emit order is DROP OLD → CREATE NEW;
+we reorder to CREATE NEW → INSERT BACKFILL → DROP OLD so the backfill
+runs atomically inside the same migration. The DDL statements are
+byte-for-byte what Prisma emitted; the only manual additions are:
+
+1. Two `INSERT INTO "MatchdayGuest" SELECT … FROM "MatchdayGuestEntry" e
+   CROSS JOIN LATERAL generate_series(1, e."externalCount") AS s(i) WHERE
+   e."externalCount" > 0` statements (one for EXTERNAL, one for LEAGUE)
+   — pure-data backfill (permitted exception per migration-sql-lessons.md).
+2. The reordering itself — Prisma's DROP-then-CREATE becomes CREATE-then-
+   INSERT-then-DROP. Reorder is necessary because the backfill reads from
+   the old table and writes to the new one; both must exist at INSERT time.
+
+### Why one migration, not two + script
+
+The brief offered an escape hatch: "two migrations + backfill script"
+for awkward CREATE+INSERT+DROP cases. We chose the one-migration path
+because:
+- Prod has zero `MatchdayGuestEntry` rows (v1.91.0 shipped 2026-05-10
+  and no user submitted any guests before the redesign brief landed).
+  The backfill is a no-op on prod.
+- Non-prod environments (preview branches, dev DB) may have test rows.
+  Inlining the backfill makes the migration self-sufficient — operator
+  doesn't need to remember a script step on those environments.
+- The backfill SQL uses Prisma-generated table + column names exactly
+  ("MatchdayGuestEntry", "externalCount", "leagueCount", "createdById",
+  "createdAt", "updatedAt") and Prisma-generated `MatchdayGuest` column
+  names — no @@map slip risk (the post-mortem rule).
+- `gen_random_uuid()` is a Postgres-13 built-in; Neon runs PG ≥15. No
+  extension needed.
+
+If prod had non-zero `MatchdayGuestEntry` rows the same migration still
+works — the LATERAL generate_series expansion handles N rows correctly,
+each yielding (externalCount + leagueCount) MatchdayGuest rows with
+contiguous displayOrders (0..externalCount-1 for EXTERNAL, then
+0..leagueCount-1 for LEAGUE).
+
+### Migration verification
+
+`prisma migrate diff` was run against the saved pre-edit schema
+(`/tmp/schema-pre-v193.prisma`) and the new schema. The emitted DDL
+(verified byte-for-byte against migration.sql) is:
+
+```
+-- CreateEnum
+CREATE TYPE "GuestType" AS ENUM ('EXTERNAL', 'LEAGUE');
+
+-- DropForeignKey
+ALTER TABLE "MatchdayGuestEntry" DROP CONSTRAINT "MatchdayGuestEntry_gameWeekId_fkey";
+ALTER TABLE "MatchdayGuestEntry" DROP CONSTRAINT "MatchdayGuestEntry_leagueTeamId_fkey";
+ALTER TABLE "MatchdayGuestEntry" DROP CONSTRAINT "MatchdayGuestEntry_createdById_fkey";
+
+-- DropTable
+DROP TABLE "MatchdayGuestEntry";
+
+-- CreateTable
+CREATE TABLE "MatchdayGuest" (
+    "id" TEXT NOT NULL,
+    "gameWeekId" TEXT NOT NULL,
+    "leagueTeamId" TEXT NOT NULL,
+    "type" "GuestType" NOT NULL,
+    "positions" TEXT[] DEFAULT ARRAY[]::TEXT[],
+    "displayOrder" INTEGER NOT NULL DEFAULT 0,
+    "createdById" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+    CONSTRAINT "MatchdayGuest_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateIndex
+CREATE INDEX "MatchdayGuest_gameWeekId_leagueTeamId_type_idx" ON "MatchdayGuest"("gameWeekId", "leagueTeamId", "type");
+CREATE INDEX "MatchdayGuest_gameWeekId_idx" ON "MatchdayGuest"("gameWeekId");
+CREATE INDEX "MatchdayGuest_leagueTeamId_idx" ON "MatchdayGuest"("leagueTeamId");
+
+-- AddForeignKey
+ALTER TABLE "MatchdayGuest" ADD CONSTRAINT "MatchdayGuest_gameWeekId_fkey" FOREIGN KEY ("gameWeekId") REFERENCES "GameWeek"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "MatchdayGuest" ADD CONSTRAINT "MatchdayGuest_leagueTeamId_fkey" FOREIGN KEY ("leagueTeamId") REFERENCES "LeagueTeam"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "MatchdayGuest" ADD CONSTRAINT "MatchdayGuest_createdById_fkey" FOREIGN KEY ("createdById") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+```
+
+The two INSERT statements (between CREATE INDEX/FK and DROP CONSTRAINT/DROP TABLE
+in the migration file) are NOT Prisma-emitted — they're the pure-data backfill.
+
+## M2 — Server action setMatchdayGuests
+
+- New `setMatchdayGuests({ leagueSlug, matchdayPublicId, teamPublicId, guests: { type, positions }[] })`
+  in `src/app/api/guests/actions.ts`. The legacy `setMatchdayGuestEntry` is GONE
+  (re-introducing it is a regression target in `tests/unit/v193_guest_rework.test.ts`).
+- Replacement-by-set: `prisma.$transaction([deleteMany({gameWeekId, leagueTeamId}), createMany(rows)])`.
+  The v1.91.0 upsert-by-key shape is replaced by set-replacement, which behaves identically from
+  the caller's POV (submit new state, it overwrites the prior).
+- Position validation per league `ballType` via `normalizePositions(raw, league.ballType)`. Soccer
+  codes against a futsal league throw "Invalid position …" before any DB write.
+- `displayOrder` re-derived server-side per type section (`externalCounter` / `leagueCounter`
+  both starting at 0). The modal "delete row 2" path can therefore never leave persisted gaps;
+  the client's submitted order is the new ordering, but the indices are owned server-side.
+- Audit: `createdById = currentUserId` on EVERY created row. Every replacement re-stamps the
+  audit trail (matches v1.91.0 "last submitter" semantic but now per-row).
+- Auth: gate on `session.userId` OR `session.lineId` (v1.80.10 / v1.59.1 pattern). Admin-
+  orthogonal — no `session.isAdmin` reference (v1.67.0 standing rule).
+- Cap: `MAX_GUESTS_PER_TEAM = 50` (same as the per-field cap in v1.91.0).
+- Revalidate `domain: 'public'` with the same 5-path list as v1.91.0.
+
+`dbToPublicLeagueData` swung from `prisma.matchdayGuestEntry.findMany` to
+`prisma.matchdayGuest.findMany` with `orderBy: [{ type: 'asc' }, { displayOrder: 'asc' }]`,
+yielding the new `MatchdayGuests` shape (`{ [matchdayId]: { [teamId]: MatchdayGuestEntry[] } }`).
+The empty-result shape carries `guests: {}` (replaces v1.91.0 `guestCounts: {}`).
+
+Type renames threaded through `Dashboard`, `ClassicLeagueHomepage`, `MultiLeagueHub`, and the
+three page.tsx routes (`/`, `/id/[slug]`, `/id/[slug]/md/[id]`).
+
+## M3 — Modal UI rebuilt as a table
+
+`AddGuestsModal.tsx` fully rewritten. Top-level component owns `rows: RowState[]` (each row has
+`{ key, type, positions[] }`). Two `<GuestSection>` sub-components rendered in fixed order:
+
+1. **League Guests** — type=LEAGUE, label prefix "League Guest", empty state "No league guests yet."
+2. **External Guests** — type=EXTERNAL, label prefix "Ext Guest", empty state "No external guests yet."
+
+Each section renders:
+- Title + per-section row count + hint text.
+- `<ul>` of rows. Each row shows `[Label "Ext Guest N" | trash button]` + `<PositionMultiSelect>`
+  (chip-based, per league `ballType` vocab from `getPositionVocabulary(ballType)`).
+- "+ Add row" button at the bottom; disabled when total rows would exceed 50.
+
+Numbering ("Ext Guest 1", "Ext Guest 2", …) is computed from `index + 1` within each section;
+purely presentational, since server re-derives `displayOrder` on submit. Order of rows in
+modal is preserved on save (LEAGUE first, then EXTERNAL).
+
+Modal contract mirrors `ApplyToLeagueModal` / `SignInLightbox`: portal, role=dialog,
+aria-modal, ESC dismiss, backdrop dismiss, body-scroll-lock. New addition: outer
+`overflow-y-auto` + `items-start sm:items-center` so a 50-row modal scrolls naturally on
+mobile (the v1.91.0 modal had no scroll because it had a fixed 2-input footprint).
+
+Title reads `Guests for ${teamName}` per the brief.
+
+Lazy-load wiring in `MatchdayAvailability.tsx` unchanged (still `next/dynamic` so the modal
+chunk only loads on first click — perf carryover from v1.80.8).
+
+## M4 — Pitch + list view + going count
+
+**Pitch view.** `synthesizeGuestPlayers` signature changed from `(teamId, count: number)` to
+`(teamId, guests: MatchdayGuestEntry[])`. Each MatchdayGuest row becomes one pseudo-Player:
+
+```ts
+{
+  id: 'guest-' + sourceRow.id,             // NEW prefix (was 'guest-pseudo-')
+  name: 'Ext Guest N' | 'League Guest N',  // displayOrder + 1, per type
+  teamId,
+  position: positions.join('/') || null,    // joined string for legacy reader compat
+  preferredPositions: positions,
+  secondaryPositions: [],
+  picture: null,
+  image: null,
+  retiredAt: null,
+}
+```
+
+The `preferredPositions` field is the load-bearing change: the v1.85.2 5-pass formation
+algorithm (and v1.89.1's pass 2.5 follow-on) places guests with declared positions through
+passes 1a/1b/2a/2b just like real players. Guests with `positions: []` fall through to
+pass 2.5 (back-most non-GK fill; GK hard-excluded). Pinned by:
+
+- `guest with positions=[CB] takes a CB slot via pass 1a` — assignPlayersToFormation
+  test in `v193_guest_rework.test.ts`.
+- `guest with positions=[] falls through to pass 2.5 (back-most non-GK)` — same file.
+- `multiple positionless guests still never land at GK (v1.89.1 hard rule)` — same file.
+
+`FormationPitch.tsx#playersWithoutPositions` filter still excludes guest pseudo-IDs via
+`!isGuestPseudoId(p.id)` — the new "guest-" prefix matches the same predicate, so the
+"fill in your profile" hint stays suppressed for guests even when their positions[] is empty.
+
+**List view.** Single v1.91.0 `'GUEST'` bucket replaced by two sub-buckets:
+- `'LEAGUE_GUEST'` (rendered first per brief)
+- `'EXTERNAL_GUEST'` (second)
+
+`BUCKET_ORDER` becomes `['GK', 'DF', 'MF', 'FW', 'UNB', 'LEAGUE_GUEST', 'EXTERNAL_GUEST']`.
+Bucket type derived per-player via `guestTypeOf(p)`, which inspects the synthesised name
+prefix ("League Guest" / "Ext Guest"). `synthesizeGuestPlayers` is the only writer of guest
+pseudo-Players, so the convention is authoritative.
+
+Within each guest sub-bucket, the sort is `localeCompare(b.name, undefined, { numeric: true })`
+so "Ext Guest 10" comes after "Ext Guest 2" (not lex-sorted "10, 2, 3, …").
+
+Guest pills now render the joined position string (or "Any" for empty positions) instead of
+the v1.91.0 hardcoded "GUEST" label. Pill colouring stays neutral (no auth-linked User → no
+role-coloured pill); only avatar (Player.image) is suppressed for guests.
+
+**Going count.** Unchanged from v1.91.0 — `confirmedIds = [...goingIds, ...guestIds]` and
+`total = confirmedIds.length`. The new shape feeds the same length-based aggregation.
+
+## M5 — Tests + suite + PR
+
+- New: `tests/unit/v193_guest_rework.test.ts` — 72 tests covering schema, migration shape,
+  pure helpers, server action, modal, MatchdayAvailability wiring, going-count invariant,
+  formation assignment, and "v1.91.0 contract is gone" regression targets.
+- Deleted: `tests/unit/v191_add_guests.test.ts` (superseded — its assertions exercise the
+  removed v1.91.0 API).
+- Edited: `tests/unit/v192_availability_list_view.test.ts` — 3 helper calls updated for the
+  new `synthesizeGuestPlayers(team, guests[])` signature + bucket-name split (GUEST →
+  LEAGUE_GUEST + EXTERNAL_GUEST) + version-pin softened to `1.9x.x or higher`.
+- Edited: `tests/unit/dbToPublicLeagueDataEvents.test.ts` — mock entry swung from
+  `matchdayGuestEntry` to `matchdayGuest`.
+
+**Full vitest suite:** 3388 passed | 2 skipped | 0 failed.
+**TypeScript:** zero errors in production code; the pre-existing `@next/bundle-analyzer`
+type error in `next.config.ts` is unrelated (predates this PR).
+
+**Stash-pop verification:** with all v1.93.0 changes stashed, `v193_guest_rework.test.ts`
+reports 45 of 72 tests FAILING — proves the regression-target coverage is load-bearing
+against the broken (v1.92.0) state. Restored after verification.

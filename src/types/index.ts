@@ -98,16 +98,35 @@ export interface PlayedStatus {
 }
 
 /**
- * v1.91.0 — Per-(matchday, team) external/league guest counts (Add Guests
- * feature). Guests are positionless pseudo-participants that bump the
- * "going" count, render as "Guest #N" tiles in the formation pitch (filled
- * into back-most non-GK slots via the v1.89.1 pass 2.5), and appear in a
- * dedicated "Guests" subsection of the list view. Empty teams/matchdays
- * are absent from the map (treated as zero).
+ * v1.93.0 — Per-(matchday, team) typed guest entries. Replaces the
+ * v1.91.0 count-only `MatchdayGuestCounts` shape with per-row guests,
+ * each carrying a type (EXTERNAL/LEAGUE), their own positions[]
+ * (validated against the league's `ballType` vocab server-side), and
+ * a `displayOrder` integer driving the "Ext Guest 1 / 2 / 3" label
+ * numbering and stable per-section ordering. Empty teams/matchdays
+ * are absent from the map.
+ *
+ * Order within a team is: all EXTERNAL rows ordered by displayOrder
+ * asc, then all LEAGUE rows ordered by displayOrder asc. The
+ * adapter (`dbToPublicLeagueData`) is responsible for emitting them
+ * in that order; consumers iterate without re-sorting.
  */
-export interface MatchdayGuestCounts {
+export type GuestType = 'EXTERNAL' | 'LEAGUE';
+
+export interface MatchdayGuestEntry {
+  /** Stable cuid from `MatchdayGuest.id`. Used to build the
+   *  `guest-<id>` pseudo-Player id in the pitch + list views so the
+   *  same row keeps the same slot/pill across re-renders. */
+  id: string;
+  type: GuestType;
+  positions: string[];
+  /** 0..N-1 per (matchday, team, type) section. Drives "Ext Guest N+1" labels. */
+  displayOrder: number;
+}
+
+export interface MatchdayGuests {
   [matchdayId: string]: {
-    [teamId: string]: { externalCount: number; leagueCount: number };
+    [teamId: string]: MatchdayGuestEntry[];
   };
 }
 
@@ -159,6 +178,7 @@ export interface LeagueData {
   availability: Availability;
   availabilityStatuses: AvailabilityStatuses;
   played: PlayedStatus;
-  /** v1.91.0 — Add Guests feature. Empty when no guests are recorded. */
-  guestCounts: MatchdayGuestCounts;
+  /** v1.93.0 — per-row typed guest entries (per-matchday × per-team).
+   *  Replaces the v1.91.0 count-only shape. Empty when no guests recorded. */
+  guests: MatchdayGuests;
 }

@@ -155,7 +155,7 @@ export default async function Home() {
       unpaidFee={unpaidFee ?? null}
       plannedRosterStats={plannedRosterStats ?? null}
       leagueDetails={leagueDetails ?? null}
-      guestCounts={data.guestCounts}
+      guests={data.guests}
     />
   );
 }

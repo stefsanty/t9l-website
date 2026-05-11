@@ -140,7 +140,7 @@ export default async function LeagueByIdMatchdayPage({ params }: Props) {
       unpaidFee={unpaidFee ?? null}
       plannedRosterStats={plannedRosterStats ?? null}
       leagueDetails={leagueDetails ?? null}
-      guestCounts={data.guestCounts}
+      guests={data.guests}
     />
   )
 }

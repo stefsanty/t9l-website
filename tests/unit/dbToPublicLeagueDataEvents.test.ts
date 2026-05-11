@@ -26,9 +26,10 @@ vi.mock('@/lib/prisma', () => ({
   prisma: {
     league: { findFirst: findFirstMock },
     playerLeagueMembership: { findMany: plaFindManyMock },
-    // v1.91.0 — MatchdayGuestEntry fetch added; tests don't exercise it,
-    // so a default empty resolution keeps existing assertions unchanged.
-    matchdayGuestEntry: { findMany: guestFindManyMock },
+    // v1.93.0 — MatchdayGuest fetch (replaces v1.91.0 MatchdayGuestEntry).
+    // Tests don't exercise it, so a default empty resolution keeps
+    // existing assertions unchanged.
+    matchdayGuest: { findMany: guestFindManyMock },
   },
 }))
 

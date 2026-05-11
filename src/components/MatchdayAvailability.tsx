@@ -10,10 +10,11 @@ import type {
   Availability,
   AvailabilityStatuses,
   PlayedStatus,
-  MatchdayGuestCounts,
+  MatchdayGuests,
+  MatchdayGuestEntry,
 } from '@/types';
-import { getPositionBucket, getPositionBucketByScore } from '@/lib/positions';
-import { synthesizeGuestPlayers, isGuestPseudoId } from '@/lib/guestSynthesis';
+import { type BallType, getPositionBucket, getPositionBucketByScore } from '@/lib/positions';
+import { synthesizeGuestPlayers, isGuestPseudoId, GUEST_PSEUDO_ID_PREFIX } from '@/lib/guestSynthesis';
 import FormationPitch from './FormationPitch';
 
 // v1.91.0 — Add Guests modal. Lazy-loaded so the auth-modal pattern from
@@ -52,16 +53,27 @@ export function getPositionPillColor(pos: string | null | undefined): string {
 //
 // Groups confirmed players by coarse position bucket for the list view.
 // English labels used for all formats (futsal FIXO→Defense, PIVOT→Forwards).
-// Empty buckets are omitted by the caller; the order is always GK→DF→MF→FW
-// followed by GUEST (v1.91.0 Add Guests). Guests are aggregated into their
-// own subsection at the bottom regardless of position (they have none).
+// Empty buckets are omitted by the caller; the order is always GK→DF→MF→FW→UNB
+// followed by the guest sub-buckets (LEAGUE_GUEST, then EXTERNAL_GUEST per
+// the v1.93.0 brief). Guests are partitioned by type — League Guests above
+// Ext Guests — and each guest carries their own positions[] from the
+// MatchdayGuest row (v1.93.0; v1.91.0 had a single positionless GUEST bucket).
 
-export type ListBucket = 'GK' | 'DF' | 'MF' | 'FW' | 'UNB' | 'GUEST';
+export type ListBucket =
+  | 'GK'
+  | 'DF'
+  | 'MF'
+  | 'FW'
+  | 'UNB'
+  | 'LEAGUE_GUEST'
+  | 'EXTERNAL_GUEST';
 
 // v1.92.0 — added 'UNB' (unbucketed) for players whose preferredPositions
 // array is empty. Renders between Forwards and Guests so authenticated
 // users without a recorded role still appear in the list.
-const BUCKET_ORDER: ReadonlyArray<ListBucket> = ['GK', 'DF', 'MF', 'FW', 'UNB', 'GUEST'];
+const BUCKET_ORDER: ReadonlyArray<ListBucket> = [
+  'GK', 'DF', 'MF', 'FW', 'UNB', 'LEAGUE_GUEST', 'EXTERNAL_GUEST',
+];
 
 export const BUCKET_LABEL: Record<ListBucket, string> = {
   GK: 'Goalkeepers',
@@ -69,7 +81,8 @@ export const BUCKET_LABEL: Record<ListBucket, string> = {
   MF: 'Midfield',
   FW: 'Forwards',
   UNB: 'Other',
-  GUEST: 'Guests',
+  LEAGUE_GUEST: 'League Guests',
+  EXTERNAL_GUEST: 'External Guests',
 };
 
 export const BUCKET_DOT: Record<ListBucket, string> = {
@@ -78,7 +91,8 @@ export const BUCKET_DOT: Record<ListBucket, string> = {
   MF: 'bg-green-400',
   FW: 'bg-red-400',
   UNB: 'bg-fg-mid',
-  GUEST: 'bg-fg-low',
+  LEAGUE_GUEST: 'bg-fg-low',
+  EXTERNAL_GUEST: 'bg-fg-low',
 };
 
 export interface BucketGroup {
@@ -86,7 +100,27 @@ export interface BucketGroup {
   players: Player[];
 }
 
+/** Internal — derive guest type from a synthesised pseudo-Player's name.
+ *  `synthesizeGuestPlayers` is the only writer of guest pseudo-Players,
+ *  so its `Ext Guest N` / `League Guest N` naming convention is the
+ *  authoritative type marker on the public Player shape (which doesn't
+ *  carry an explicit `type` field). Returns `null` for non-guest
+ *  players. */
+function guestTypeOf(p: Player): 'EXTERNAL' | 'LEAGUE' | null {
+  if (!isGuestPseudoId(p.id)) return null;
+  if (p.name.startsWith('League Guest')) return 'LEAGUE';
+  if (p.name.startsWith('Ext Guest')) return 'EXTERNAL';
+  return null;
+}
+
 /** Pure helper — resolves + groups confirmed players by position bucket.
+ *
+ *  v1.93.0 — guest sub-buckets. Guests partition into LEAGUE_GUEST
+ *  (League Guests, rendered first) and EXTERNAL_GUEST (Ext Guests,
+ *  rendered second) per the brief. Within each guest sub-bucket the
+ *  ordering preserves the synthesised name's numeric tail (string
+ *  localeCompare with numeric: true), matching the modal's row order
+ *  for sets ≤9 and giving natural numeric order for sets ≥10.
  *
  *  v1.92.0 — bucketing logic flipped from `positions[0]` (which picked
  *  one code arbitrarily off the joined `position` string) to the score-
@@ -105,14 +139,14 @@ export function bucketConfirmedPlayers(
     .filter((p): p is Player => !!p);
 
   const map = new Map<ListBucket, Player[]>([
-    ['GK', []], ['DF', []], ['MF', []], ['FW', []], ['UNB', []], ['GUEST', []],
+    ['GK', []], ['DF', []], ['MF', []], ['FW', []], ['UNB', []],
+    ['LEAGUE_GUEST', []], ['EXTERNAL_GUEST', []],
   ]);
 
   for (const p of resolved) {
-    if (isGuestPseudoId(p.id)) {
-      map.get('GUEST')!.push(p);
-      continue;
-    }
+    const gType = guestTypeOf(p);
+    if (gType === 'LEAGUE') { map.get('LEAGUE_GUEST')!.push(p); continue; }
+    if (gType === 'EXTERNAL') { map.get('EXTERNAL_GUEST')!.push(p); continue; }
     // Prefer the explicit preferredPositions[] array; fall back to
     // splitting the legacy joined `position` string for memberships
     // that haven't been re-saved since v1.86.0.
@@ -124,13 +158,16 @@ export function bucketConfirmedPlayers(
     map.get(listBucket)!.push(p);
   }
 
-  // Sort within each bucket alphabetically by name. Guest names are
-  // already "Guest #N" with N 1-indexed; alphabetical sort keeps them
-  // in numeric order through #9 (string lex on a single digit). For
-  // teams with ≥10 guests the order would be "#1, #10, #11, ..., #2"
-  // — acceptable trade-off for keeping the helper purely alphabetical
-  // (guest counts >9 per team are extreme).
-  for (const group of map.values()) group.sort((a, b) => a.name.localeCompare(b.name));
+  // Real-player buckets sort alphabetically. Guest buckets sort by
+  // synthesised name with numeric: true so "Ext Guest 10" comes after
+  // "Ext Guest 2" (not lex-sorted "10, 2, 3, ...").
+  for (const [bucket, group] of map.entries()) {
+    if (bucket === 'LEAGUE_GUEST' || bucket === 'EXTERNAL_GUEST') {
+      group.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+    } else {
+      group.sort((a, b) => a.name.localeCompare(b.name));
+    }
+  }
 
   return BUCKET_ORDER
     .map((bucket) => ({ bucket, players: map.get(bucket)! }))
@@ -226,7 +263,15 @@ function TeamPillList({
           </div>
           <div className="flex flex-wrap gap-1.5">
             {groupPlayers.map((p) => {
-              const isGuest = bucket === 'GUEST';
+              const isGuest = bucket === 'LEAGUE_GUEST' || bucket === 'EXTERNAL_GUEST';
+              // v1.93.0 — guests now carry their own positions, so the
+              // pill displays them like real players (or "Any" when the
+              // guest has no positions). Pill colouring stays neutral
+              // for guests (no auth-linked User → no team-coloured
+              // role pill).
+              const positionLabel = p.position && p.position.trim() !== ''
+                ? p.position
+                : isGuest ? 'Any' : '—';
               return (
                 <span
                   key={p.id}
@@ -240,10 +285,10 @@ function TeamPillList({
                 >
                   {/* v1.92.0 — avatar (User.image or initials) for
                       non-guest pills only. Guests have no auth-linked
-                      User and render as a plain "Guest" pill. */}
+                      User and render as a plain pill. */}
                   {!isGuest && <PlayerPillAvatar src={p.image} name={p.name} />}
                   <span className="text-[9px] font-black uppercase tracking-wider opacity-80">
-                    {isGuest ? 'GUEST' : (p.position || '—')}
+                    {positionLabel}
                   </span>
                   {p.name}
                 </span>
@@ -321,14 +366,13 @@ interface MatchdayAvailabilityProps {
   ballType?: 'SOCCER' | 'FUTSAL' | null;
   playerFormat?: number | null;
   /**
-   * v1.91.0 — Add Guests feature. Per-(matchday, team) external/league
-   * guest counts. Empty when no guests are recorded; the "+ Add Guests"
-   * button still renders so authenticated users can record the first
-   * guest. Optional because some legacy preview paths render this
-   * component without league context — in that case the button stays
-   * hidden (no leagueSlug ⇒ no submit target).
+   * v1.93.0 — Per-(matchday, team) typed guest rows. Replaces the
+   * v1.91.0 count map. Empty when no guests are recorded; the "+ Guests"
+   * trigger still renders so authenticated users can record the first
+   * guest. Optional for legacy preview paths that render without
+   * league context.
    */
-  guestCounts?: MatchdayGuestCounts;
+  guests?: MatchdayGuests;
   /** v1.91.0 — league subdomain, target for the Add Guests server action. */
   leagueSlug?: string;
 }
@@ -342,7 +386,7 @@ export default function MatchdayAvailability({
   played,
   ballType,
   playerFormat,
-  guestCounts,
+  guests,
   leagueSlug,
 }: MatchdayAvailabilityProps) {
   const { data: session } = useSession();
@@ -352,9 +396,9 @@ export default function MatchdayAvailability({
   const guestModalTeam = guestModalTeamId
     ? teams.find((t) => t.id === guestModalTeamId) ?? null
     : null;
-  const guestModalEntry = guestModalTeamId
-    ? guestCounts?.[matchday.id]?.[guestModalTeamId]
-    : undefined;
+  const guestModalRows: MatchdayGuestEntry[] = guestModalTeamId
+    ? guests?.[matchday.id]?.[guestModalTeamId] ?? []
+    : [];
     const isNext = matchday.matches[0].homeGoals === null;
   const playingTeams = teams.filter((t) => t.id !== matchday.sittingOutTeamId);
 
@@ -399,20 +443,15 @@ export default function MatchdayAvailability({
   const mdAvailability = availability[matchday.id] || {};
   const mdPlayed = played[matchday.id] || {};
 
-  // v1.91.0 — Per-team guest synthesis. Memoised across the matchday so the
-  // list of synthesised pseudo-Player objects is stable per render — passing
-  // a fresh object every render would force FormationPitch to recompute the
-  // assignment unnecessarily.
-  function getTeamGuestEntry(teamId: string): { externalCount: number; leagueCount: number } {
-    const e = guestCounts?.[matchday.id]?.[teamId];
-    return {
-      externalCount: e?.externalCount ?? 0,
-      leagueCount: e?.leagueCount ?? 0,
-    };
+  // v1.93.0 — Per-team guest synthesis. Each team's guest rows turn
+  // into one pseudo-Player per row (with their chosen positions, so the
+  // 6-pass formation algorithm places them like real players). Memoised
+  // across the matchday so the synthesised array is stable per render.
+  function getTeamGuests(teamId: string): MatchdayGuestEntry[] {
+    return guests?.[matchday.id]?.[teamId] ?? [];
   }
   function getTeamGuestTotal(teamId: string): number {
-    const e = getTeamGuestEntry(teamId);
-    return e.externalCount + e.leagueCount;
+    return getTeamGuests(teamId).length;
   }
   // One synthesised pool, per (matchday, all teams). Each team only
   // references its own guest IDs in `confirmedIds`, so a single shared
@@ -420,22 +459,16 @@ export default function MatchdayAvailability({
   const playersWithGuests = useMemo(() => {
     const out: Player[] = [...players];
     for (const t of playingTeams) {
-      const total = getTeamGuestTotal(t.id);
-      if (total > 0) out.push(...synthesizeGuestPlayers(t.id, total));
+      const teamGuests = getTeamGuests(t.id);
+      if (teamGuests.length > 0) out.push(...synthesizeGuestPlayers(t.id, teamGuests));
     }
     return out;
-    // Track guest counts JSON for stability when guestCounts identity changes.
+    // Track guests JSON for stability when guests identity changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [players, playingTeams, JSON.stringify(guestCounts?.[matchday.id] ?? {})]);
+  }, [players, playingTeams, JSON.stringify(guests?.[matchday.id] ?? {})]);
 
   function guestIdsForTeam(teamId: string): string[] {
-    const total = getTeamGuestTotal(teamId);
-    if (total <= 0) return [];
-    const out: string[] = [];
-    for (let i = 1; i <= total; i++) {
-      out.push(`guest-pseudo-${teamId}-${i}`);
-    }
-    return out;
+    return getTeamGuests(teamId).map((g) => `${GUEST_PSEUDO_ID_PREFIX}${g.id}`);
   }
 
   // Single modal node, mounted in both the past-matchday and upcoming-
@@ -450,8 +483,8 @@ export default function MatchdayAvailability({
       teamPublicId={guestModalTeam.id}
       teamName={guestModalTeam.name}
       matchdayLabel={matchday.label}
-      initialExternalCount={guestModalEntry?.externalCount ?? 0}
-      initialLeagueCount={guestModalEntry?.leagueCount ?? 0}
+      ballType={(ballType as BallType | null | undefined) ?? null}
+      initialGuests={guestModalRows}
     />
   ) : null;
 
