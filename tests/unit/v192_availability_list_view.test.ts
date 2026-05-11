@@ -53,12 +53,12 @@ const AVAILABILITY_SRC = readFileSync(
 )
 
 describe('v1.92.0 — version bump', () => {
-  it('APP_VERSION is 1.92.0', () => {
-    expect(VERSION_SRC).toMatch(/APP_VERSION\s*=\s*'1\.92\.0'/)
+  it('APP_VERSION is 1.92.1', () => {
+    expect(VERSION_SRC).toMatch(/APP_VERSION\s*=\s*'1\.92\.1'/)
   })
 
-  it('CLAUDE.md current-release header lists v1.92.0', () => {
-    expect(CLAUDE_MD).toMatch(/Current release.*v?1\.92\.0/i)
+  it('CLAUDE.md current-release header lists v1.92.1', () => {
+    expect(CLAUDE_MD).toMatch(/Current release.*v?1\.92\.1/i)
   })
 })
 
