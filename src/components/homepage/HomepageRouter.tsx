@@ -30,17 +30,34 @@ import MultiLeagueHub from './MultiLeagueHub'
  *     the user's `defaultLeagueId` (or the deterministic fallback) plus
  *     the new switcher + recruiting-handoff surfaces.
  *
+ * v1.93.0 — accepts `preferredLeagueId` from the page-level
+ * `searchParams.league` query so the switcher can navigate via
+ * `<Link prefetch>` instead of awaiting a server action then
+ * `router.refresh()`. The persona resolver still validates the id
+ * against the viewer's memberships before honouring it; an unknown id
+ * silently falls through to `User.defaultLeagueId` then to the
+ * alphabetical-first membership. Pinning the choice to the URL also
+ * makes the switcher result shareable/bookmarkable.
+ *
  * This is a server component. The persona resolver reads the session
  * once via `getServerSession`; calling that establishes the route as
  * dynamic per-request, which is what we want — every visitor has a
  * different persona and the page output cannot be statically cached.
  */
-export default async function HomepageRouter() {
+export default async function HomepageRouter({
+  preferredLeagueId,
+}: {
+  preferredLeagueId?: string | null
+} = {}) {
   const session = await getServerSession(authOptions)
   const userId = (session as { userId?: string | null } | null)?.userId ?? null
   const lineId = (session as { lineId?: string | null } | null)?.lineId ?? null
 
-  const persona: HomepagePersona = await resolveHomepagePersona({ userId, lineId })
+  const persona: HomepagePersona = await resolveHomepagePersona({
+    userId,
+    lineId,
+    preferredLeagueId: preferredLeagueId ?? null,
+  })
 
   if (persona.kind === 'single') {
     // Throws NEXT_REDIRECT — nothing below this line runs. Keeps the
@@ -53,6 +70,7 @@ export default async function HomepageRouter() {
       <MultiLeagueHub
         memberships={persona.memberships}
         activeLeagueId={persona.activeLeagueId}
+        viewer={{ userId, lineId }}
       />
     )
   }

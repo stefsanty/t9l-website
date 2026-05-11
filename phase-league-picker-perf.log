@@ -1,0 +1,175 @@
+# League switcher perf + UX — phase log
+
+## M1 — diagnose where the click→render time goes
+
+### Critical path (current `LeagueSwitcherTabs` → `setUserDefaultLeague` → `router.refresh()`)
+
+Per click, the user waits for two sequential server round-trips before seeing
+anything change:
+
+1. **Server action `setUserDefaultLeague(leagueId)`** — `src/components/homepage/actions.ts:37-98`
+   - `getServerSession`                    — cookie decode, ~5–15 ms
+   - `prisma.user.findUnique`              — 1 Neon round-trip
+   - `prisma.player.findFirst` w/ leagueAssignments include — 1 Neon round-trip
+   - `prisma.user.update` (when value differs) — 1 Neon round-trip
+   - **3 sequential Neon queries** before returning. Warm: ~150–300 ms. Cold: 250–400 ms.
+
+2. **`router.refresh()` triggers RSC re-render** — Next.js refetches the route's
+   server-component payload from `/test`:
+   - `getServerSession` again
+   - `resolveHomepagePersona` → 2 sequential queries (user + player+leagueAssignments)
+   - `MultiLeagueHub` → `getLeaguePageBundle(activeLeagueId)` — 7 parallel reads;
+     bottleneck is `getPublicLeagueData` → `dbToPublicLeagueData` which does 4
+     **sequential** queries internally (League deep-include, PLM findMany,
+     User findMany for avatars, MatchdayGuestEntry findMany)
+   - Bundle is wrapped in `unstable_cache(... revalidate: 300)`, so warm hits
+     are very fast; cold hits pay the full Prisma fanout
+
+### Measurements (production t9l.me, unauthenticated path)
+
+```
+GET /test (warm, full HTML)      TTFB 0.234 s
+GET /test (RSC payload x3 warm)  TTFB 0.207 / 0.222 / 0.214 s
+GET /id/t9l-2026-spring (warm)   TTFB ~0.210 s
+GET /test (cold)                 TTFB 0.610 s
+```
+
+For an **authenticated multi-league user** the figures are higher — the
+`resolveHomepagePersona` + `getLeaguePageBundle` chains add the membership
+lookup and the league fetch on top of the unauth path.
+
+### Estimated end-to-end click → first paint of new league
+
+|                                               | Warm    | Cold      |
+|-----------------------------------------------|---------|-----------|
+| 1. `setUserDefaultLeague` (3 sequential)      | 150–300 | 250–400   |
+| 2. RSC re-fetch (`router.refresh`)            | 220–300 | 600–1000  |
+| 3. React reconcile + paint                    |  30–100 |  30–100   |
+| **Total**                                     | **400–700 ms** | **900–1500 ms** |
+
+### Causes ranked
+
+1. **Awaited server action sits on the critical path.** `setUserDefaultLeague`
+   only writes a "remember last selection" preference; the navigation could
+   start in parallel.
+2. **No prefetch.** Switcher pills are `<button>` elements — Next.js never
+   pre-warms the destination RSC payload, so every click pays the cold render.
+3. **No optimistic UI.** No active-state swap on click, no spinner / skeleton
+   on the dashboard during the transition. Page looks frozen for the entire
+   400–1500 ms.
+4. **3-query server action.** The membership-gate + write could collapse to a
+   single SQL update with a WHERE-EXISTS subquery (1 round-trip).
+5. **`animate-pulse` fires on the wrong tab.**
+   `LeagueSwitcherTabs.tsx:82`: `${isPending && selected ? 'animate-pulse' : ''}`.
+   `selected` is computed from `activeLeagueId`, which is the *old* league
+   until the refresh resolves. So during pending, the OLD active pill pulses,
+   not the just-clicked pill.
+
+### Verified UX bug — not just a perf problem
+
+```tsx
+// src/components/homepage/LeagueSwitcherTabs.tsx
+const selected = m.leagueId === activeLeagueId   // ← old active league
+className={`… ${isPending && selected ? 'animate-pulse' : ''}`}
+```
+
+The user clicks League B, but League A pulses. This makes it look like the
+page is broken on top of being slow.
+
+## M2 — UX fix (drafted; pending user sign-off)
+
+- Optimistic active-state swap via React 19 `useOptimistic` so the tapped
+  pill turns "active" *immediately*, before navigation resolves.
+- Tactile press: `active:scale-[0.97]` + `active:bg-` (CSS, no JS).
+- `useTransition` wraps the navigation; `isPending` dims the dashboard area
+  via opacity + pointer-events-none + a subtle skeleton overlay.
+
+## M3 — perf fix (drafted; pending user sign-off)
+
+**Approach:** replace the server-action-then-refresh flow with `<Link prefetch>`
++ searchParam-driven active league. Mirrors the existing
+`touchUserDefaultLeague` fire-and-forget pattern already used by
+`/id/<slug>/page.tsx` and `/id/<slug>/md/<id>/page.tsx`.
+
+Specifically:
+
+- Switcher pills become `<Link prefetch href="/test?league=<leagueId>">`.
+  Next.js prefetches the destination RSC payload on hover/intersection, so
+  the click is essentially instant on a warm prefetch.
+- `HomepageRouter` accepts `searchParams.league` and resolves the active
+  league from the param if it matches an APPROVED membership. Falls back to
+  `User.defaultLeagueId` then to the alphabetical-first membership when the
+  param is absent or stale.
+- `MultiLeagueHub` calls `touchUserDefaultLeague(...)` for the active
+  league via `waitUntil` (existing pattern) — sets the persisted preference
+  for the next visit without blocking render.
+- The `setUserDefaultLeague` server action becomes unused and is deleted.
+  Safety: the new `searchParams.league` branch validates membership the
+  same way as the old action, so a malicious URL parameter can never pin
+  the user to a league they aren't in.
+
+**Wins:**
+
+- Click → first paint: 400–700 ms warm collapses to ~50 ms (prefetched RSC
+  payload + URL change + React reconcile). Cold collapses to ~250–400 ms
+  (just the bundle fetch, no awaited action).
+- The 3-query server action vanishes entirely.
+- User gets immediate active-state feedback via optimistic UI + URL change.
+- Skeleton/dim during transition for honest "still loading" feedback.
+
+**Out-of-scope (kept as-is):**
+
+- `getLeaguePageBundle` itself — already cached + parallelized; no need to
+  break apart `dbToPublicLeagueData`'s 4-sequential pattern for this PR.
+- Adding the switcher to `/id/<slug>` pages — that's a separate UX call.
+
+## M4 — implement (done)
+
+Files touched:
+
+- `src/lib/version.ts` — bump 1.92.1 → 1.94.0 (v1.93.0 was claimed by PR #261's Guest rework while this PR was in flight; rebased + bumped)
+- `src/lib/homepageRouting.ts` — `ResolveInput.preferredLeagueId?: string | null`;
+  `classifyPersona` accepts the new arg; priority preferredLeagueId →
+  defaultLeagueId → alphabetical-first; unknown ids silently fall through
+- `src/components/homepage/HomepageRouter.tsx` — accepts `preferredLeagueId`
+  prop, forwards into `resolveHomepagePersona`, passes `viewer={{ userId, lineId }}`
+  to `<MultiLeagueHub>`
+- `src/app/test/page.tsx` — async page; reads `searchParams.league` (Promise);
+  normalises array / empty-string to null; forwards as `preferredLeagueId`
+- `src/components/homepage/HubTransitionShell.tsx` — NEW. Owns single
+  `useTransition` shared via `useHubTransition()`; renders top-edge
+  progress strip during pending; `data-testid="hub-transition-progress"`
+- `src/components/homepage/LeagueSwitcherTabs.tsx` — full rewrite: `<Link prefetch>`
+  per pill, `useOptimistic(activeLeagueId)`, navigates inside `startNavigation`,
+  spinner on `selected (via optimisticActiveId) && isPending`, `active:scale-[0.96]`
+  press, power-user gestures preserved
+- `src/components/homepage/MultiLeagueHub.tsx` — `viewer` prop;
+  `touchUserDefaultLeague(...)` fire-and-forget for active league;
+  Dashboard wrapped in `<HubTransitionShell>`
+- `src/components/homepage/actions.ts` — DELETED (was the `setUserDefaultLeague`
+  server action; no remaining callers)
+- `src/app/globals.css` — `@keyframes hub-progress` + `.animate-hub-progress`
+  utility class
+- `tests/unit/v193_league_picker_perf.test.ts` — NEW. 35 regression-target tests
+- `tests/unit/v185_homepage_phase1bc.test.ts` — surgical updates: drop the
+  switcher action-call pin (action deleted), drop the runtime block for
+  `setUserDefaultLeague`, relax the `resolveHomepagePersona({...})` regex
+  to allow the new third arg, prune unused `vi` / `beforeEach` imports
+- `tests/unit/v192_availability_list_view.test.ts` — bump version pin to a
+  range so future patches don't churn
+- `tests/unit/version.test.ts` — bump pin to 1.93.0
+- `CLAUDE.md` — current-release header, ledger entry
+
+Validation:
+
+- `npx tsc --noEmit` — clean except for the pre-existing
+  `@next/bundle-analyzer` optional-dep warning (unchanged from baseline)
+- `npx vitest run` — 3395 passed, 2 skipped (unchanged from baseline)
+- Stash-pop sanity check: with `src/` reverted, the v193 test file
+  fails at TS compile on 5 type errors complaining `preferredLeagueId`
+  isn't a known property on the `classifyPersona` arg shape — proves
+  the load-bearing tests are real regression targets, not vacuous pins
+
+## M5 — push PR
+
+(populated after PR opens)

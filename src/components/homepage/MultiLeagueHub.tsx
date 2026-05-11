@@ -1,9 +1,11 @@
 import { findNextMatchday } from '@/lib/stats'
 import { getLeaguePageBundle } from '@/lib/leaguePageData'
+import { touchUserDefaultLeague } from '@/lib/userDefaultLeague'
 import type { ApprovedMembership } from '@/lib/homepageRouting'
 import Dashboard from '@/components/Dashboard'
 import LeagueSwitcherTabs from './LeagueSwitcherTabs'
 import RecruitingHandoff from './RecruitingHandoff'
+import HubTransitionShell from './HubTransitionShell'
 
 /**
  * v1.85.0 — homepage redesign phase 1c. Server component rendered by
@@ -11,15 +13,14 @@ import RecruitingHandoff from './RecruitingHandoff'
  *
  * Renders the FULL classic Dashboard for the active league
  * (`activeLeagueId`, derived in `homepageRouting.classifyPersona` from
- * `User.defaultLeagueId` ∩ memberships, falling back to the
- * alphabetical-first APPROVED membership) and injects two new surfaces
- * into Dashboard's `topSlot`:
+ * `searchParams.league` ∩ `User.defaultLeagueId` ∩ memberships, falling
+ * back to the alphabetical-first APPROVED membership) and injects two
+ * new surfaces into Dashboard's `topSlot`:
  *
  *   1. `<LeagueSwitcherTabs>` — pill-strip tab UI for switching the
- *      active league. Calls the `setUserDefaultLeague` server action
- *      and `router.refresh()`es so the page re-renders for the picked
- *      league. Hidden when memberships < 2 (defense; the persona
- *      resolver shouldn't hand us a multi shape with one tab).
+ *      active league. v1.93.0 navigates via `<Link prefetch>` instead
+ *      of awaiting a server action; the persisted "last selection" is
+ *      written here via `touchUserDefaultLeague`.
  *
  *   2. `<RecruitingHandoff>` — capped (≤ 2) cards for PUBLIC_OPEN
  *      leagues the viewer is NOT in. Renders nothing when no
@@ -28,13 +29,25 @@ import RecruitingHandoff from './RecruitingHandoff'
  * Both surfaces flow inline with the rest of the dashboard content
  * (same `max-w-lg` column, below the fixed Header) so the page layout
  * stays as a single uniform stack.
+ *
+ * v1.93.0 changes:
+ *   - Accepts a `viewer` prop carrying the resolved session identifiers
+ *     so `touchUserDefaultLeague` can pin the active league as the
+ *     "last selection" without the switcher running a separate server
+ *     action. Mirrors the existing `/id/<slug>/page.tsx` call site —
+ *     same helper, same `waitUntil` shape, never blocks render.
+ *   - Wraps the Dashboard in `<HubTransitionShell>` so the switcher's
+ *     `useTransition` and the page-level "loading" affordance share
+ *     the same pending signal.
  */
 export default async function MultiLeagueHub({
   memberships,
   activeLeagueId,
+  viewer,
 }: {
   memberships: ReadonlyArray<ApprovedMembership>
   activeLeagueId: string
+  viewer: { userId: string | null; lineId: string | null }
 }) {
   const active = memberships.find((m) => m.leagueId === activeLeagueId)
   if (!active) {
@@ -43,6 +56,17 @@ export default async function MultiLeagueHub({
     // unavailable" message as the page-level catch in /id/[slug].
     return <DataUnavailable />
   }
+
+  // v1.93.0 — fire-and-forget pin. Mirrors the `/id/<slug>` call shape:
+  // the helper short-circuits when `defaultLeagueId === activeLeagueId`
+  // so this is a no-op on the dominant "user revisits their default
+  // league" path, and `waitUntil` keeps the write off the request
+  // critical path on the divergent path.
+  touchUserDefaultLeague({
+    userId: viewer.userId,
+    lineId: viewer.lineId,
+    leagueId: activeLeagueId,
+  })
 
   const bundle = await getLeaguePageBundle(activeLeagueId)
   if (!bundle) return <DataUnavailable />
@@ -61,26 +85,28 @@ export default async function MultiLeagueHub({
   )
 
   return (
-    <Dashboard
-      teams={bundle.data.teams}
-      players={bundle.data.players}
-      matchdays={bundle.data.matchdays}
-      goals={bundle.data.goals}
-      availability={bundle.data.availability}
-      availabilityStatuses={bundle.data.availabilityStatuses}
-      played={bundle.data.played}
-      nextMd={nextMd}
-      leagueSlug={active.slug}
-      preseasonMode={bundle.flags.preseasonMode}
-      recruiting={bundle.flags.visibility === 'PUBLIC_OPEN'}
-      recruitingState={bundle.recruitingState}
-      league={bundle.league ?? undefined}
-      unpaidFee={bundle.unpaidFee ?? null}
-      plannedRosterStats={bundle.plannedRosterStats ?? null}
-      leagueDetails={bundle.leagueDetails ?? null}
-      topSlot={topSlot}
-      guests={bundle.data.guests}
-    />
+    <HubTransitionShell>
+      <Dashboard
+        teams={bundle.data.teams}
+        players={bundle.data.players}
+        matchdays={bundle.data.matchdays}
+        goals={bundle.data.goals}
+        availability={bundle.data.availability}
+        availabilityStatuses={bundle.data.availabilityStatuses}
+        played={bundle.data.played}
+        nextMd={nextMd}
+        leagueSlug={active.slug}
+        preseasonMode={bundle.flags.preseasonMode}
+        recruiting={bundle.flags.visibility === 'PUBLIC_OPEN'}
+        recruitingState={bundle.recruitingState}
+        league={bundle.league ?? undefined}
+        unpaidFee={bundle.unpaidFee ?? null}
+        plannedRosterStats={bundle.plannedRosterStats ?? null}
+        leagueDetails={bundle.leagueDetails ?? null}
+        topSlot={topSlot}
+        guests={bundle.data.guests}
+      />
+    </HubTransitionShell>
   )
 }
 
