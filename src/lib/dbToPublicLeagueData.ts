@@ -150,6 +150,30 @@ export async function dbToPublicLeagueData(
     orderBy: { player: { name: 'asc' } },
   })
 
+  // v1.92.0 — pull the linked User.image for the list-view avatar pill
+  // in MatchdayAvailability. NextAuth writes `User.image` from the
+  // OAuth profile (Google / LINE); this becomes the source-of-truth
+  // avatar for any auth-linked Player. There is no `@relation` field
+  // from Player → User in the schema (only the `userId String? @unique`
+  // column), so we do a separate User lookup keyed by playerId.userId
+  // and merge by Map. One extra round-trip; small bounded fanout.
+  const userIds = Array.from(
+    new Set(
+      plas
+        .map((pla) => pla.player.userId)
+        .filter((id): id is string => typeof id === 'string'),
+    ),
+  )
+  const users = userIds.length
+    ? await prisma.user.findMany({
+        where: { id: { in: userIds } },
+        select: { id: true, image: true },
+      })
+    : []
+  const userImageByUserId = new Map<string, string | null>(
+    users.map((u) => [u.id, u.image ?? null]),
+  )
+
   const players: Player[] = []
   for (const pla of plas) {
     // v1.88.0 — covers both the legacy single `p-guest` and the
@@ -189,6 +213,12 @@ export async function dbToPublicLeagueData(
         ? [...pla.secondaryPositions]
         : undefined,
       picture: pla.player.pictureUrl ?? null,
+      // v1.92.0 — NextAuth User.image (Google avatar / LINE picture).
+      // Threaded through so the MatchdayAvailability list-view pill can
+      // render the current auth-provider avatar.
+      image: pla.player.userId
+        ? (userImageByUserId.get(pla.player.userId) ?? null)
+        : null,
       // v1.87.0 — per-league retirement marker. SquadList sorts retired
       // players to the bottom of their team and greys them out;
       // MatchdayAvailability filters them out of upcoming goingIds.

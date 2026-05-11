@@ -17,6 +17,17 @@ export interface Player {
   secondaryPositions?: string[];
   picture: string | null;
   /**
+   * v1.92.0 — NextAuth `User.image` of the player's linked auth account
+   * (Google avatar / LINE picture / null). Distinct from `picture`,
+   * which mirrors `Player.pictureUrl` (LINE-CDN write from the
+   * /api/assign-player binding) and is used by the formation pitch +
+   * SquadList. The list view in `MatchdayAvailability` uses `image`
+   * specifically so the avatar follows the user's currently-active
+   * auth provider rather than the historical LINE binding.
+   * Null when the player has no linked User OR the User has no image.
+   */
+  image?: string | null;
+  /**
    * v1.87.0 — per-league retirement marker. ISO string when the admin
    * has retired this player from this league; null/undefined when active.
    * Retired players still appear in the public squad list (sorted to

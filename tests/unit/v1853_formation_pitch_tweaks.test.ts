@@ -125,11 +125,15 @@ describe('[v1.85.3 regression] bucketConfirmedPlayers — futsal codes', () => {
   })
 })
 
-describe('[v1.85.3 regression] bucketConfirmedPlayers — multi-position (joined string)', () => {
-  it('uses first code in "CB/CM" → DF bucket', () => {
+describe('[v1.85.3 → v1.92.0 update] bucketConfirmedPlayers — multi-position (joined string)', () => {
+  // v1.92.0 flipped the rule from "first code wins" to "averaged
+  // forward-score across the array". "CB/CM" now averages (1+3)/2 = 2.0
+  // → MF, not DF. The previous v1.85.3 pin asserted the now-superseded
+  // first-code-wins behavior.
+  it('averages codes in "CB/CM" → (1+3)/2 = 2.0 → MF bucket (v1.92.0)', () => {
     const p = [makePlayer('alex', 'CB/CM')]
     const groups = bucketConfirmedPlayers(['alex'], p)
-    expect(groups[0].bucket).toBe('DF')
+    expect(groups[0].bucket).toBe('MF')
   })
 })
 

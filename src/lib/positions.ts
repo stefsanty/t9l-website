@@ -266,3 +266,88 @@ export function validatePreferredSecondary(
     return { ok: false, error: (err as Error).message }
   }
 }
+
+// v1.92.0 — Forward-score map for score-based bucketing of preferred-
+// positions arrays. Lower values are deeper roles, higher values are
+// more attacking. Soccer (12 codes) and futsal (4 codes) share the
+// same GK=0 anchor; futsal jumps to 1/3/5 because it has fewer codes.
+const POSITION_FORWARD_SCORES: Record<string, number> = {
+  // Soccer
+  GK:  0,
+  LB:  1, CB:  1, RB:  1,
+  DM:  2,
+  CM:  3, LM:  3, RM:  3,
+  CAM: 4, LW:  4, RW:  4,
+  ST:  5,
+  // Futsal
+  FIXO:  1,
+  ALA:   3,
+  PIVOT: 5,
+}
+
+/** v1.92.0 — bucket returned by `getPositionBucketByScore`. `null` means
+ *  unbucketed (empty preferred-positions array — caller decides whether
+ *  to render an "Other" section or hide). */
+export type ScoreBucket = 'GK' | 'DF' | 'MF' | 'FW' | null
+
+/**
+ * v1.92.0 — Score-based bucketing for the PlayerAvailability list view.
+ *
+ * Replaces the pre-v1.92 `positions[0]` rule (which picked one code
+ * arbitrarily off the array) with an averaged forward-score across the
+ * full `preferredPositions[]` array, so a player who plays CB + CM + ST
+ * lands in Midfield (avg 3.0) instead of Defense (positions[0]=CB).
+ *
+ * Rules:
+ *   1. Any preferred code == GK → 'GK' (short-circuit; goalkeepers are
+ *      uniquely keyed by role, never averaged with outfield codes).
+ *   2. Otherwise average POSITION_FORWARD_SCORES across the array.
+ *      - avg < 1.5         → 'DF'
+ *      - 1.5 ≤ avg < 3.5   → 'MF'
+ *      - avg ≥ 3.5         → 'FW'
+ *   3. Empty array (or array of only-unknown-codes) → null (unbucketed).
+ *
+ * Worked examples (per the v1.92.0 product brief):
+ *   [CB,CM,ST]   → (1+3+5)/3 = 3.0   → 'MF'
+ *   [CAM,ST,LW]  → (4+5+4)/3 ≈ 4.33  → 'FW'
+ *   [CB,DM]      → (1+2)/2  = 1.5    → 'MF' (boundary, inclusive lower)
+ *   [GK,CB]      → contains GK       → 'GK'
+ *   [ST]         → 5                  → 'FW'
+ *
+ * The old `getPositionBucket(code)` helper stays for non-list callers
+ * (SquadList colours, group labels, formation grouping) that still
+ * operate on a single code.
+ */
+export function getPositionBucketByScore(
+  positions: ReadonlyArray<string> | null | undefined,
+): ScoreBucket {
+  if (!positions || positions.length === 0) return null
+
+  // Normalise once; skip empties.
+  const codes = positions
+    .map((p) => (typeof p === 'string' ? p.trim().toUpperCase() : ''))
+    .filter((p) => p.length > 0)
+  if (codes.length === 0) return null
+
+  // GK short-circuit.
+  if (codes.some((c) => c === 'GK')) return 'GK'
+
+  // Average score across known codes. Unknown codes are dropped from
+  // the average rather than scoring 0 (which would falsely pull the
+  // average toward DF for a player with one unknown code + one ST).
+  let sum = 0
+  let n = 0
+  for (const c of codes) {
+    const score = POSITION_FORWARD_SCORES[c]
+    if (typeof score === 'number') {
+      sum += score
+      n += 1
+    }
+  }
+  if (n === 0) return null
+
+  const avg = sum / n
+  if (avg < 1.5) return 'DF'
+  if (avg < 3.5) return 'MF'
+  return 'FW'
+}
