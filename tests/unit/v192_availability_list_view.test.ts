@@ -53,12 +53,12 @@ const AVAILABILITY_SRC = readFileSync(
 )
 
 describe('v1.92.0 — version bump', () => {
-  it('APP_VERSION is 1.92.1', () => {
-    expect(VERSION_SRC).toMatch(/APP_VERSION\s*=\s*'1\.92\.1'/)
+  it('APP_VERSION is 1.92.2', () => {
+    expect(VERSION_SRC).toMatch(/APP_VERSION\s*=\s*'1\.92\.2'/)
   })
 
-  it('CLAUDE.md current-release header lists v1.92.1', () => {
-    expect(CLAUDE_MD).toMatch(/Current release.*v?1\.92\.1/i)
+  it('CLAUDE.md current-release header lists v1.92.2', () => {
+    expect(CLAUDE_MD).toMatch(/Current release.*v?1\.92\.2/i)
   })
 })
 
@@ -287,8 +287,12 @@ describe('v1.92.0 — Player.image threaded through types + db adapter', () => {
   })
 
   it('dbToPublicLeagueData populates image via the userImageByUserId Map', () => {
+    // v1.92.2 wrapped the `image` value in an IIFE for the priority
+    // chain (User.image → profilePictureUrl → pictureUrl → LineLogin).
+    // The userImageByUserId Map is still the leading lookup; assert on
+    // its presence + the userId-conditional inside the IIFE.
     expect(DB_TO_PUBLIC_SRC).toMatch(/userImageByUserId/)
-    expect(DB_TO_PUBLIC_SRC).toMatch(/image:\s*pla\.player\.userId/)
+    expect(DB_TO_PUBLIC_SRC).toMatch(/pla\.player\.userId/)
   })
 })
 

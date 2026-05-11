@@ -157,6 +157,15 @@ export async function dbToPublicLeagueData(
   // from Player → User in the schema (only the `userId String? @unique`
   // column), so we do a separate User lookup keyed by playerId.userId
   // and merge by Map. One extra round-trip; small bounded fanout.
+  //
+  // v1.92.2 — also pull `User.lineId` and the matching `LineLogin.pictureUrl`
+  // so the priority chain below can fall through to LINE-CDN for users
+  // whose linked User row has `image=null`. The LINE sign-in callback
+  // (`src/lib/auth.ts`) historically did not write `User.image` — 33 of
+  // 37 LINE-auth Users have `image=null` in prod even though their
+  // `LineLogin.pictureUrl` is set. v1.92.2's R2 change fixes the
+  // callback going forward; this read-side chain rescues existing rows
+  // for whom LineLogin has the URL but User.image still does not.
   const userIds = Array.from(
     new Set(
       plas
@@ -167,11 +176,32 @@ export async function dbToPublicLeagueData(
   const users = userIds.length
     ? await prisma.user.findMany({
         where: { id: { in: userIds } },
-        select: { id: true, image: true },
+        select: { id: true, image: true, lineId: true },
       })
     : []
   const userImageByUserId = new Map<string, string | null>(
     users.map((u) => [u.id, u.image ?? null]),
+  )
+  const lineIdByUserId = new Map<string, string>(
+    users
+      .filter((u): u is { id: string; image: string | null; lineId: string } =>
+        typeof u.lineId === 'string' && u.lineId.length > 0,
+      )
+      .map((u) => [u.id, u.lineId]),
+  )
+  const lineIdsForLookup = Array.from(new Set(lineIdByUserId.values()))
+  const lineLogins = lineIdsForLookup.length
+    ? await prisma.lineLogin.findMany({
+        where: { lineId: { in: lineIdsForLookup } },
+        select: { lineId: true, pictureUrl: true },
+      })
+    : []
+  const lineLoginPictureByLineId = new Map<string, string>(
+    lineLogins
+      .filter((ll): ll is { lineId: string; pictureUrl: string } =>
+        typeof ll.pictureUrl === 'string' && ll.pictureUrl.length > 0,
+      )
+      .map((ll) => [ll.lineId, ll.pictureUrl]),
   )
 
   const players: Player[] = []
@@ -216,9 +246,33 @@ export async function dbToPublicLeagueData(
       // v1.92.0 — NextAuth User.image (Google avatar / LINE picture).
       // Threaded through so the MatchdayAvailability list-view pill can
       // render the current auth-provider avatar.
-      image: pla.player.userId
-        ? (userImageByUserId.get(pla.player.userId) ?? null)
-        : null,
+      //
+      // v1.92.2 — priority chain. The pre-v1.92.2 implementation read
+      // only `User.image`, which is null on 33 of 37 LINE-auth Users
+      // (the LINE callback historically never wrote it; see auth.ts).
+      // Mirrors the `pickPlayerAvatarUrl` (src/lib/playerAvatar.ts) and
+      // `sessionPictureUrl` (AccountPlayerForm) patterns used elsewhere
+      // in the codebase:
+      //   1. User.image                — auth-provider avatar (Google / LINE post-fix)
+      //   2. Player.profilePictureUrl  — user-uploaded via /account/player
+      //   3. Player.pictureUrl         — LINE-CDN mirror (`/api/assign-player`)
+      //   4. LineLogin.pictureUrl      — LINE-CDN, refreshed every LINE login
+      image: ((): string | null => {
+        const userImage = pla.player.userId
+          ? userImageByUserId.get(pla.player.userId) ?? null
+          : null
+        if (userImage) return userImage
+        if (pla.player.profilePictureUrl) return pla.player.profilePictureUrl
+        if (pla.player.pictureUrl) return pla.player.pictureUrl
+        const lineId = pla.player.userId
+          ? lineIdByUserId.get(pla.player.userId)
+          : undefined
+        if (lineId) {
+          const ll = lineLoginPictureByLineId.get(lineId)
+          if (ll) return ll
+        }
+        return null
+      })(),
       // v1.87.0 — per-league retirement marker. SquadList sorts retired
       // players to the bottom of their team and greys them out;
       // MatchdayAvailability filters them out of upcoming goingIds.
