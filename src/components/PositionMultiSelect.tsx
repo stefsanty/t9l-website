@@ -40,6 +40,16 @@ export interface PositionMultiSelectProps {
   disabled?: boolean
   /** Visual variant. `public` = border-default tokens; `admin` = admin-* tokens. */
   variant?: 'public' | 'admin'
+  /**
+   * v1.93.0 — optional cap on the selection size. Once `selected.length`
+   * reaches `maxSelected`, additional toggle attempts on unselected
+   * chips are no-op and the chips render visibly disabled. Deselect
+   * (toggling an already-selected chip) is always allowed. Used by the
+   * preferred-positions picker to enforce the 3-position cap; left
+   * undefined for unconstrained pickers (secondary positions, legacy
+   * single-array callers).
+   */
+  maxSelected?: number
 }
 
 export default function PositionMultiSelect({
@@ -49,15 +59,22 @@ export default function PositionMultiSelect({
   testIdPrefix,
   disabled,
   variant = 'public',
+  maxSelected,
 }: PositionMultiSelectProps) {
   const vocab = useMemo(() => getPositionVocabulary(ballType), [ballType])
   const selectedSet = useMemo(() => new Set(selected), [selected])
+  const atCap = typeof maxSelected === 'number' && selected.length >= maxSelected
 
   function toggle(code: string) {
-    const next = selectedSet.has(code)
-      ? selected.filter((c) => c !== code)
-      : // Insert in canonical vocab order so the chip row stays stable.
-        vocab.map((p) => p.code).filter((c) => selectedSet.has(c) || c === code)
+    if (selectedSet.has(code)) {
+      // Deselect is always allowed.
+      onChange(selected.filter((c) => c !== code))
+      return
+    }
+    // Selecting a new chip when already at cap: no-op (caller can show a
+    // counter; the chip is also greyed out below).
+    if (atCap) return
+    const next = vocab.map((p) => p.code).filter((c) => selectedSet.has(c) || c === code)
     onChange(next)
   }
 
@@ -87,12 +104,17 @@ export default function PositionMultiSelect({
     >
       {vocab.map((p) => {
         const isOn = selectedSet.has(p.code)
+        // v1.93.0 — when the cap is hit, unselected chips render disabled
+        // so users see a visible at-cap signal. The browser disabled
+        // attribute also makes the `onClick` no-op redundant, but we
+        // keep both for belt-and-braces.
+        const chipDisabled = !!disabled || (!isOn && atCap)
         return (
           <button
             type="button"
             key={p.code}
             onClick={() => toggle(p.code)}
-            disabled={disabled}
+            disabled={chipDisabled}
             aria-pressed={isOn}
             title={p.label}
             className={`${baseClass} ${isOn ? variantClasses.on : variantClasses.off}`}

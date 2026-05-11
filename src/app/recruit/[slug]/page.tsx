@@ -58,7 +58,7 @@ export default async function RecruitPage({ params }: Props) {
     where: { id: leagueId },
     // v1.82.0 — `ballType` drives the position chip vocabulary in
     // RegistrationFields (SOCCER → 12 codes; FUTSAL → GK/FIXO/ALA/PIVOT).
-    select: { id: true, name: true, recruiting: true, subdomain: true, ballType: true },
+    select: { id: true, name: true, recruiting: true, subdomain: true, ballType: true, idRequired: true },
   })
   if (!league) notFound()
 
@@ -129,6 +129,7 @@ export default async function RecruitPage({ params }: Props) {
           userId={user.id}
           initialEmail={initialEmail}
           ballType={league.ballType}
+          idRequired={league.idRequired}
         />
       </div>
     </main>

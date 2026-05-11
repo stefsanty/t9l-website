@@ -55,7 +55,9 @@ export default async function OnboardingPage({ params }: Props) {
     prisma.league.findUnique({
       where: { id: invite.leagueId },
       // v1.82.0 — `ballType` drives the position chip vocabulary.
-      select: { id: true, name: true, subdomain: true, ballType: true },
+      // v1.93.0 — `idRequired` controls whether the ID-upload section
+      // renders in `RegistrationFields`.
+      select: { id: true, name: true, subdomain: true, ballType: true, idRequired: true },
     }),
     prisma.playerLeagueMembership.findFirst({
       where: {
@@ -119,6 +121,7 @@ export default async function OnboardingPage({ params }: Props) {
                 : []
           }
           ballType={league.ballType}
+          idRequired={league.idRequired}
         />
       </div>
     </main>

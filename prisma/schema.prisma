@@ -302,6 +302,30 @@ model League {
   organizerMessage       String?      @db.Text
   showLeagueDetails      Boolean      @default(true)
 
+  // v1.93.0 — per-league ID-document requirement during onboarding.
+  // When true (default — backward compatible), the join + recruit forms
+  // require front + back ID uploads as a hard gate (the v1.71.1
+  // client-direct upload path). When false, the onboarding form hides
+  // the ID section entirely and accepts submissions without files. Use
+  // case: casual leagues whose admins don't need ID-on-file for venue
+  // booking. Default-true preserves every existing league's UX.
+  idRequired             Boolean      @default(true)
+
+  // v1.94.0 — admin-toggleable "private join link". When true, the
+  // route at `/id/<slug>/join` mounts the standard league page with
+  // the recruiting banner forced ON, regardless of `visibility`. Lets
+  // admins share a discoverable apply-page URL even for PRIVATE /
+  // PUBLIC_CLOSED leagues without flipping the league's visibility.
+  // Default-false preserves every existing league (route 404s).
+  //
+  // Security note: the URL is slug-based — anyone who guesses the slug
+  // and tries `/join` with this on sees the recruitment page. For
+  // PRIVATE leagues this is a real (if low-severity) exposure. A
+  // stronger token-based variant (`privateJoinToken` + URL like
+  // `/id/<slug>/join/<token>`) is documented in the v1.94.0 ledger as
+  // a follow-up.
+  privateJoinLinkEnabled Boolean      @default(false)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

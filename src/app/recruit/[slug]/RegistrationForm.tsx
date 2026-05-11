@@ -49,6 +49,12 @@ interface Props {
    * (SOCCER → 12 codes; FUTSAL → GK/FIXO/ALA/PIVOT).
    */
   ballType?: BallType | null
+  /**
+   * v1.93.0 — when false, the league has disabled the ID-upload
+   * requirement; RegistrationFields hides the front/back fields and
+   * accepts submissions without files. Server-side gate re-checks.
+   */
+  idRequired?: boolean
 }
 
 export default function RegistrationForm({
@@ -58,6 +64,7 @@ export default function RegistrationForm({
   userId,
   initialEmail = '',
   ballType = null,
+  idRequired = true,
 }: Props) {
   const router = useRouter()
 
@@ -72,7 +79,8 @@ export default function RegistrationForm({
       leagueId,
       name: input.name,
       email: input.email,
-      positions: input.positions,
+      preferredPositions: input.preferredPositions,
+      secondaryPositions: input.secondaryPositions,
       idFrontUrl: input.idFrontUrl,
       idBackUrl: input.idBackUrl,
       profilePictureUrl: input.profilePictureUrl,
@@ -89,6 +97,7 @@ export default function RegistrationForm({
       <RegistrationFields
         initialEmail={initialEmail}
         ballType={ballType}
+        idRequired={idRequired}
         submitLabel={`Apply to ${leagueName}`}
         uploadPathPrefix={`register-pending/${userId}`}
         onSubmit={handleSubmit}

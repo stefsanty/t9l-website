@@ -104,9 +104,13 @@ describe('v1.41.0 — EditPlayerPanel component', () => {
     expect(PLAYERS_TAB).toMatch(/useState<string>\(player\.name \?\? ''\)/)
   })
 
-  it('v1.82.0 — initializes the positions[] field from player.positions (with legacy fallback)', () => {
-    // Defensive shape — PlayerRow.positions is the canonical source;
-    // PlayerRow.position remains for backward-compat fallback.
+  it('v1.93.0 — initializes preferred from preferredPositions (v1.86.0) with legacy fallback through positions[] then [position]', () => {
+    // Defensive shape — PlayerRow.preferredPositions is the canonical
+    // source post-v1.86.0; positions[] (v1.82.0) and the legacy single
+    // `position` enum (pre-v1.82.0) are tried in order.
+    expect(PLAYERS_TAB).toMatch(
+      /if \(player\.preferredPositions && player\.preferredPositions\.length > 0\) return \[\.\.\.player\.preferredPositions\]/,
+    )
     expect(PLAYERS_TAB).toMatch(
       /if \(player\.positions && player\.positions\.length > 0\) return \[\.\.\.player\.positions\]/,
     )
@@ -120,12 +124,15 @@ describe('v1.41.0 — EditPlayerPanel component', () => {
     expect(PLAYERS_TAB).toMatch(/if \(positionsChanged\) \{[\s\S]+?adminUpdatePlayerPosition/)
   })
 
-  it('v1.82.0 — Save passes positions[] (new contract) to adminUpdatePlayerPosition', () => {
-    expect(PLAYERS_TAB).toMatch(/adminUpdatePlayerPosition\(\{[\s\S]+?positions,/)
+  it('v1.93.0 — Save passes preferredPositions + secondaryPositions to adminUpdatePlayerPosition', () => {
+    expect(PLAYERS_TAB).toMatch(/adminUpdatePlayerPosition\(\{[\s\S]+?preferredPositions: preferred,/)
+    expect(PLAYERS_TAB).toMatch(/adminUpdatePlayerPosition\(\{[\s\S]+?secondaryPositions: secondaryFiltered,/)
   })
 
-  it('Save is disabled when the form is not dirty OR the name is invalid', () => {
-    expect(PLAYERS_TAB).toMatch(/disabled=\{!dirty \|\| nameInvalid \|\| pending\}/)
+  it('Save is disabled when the form is not dirty OR the name is invalid OR preferred is oversize', () => {
+    // v1.93.0 — `preferredOversize` joins the disable predicate to gate
+    // tampered selections at the cap boundary.
+    expect(PLAYERS_TAB).toMatch(/disabled=\{!dirty \|\| nameInvalid \|\| preferredOversize \|\| pending\}/)
   })
 
   it('Cancel discards local form state and closes the panel', () => {
@@ -133,7 +140,10 @@ describe('v1.41.0 — EditPlayerPanel component', () => {
     // the panel and is destroyed on unmount. Pin the Cancel onClick.
     const panelIdx = PLAYERS_TAB.indexOf('function EditPlayerPanel(')
     expect(panelIdx).toBeGreaterThan(0)
-    const panelBody = PLAYERS_TAB.slice(panelIdx, panelIdx + 7000)
+    // v1.93.0 — body grew past the prior 7000-char window after the
+    // preferred/secondary split landed; widen the slice generously so
+    // both Cancel + onClose lines are reliably inside it.
+    const panelBody = PLAYERS_TAB.slice(panelIdx, panelIdx + 12000)
     expect(panelBody).toMatch(/data-testid=\{`player-edit-cancel-\$\{player\.id\}`\}/)
     expect(panelBody).toMatch(/onClick=\{onClose\}/)
   })
@@ -144,10 +154,12 @@ describe('v1.41.0 — EditPlayerPanel component', () => {
     expect(PLAYERS_TAB).toMatch(/<PositionMultiSelect[\s\S]+?ballType=\{ballType\}/)
   })
 
-  it('exposes data-testids for the name input + position select + save button', () => {
+  it('exposes data-testids for the name input + position pickers + save button', () => {
     expect(PLAYERS_TAB).toMatch(/data-testid=\{`player-edit-panel-\$\{player\.id\}`\}/)
     expect(PLAYERS_TAB).toMatch(/data-testid=\{`player-edit-name-input-\$\{player\.id\}`\}/)
-    expect(PLAYERS_TAB).toMatch(/data-testid=\{`player-edit-position-select-\$\{player\.id\}`\}/)
+    // v1.93.0 — single position-select replaced with preferred + secondary pickers.
+    expect(PLAYERS_TAB).toMatch(/data-testid=\{`player-edit-preferred-select-\$\{player\.id\}`\}/)
+    expect(PLAYERS_TAB).toMatch(/data-testid=\{`player-edit-secondary-select-\$\{player\.id\}`\}/)
     expect(PLAYERS_TAB).toMatch(/data-testid=\{`player-edit-save-\$\{player\.id\}`\}/)
   })
 })
@@ -157,19 +169,20 @@ describe('v1.41.0 — adminUpdatePlayerPosition server action', () => {
     expect(LEAGUES_ACTIONS).toMatch(/export\s+async\s+function\s+adminUpdatePlayerPosition/)
   })
 
-  it('v1.82.0 — accepts a positions[] array (per-format vocabulary)', () => {
+  it('v1.93.0 — accepts the preferred/secondary split (legacy positions[] still accepted but deprecated)', () => {
     expect(LEAGUES_ACTIONS).toMatch(
-      /adminUpdatePlayerPosition\(input: \{[\s\S]+?positions:\s*ReadonlyArray<string>/,
+      /adminUpdatePlayerPosition\(input: \{[\s\S]+?preferredPositions\?: ReadonlyArray<string>/,
+    )
+    expect(LEAGUES_ACTIONS).toMatch(
+      /adminUpdatePlayerPosition\(input: \{[\s\S]+?secondaryPositions\?: ReadonlyArray<string>/,
     )
   })
 
-  it('v1.82.0 — validates positions through normalizePositions + dual-writes legacy enum', () => {
-    expect(LEAGUES_ACTIONS).toMatch(
-      /const validatedPositions = normalizePositions\(\s*input\.positions,/,
-    )
-    expect(LEAGUES_ACTIONS).toMatch(
-      /const legacyPosition = legacyPositionFromArray\(validatedPositions\)/,
-    )
+  it('v1.93.0 — validates positions through validatePreferredSecondary (cap enforced) + dual-writes legacy enum', () => {
+    const fnIdx = LEAGUES_ACTIONS.indexOf('export async function adminUpdatePlayerPosition')
+    const fnBody = LEAGUES_ACTIONS.slice(fnIdx, fnIdx + 3000)
+    expect(fnBody).toMatch(/validatePreferredSecondary/)
+    expect(fnBody).toMatch(/legacyPositionFromArray\(validatedPreferred\)/)
   })
 
   it('uses the canonical revalidate helper rather than direct revalidatePath / revalidateTag', () => {
@@ -178,7 +191,9 @@ describe('v1.41.0 — adminUpdatePlayerPosition server action', () => {
     // contract; this test pins the call site shape inside the action.
     const fnIdx = LEAGUES_ACTIONS.indexOf('export async function adminUpdatePlayerPosition')
     expect(fnIdx).toBeGreaterThan(0)
-    const fnBody = LEAGUES_ACTIONS.slice(fnIdx, fnIdx + 2000)
+    // v1.93.0 — widened slice; function grew with the preferred/secondary
+    // split + validatePreferredSecondary plumbing.
+    const fnBody = LEAGUES_ACTIONS.slice(fnIdx, fnIdx + 3500)
     expect(fnBody).toMatch(
       /revalidate\(\{ domain: 'admin', paths: \[`\/admin\/leagues\/\$\{leagueId\}\/players`\] \}\)/,
     )
@@ -186,7 +201,8 @@ describe('v1.41.0 — adminUpdatePlayerPosition server action', () => {
 
   it('rejects empty playerId before touching Prisma (v1.65.4 — writes to PLM)', () => {
     const fnIdx = LEAGUES_ACTIONS.indexOf('export async function adminUpdatePlayerPosition')
-    const fnBody = LEAGUES_ACTIONS.slice(fnIdx, fnIdx + 1500)
+    // v1.93.0 — widened slice.
+    const fnBody = LEAGUES_ACTIONS.slice(fnIdx, fnIdx + 3500)
     // Validation order: assertAdmin, then `if (!playerId) throw`. The
     // throw comes BEFORE the Prisma update so the action can't no-op an
     // arbitrary row. v1.65.4 — position now writes to playerLeagueMembership,
@@ -197,10 +213,13 @@ describe('v1.41.0 — adminUpdatePlayerPosition server action', () => {
     expect(updateIdx).toBeGreaterThan(idGuardIdx)
     // v1.82.0 — the updateMany payload now dual-writes positions[] +
     // the legacy enum bucketed via legacyPositionFromArray().
-    // v1.86.0 — also writes preferredPositions + secondaryPositions.
-    expect(fnBody).toMatch(/data:\s*\{\s*positions:\s*validatedPositions/)
-    expect(fnBody).toMatch(/preferredPositions:\s*validatedPositions/)
-    expect(fnBody).toMatch(/secondaryPositions:\s*\[\]/)
+    // v1.93.0 — preferredPositions / secondaryPositions populated
+    // independently from the new split shape (or from the legacy single
+    // array, in which case preferred = positions and secondary = []).
+    // `positions[]` mirrors preferred for legacy single-array readers.
+    expect(fnBody).toMatch(/positions:\s*validatedPreferred/)
+    expect(fnBody).toMatch(/preferredPositions:\s*validatedPreferred/)
+    expect(fnBody).toMatch(/secondaryPositions:\s*validatedSecondary/)
     expect(fnBody).toMatch(/position:\s*legacyPosition/)
   })
 

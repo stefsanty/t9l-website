@@ -369,8 +369,11 @@ describe('v1.63.0 — Dashboard branches on flags', () => {
     // v1.64.0 — banner now needs `league` + `recruitingState` props from
     // the page-level RSC, so the branch is `recruiting && league &&
     // recruitingState && <RecruitingBanner ...>`. Pin the chain.
+    // v1.94.0 — broadened to `(recruiting || forceRecruitingBanner)` to
+    // support the new `/id/<slug>/join` route which mounts the banner
+    // regardless of `League.visibility`.
     expect(DASHBOARD_SRC).toMatch(
-      /recruiting\s*&&\s*league\s*&&\s*recruitingState\s*&&[\s\S]{0,200}<RecruitingBanner\b/,
+      /\(recruiting\s*\|\|\s*forceRecruitingBanner\)\s*&&\s*league\s*&&\s*recruitingState\s*&&[\s\S]{0,200}<RecruitingBanner\b/,
     )
   })
 

@@ -28,7 +28,7 @@ import {
   unretirePlayer,
 } from '@/app/admin/leagues/actions'
 import { formatJpyFee } from '@/lib/playerFee'
-import { groupedPositionLabel } from '@/lib/positions'
+import { groupedPositionLabel, MAX_PREFERRED_POSITIONS } from '@/lib/positions'
 import { getMembershipStatus } from '@/lib/membership'
 import PositionMultiSelect from '@/components/PositionMultiSelect'
 
@@ -84,8 +84,16 @@ interface PlayerRow {
    * league's vocabulary. Empty array == "no position recorded".
    * Falls back to `[position]` when missing (memberships that
    * haven't been re-saved since the migration).
+   *
+   * v1.93.0 — `positions` mirrors `preferredPositions` for legacy
+   * single-array readers. The admin Edit panel writes the split via
+   * `preferredPositions` + `secondaryPositions` below.
    */
   positions: string[]
+  /** v1.93.0 — preferred positions (capped at MAX_PREFERRED_POSITIONS). */
+  preferredPositions: string[]
+  /** v1.93.0 — secondary positions (uncapped, disjoint from preferred). */
+  secondaryPositions: string[]
   // v1.37.0 (PR ι) — user-uploaded profile picture; preferred over
   // pictureUrl + linePictureUrl in the avatar fallback chain.
   profilePictureUrl: string | null
@@ -1211,25 +1219,43 @@ interface EditPlayerPanelProps {
 function EditPlayerPanel({ player, leagueId, ballType, onClose }: EditPlayerPanelProps) {
   const { toast } = useToast()
   const [name, setName] = useState<string>(player.name ?? '')
-  // v1.82.0 — multi-position. Initial selection prefers `positions[]`
-  // and falls back to the legacy single-string column for memberships
-  // that haven't been re-saved since the migration.
-  const initialPositions = useMemo<string[]>(() => {
+  // v1.82.0 — multi-position. v1.93.0 — split preferred + secondary;
+  // legacy memberships that haven't been re-saved seed preferred from
+  // either `preferredPositions[]` (v1.86.0 dual-write) or `positions[]`
+  // (v1.82.0 pre-split) or `[position]` (pre-v1.82.0 enum column).
+  const initialPreferred = useMemo<string[]>(() => {
+    if (player.preferredPositions && player.preferredPositions.length > 0) return [...player.preferredPositions]
     if (player.positions && player.positions.length > 0) return [...player.positions]
     return player.position ? [player.position] : []
-  }, [player.positions, player.position])
-  const [positions, setPositions] = useState<string[]>(initialPositions)
+  }, [player.preferredPositions, player.positions, player.position])
+  const initialSecondary = useMemo<string[]>(() => [...(player.secondaryPositions ?? [])], [player.secondaryPositions])
+  const [preferred, setPreferred] = useState<string[]>(initialPreferred)
+  const [secondary, setSecondary] = useState<string[]>(initialSecondary)
   const [pending, startTransition] = useTransition()
+
+  function handlePreferredChange(next: string[]) {
+    setPreferred(next)
+    // Demote-from-preferred semantics: dropping a code from preferred
+    // is non-destructive; ADDING a code that's currently in secondary
+    // removes it from secondary so the two sets stay disjoint.
+    const nextSet = new Set(next)
+    setSecondary((prev) => prev.filter((c) => !nextSet.has(c)))
+  }
+  const preferredSet = new Set(preferred)
+  const secondaryFiltered = secondary.filter((c) => !preferredSet.has(c))
 
   const initialName = player.name ?? ''
   const trimmedName = name.trim()
   const nameChanged = trimmedName !== initialName.trim()
-  const positionsChanged = !sameStringArray(positions, initialPositions)
+  const preferredChanged = !sameStringArray(preferred, initialPreferred)
+  const secondaryChanged = !sameStringArray(secondaryFiltered, initialSecondary)
+  const positionsChanged = preferredChanged || secondaryChanged
+  const preferredOversize = preferred.length > MAX_PREFERRED_POSITIONS
   const dirty = nameChanged || positionsChanged
   const nameInvalid = nameChanged && trimmedName.length === 0
 
   function handleSave() {
-    if (!dirty || nameInvalid) return
+    if (!dirty || nameInvalid || preferredOversize) return
     startTransition(async () => {
       try {
         if (nameChanged) {
@@ -1239,7 +1265,8 @@ function EditPlayerPanel({ player, leagueId, ballType, onClose }: EditPlayerPane
           await adminUpdatePlayerPosition({
             playerId: player.id,
             leagueId,
-            positions,
+            preferredPositions: preferred,
+            secondaryPositions: secondaryFiltered,
           })
         }
         toast(`${nameOrPlaceholder(trimmedName || initialName)} updated`)
@@ -1296,22 +1323,51 @@ function EditPlayerPanel({ player, leagueId, ballType, onClose }: EditPlayerPane
           )}
         </div>
 
-        {/* Position */}
+        {/* Preferred positions (capped at MAX_PREFERRED_POSITIONS) */}
+        <div className="w-full md:flex-1 flex flex-col gap-1.5">
+          <div className="flex items-baseline justify-between">
+            <span
+              className="text-[11px] font-semibold uppercase tracking-[1.5px] text-admin-text3"
+              id={`edit-preferred-${player.id}`}
+            >
+              Preferred (up to {MAX_PREFERRED_POSITIONS})
+            </span>
+            <span
+              className="text-[10px] font-bold uppercase tracking-widest text-admin-text3"
+              data-testid={`player-edit-preferred-counter-${player.id}`}
+            >
+              {preferred.length} / {MAX_PREFERRED_POSITIONS}
+            </span>
+          </div>
+          <div data-testid={`player-edit-preferred-select-${player.id}`}>
+            <PositionMultiSelect
+              selected={preferred}
+              onChange={handlePreferredChange}
+              ballType={ballType}
+              disabled={pending}
+              maxSelected={MAX_PREFERRED_POSITIONS}
+              variant="admin"
+              testIdPrefix={`player-edit-preferred-${player.id}`}
+            />
+          </div>
+        </div>
+
+        {/* Secondary positions (uncapped) */}
         <div className="w-full md:flex-1 flex flex-col gap-1.5">
           <span
             className="text-[11px] font-semibold uppercase tracking-[1.5px] text-admin-text3"
-            id={`edit-position-${player.id}`}
+            id={`edit-secondary-${player.id}`}
           >
-            Position(s)
+            Also plays
           </span>
-          <div data-testid={`player-edit-position-select-${player.id}`}>
+          <div data-testid={`player-edit-secondary-select-${player.id}`}>
             <PositionMultiSelect
-              selected={positions}
-              onChange={setPositions}
+              selected={secondaryFiltered}
+              onChange={setSecondary}
               ballType={ballType}
               disabled={pending}
               variant="admin"
-              testIdPrefix={`player-edit-position-${player.id}`}
+              testIdPrefix={`player-edit-secondary-${player.id}`}
             />
           </div>
         </div>
@@ -1321,7 +1377,7 @@ function EditPlayerPanel({ player, leagueId, ballType, onClose }: EditPlayerPane
           <button
             type="button"
             onClick={handleSave}
-            disabled={!dirty || nameInvalid || pending}
+            disabled={!dirty || nameInvalid || preferredOversize || pending}
             className="flex-1 md:flex-none rounded-[6px] bg-admin-green px-3.5 py-1.5 text-[13px] font-semibold tracking-[0.2px] text-admin-ink hover:opacity-90 disabled:opacity-50"
             data-testid={`player-edit-save-${player.id}`}
           >

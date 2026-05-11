@@ -3,7 +3,7 @@
 import { useRef, useState, useTransition } from 'react'
 import { upload } from '@vercel/blob/client'
 import PositionMultiSelect from '@/components/PositionMultiSelect'
-import type { BallType } from '@/lib/positions'
+import { MAX_PREFERRED_POSITIONS, type BallType } from '@/lib/positions'
 
 /**
  * v1.68.0 — shared registration fields component.
@@ -43,12 +43,18 @@ export interface RegistrationFieldsSubmit {
   name: string
   email: string
   /**
-   * v1.82.0 — multi-position. Stored as canonical uppercase codes from
-   * the league's vocabulary (per ballType). Empty array == "no
-   * position recorded" (matches the v1.68.0 "Prefer not to say"
-   * default semantics).
+   * v1.93.0 — preferred + secondary positions. Replaces the single
+   * `positions[]` array in earlier RegistrationFieldsSubmit. Preferred
+   * are capped at `MAX_PREFERRED_POSITIONS` (3) at both the UI and
+   * server layers; secondary is uncapped and excludes any code already
+   * in preferred (UI clamp + server `validatePreferredSecondary`).
+   *
+   * Empty preferred is permitted at the server level but blocked at
+   * the form level — every onboarding submission must record at least
+   * one preferred position.
    */
-  positions: string[]
+  preferredPositions: string[]
+  secondaryPositions: string[]
   idFrontUrl: string
   idBackUrl: string
   profilePictureUrl: string | null
@@ -74,14 +80,32 @@ export interface RegistrationFieldsProps {
    * v1.82.0 — initial selected position codes. Empty by default. Codes
    * are validated against `ballType`'s vocabulary on submit (server-
    * side validation owns the final word).
+   *
+   * v1.93.0 — when supplied to the onboarding form, this seeds the
+   * **preferred** picker (the legacy single-array memberships read
+   * `positions[]`, and pre-v1.86.0 wrote everything as preferred).
+   * Use the explicit `initialPreferredPositions` /
+   * `initialSecondaryPositions` props when you want the v1.86.0 split.
    */
   initialPositions?: ReadonlyArray<string>
+  /** v1.93.0 — explicit preferred seed (overrides `initialPositions`). */
+  initialPreferredPositions?: ReadonlyArray<string>
+  /** v1.93.0 — explicit secondary seed. */
+  initialSecondaryPositions?: ReadonlyArray<string>
   /**
    * v1.82.0 — league format. Drives the position chip vocabulary.
    * Defaults to SOCCER for legacy callers; the recruit/onboarding/
    * apply paths thread the league's actual ballType through.
    */
   ballType?: BallType | null
+  /**
+   * v1.93.0 — when false, hides the ID front/back upload fields and
+   * the "Why we need your ID" callout, and skips the front/back required-
+   * gate at submit time. The server-side gate still owns the final word
+   * (re-checks `league.idRequired` to defend against a forged false).
+   * Defaults to `true` so existing callers continue to require ID.
+   */
+  idRequired?: boolean
   /** Submit button label, e.g. "Apply to T9L" or "Save and finish". */
   submitLabel: string
   /**
@@ -111,7 +135,10 @@ export default function RegistrationFields({
   initialEmail = '',
   initialComments = '',
   initialPositions = [],
+  initialPreferredPositions,
+  initialSecondaryPositions,
   ballType = null,
+  idRequired = true,
   submitLabel,
   uploadPathPrefix,
   picturePathPrefix,
@@ -121,7 +148,16 @@ export default function RegistrationFields({
   const [name, setName] = useState(initialName)
   const [email, setEmail] = useState(initialEmail)
   const [comments, setComments] = useState(initialComments)
-  const [positions, setPositions] = useState<string[]>([...initialPositions])
+  // v1.93.0 — preferred + secondary split. When the explicit-prefer
+  // props are supplied, they win (v1.86.0 multi-league split path);
+  // otherwise `initialPositions[]` seeds preferred (legacy single-array
+  // PLMs from before v1.86.0's dual-write).
+  const [preferredPositions, setPreferredPositions] = useState<string[]>(
+    initialPreferredPositions ? [...initialPreferredPositions] : [...initialPositions],
+  )
+  const [secondaryPositions, setSecondaryPositions] = useState<string[]>(
+    initialSecondaryPositions ? [...initialSecondaryPositions] : [],
+  )
   const [error, setError] = useState<string | null>(null)
 
   const idFrontRef = useRef<HTMLInputElement>(null)
@@ -188,11 +224,22 @@ export default function RegistrationFields({
       setError('Please enter a valid email address')
       return
     }
-    if (!idFrontFile) {
+    // v1.93.0 — onboarding form requires at least one preferred position.
+    // The server-side gate only enforces the upper-bound (≤ 3) via
+    // `validatePreferredSecondary`; the lower-bound is form-level.
+    if (preferredPositions.length === 0) {
+      setError('Pick at least one preferred position.')
+      return
+    }
+    if (preferredPositions.length > MAX_PREFERRED_POSITIONS) {
+      setError(`Preferred positions: pick at most ${MAX_PREFERRED_POSITIONS}.`)
+      return
+    }
+    if (idRequired && !idFrontFile) {
       setError('Front of ID is required')
       return
     }
-    if (!idBackFile) {
+    if (idRequired && !idBackFile) {
       setError('Back of ID is required')
       return
     }
@@ -200,23 +247,31 @@ export default function RegistrationFields({
     startTransition(async () => {
       try {
         const ts = Date.now()
-        const idFrontPath = `${uploadPathPrefix}/id-front-${ts}.${extOf(idFrontFile.name)}`
-        const idBackPath = `${uploadPathPrefix}/id-back-${ts}.${extOf(idBackFile.name)}`
+        const idFrontPath = idFrontFile
+          ? `${uploadPathPrefix}/id-front-${ts}.${extOf(idFrontFile.name)}`
+          : null
+        const idBackPath = idBackFile
+          ? `${uploadPathPrefix}/id-back-${ts}.${extOf(idBackFile.name)}`
+          : null
         const picPath = picFile
           ? `${picturePathPrefix ?? uploadPathPrefix}/profile-${ts}.${extOf(picFile.name)}`
           : null
 
         const [front, back, pic] = await Promise.all([
-          upload(idFrontPath, idFrontFile, {
-            access: 'public',
-            handleUploadUrl: UPLOAD_TOKEN_URL,
-            contentType: idFrontFile.type || undefined,
-          }),
-          upload(idBackPath, idBackFile, {
-            access: 'public',
-            handleUploadUrl: UPLOAD_TOKEN_URL,
-            contentType: idBackFile.type || undefined,
-          }),
+          idFrontFile && idFrontPath
+            ? upload(idFrontPath, idFrontFile, {
+                access: 'public',
+                handleUploadUrl: UPLOAD_TOKEN_URL,
+                contentType: idFrontFile.type || undefined,
+              })
+            : Promise.resolve(null),
+          idBackFile && idBackPath
+            ? upload(idBackPath, idBackFile, {
+                access: 'public',
+                handleUploadUrl: UPLOAD_TOKEN_URL,
+                contentType: idBackFile.type || undefined,
+              })
+            : Promise.resolve(null),
           picFile && picPath
             ? upload(picPath, picFile, {
                 access: 'public',
@@ -226,12 +281,21 @@ export default function RegistrationFields({
             : Promise.resolve(null),
         ])
 
+        // v1.93.0 — drop any secondary code that overlaps preferred
+        // before submission. The server's `validatePreferredSecondary`
+        // also drops on overlap; this is the matching client-side
+        // safety net (in case the picker missed a transient state).
+        const preferredSet = new Set(preferredPositions)
+        const filteredSecondary = secondaryPositions.filter(
+          (c) => !preferredSet.has(c),
+        )
         await onSubmit({
           name: trimmed,
           email: trimmedEmail,
-          positions,
-          idFrontUrl: front.url,
-          idBackUrl: back.url,
+          preferredPositions,
+          secondaryPositions: filteredSecondary,
+          idFrontUrl: front?.url ?? '',
+          idBackUrl: back?.url ?? '',
           profilePictureUrl: pic?.url ?? null,
           comments: comments.trim(),
         })
@@ -245,7 +309,13 @@ export default function RegistrationFields({
     })
   }
 
-  const submitDisabled = pending || !name.trim() || !email.trim() || !idFrontFile || !idBackFile
+  const submitDisabled =
+    pending ||
+    !name.trim() ||
+    !email.trim() ||
+    preferredPositions.length === 0 ||
+    preferredPositions.length > MAX_PREFERRED_POSITIONS ||
+    (idRequired && (!idFrontFile || !idBackFile))
 
   return (
     <form
@@ -290,56 +360,92 @@ export default function RegistrationFields({
       </label>
 
       <div className="block">
-        <span className="block text-fg-mid text-xs uppercase tracking-widest font-bold mb-1.5">
-          Position(s)
-        </span>
+        <div className="flex items-baseline justify-between mb-1.5">
+          <span className="block text-fg-mid text-xs uppercase tracking-widest font-bold">
+            Preferred positions (up to {MAX_PREFERRED_POSITIONS}) <span className="text-vibrant-pink">*</span>
+          </span>
+          <span
+            className="text-fg-low text-[10px] font-bold uppercase tracking-widest"
+            data-testid="registration-preferred-counter"
+          >
+            {preferredPositions.length} / {MAX_PREFERRED_POSITIONS}
+          </span>
+        </div>
         <PositionMultiSelect
-          selected={positions}
-          onChange={setPositions}
+          selected={preferredPositions}
+          onChange={(next) => {
+            setPreferredPositions(next)
+            // Drop any secondary code that the user just promoted to
+            // preferred — keeps the two sets disjoint without
+            // surprising the user with a stale ghost chip.
+            const nextSet = new Set(next)
+            setSecondaryPositions((prev) => prev.filter((c) => !nextSet.has(c)))
+          }}
           ballType={ballType}
           disabled={pending}
-          testIdPrefix="registration-position"
+          maxSelected={MAX_PREFERRED_POSITIONS}
+          testIdPrefix="registration-preferred"
         />
         <span className="block text-fg-low text-xs mt-1.5">
-          Tap to pick one or more. You can leave this blank.
+          Pick at least one. Formation assignment fills these first.
         </span>
       </div>
 
-      <div
-        className="rounded-lg border border-warning/40 bg-warning/10 px-4 py-3 text-sm text-fg-high leading-relaxed"
-        data-testid="registration-id-callout"
-      >
-        <p className="font-bold mb-1.5 text-fg-high">Why we need your ID</p>
-        <p className="text-fg-mid">
-          We need these IDs to be able to book more courts. We will only ever use your ID
-          to book courts in order to host more games. We require all league members to
-          acknowledge this and submit their ID to join the league.
-        </p>
+      <div className="block">
+        <span className="block text-fg-mid text-xs uppercase tracking-widest font-bold mb-1.5">
+          Also plays
+        </span>
+        <PositionMultiSelect
+          selected={secondaryPositions.filter((c) => !preferredPositions.includes(c))}
+          onChange={setSecondaryPositions}
+          ballType={ballType}
+          disabled={pending}
+          testIdPrefix="registration-secondary"
+        />
+        <span className="block text-fg-low text-xs mt-1.5">
+          Optional. Roles you can cover if needed.
+        </span>
       </div>
 
-      <FileField
-        label="Front of ID"
-        required
-        accept={ID_ACCEPT}
-        preview={idFrontPreview}
-        inputRef={idFrontRef}
-        onChange={(f) =>
-          handleFileChange(f, setIdFrontFile, setIdFrontPreview, ID_MAX_BYTES, 'Front of ID')
-        }
-        testid="registration-id-front"
-      />
+      {idRequired && (
+        <>
+          <div
+            className="rounded-lg border border-warning/40 bg-warning/10 px-4 py-3 text-sm text-fg-high leading-relaxed"
+            data-testid="registration-id-callout"
+          >
+            <p className="font-bold mb-1.5 text-fg-high">Why we need your ID</p>
+            <p className="text-fg-mid">
+              We need these IDs to be able to book more courts. We will only ever use your ID
+              to book courts in order to host more games. We require all league members to
+              acknowledge this and submit their ID to join the league.
+            </p>
+          </div>
 
-      <FileField
-        label="Back of ID"
-        required
-        accept={ID_ACCEPT}
-        preview={idBackPreview}
-        inputRef={idBackRef}
-        onChange={(f) =>
-          handleFileChange(f, setIdBackFile, setIdBackPreview, ID_MAX_BYTES, 'Back of ID')
-        }
-        testid="registration-id-back"
-      />
+          <FileField
+            label="Front of ID"
+            required
+            accept={ID_ACCEPT}
+            preview={idFrontPreview}
+            inputRef={idFrontRef}
+            onChange={(f) =>
+              handleFileChange(f, setIdFrontFile, setIdFrontPreview, ID_MAX_BYTES, 'Front of ID')
+            }
+            testid="registration-id-front"
+          />
+
+          <FileField
+            label="Back of ID"
+            required
+            accept={ID_ACCEPT}
+            preview={idBackPreview}
+            inputRef={idBackRef}
+            onChange={(f) =>
+              handleFileChange(f, setIdBackFile, setIdBackPreview, ID_MAX_BYTES, 'Back of ID')
+            }
+            testid="registration-id-back"
+          />
+        </>
+      )}
 
       <FileField
         label="Profile picture (optional)"

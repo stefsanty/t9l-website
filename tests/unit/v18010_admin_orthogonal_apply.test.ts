@@ -116,7 +116,9 @@ describe('v1.80.10 — applyToLeague admin-orthogonal-UX fix', () => {
     const regIdx = RECRUITING_ACTIONS_SRC.indexOf(
       'export async function registerToLeague',
     )
-    const block = RECRUITING_ACTIONS_SRC.slice(regIdx, regIdx + 3500)
+    // v1.93.0 — widened slice; the function grew after the
+    // preferred/secondary + idRequired plumbing landed.
+    const block = RECRUITING_ACTIONS_SRC.slice(regIdx, regIdx + 6000)
     expect(block).toMatch(/prisma\.user\.findUnique\(\s*\{\s*where:\s*\{\s*id:\s*userId\s*\}/)
     expect(block).toMatch(/prisma\.user\.findUnique\(\s*\{\s*where:\s*\{\s*lineId\s*\}/)
   })
@@ -129,7 +131,8 @@ describe('v1.80.10 — applyToLeague admin-orthogonal-UX fix', () => {
     const regIdx = RECRUITING_ACTIONS_SRC.indexOf(
       'export async function registerToLeague',
     )
-    const block = RECRUITING_ACTIONS_SRC.slice(regIdx, regIdx + 4000)
+    // v1.93.0 — widened slice (same reason as above).
+    const block = RECRUITING_ACTIONS_SRC.slice(regIdx, regIdx + 6000)
     expect(block).toMatch(/expectedPrefix\s*=\s*`\/register-pending\/\$\{user\.id\}\//)
     // Regression target: `${userId}` raw substitution would be the bug.
     expect(block).not.toMatch(/expectedPrefix\s*=\s*`\/register-pending\/\$\{userId\}\//)

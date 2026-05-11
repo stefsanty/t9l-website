@@ -6,7 +6,7 @@ import { adminCreatePlayer, adminGenerateInvite } from '@/app/admin/leagues/acti
 import { useToast } from './ToastProvider'
 import InviteDisplay from './InviteDisplay'
 import PositionMultiSelect from '@/components/PositionMultiSelect'
-import type { BallType } from '@/lib/positions'
+import { MAX_PREFERRED_POSITIONS, type BallType } from '@/lib/positions'
 
 interface LeagueTeamRef {
   id: string
@@ -51,10 +51,19 @@ export default function AddPlayerDialog({ leagueId, leagueTeams, ballType }: Add
 
   // Form state
   const [name, setName] = useState('')
-  const [positions, setPositions] = useState<string[]>([])
+  const [preferred, setPreferred] = useState<string[]>([])
+  const [secondary, setSecondary] = useState<string[]>([])
   const [leagueTeamId, setLeagueTeamId] = useState('')
   const [generateInviteAfter, setGenerateInviteAfter] = useState(false)
   const [skipOnboarding, setSkipOnboarding] = useState(false)
+
+  function handlePreferredChange(next: string[]) {
+    setPreferred(next)
+    const nextSet = new Set(next)
+    setSecondary((prev) => prev.filter((c) => !nextSet.has(c)))
+  }
+  const preferredSet = new Set(preferred)
+  const secondaryFiltered = secondary.filter((c) => !preferredSet.has(c))
 
   // Result state — populated after a successful create+invite
   const [generatedInvite, setGeneratedInvite] = useState<{
@@ -67,7 +76,8 @@ export default function AddPlayerDialog({ leagueId, leagueTeams, ballType }: Add
 
   function reset() {
     setName('')
-    setPositions([])
+    setPreferred([])
+    setSecondary([])
     setLeagueTeamId('')
     setGenerateInviteAfter(false)
     setSkipOnboarding(false)
@@ -98,7 +108,8 @@ export default function AddPlayerDialog({ leagueId, leagueTeams, ballType }: Add
         const created = await adminCreatePlayer({
           leagueId,
           name: trimmedName === '' ? null : trimmedName,
-          positions,
+          preferredPositions: preferred,
+          secondaryPositions: secondaryFiltered,
           leagueTeamId: leagueTeamId === '' ? null : leagueTeamId,
         })
         if (generateInviteAfter) {
@@ -217,16 +228,39 @@ export default function AddPlayerDialog({ leagueId, leagueTeams, ballType }: Add
                   </label>
 
                   <div className="block">
+                    <div className="flex items-baseline justify-between mb-1">
+                      <span className="block text-admin-text3 text-[10px] font-bold uppercase tracking-widest">
+                        Preferred (up to {MAX_PREFERRED_POSITIONS})
+                      </span>
+                      <span
+                        className="text-[10px] font-bold uppercase tracking-widest text-admin-text3"
+                        data-testid="add-player-preferred-counter"
+                      >
+                        {preferred.length} / {MAX_PREFERRED_POSITIONS}
+                      </span>
+                    </div>
+                    <PositionMultiSelect
+                      selected={preferred}
+                      onChange={handlePreferredChange}
+                      ballType={ballType}
+                      disabled={pending}
+                      maxSelected={MAX_PREFERRED_POSITIONS}
+                      variant="admin"
+                      testIdPrefix="add-player-preferred"
+                    />
+                  </div>
+
+                  <div className="block">
                     <span className="block text-admin-text3 text-[10px] font-bold uppercase tracking-widest mb-1">
-                      Position(s)
+                      Also plays
                     </span>
                     <PositionMultiSelect
-                      selected={positions}
-                      onChange={setPositions}
+                      selected={secondaryFiltered}
+                      onChange={setSecondary}
                       ballType={ballType}
                       disabled={pending}
                       variant="admin"
-                      testIdPrefix="add-player-position"
+                      testIdPrefix="add-player-secondary"
                     />
                   </div>
                 </div>

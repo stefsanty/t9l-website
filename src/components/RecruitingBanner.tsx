@@ -67,13 +67,27 @@ interface Props {
    * changes.
    */
   leagueSlug?: string
+  /**
+   * v1.94.0 — when true, the banner is being rendered by the
+   * `/id/<slug>/join` "private join link" route. This is purely a
+   * marker prop today; the gate at the caller (`Dashboard`) decides
+   * whether to render us at all, and the State C / D / E surfaces
+   * surface the same Apply CTA regardless. Reserved for future
+   * per-state copy tweaks (e.g. "you've been invited to apply").
+   */
+  forceRecruitingBanner?: boolean
 }
 
 export default function RecruitingBanner({
   league,
   viewer,
   leagueSlug = DEFAULT_LEAGUE_SLUG,
+  forceRecruitingBanner: _forceRecruitingBanner = false,
 }: Props) {
+  // v1.94.0 — `_forceRecruitingBanner` is currently a marker prop the
+  // banner accepts but doesn't branch on. Kept on the API so future
+  // per-state copy tweaks don't require a Dashboard signature change.
+  void _forceRecruitingBanner
   const [applyOpen, setApplyOpen] = useState(false)
   const [signInOpen, setSignInOpen] = useState(false)
   const [callbackUrl, setCallbackUrl] = useState('/')

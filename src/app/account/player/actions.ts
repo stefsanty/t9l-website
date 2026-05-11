@@ -8,7 +8,6 @@ import { deleteMapping } from '@/lib/playerMappingStore'
 import { PROFILE_PIC_ALLOWED_TYPES, PROFILE_PIC_MAX_BYTES } from './validation'
 import {
   legacyPositionFromArray,
-  normalizePositions,
   validatePreferredSecondary,
   type BallType,
 } from '@/lib/positions'
@@ -208,11 +207,15 @@ export async function updatePlayerLeague(
     data.positions = [...result.preferred, ...result.secondary]
     data.position = legacyPositionFromArray(result.preferred)
   } else if (hasLegacyField) {
-    const validated = normalizePositions(input.positions!, ballType)
-    data.positions = validated
-    data.preferredPositions = validated
+    // v1.93.0 — funnel legacy `positions` through validatePreferredSecondary
+    // so the cap on preferred is enforced even for callers that haven't
+    // migrated to the split shape.
+    const result = validatePreferredSecondary(input.positions ?? [], [], ballType)
+    if (!result.ok) throw new Error(result.error)
+    data.positions = result.preferred
+    data.preferredPositions = result.preferred
     data.secondaryPositions = []
-    data.position = legacyPositionFromArray(validated)
+    data.position = legacyPositionFromArray(result.preferred)
   }
 
   if (input.idShared !== undefined) {

@@ -13,6 +13,7 @@ import { buildSuccessRedirect } from '@/lib/successRedirect'
 import {
   legacyPositionFromArray,
   normalizePositions,
+  validatePreferredSecondary,
   type BallType,
 } from '@/lib/positions'
 
@@ -72,8 +73,13 @@ export interface ApplyToLeagueInput {
    * v1.82.0 — multi-position. Validated server-side against the
    * league's `ballType` vocabulary. Empty array == "no position
    * recorded" (matches the legacy null behaviour).
+   * @deprecated v1.93.0 — prefer `preferredPositions` + `secondaryPositions`.
    */
   positions?: ReadonlyArray<string>
+  /** v1.93.0 — preferred positions (≤ 3). */
+  preferredPositions?: ReadonlyArray<string>
+  /** v1.93.0 — secondary positions (uncapped, disjoint from preferred). */
+  secondaryPositions?: ReadonlyArray<string>
   /**
    * v1.81.0 — origin-path tracking for the success popup. Captured at
    * form-mount time on the originating page (e.g. `/id/<slug>`) and
@@ -148,19 +154,22 @@ export async function applyToLeague(
   // `normalizePositions` throws on cross-format codes (e.g. FW in a
   // FUTSAL league); surface that as an `ok: false` error so the modal
   // shows the message rather than a generic 500.
-  let validatedPositions: string[]
-  try {
-    validatedPositions = normalizePositions(
-      input.positions,
-      league.ballType as BallType | null,
-    )
-  } catch (err) {
-    return {
-      ok: false,
-      error: err instanceof Error ? err.message : 'Invalid position(s)',
-    }
+  // v1.93.0 — prefer the new preferred/secondary split; fall back to
+  // the legacy single-array shape for callers that haven't migrated.
+  const usingNewShape =
+    input.preferredPositions !== undefined ||
+    input.secondaryPositions !== undefined
+  const positionsResult = validatePreferredSecondary(
+    usingNewShape ? input.preferredPositions ?? [] : input.positions ?? [],
+    usingNewShape ? input.secondaryPositions ?? [] : [],
+    league.ballType as BallType | null,
+  )
+  if (!positionsResult.ok) {
+    return { ok: false, error: positionsResult.error }
   }
-  const legacyPosition = legacyPositionFromArray(validatedPositions)
+  const validatedPreferred = positionsResult.preferred
+  const validatedSecondary = positionsResult.secondary
+  const legacyPosition = legacyPositionFromArray(validatedPreferred)
 
   // v1.80.10 — resolve the calling User row by `userId` first (canonical
   // post-α.5 / v1.27.0 binding), falling back to `lineId` (legacy
@@ -217,7 +226,10 @@ export async function applyToLeague(
         fromGameWeek: 1,
         applicationStatus: 'PENDING',
         // v1.82.0 — dual-write positions[] + legacy enum.
-        positions: validatedPositions,
+        // v1.93.0 — populate preferred/secondary explicitly.
+        positions: validatedPreferred,
+        preferredPositions: validatedPreferred,
+        secondaryPositions: validatedSecondary,
         position: legacyPosition,
         joinSource: 'SELF_SERVE',
         onboardingStatus: 'NOT_YET',
@@ -274,7 +286,10 @@ export async function applyToLeague(
         fromGameWeek: 1,
         applicationStatus: 'PENDING',
         // v1.82.0 — dual-write positions[] + legacy enum.
-        positions: validatedPositions,
+        // v1.93.0 — populate preferred/secondary explicitly.
+        positions: validatedPreferred,
+        preferredPositions: validatedPreferred,
+        secondaryPositions: validatedSecondary,
         position: legacyPosition,
         joinSource: 'SELF_SERVE',
         onboardingStatus: 'NOT_YET',
@@ -373,8 +388,18 @@ export interface RegisterToLeagueInput {
   /**
    * v1.82.0 — multi-position. Validated server-side against the
    * league's `ballType` vocabulary.
+   * @deprecated v1.93.0 — use `preferredPositions` + `secondaryPositions`.
+   *   Legacy callers may still pass `positions`; it's treated as
+   *   preferred when the new fields are absent.
    */
   positions?: ReadonlyArray<string>
+  /**
+   * v1.93.0 — preferred positions (≤ 3, validated server-side via
+   * `validatePreferredSecondary`).
+   */
+  preferredPositions?: ReadonlyArray<string>
+  /** v1.93.0 — secondary positions (uncapped, disjoint from preferred). */
+  secondaryPositions?: ReadonlyArray<string>
   idFrontUrl: string
   idBackUrl: string
   profilePictureUrl?: string | null
@@ -436,7 +461,9 @@ export async function registerToLeague(
   const league = await prisma.league.findUnique({
     where: { id: input.leagueId },
     // v1.82.0 — also pulls `ballType` for position-vocabulary validation.
-    select: { id: true, recruiting: true, name: true, subdomain: true, ballType: true },
+    // v1.93.0 — also pulls `idRequired` so the ID-upload gates are
+    // conditional on the league's setting.
+    select: { id: true, recruiting: true, name: true, subdomain: true, ballType: true, idRequired: true },
   })
   if (!league) return { ok: false, error: 'League not found' }
   if (!league.recruiting) {
@@ -444,19 +471,24 @@ export async function registerToLeague(
   }
 
   // v1.82.0 — validate positions against the league's vocabulary.
-  let validatedPositions: string[]
-  try {
-    validatedPositions = normalizePositions(
-      input.positions,
-      league.ballType as BallType | null,
-    )
-  } catch (err) {
-    return {
-      ok: false,
-      error: err instanceof Error ? err.message : 'Invalid position(s)',
-    }
+  // v1.93.0 — prefer the new `preferredPositions` / `secondaryPositions`
+  // split; fall back to the legacy single `positions` field for callers
+  // that haven't migrated yet (treated as preferred, with secondary [].).
+  // Cap on preferred enforced by `validatePreferredSecondary`.
+  const usingNewShape =
+    input.preferredPositions !== undefined ||
+    input.secondaryPositions !== undefined
+  const positionsResult = validatePreferredSecondary(
+    usingNewShape ? input.preferredPositions ?? [] : input.positions ?? [],
+    usingNewShape ? input.secondaryPositions ?? [] : [],
+    league.ballType as BallType | null,
+  )
+  if (!positionsResult.ok) {
+    return { ok: false, error: positionsResult.error }
   }
-  const legacyPosition = legacyPositionFromArray(validatedPositions)
+  const validatedPreferred = positionsResult.preferred
+  const validatedSecondary = positionsResult.secondary
+  const legacyPosition = legacyPositionFromArray(validatedPreferred)
 
   // v1.80.10 — resolve User row by `userId` first, falling back to
   // `lineId` (User.lineId @unique). Mirrors the v1.59.1 pattern in
@@ -486,12 +518,19 @@ export async function registerToLeague(
   // Defense in depth: the URLs must live under the user's own
   // register-pending prefix on Vercel Blob. The token route gated the
   // PUT keyed on the SAME canonical User.id we just resolved here.
+  // v1.93.0 — when `league.idRequired === false`, the form is allowed to
+  // submit without ID files; empty strings flow through to the DB write
+  // and the gate below is skipped. The check is keyed on the server-
+  // resolved `league.idRequired` (NOT a form-supplied flag) so a
+  // tampered client can't bypass the requirement.
   const expectedPrefix = `/register-pending/${user.id}/`
-  if (!isOwnedBlobUrl(input.idFrontUrl, expectedPrefix)) {
-    return { ok: false, error: 'Front of ID is required' }
-  }
-  if (!isOwnedBlobUrl(input.idBackUrl, expectedPrefix)) {
-    return { ok: false, error: 'Back of ID is required' }
+  if (league.idRequired) {
+    if (!isOwnedBlobUrl(input.idFrontUrl, expectedPrefix)) {
+      return { ok: false, error: 'Front of ID is required' }
+    }
+    if (!isOwnedBlobUrl(input.idBackUrl, expectedPrefix)) {
+      return { ok: false, error: 'Back of ID is required' }
+    }
   }
   if (input.profilePictureUrl && !isOwnedBlobUrl(input.profilePictureUrl, expectedPrefix)) {
     return { ok: false, error: 'profilePictureUrl is not yours' }
@@ -526,9 +565,17 @@ export async function registerToLeague(
           playerId: created.id,
           // v1.72.0 — User.name = Player.name when linking.
           name: trimmedName,
-          idFrontUrl: input.idFrontUrl,
-          idBackUrl: input.idBackUrl,
-          idUploadedAt: new Date(),
+          // v1.93.0 — only persist the ID-upload columns when the
+          // league actually required ID. When `league.idRequired ===
+          // false` the form sends empty URL strings; we leave the
+          // columns unchanged.
+          ...(league.idRequired
+            ? {
+                idFrontUrl: input.idFrontUrl,
+                idBackUrl: input.idBackUrl,
+                idUploadedAt: new Date(),
+              }
+            : {}),
           // v1.78.0 — conditionally write email; do not overwrite a
           // pre-existing verified address.
           ...(shouldWriteEmail ? { email: trimmedEmail } : {}),
@@ -542,7 +589,13 @@ export async function registerToLeague(
           fromGameWeek: 1,
           applicationStatus: 'PENDING',
           // v1.82.0 — dual-write positions[] + legacy enum.
-          positions: validatedPositions,
+          // v1.93.0 — positions[] now mirrors `preferredPositions` (the
+          // multi-array contract makes "positions" ambiguous; preferred
+          // is the closest semantic match for legacy single-array
+          // readers).
+          positions: validatedPreferred,
+          preferredPositions: validatedPreferred,
+          secondaryPositions: validatedSecondary,
           position: legacyPosition,
           joinSource: 'SELF_SERVE',
           onboardingStatus: 'COMPLETED',

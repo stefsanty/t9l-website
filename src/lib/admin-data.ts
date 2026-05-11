@@ -250,6 +250,9 @@ export const getLeaguePlayers = unstable_cache(
       position: plm.position,
       // v1.82.0 — multi-position from the PLM row.
       positions: plm.positions,
+      // v1.93.0 — preferred + secondary split.
+      preferredPositions: plm.preferredPositions,
+      secondaryPositions: plm.secondaryPositions,
       // v1.80.0 — applicant comments from the PLM.
       comments: plm.comments,
     }))

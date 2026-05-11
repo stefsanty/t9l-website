@@ -4,7 +4,7 @@ import { useEffect, useState, useTransition } from 'react'
 import { createPortal } from 'react-dom'
 import { applyToLeague } from '@/app/api/recruiting/actions'
 import PositionMultiSelect from './PositionMultiSelect'
-import type { BallType } from '@/lib/positions'
+import { MAX_PREFERRED_POSITIONS, type BallType } from '@/lib/positions'
 
 /**
  * v1.64.0 — Application form modal.
@@ -56,8 +56,17 @@ export default function ApplyToLeagueModal({
   ballType = null,
 }: Props) {
   const [name, setName] = useState('')
-  const [positions, setPositions] = useState<string[]>([])
+  const [preferred, setPreferred] = useState<string[]>([])
+  const [secondary, setSecondary] = useState<string[]>([])
   const [error, setError] = useState<string | null>(null)
+
+  function handlePreferredChange(next: string[]) {
+    setPreferred(next)
+    const nextSet = new Set(next)
+    setSecondary((prev) => prev.filter((c) => !nextSet.has(c)))
+  }
+  const preferredSet = new Set(preferred)
+  const secondaryFiltered = secondary.filter((c) => !preferredSet.has(c))
   const [pending, startTransition] = useTransition()
   const [mounted, setMounted] = useState(false)
   // v1.81.0 — capture the originating page path so the server action can
@@ -92,6 +101,14 @@ export default function ApplyToLeagueModal({
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError(null)
+    if (preferred.length === 0) {
+      setError('Pick at least one preferred position.')
+      return
+    }
+    if (preferred.length > MAX_PREFERRED_POSITIONS) {
+      setError(`Preferred positions: pick at most ${MAX_PREFERRED_POSITIONS}.`)
+      return
+    }
     startTransition(async () => {
       try {
         // v1.81.0 — server-side redirect handles success navigation.
@@ -103,7 +120,8 @@ export default function ApplyToLeagueModal({
           // For State D ('existing'), the existing Player's name is
           // unchanged; we send empty string and the action ignores it.
           name: mode === 'existing' ? '' : name.trim(),
-          positions,
+          preferredPositions: preferred,
+          secondaryPositions: secondaryFiltered,
           originPath,
         })
         if (result && !result.ok) {
@@ -183,18 +201,43 @@ export default function ApplyToLeagueModal({
             )}
 
             <div className="block">
-              <span className="block text-fg-mid text-xs uppercase tracking-widest font-bold mb-1.5">
-                Position(s)
-              </span>
+              <div className="flex items-baseline justify-between mb-1.5">
+                <span className="block text-fg-mid text-xs uppercase tracking-widest font-bold">
+                  Preferred (up to {MAX_PREFERRED_POSITIONS}) <span className="text-vibrant-pink">*</span>
+                </span>
+                <span
+                  className="text-fg-low text-[10px] font-bold uppercase tracking-widest"
+                  data-testid="apply-preferred-counter"
+                >
+                  {preferred.length} / {MAX_PREFERRED_POSITIONS}
+                </span>
+              </div>
               <PositionMultiSelect
-                selected={positions}
-                onChange={setPositions}
+                selected={preferred}
+                onChange={handlePreferredChange}
                 ballType={ballType}
                 disabled={pending}
-                testIdPrefix="apply-position"
+                maxSelected={MAX_PREFERRED_POSITIONS}
+                testIdPrefix="apply-preferred"
               />
               <span className="block text-fg-low text-xs mt-1.5">
-                Tap to pick one or more. You can leave this blank.
+                Pick at least one. Roles you want to play.
+              </span>
+            </div>
+
+            <div className="block">
+              <span className="block text-fg-mid text-xs uppercase tracking-widest font-bold mb-1.5">
+                Also plays
+              </span>
+              <PositionMultiSelect
+                selected={secondaryFiltered}
+                onChange={setSecondary}
+                ballType={ballType}
+                disabled={pending}
+                testIdPrefix="apply-secondary"
+              />
+              <span className="block text-fg-low text-xs mt-1.5">
+                Optional. Roles you can cover if needed.
               </span>
             </div>
 
@@ -215,7 +258,12 @@ export default function ApplyToLeagueModal({
               </button>
               <button
                 type="submit"
-                disabled={pending || (mode === 'fresh' && !name.trim())}
+                disabled={
+                  pending ||
+                  (mode === 'fresh' && !name.trim()) ||
+                  preferred.length === 0 ||
+                  preferred.length > MAX_PREFERRED_POSITIONS
+                }
                 className="flex-1 rounded-lg bg-primary text-on-primary px-4 py-2.5 text-sm font-bold hover:opacity-90 disabled:opacity-50 transition-opacity"
                 data-testid="apply-submit"
               >

@@ -239,6 +239,15 @@ export function groupedPositionLabel(positions: ReadonlyArray<string>): string {
 }
 
 /**
+ * v1.93.0 — maximum count of preferred positions a player may record per
+ * league. Enforced server-side via `validatePreferredSecondary` and at
+ * the UI layer (RegistrationFields / AccountPlayerForm / admin edit /
+ * ApplyToLeagueModal) by greying out additional chips once the cap is
+ * hit. Secondary positions are NOT capped.
+ */
+export const MAX_PREFERRED_POSITIONS = 3
+
+/**
  * v1.86.0 — Validate and normalise the preferred + secondary position
  * arrays submitted from the account page or join flow.
  *
@@ -247,9 +256,14 @@ export function groupedPositionLabel(positions: ReadonlyArray<string>): string {
  *   - A code that appears in `preferred` is silently removed from
  *     `secondary` (no duplicates across the two sets).
  *   - Both may be empty (no position recorded).
+ *   - v1.93.0 — `preferred.length <= MAX_PREFERRED_POSITIONS`. Oversize
+ *     submissions return `{ ok: false, error }` so callers surface a
+ *     friendly hint instead of silently truncating. UI clamps the
+ *     selection, so this gate primarily defends against tampered
+ *     client submissions.
  *
  * Returns `{ ok: true, preferred, secondary }` or
- *         `{ ok: false, error }` on invalid code.
+ *         `{ ok: false, error }` on invalid code or oversize preferred.
  */
 export function validatePreferredSecondary(
   rawPreferred: ReadonlyArray<string> | null | undefined,
@@ -258,6 +272,12 @@ export function validatePreferredSecondary(
 ): { ok: true; preferred: PositionCode[]; secondary: PositionCode[] } | { ok: false; error: string } {
   try {
     const preferred = normalizePositions(rawPreferred ?? [], ballType)
+    if (preferred.length > MAX_PREFERRED_POSITIONS) {
+      return {
+        ok: false,
+        error: `Preferred positions: pick at most ${MAX_PREFERRED_POSITIONS}.`,
+      }
+    }
     const prefSet = new Set(preferred)
     const secondaryRaw = normalizePositions(rawSecondary ?? [], ballType)
     const secondary = secondaryRaw.filter((c) => !prefSet.has(c))

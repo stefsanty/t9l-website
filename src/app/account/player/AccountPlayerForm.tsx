@@ -15,7 +15,7 @@ import {
 } from './validation'
 import PositionMultiSelect from '@/components/PositionMultiSelect'
 import { formatJpyFee } from '@/lib/playerFee'
-import type { BallType } from '@/lib/positions'
+import { MAX_PREFERRED_POSITIONS, type BallType } from '@/lib/positions'
 
 /**
  * v1.83.0 — multi-league redesign.
@@ -489,14 +489,23 @@ function LeagueCard({ league, adminContactEmail }: LeagueCardProps) {
 
         {/* Preferred positions (editable) */}
         <div>
-          <span className="block text-fg-low text-xs uppercase tracking-wider font-bold mb-1.5">
-            Preferred positions
-          </span>
+          <div className="flex items-baseline justify-between mb-1.5">
+            <span className="block text-fg-low text-xs uppercase tracking-wider font-bold">
+              Preferred positions (up to {MAX_PREFERRED_POSITIONS})
+            </span>
+            <span
+              className="text-fg-low text-[10px] font-bold uppercase tracking-widest"
+              data-testid={`league-card-preferred-counter-${league.leagueId}`}
+            >
+              {preferred.length} / {MAX_PREFERRED_POSITIONS}
+            </span>
+          </div>
           <PositionMultiSelect
             selected={preferred}
             onChange={handlePreferredChange}
             ballType={league.ballType}
             disabled={pending}
+            maxSelected={MAX_PREFERRED_POSITIONS}
             testIdPrefix={`league-card-preferred-${league.leagueId}`}
           />
           <span className="block text-fg-low text-xs mt-1.5">

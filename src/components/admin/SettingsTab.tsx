@@ -63,6 +63,10 @@ interface League {
   unlimitedSubstitutions: boolean
   organizerMessage: string | null
   showLeagueDetails: boolean
+  // v1.93.0 — per-league ID requirement on the onboarding form.
+  idRequired: boolean
+  // v1.94.0 — admin-toggleable private join link.
+  privateJoinLinkEnabled: boolean
 }
 
 // JST calendar date as YYYY-MM-DD for `<input type="date">`. See lib/jst.ts.
@@ -683,6 +687,9 @@ export default function SettingsTab({ league }: SettingsTabProps) {
         initialUnlimitedSubstitutions={league.unlimitedSubstitutions}
         initialOrganizerMessage={league.organizerMessage}
         initialShowLeagueDetails={league.showLeagueDetails}
+        initialIdRequired={league.idRequired}
+        initialPrivateJoinLinkEnabled={league.privateJoinLinkEnabled}
+        leagueSubdomain={league.subdomain ?? null}
         initialDefaultFee={league.defaultFee}
         initialPositionFees={league.positionFees}
         initialPlannedPlayersPerTeam={league.plannedPlayersPerTeam}
