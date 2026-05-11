@@ -397,6 +397,14 @@ describe('v1.67.0 isAdmin usage is bounded', () => {
   //   - LineLoginButton.tsx (the dropdown "Admin" link entry)
   //   - auth.ts (the source of truth for token.isAdmin / session.isAdmin)
   //   - next-auth.d.ts (type declaration)
+  //   - src/app/api/guests/actions.ts (v1.95.0 — admin-only RSVP override
+  //     section in the Add Guests modal. ADDITIVE admin capability layered
+  //     on top of a user-facing modal; the user-facing guest CRUD path
+  //     remains admin-orthogonal. The v1.93.0 test pins that the auth
+  //     gate on the guest CRUD path is userId/lineId-only, never isAdmin.)
+  //   - MatchdayAvailability.tsx (v1.95.0 — passes session.isAdmin down
+  //     into the modal to render the admin-only override section. Does
+  //     NOT gate any user-facing functionality on admin status.)
   //
   // If any other source file in src/ adds a session.isAdmin gate, this
   // test fails — surfacing the anti-pattern for review.
@@ -405,6 +413,10 @@ describe('v1.67.0 isAdmin usage is bounded', () => {
       'src/components/LineLoginButton.tsx',
       'src/lib/auth.ts',
       'src/types/next-auth.d.ts',
+      // v1.95.0 — admin-only additive capability (RSVP override section
+      // in Add Guests modal). User-facing guest CRUD stays admin-orthogonal.
+      'src/app/api/guests/actions.ts',
+      'src/components/MatchdayAvailability.tsx',
     ])
     // Walk src/ recursively for `session.isAdmin` or `token.isAdmin`.
     const violations: string[] = []

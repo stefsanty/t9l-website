@@ -477,11 +477,32 @@ describe('v1.93.0 — server action setMatchdayGuests', () => {
     expect(ACTION_SRC).toMatch(/session\.lineId/)
   })
 
-  it('does NOT gate on session.isAdmin (admin-orthogonal-UX rule)', () => {
+  it('does NOT gate the user-facing guest CRUD path on session.isAdmin (admin-orthogonal-UX rule)', () => {
+    // v1.95.0 — relaxed to allow the additive admin-only `rsvpOverrides`
+    // capability. The user-facing guest CRUD path (auth → guest row
+    // writes) must remain admin-orthogonal; if `session.isAdmin` appears
+    // anywhere in the action source it MUST be scoped to the
+    // `rsvpOverrides` block (or to the dedicated `getAdminRosterRsvp`
+    // admin-only action). The auth gate itself stays the v1.80.10
+    // pattern: userId OR lineId, NEVER isAdmin.
     const stripped = ACTION_SRC
       .replace(/\/\/.*$/gm, '')
       .replace(/\/\*[\s\S]*?\*\//g, '')
-    expect(stripped).not.toMatch(/session\.isAdmin/)
+    // Auth gate is userId/lineId based, not isAdmin.
+    expect(stripped).toMatch(/session\.userId/)
+    expect(stripped).toMatch(/session\.lineId/)
+    // Every isAdmin reference must sit within ~800 chars of an
+    // `rsvpOverrides` reference OR within the dedicated admin action.
+    let scan = 0
+    while (true) {
+      const idx = stripped.indexOf('session.isAdmin', scan)
+      if (idx < 0) break
+      const window = stripped.substring(Math.max(0, idx - 800), idx + 200)
+      const isInAdminContext =
+        /rsvpOverrides/.test(window) || /getAdminRosterRsvp/.test(window)
+      expect(isInAdminContext).toBe(true)
+      scan = idx + 1
+    }
   })
 
   it('validates positions[] per league.ballType via normalizePositions', () => {

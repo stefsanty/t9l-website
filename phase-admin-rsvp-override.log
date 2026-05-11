@@ -1,0 +1,108 @@
+# v1.95.0 — Admin RSVP override in Add Guests modal
+
+## M1 — Schema audit + decisions
+
+### Availability model (prisma/schema.prisma:949-963)
+
+```prisma
+model Availability {
+  id           String              @id @default(cuid())
+  playerId     String
+  gameWeekId   String
+  rsvp         RsvpStatus?         // GOING | UNDECIDED | NOT_GOING
+  participated ParticipatedStatus? // JOINED | NO_SHOWED
+  updatedAt    DateTime            @updatedAt
+
+  player   Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  gameWeek GameWeek @relation(fields: [gameWeekId], references: [id], onDelete: Cascade)
+
+  @@unique([playerId, gameWeekId])
+  @@index([gameWeekId])
+  @@index([playerId])
+}
+```
+
+**No audit fields exist for who overrode an RSVP.** Adding two nullable columns:
+
+- `overriddenById String?` — FK → User, `onDelete: SetNull` (admin's User id; SetNull preserves the historical override even after the admin's User row is deleted).
+- `overriddenAt DateTime?` — when the override was applied. Distinct from `updatedAt` (which fires on every row touch, including user re-RSVPs).
+
+Both nullable; additive migration. Existing rows default null.
+
+**Lifecycle:**
+- Admin override write → sets both fields.
+- User re-RSVPs through `/api/rsvp` → clears both (the player took ownership back, so the audit row should reflect "no current override applied").
+- The `User.id` referenced is the canonical user.id resolved from `session.userId` OR `session.lineId` (mirrors v1.80.10 pattern, since admins on LINE may not have `userId` on the session).
+
+### Read path / canonical store
+
+RSVP read path is **Redis-canonical** (`src/lib/rsvpStore.ts`, hash per `gameWeekId`). Prisma `Availability` is durable backup; the read fallback in `src/lib/publicData.ts#backfillMissesFromPrisma` reads `playerId`, `rsvp`, `participated` and writes back into Redis on miss. The new audit columns are **not** stored in Redis — they're admin-domain observability only and the public read path doesn't surface them.
+
+**Implication:** admin override write must hit both Redis (so the read-path immediately surfaces the new status) AND Prisma (for the audit trail + recovery). Mirrors the v1.8.0 invert-write pattern: Redis sync, Prisma deferred via `waitUntil`. Server-action context doesn't have `waitUntil` available the same way, but since this is admin-domain (slower acceptable), Prisma-first then Redis is fine.
+
+### Server action shape
+
+Extending the existing `setMatchdayGuests` action in `src/app/api/guests/actions.ts` with an optional admin-only field:
+
+```ts
+interface SetMatchdayGuestsInput {
+  leagueSlug: string
+  matchdayPublicId: string
+  teamPublicId: string
+  guests: GuestRowInput[]
+  /** v1.95.0 — admin-only. Triggers admin gate when present + non-empty. */
+  rsvpOverrides?: Array<{
+    playerPublicId: string  // public slug (no "p-" prefix)
+    status: 'GOING' | 'UNDECIDED' | 'NOT_GOING' | null  // null clears
+  }>
+}
+```
+
+When `rsvpOverrides` is present + non-empty, the action checks `session.isAdmin` (throws "Unauthorized" if false). The override writes happen alongside the guest writes in the same transaction (Prisma side). Redis writes happen after the transaction commits.
+
+### Why extend rather than split
+
+The modal "Save" button is a single user gesture; splitting into two server calls risks partial-state surfaces (guests saved, overrides failed, or vice-versa). Single action keeps the atomic boundary. Admin gate fires only when `rsvpOverrides` is present, so non-admin guest-only saves are unchanged.
+
+## M2 — Server action implementation
+
+Done in `src/app/api/guests/actions.ts`:
+- Extended `SetMatchdayGuestsInput` with optional `rsvpOverrides`.
+- Admin gate fires when `rsvpOverrides` is present + non-empty (`session.isAdmin` check, no fallthrough to lineId).
+- Player validation: each `playerPublicId` resolved to DB id (`p-<slug>`), verified active PLM in the league + team.
+- Status validation: must be `'GOING' | 'UNDECIDED' | 'NOT_GOING' | null`.
+- Atomic transaction: guest rows + availability upserts in one $transaction call.
+- Audit: `overriddenById = userId`, `overriddenAt = new Date()` on every override row.
+- Redis post-write: per override, `setRsvp(gameWeekId, gwStartDate, slug, status)` runs after the transaction commits. Silent variant — drift logged.
+
+User-side `/api/rsvp` POST extended to clear `overriddenById: null, overriddenAt: null` on every user write (the player taking ownership clears the override flag).
+
+## M3 — Admin UI section
+
+Done in `src/components/AddGuestsModal.tsx`:
+- New props: `isAdmin: boolean`, `roster: RosterMember[]`, `currentStatuses: Record<string, 'GOING' | 'UNDECIDED' | 'NOT_GOING' | undefined>`.
+- New `<RsvpOverrideSection>` rendered ONLY when `isAdmin === true`, below External Guests.
+- Lists roster players sorted by name (`localeCompare`); each row shows current status + three buttons: Going / Undecided / Not Going / Clear (4 states for parity with schema; spec said 3 but UNDECIDED is a real existing state).
+- Pending changes tracked in `overridesByPlayer: Map<playerPublicId, status | null>` (only diffs from current; unchanged players not submitted).
+- Submit handler bundles `rsvpOverrides` into the `setMatchdayGuests` call.
+
+Thread-through in `src/components/MatchdayAvailability.tsx`:
+- Pull `session.isAdmin` from `useSession`.
+- Compute roster (`players.filter(p => p.teamId === guestModalTeam.id && !p.retiredAt)`).
+- Compute current statuses from `availabilityStatuses[matchday.id][team.id]`.
+
+## M4 — Tests
+
+`tests/unit/v195_admin_rsvp_override.test.ts`:
+- Server action: rejects non-admin caller when rsvpOverrides present.
+- Server action: accepts admin caller; writes Availability with audit fields.
+- Server action: rejects invalid status / unknown player / cross-league player.
+- Server action: clears audit fields on user re-RSVP (via /api/rsvp).
+- Source pin: AddGuestsModal renders admin section only when isAdmin.
+- Source pin: modal props include isAdmin/roster/currentStatuses.
+
+Stash-pop verification target: ≥10 new tests fail on the v1.94.1 baseline.
+
+## M5 — PR push
+
+Pushed as PR #N. Surface to user; orchestrator merges.

@@ -391,6 +391,13 @@ export default function MatchdayAvailability({
 }: MatchdayAvailabilityProps) {
   const { data: session } = useSession();
   const canAddGuests = Boolean(session?.user) && Boolean(leagueSlug);
+  // v1.95.0 — admin-only RSVP override section in the Add Guests modal.
+  // Visible only when the session carries the admin flag; the server
+  // action enforces the same gate before writing Availability rows.
+  // The modal fetches its own roster + raw RSVP data on open (rather
+  // than receiving it as a prop) so NOT_GOING signals — which the public
+  // read path deliberately drops in `rsvpMerge.ts` — surface for admins.
+  const isAdmin = Boolean(session?.isAdmin);
 
   const [guestModalTeamId, setGuestModalTeamId] = useState<string | null>(null);
   const guestModalTeam = guestModalTeamId
@@ -485,6 +492,7 @@ export default function MatchdayAvailability({
       matchdayLabel={matchday.label}
       ballType={(ballType as BallType | null | undefined) ?? null}
       initialGuests={guestModalRows}
+      isAdmin={isAdmin}
     />
   ) : null;
 
