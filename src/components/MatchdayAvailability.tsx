@@ -12,7 +12,7 @@ import type {
   PlayedStatus,
   MatchdayGuestCounts,
 } from '@/types';
-import { getPositionBucket } from '@/lib/positions';
+import { getPositionBucket, getPositionBucketByScore } from '@/lib/positions';
 import { synthesizeGuestPlayers, isGuestPseudoId } from '@/lib/guestSynthesis';
 import FormationPitch from './FormationPitch';
 
@@ -56,15 +56,19 @@ export function getPositionPillColor(pos: string | null | undefined): string {
 // followed by GUEST (v1.91.0 Add Guests). Guests are aggregated into their
 // own subsection at the bottom regardless of position (they have none).
 
-export type ListBucket = 'GK' | 'DF' | 'MF' | 'FW' | 'GUEST';
+export type ListBucket = 'GK' | 'DF' | 'MF' | 'FW' | 'UNB' | 'GUEST';
 
-const BUCKET_ORDER: ReadonlyArray<ListBucket> = ['GK', 'DF', 'MF', 'FW', 'GUEST'];
+// v1.92.0 — added 'UNB' (unbucketed) for players whose preferredPositions
+// array is empty. Renders between Forwards and Guests so authenticated
+// users without a recorded role still appear in the list.
+const BUCKET_ORDER: ReadonlyArray<ListBucket> = ['GK', 'DF', 'MF', 'FW', 'UNB', 'GUEST'];
 
 export const BUCKET_LABEL: Record<ListBucket, string> = {
   GK: 'Goalkeepers',
   DF: 'Defense',
   MF: 'Midfield',
   FW: 'Forwards',
+  UNB: 'Other',
   GUEST: 'Guests',
 };
 
@@ -73,6 +77,7 @@ export const BUCKET_DOT: Record<ListBucket, string> = {
   DF: 'bg-blue-400',
   MF: 'bg-green-400',
   FW: 'bg-red-400',
+  UNB: 'bg-fg-mid',
   GUEST: 'bg-fg-low',
 };
 
@@ -81,7 +86,16 @@ export interface BucketGroup {
   players: Player[];
 }
 
-/** Pure helper — resolves + groups confirmed players by position bucket. */
+/** Pure helper — resolves + groups confirmed players by position bucket.
+ *
+ *  v1.92.0 — bucketing logic flipped from `positions[0]` (which picked
+ *  one code arbitrarily off the joined `position` string) to the score-
+ *  based average across `preferredPositions[]` via
+ *  `getPositionBucketByScore`. Falls back to the joined `position`
+ *  string when preferredPositions is missing (legacy memberships that
+ *  haven't been re-saved since v1.86.0). Empty array → 'UNB' bucket
+ *  rather than silently dropping into 'MF'.
+ */
 export function bucketConfirmedPlayers(
   confirmedIds: string[],
   players: Player[],
@@ -91,7 +105,7 @@ export function bucketConfirmedPlayers(
     .filter((p): p is Player => !!p);
 
   const map = new Map<ListBucket, Player[]>([
-    ['GK', []], ['DF', []], ['MF', []], ['FW', []], ['GUEST', []],
+    ['GK', []], ['DF', []], ['MF', []], ['FW', []], ['UNB', []], ['GUEST', []],
   ]);
 
   for (const p of resolved) {
@@ -99,9 +113,15 @@ export function bucketConfirmedPlayers(
       map.get('GUEST')!.push(p);
       continue;
     }
-    const first = (p.position ?? '').split('/')[0]?.toUpperCase() ?? '';
-    const bucket = getPositionBucket(first);
-    map.get(bucket)!.push(p);
+    // Prefer the explicit preferredPositions[] array; fall back to
+    // splitting the legacy joined `position` string for memberships
+    // that haven't been re-saved since v1.86.0.
+    const positions = p.preferredPositions && p.preferredPositions.length > 0
+      ? p.preferredPositions
+      : (p.position ?? '').split('/').map((s) => s.trim()).filter(Boolean);
+    const scoreBucket = getPositionBucketByScore(positions);
+    const listBucket: ListBucket = scoreBucket ?? 'UNB';
+    map.get(listBucket)!.push(p);
   }
 
   // Sort within each bucket alphabetically by name. Guest names are
@@ -115,6 +135,63 @@ export function bucketConfirmedPlayers(
   return BUCKET_ORDER
     .map((bucket) => ({ bucket, players: map.get(bucket)! }))
     .filter((g) => g.players.length > 0);
+}
+
+// -- Avatar fallback ──────────────────────────────────────────────────────
+//
+// v1.92.0 — initials for the list-view player pill when `User.image` is
+// null. First letter of the first whitespace-separated token + first
+// letter of the last token. Single-token names use that single letter
+// twice trimmed to one. Empty/null name → "?". Always uppercase.
+
+export function playerInitials(name: string | null | undefined): string {
+  if (!name) return '?';
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '?';
+  if (parts.length === 1) return parts[0]!.charAt(0).toUpperCase();
+  const first = parts[0]!.charAt(0).toUpperCase();
+  const last = parts[parts.length - 1]!.charAt(0).toUpperCase();
+  return `${first}${last}`;
+}
+
+/** v1.92.0 — list-view avatar. User.image when present, otherwise the
+ *  initials bubble. Sized ~22px (px-2 py-1 pill is ~28px tall, so 22px
+ *  avatar reads as inline-centered). */
+function PlayerPillAvatar({
+  src,
+  name,
+}: {
+  src: string | null | undefined;
+  name: string;
+}) {
+  if (src) {
+    return (
+      <span
+        className="w-[22px] h-[22px] rounded-full overflow-hidden shrink-0 bg-fg-mid/20 inline-block align-middle"
+        data-testid="availability-pill-avatar"
+      >
+        {/* Native <img> rather than next/image: the public LeagueData
+            payload doesn't currently configure remote-image domains
+            for arbitrary OAuth-provider avatars, and the perf cost is
+            negligible for the ≤24px list pills. */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={src}
+          alt=""
+          referrerPolicy="no-referrer"
+          className="w-full h-full object-cover"
+        />
+      </span>
+    );
+  }
+  return (
+    <span
+      className="w-[22px] h-[22px] rounded-full bg-fg-mid/20 text-fg-mid text-[10px] font-black uppercase inline-flex items-center justify-center shrink-0 align-middle"
+      data-testid="availability-pill-avatar-initials"
+    >
+      {playerInitials(name)}
+    </span>
+  );
 }
 
 // -- TeamPillList sub-component --
@@ -155,13 +232,17 @@ function TeamPillList({
                   key={p.id}
                   className={
                     isGuest
-                      ? 'text-[11px] font-bold px-2 py-1 rounded-full border bg-surface-md text-fg-mid border-border-default'
-                      : `text-[11px] font-bold px-2 py-1 rounded-full border ${getPositionPillColor(p.position)}`
+                      ? 'inline-flex items-center gap-1.5 text-[11px] font-bold px-2 py-1 rounded-full border bg-surface-md text-fg-mid border-border-default'
+                      : `inline-flex items-center gap-1.5 text-[11px] font-bold px-2 py-1 rounded-full border ${getPositionPillColor(p.position)}`
                   }
                   translate="no"
                   data-testid={`availability-pill-${p.id}`}
                 >
-                  <span className="text-[9px] font-black uppercase tracking-wider opacity-80 mr-1">
+                  {/* v1.92.0 — avatar (User.image or initials) for
+                      non-guest pills only. Guests have no auth-linked
+                      User and render as a plain "Guest" pill. */}
+                  {!isGuest && <PlayerPillAvatar src={p.image} name={p.name} />}
+                  <span className="text-[9px] font-black uppercase tracking-wider opacity-80">
                     {isGuest ? 'GUEST' : (p.position || '—')}
                   </span>
                   {p.name}
