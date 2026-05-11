@@ -1,40 +1,59 @@
 'use client'
 
-import { useTransition } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { setUserDefaultLeague } from './actions'
+import { useOptimistic, type MouseEvent } from 'react'
+import { useHubTransition } from './HubTransitionShell'
 import type { ApprovedMembership } from '@/lib/homepageRouting'
 
 /**
- * v1.85.0 — homepage redesign phase 1c. Pill-style tab strip rendered
- * inside `<MultiLeagueHub>` for users with ≥ 2 APPROVED memberships.
+ * v1.85.0 → v1.93.0 — pill-style league switcher rendered inside
+ * `<MultiLeagueHub>` for users with ≥ 2 APPROVED memberships.
  *
- * Why Option A (tabs) instead of Option B (banner + dropdown): a
- * 2–4-league user benefits from at-a-glance discovery — every league
- * the user belongs to is visible without a tap. A dropdown adds an
- * extra interaction step and hides the membership count behind a
- * chevron. On overflow (5+ leagues, currently zero in production), the
- * row scrolls horizontally rather than wrapping; the active tab stays
- * leftmost so the most-used league is one tap away on a fresh load.
+ * v1.85.0 shipped this as a `<button>` row that called the
+ * `setUserDefaultLeague` server action then `router.refresh()`. That
+ * meant every click sat on three sequential Neon round-trips before
+ * the navigation kicked off, with no visual feedback in the meantime —
+ * v1.92.x user feedback was "no animation, no loading, takes too long."
  *
- * Mobile layout: pills are h-9, gap-2, with `flex-shrink-0` so they
- * keep their typography intact under horizontal scroll. The container
- * uses `overflow-x-auto` + `no-scrollbar` so the strip stays visually
- * clean even when scrollable. Sits directly under the Header; the
- * Dashboard's `<main>` content begins below.
+ * v1.93.0 swaps the model:
  *
- * Click behaviour:
- *   1. Optimistic: visually mark the tapped tab as active.
- *   2. Fire `setUserDefaultLeague(leagueId)` server action.
- *   3. On success: `router.refresh()` so the server-rendered
- *      `<HomepageRouter>` re-evaluates the persona with the new
- *      `defaultLeagueId` and the page swaps to that league's data.
- *   4. On failure: roll back to the original active tab; the user can
- *      retry by tapping again.
+ *   1. Each pill is a `<Link prefetch href="/test?league=<id>">`.
+ *      Next.js prefetches the destination's RSC payload on hover /
+ *      visibility, so the navigation typically lands inside the route
+ *      cache window (warm: ~50 ms; cold: ~250–400 ms).
  *
- * `useTransition` wraps the action so React keeps the strip
- * interactive while the refresh is in flight (the active tab shows a
- * subtle pulse rather than freezing the whole UI).
+ *   2. `useOptimistic` mirrors the server-supplied `activeLeagueId`
+ *      and updates IMMEDIATELY on click, so the tapped pill jumps to
+ *      the active style before the navigation resolves. Pre-v1.93.0
+ *      the `animate-pulse` actually fired on the OLD active pill
+ *      because the comparison ran against the not-yet-updated
+ *      `activeLeagueId` — confusing UX dressed up as a perf problem.
+ *
+ *   3. The click is wrapped in the shared `useHubTransition()` so the
+ *      `<HubTransitionShell>` can render the top-edge progress strip
+ *      from the same `isPending` signal.
+ *
+ *   4. `active:scale-[0.96]` gives a tactile press without any JS.
+ *
+ *   5. `User.defaultLeagueId` is no longer written from the click. The
+ *      `<MultiLeagueHub>` server component fires
+ *      `touchUserDefaultLeague(...)` via `waitUntil` on every render,
+ *      which mirrors the `/id/<slug>` last-selected pattern and
+ *      removes the action's 3-query critical path entirely.
+ *
+ * Why we still call `router.push` from inside `startNavigation` rather
+ * than letting `<Link>` navigate on its own:
+ *
+ *   - We need the navigation to share the SAME transition that wraps
+ *     the optimistic state update, otherwise React rejects the
+ *     `setOptimisticId` call ("not in a transition"). Running both
+ *     inside `startNavigation` keeps them coupled.
+ *   - We keep `<Link prefetch>` so Next.js prefetches the destination,
+ *     and we keep `href` set so right-click / open-in-new-tab still
+ *     work for keyboard / power users.
+ *   - The `e.preventDefault()` short-circuits the implicit navigation
+ *     so React isn't fighting the router for control of the next URL.
  */
 export default function LeagueSwitcherTabs({
   memberships,
@@ -44,19 +63,39 @@ export default function LeagueSwitcherTabs({
   activeLeagueId: string
 }) {
   const router = useRouter()
-  const [isPending, startTransition] = useTransition()
-
-  function pick(leagueId: string) {
-    if (leagueId === activeLeagueId) return
-    startTransition(async () => {
-      const result = await setUserDefaultLeague(leagueId)
-      if (result.ok) {
-        router.refresh()
-      }
-    })
-  }
+  const { isPending, startNavigation } = useHubTransition()
+  const [optimisticActiveId, setOptimisticActiveId] = useOptimistic(activeLeagueId)
 
   if (memberships.length < 2) return null
+
+  function pickLeague(
+    e: MouseEvent<HTMLAnchorElement>,
+    leagueId: string,
+    href: string,
+  ) {
+    if (leagueId === activeLeagueId) {
+      // Same-league taps would otherwise re-fetch the RSC payload for
+      // no reason. Cancel the implicit navigation and exit.
+      e.preventDefault()
+      return
+    }
+    if (
+      e.metaKey ||
+      e.ctrlKey ||
+      e.shiftKey ||
+      e.altKey ||
+      e.button !== 0
+    ) {
+      // Power-user gestures (cmd-click new tab, middle-click, etc.)
+      // — let the browser handle the navigation natively.
+      return
+    }
+    e.preventDefault()
+    startNavigation(() => {
+      setOptimisticActiveId(leagueId)
+      router.push(href, { scroll: false })
+    })
+  }
 
   return (
     <nav
@@ -66,24 +105,34 @@ export default function LeagueSwitcherTabs({
     >
       <div className="flex items-center gap-2 min-w-max">
         {memberships.map((m) => {
-          const selected = m.leagueId === activeLeagueId
+          const selected = m.leagueId === optimisticActiveId
+          const showSpinner = isPending && selected
+          const href = `/test?league=${encodeURIComponent(m.leagueId)}`
           return (
-            <button
+            <Link
               key={m.leagueId}
-              type="button"
-              onClick={() => pick(m.leagueId)}
-              disabled={isPending}
+              href={href}
+              prefetch
+              scroll={false}
+              onClick={(e) => pickLeague(e, m.leagueId, href)}
               data-testid={`league-switcher-tab-${m.slug}`}
               data-active={selected ? 'true' : 'false'}
-              className={`flex-shrink-0 h-9 px-4 rounded-full text-[11px] font-black uppercase tracking-widest transition-colors ${
+              aria-pressed={selected}
+              className={`flex-shrink-0 inline-flex items-center h-9 px-4 rounded-full text-[11px] font-black uppercase tracking-widest transition-transform duration-100 active:scale-[0.96] ${
                 selected
                   ? 'bg-primary text-primary-foreground'
                   : 'bg-surface text-fg-mid hover:bg-surface-md'
-              } ${isPending && selected ? 'animate-pulse' : ''}`}
-              aria-pressed={selected}
+              }`}
             >
-              {m.leagueName}
-            </button>
+              <span>{m.leagueName}</span>
+              {showSpinner ? (
+                <span
+                  aria-hidden="true"
+                  data-testid={`league-switcher-tab-spinner-${m.slug}`}
+                  className="ml-1.5 inline-block h-1.5 w-1.5 rounded-full bg-current opacity-70 animate-pulse"
+                />
+              ) : null}
+            </Link>
           )
         })}
       </div>

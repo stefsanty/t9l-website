@@ -15,9 +15,11 @@
  *      `<RecruitingHandoff>` — multi-league surface for users with ≥ 2
  *      APPROVED memberships.
  *   4. `touchUserDefaultLeague(...)` — last-selected tracking wired
- *      into `/id/[slug]` and `/id/[slug]/md/[id]`.
- *   5. `setUserDefaultLeague(...)` server action invoked by the
- *      switcher tab strip.
+ *      into `/id/[slug]` and `/id/[slug]/md/[id]`. v1.93.0 also wires
+ *      it into `<MultiLeagueHub>` itself; that pin lives in the v1.93
+ *      regression-target file.
+ *   5. `setUserDefaultLeague(...)` server action — REMOVED in v1.93.0.
+ *      The new prefetch-based switcher is pinned separately.
  *
  * Tests are a mix of source-string structural pins (project convention)
  * and runtime assertions through hoisted mocks (mirrors v1.84.0's
@@ -26,7 +28,7 @@
  * production code is reverted to the broken pre-v1.85.0 state.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -64,10 +66,10 @@ const RECRUITING_HANDOFF_SRC = readFileSync(
   join(REPO_ROOT, 'src/components/homepage/RecruitingHandoff.tsx'),
   'utf8',
 )
-const ACTIONS_SRC = readFileSync(
-  join(REPO_ROOT, 'src/components/homepage/actions.ts'),
-  'utf8',
-)
+// v1.93.0 — `src/components/homepage/actions.ts` deleted. The switcher
+// no longer routes through `setUserDefaultLeague`; `MultiLeagueHub`
+// fires `touchUserDefaultLeague` via `waitUntil` instead. The new
+// behaviour is pinned in `tests/unit/v193_league_picker_perf.test.ts`.
 const TEST_PAGE_SRC = readFileSync(
   join(REPO_ROOT, 'src/app/test/page.tsx'),
   'utf8',
@@ -245,6 +247,10 @@ describe('v1.85.0 — HomepageRouter render decisions', () => {
     expect(HOMEPAGE_ROUTER_SRC).toMatch(/<MultiLeagueHub/)
     expect(HOMEPAGE_ROUTER_SRC).toMatch(/memberships=\{persona\.memberships\}/)
     expect(HOMEPAGE_ROUTER_SRC).toMatch(/activeLeagueId=\{persona\.activeLeagueId\}/)
+    // v1.93.0 — `viewer` is the new prop carrying the resolved session
+    // identifiers so MultiLeagueHub can fire touchUserDefaultLeague
+    // without a second getServerSession round-trip.
+    expect(HOMEPAGE_ROUTER_SRC).toMatch(/viewer=\{\{\s*userId,\s*lineId\s*\}\}/)
   })
 
   it('directory fallthrough → renders <LeagueDirectory> with directory data', () => {
@@ -258,7 +264,9 @@ describe('v1.85.0 — HomepageRouter render decisions', () => {
     // dead-end at the directory.
     expect(HOMEPAGE_ROUTER_SRC).toMatch(/userId/)
     expect(HOMEPAGE_ROUTER_SRC).toMatch(/lineId/)
-    expect(HOMEPAGE_ROUTER_SRC).toMatch(/resolveHomepagePersona\(\s*\{\s*userId,\s*lineId\s*\}/)
+    // v1.93.0 added a third arg (preferredLeagueId). Match the leading
+    // shape only — the v1.93 file pins the full call shape.
+    expect(HOMEPAGE_ROUTER_SRC).toMatch(/resolveHomepagePersona\(\s*\{\s*userId,\s*lineId,/)
   })
 })
 
@@ -370,10 +378,10 @@ describe('v1.85.0 — LeagueSwitcherTabs (Option A pill strip)', () => {
     expect(SWITCHER_TABS_SRC).toMatch(/return\s+null/)
   })
 
-  it('calls setUserDefaultLeague server action + router.refresh on pick', () => {
-    expect(SWITCHER_TABS_SRC).toMatch(/setUserDefaultLeague\(leagueId\)/)
-    expect(SWITCHER_TABS_SRC).toMatch(/router\.refresh\(\)/)
-  })
+  // v1.93.0 — switcher no longer routes through the deleted
+  // `setUserDefaultLeague` server action. The new behaviour
+  // (`<Link prefetch>` + `useOptimistic` + `useTransition`) is
+  // pinned in `tests/unit/v193_league_picker_perf.test.ts`.
 
   it('renders pill testids per league for switcher targeting', () => {
     expect(SWITCHER_TABS_SRC).toMatch(/data-testid=\{`league-switcher-tab-\$\{m\.slug\}`\}/)
@@ -458,123 +466,14 @@ describe('v1.85.0 — touchUserDefaultLeague wired into league pages', () => {
 })
 
 // ────────────────────────────────────────────────────────────────────────────
-// 8) setUserDefaultLeague server action — runtime gates
+// 8) v1.93.0 — `setUserDefaultLeague` server action and its runtime
+//    gates were deleted alongside the actions module. The replacement
+//    flow (Link-prefetch + searchParam-driven active league) is pinned
+//    in `tests/unit/v193_league_picker_perf.test.ts`.
 // ────────────────────────────────────────────────────────────────────────────
-
-const {
-  sessionMock,
-  userFindUniqueMock,
-  playerFindFirstMock,
-  userUpdateMock,
-} = vi.hoisted(() => ({
-  sessionMock: vi.fn(),
-  userFindUniqueMock: vi.fn(),
-  playerFindFirstMock: vi.fn(),
-  userUpdateMock: vi.fn(),
-}))
-
-vi.mock('next-auth', () => ({ getServerSession: sessionMock }))
-vi.mock('@/lib/auth', () => ({ authOptions: {} }))
-vi.mock('@/lib/prisma', () => ({
-  prisma: {
-    user: { findUnique: userFindUniqueMock, update: userUpdateMock },
-    player: { findFirst: playerFindFirstMock },
-  },
-}))
-
-const { setUserDefaultLeague } = await import('@/components/homepage/actions')
-
-beforeEach(() => {
-  vi.clearAllMocks()
-  sessionMock.mockResolvedValue({ userId: 'u-1', lineId: null })
-  userFindUniqueMock.mockResolvedValue({
-    id: 'u-1',
-    playerId: 'p-1',
-    defaultLeagueId: null,
-  })
-  playerFindFirstMock.mockResolvedValue({
-    leagueAssignments: [{ id: 'plm-1' }],
-  })
-})
-
-describe('v1.85.0 — setUserDefaultLeague server action gates', () => {
-  it('declares "use server" so it can be invoked from the client switcher', () => {
-    expect(ACTIONS_SRC).toMatch(/^['"]use server['"]/)
-  })
-
-  it('rejects unauthenticated callers (no session)', async () => {
-    sessionMock.mockResolvedValue(null)
-    const result = await setUserDefaultLeague('league-1')
-    expect(result).toEqual({ ok: false, error: 'unauthenticated' })
-    expect(userUpdateMock).not.toHaveBeenCalled()
-  })
-
-  it('rejects admin-credentials sessions (no userId AND no lineId)', async () => {
-    sessionMock.mockResolvedValue({ userId: null, lineId: null })
-    const result = await setUserDefaultLeague('league-1')
-    expect(result).toEqual({ ok: false, error: 'unauthenticated' })
-    expect(userUpdateMock).not.toHaveBeenCalled()
-  })
-
-  it('rejects empty leagueId (defensive — the client should never send this)', async () => {
-    const result = await setUserDefaultLeague('')
-    expect(result).toEqual({ ok: false, error: 'invalid_input' })
-    expect(userUpdateMock).not.toHaveBeenCalled()
-  })
-
-  it('rejects when the user has no APPROVED PLM in the picked league (regression target)', async () => {
-    playerFindFirstMock.mockResolvedValue({ leagueAssignments: [] })
-    const result = await setUserDefaultLeague('league-stranger')
-    expect(result).toEqual({ ok: false, error: 'not_a_member' })
-    expect(userUpdateMock).not.toHaveBeenCalled()
-  })
-
-  it('writes User.defaultLeagueId on success', async () => {
-    const result = await setUserDefaultLeague('league-pick')
-    expect(result).toEqual({ ok: true })
-    expect(userUpdateMock).toHaveBeenCalledWith({
-      where: { id: 'u-1' },
-      data: { defaultLeagueId: 'league-pick' },
-    })
-  })
-
-  it('skips the write when defaultLeagueId already equals the picked id (no-op fast path)', async () => {
-    userFindUniqueMock.mockResolvedValue({
-      id: 'u-1',
-      playerId: 'p-1',
-      defaultLeagueId: 'league-pick',
-    })
-    const result = await setUserDefaultLeague('league-pick')
-    expect(result).toEqual({ ok: true })
-    expect(userUpdateMock).not.toHaveBeenCalled()
-  })
-
-  it('admin-orthogonal — accepts lineId-only sessions (no userId)', async () => {
-    // The action skips the userId branch entirely when userId is null, so
-    // the lineId fallback is the ONLY call into user.findUnique. Mirrors
-    // the v1.80.10 admin-orthogonal-UX fix shape: legacy LINE sessions
-    // with no userId on the JWT must not dead-end at the directory.
-    sessionMock.mockResolvedValue({ userId: null, lineId: 'L1' })
-    userFindUniqueMock.mockResolvedValueOnce({
-      id: 'u-1',
-      playerId: 'p-1',
-      defaultLeagueId: null,
-    })
-    const result = await setUserDefaultLeague('league-pick')
-    expect(result).toEqual({ ok: true })
-    expect(userUpdateMock).toHaveBeenCalled()
-    expect(userFindUniqueMock).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { lineId: 'L1' } }),
-    )
-  })
-})
 
 // ────────────────────────────────────────────────────────────────────────────
 // 9) getApprovedMembershipsAndDefault — source-string pins
-//    Runtime tests would require a third Prisma mock layered on top of the
-//    one already wired for setUserDefaultLeague; keeping these as
-//    structural pins avoids mock contention while still guarding the
-//    contract that classifyPersona depends on.
 // ────────────────────────────────────────────────────────────────────────────
 
 describe('v1.85.0 — getApprovedMembershipsAndDefault structural pins', () => {

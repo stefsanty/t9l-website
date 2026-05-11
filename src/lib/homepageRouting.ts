@@ -54,6 +54,17 @@ export type HomepagePersona =
 interface ResolveInput {
   userId: string | null
   lineId: string | null
+  /**
+   * v1.93.0 — optional caller-provided override (typically
+   * `searchParams.league` from the apex page). When supplied AND the id
+   * matches an APPROVED membership, it wins over `User.defaultLeagueId`
+   * for the active-league pick. When the value doesn't match any
+   * membership, it's silently ignored — the resolver falls back to the
+   * stored default, then to alphabetical-first. The classifier never
+   * trusts an unverified id, so a malicious URL parameter cannot pin
+   * the user to a league they aren't in.
+   */
+  preferredLeagueId?: string | null
 }
 
 /**
@@ -225,18 +236,33 @@ export async function getApprovedMembershipsAndDefault(input: ResolveInput): Pro
 export function classifyPersona(args: {
   memberships: ApprovedMembership[]
   defaultLeagueId: string | null
+  /**
+   * v1.93.0 — optional active-league override. See the doc on
+   * `ResolveInput.preferredLeagueId` for the priority order and the
+   * unverified-input guarantee. When omitted the classifier behaves
+   * identically to v1.85.0.
+   */
+  preferredLeagueId?: string | null
 }): HomepagePersona {
-  const { memberships, defaultLeagueId } = args
+  const { memberships, defaultLeagueId, preferredLeagueId = null } = args
   if (memberships.length === 0) {
     return { kind: 'directory' }
   }
   if (memberships.length === 1) {
     return { kind: 'single', membership: memberships[0] }
   }
+  // Priority: explicit preferredLeagueId (URL `?league=` from the
+  // switcher) → stored `User.defaultLeagueId` → alphabetical-first
+  // membership. Each branch validates against the memberships list, so
+  // an unknown id (URL tampering or stale stored default) silently
+  // falls through to the next layer.
+  const preferred = preferredLeagueId
+    ? memberships.find((m) => m.leagueId === preferredLeagueId) ?? null
+    : null
   const stored = defaultLeagueId
     ? memberships.find((m) => m.leagueId === defaultLeagueId) ?? null
     : null
-  const active = stored ?? memberships[0]
+  const active = preferred ?? stored ?? memberships[0]
   return {
     kind: 'multi',
     memberships,
@@ -253,6 +279,13 @@ export function classifyPersona(args: {
 export async function resolveHomepagePersona(
   input: ResolveInput,
 ): Promise<HomepagePersona> {
-  const { memberships, defaultLeagueId } = await getApprovedMembershipsAndDefault(input)
-  return classifyPersona({ memberships, defaultLeagueId })
+  const { memberships, defaultLeagueId } = await getApprovedMembershipsAndDefault({
+    userId: input.userId,
+    lineId: input.lineId,
+  })
+  return classifyPersona({
+    memberships,
+    defaultLeagueId,
+    preferredLeagueId: input.preferredLeagueId ?? null,
+  })
 }

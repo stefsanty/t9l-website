@@ -266,6 +266,16 @@ html.light {
       opacity: 1;
     }
   }
+
+  /* v1.93.0 — top-edge progress strip rendered by `<HubTransitionShell>`
+     while a `<LeagueSwitcherTabs>` navigation is pending. The translateX
+     range goes well past 100% so the strip slides off the right edge
+     before reappearing on the left, giving an indeterminate
+     "still working" cue without claiming a measurable percentage. */
+  @keyframes hub-progress {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(400%); }
+  }
 }
 
 .animate-in {
@@ -279,6 +289,12 @@ html.light {
   stroke-dasharray: 1;
   stroke-dashoffset: 1;
   animation: success-check-draw 0.45s cubic-bezier(0.65, 0, 0.45, 1) 0.18s forwards;
+}
+
+/* v1.93.0 — see the keyframe doc above. Linear easing on the
+   indeterminate progress strip so the apparent speed stays constant. */
+.animate-hub-progress {
+  animation: hub-progress 1.1s linear infinite;
 }
 
 body {
