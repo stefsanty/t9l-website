@@ -4,7 +4,14 @@ import { useEffect, useState, useTransition } from 'react'
 import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import PositionMultiSelect from './PositionMultiSelect'
-import { setMatchdayGuests, type GuestRowInput } from '@/app/api/guests/actions'
+import {
+  setMatchdayGuests,
+  getAdminRosterRsvp,
+  type GuestRowInput,
+  type RsvpOverrideInput,
+  type AdminRosterRsvpEntry,
+  type AdminRsvpStatus,
+} from '@/app/api/guests/actions'
 import type { BallType } from '@/lib/positions'
 import type { MatchdayGuestEntry } from '@/types'
 
@@ -24,6 +31,14 @@ import type { MatchdayGuestEntry } from '@/types'
  *
  * Modal contract mirrors `ApplyToLeagueModal` / `SignInLightbox`:
  * portal, ESC dismiss, backdrop dismiss, body-scroll-lock, role=dialog.
+ *
+ * v1.95.0 — Admin-only RSVP override section. Visible only when
+ * `isAdmin === true`; lists every active roster player with a
+ * three-state toggle (Going / Not going / Clear). Changes batch with
+ * the guest changes — the modal's existing Save button submits both
+ * in one server transaction. The override section fetches its own
+ * authoritative RSVP data via `getAdminRosterRsvp` on open so admins
+ * see NOT_GOING signals that the public read path drops.
  */
 
 interface Props {
@@ -36,6 +51,9 @@ interface Props {
   matchdayLabel: string
   ballType: BallType | null | undefined
   initialGuests: MatchdayGuestEntry[]
+  /** v1.95.0 — when true, the modal renders the admin-only RSVP
+   *  override section. Server action enforces the same gate. */
+  isAdmin?: boolean
 }
 
 interface RowState {
@@ -81,12 +99,22 @@ export default function AddGuestsModal({
   matchdayLabel,
   ballType,
   initialGuests,
+  isAdmin = false,
 }: Props) {
   const router = useRouter()
   const [rows, setRows] = useState<RowState[]>(() => rowsFromInitial(initialGuests))
   const [error, setError] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
   const [mounted, setMounted] = useState(false)
+
+  // v1.95.0 — admin override section state. `adminRoster` is the
+  // authoritative roster+rsvp list loaded from `getAdminRosterRsvp`
+  // when the modal opens. `overrides` carries only diffs (player slug
+  // → new status); unchanged players are NOT sent to the server.
+  const [adminRoster, setAdminRoster] = useState<AdminRosterRsvpEntry[]>([])
+  const [adminRosterLoading, setAdminRosterLoading] = useState(false)
+  const [adminRosterError, setAdminRosterError] = useState<string | null>(null)
+  const [overrides, setOverrides] = useState<Record<string, AdminRsvpStatus>>({})
 
   useEffect(() => {
     setMounted(true)
@@ -97,7 +125,40 @@ export default function AddGuestsModal({
     if (!open) return
     setRows(rowsFromInitial(initialGuests))
     setError(null)
+    setOverrides({})
   }, [open, initialGuests])
+
+  // v1.95.0 — admin context fetch on open. Only fires when isAdmin
+  // because the server action throws for non-admins. One round-trip
+  // per modal-open is acceptable (the modal is itself dynamic-loaded
+  // per the v1.91.0 chunk-fetch pattern).
+  useEffect(() => {
+    if (!open || !isAdmin) return
+    let cancelled = false
+    setAdminRosterLoading(true)
+    setAdminRosterError(null)
+    getAdminRosterRsvp({
+      leagueSlug,
+      matchdayPublicId,
+      teamPublicId,
+    })
+      .then((res) => {
+        if (cancelled) return
+        setAdminRoster(res.entries)
+      })
+      .catch((err) => {
+        if (cancelled) return
+        setAdminRosterError(
+          err instanceof Error ? err.message : 'Failed to load roster',
+        )
+      })
+      .finally(() => {
+        if (!cancelled) setAdminRosterLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [open, isAdmin, leagueSlug, matchdayPublicId, teamPublicId])
 
   useEffect(() => {
     if (!open) return
@@ -146,11 +207,21 @@ export default function AddGuestsModal({
           ...rows.filter((r) => r.type === 'LEAGUE'),
           ...rows.filter((r) => r.type === 'EXTERNAL'),
         ]
+        // v1.95.0 — bundle admin overrides into the same server call so
+        // both apply atomically (single Prisma $transaction server-side).
+        // Only diffs are submitted; unchanged rows are excluded.
+        const rsvpOverrides: RsvpOverrideInput[] = isAdmin
+          ? Object.entries(overrides).map(([playerPublicId, status]) => ({
+              playerPublicId,
+              status,
+            }))
+          : []
         await setMatchdayGuests({
           leagueSlug,
           matchdayPublicId,
           teamPublicId,
           guests: rowsToSubmit(ordered),
+          ...(rsvpOverrides.length > 0 ? { rsvpOverrides } : {}),
         })
         router.refresh()
         onClose()
@@ -158,6 +229,19 @@ export default function AddGuestsModal({
         setError(err instanceof Error ? err.message : 'Submit failed')
       }
     })
+  }
+
+  // v1.95.0 — resolve the currently-displayed status for a roster row:
+  // pending override (if the admin has touched it) wins over the
+  // persisted status. Pure — defined inside the component because it
+  // closes over `overrides`.
+  function effectiveStatus(entry: AdminRosterRsvpEntry): AdminRsvpStatus {
+    if (entry.playerPublicId in overrides) return overrides[entry.playerPublicId]
+    return entry.currentRsvp
+  }
+
+  function setOverrideFor(playerPublicId: string, status: AdminRsvpStatus): void {
+    setOverrides((prev) => ({ ...prev, [playerPublicId]: status }))
   }
 
   if (!open || !mounted) return null
@@ -229,6 +313,18 @@ export default function AddGuestsModal({
               onRemove={removeRow}
               onChangePositions={updateRowPositions}
             />
+
+            {isAdmin && (
+              <AdminRsvpOverrideSection
+                loading={adminRosterLoading}
+                error={adminRosterError}
+                roster={adminRoster}
+                overrides={overrides}
+                pending={pending}
+                getEffective={effectiveStatus}
+                onSet={setOverrideFor}
+              />
+            )}
 
             <div className="flex items-center justify-between text-xs text-fg-mid bg-surface rounded-lg px-3 py-2">
               <span className="uppercase tracking-widest font-bold">Total guests</span>
@@ -388,5 +484,172 @@ function GuestSection({
         <span>Add row</span>
       </button>
     </div>
+  )
+}
+
+/**
+ * v1.95.0 — Admin-only override section. Rendered ONLY when the
+ * parent's `isAdmin === true`. Lists every active roster member with a
+ * three-state toggle (Going / Not going / Clear). Changes batch — the
+ * outer form's Save button submits both guest changes and overrides in
+ * one server transaction.
+ *
+ * Status display collapses UNDECIDED ↔ "—" (unspecified) for the
+ * admin UI per spec: admins flip confirm/deny/clear; nuance like
+ * UNDECIDED is for the player to set themselves. UNDECIDED is still
+ * preserved in the schema and won't be overwritten unless the admin
+ * explicitly clicks one of the buttons for that row.
+ */
+function AdminRsvpOverrideSection({
+  loading,
+  error,
+  roster,
+  overrides,
+  pending,
+  getEffective,
+  onSet,
+}: {
+  loading: boolean
+  error: string | null
+  roster: AdminRosterRsvpEntry[]
+  overrides: Record<string, AdminRsvpStatus>
+  pending: boolean
+  getEffective: (entry: AdminRosterRsvpEntry) => AdminRsvpStatus
+  onSet: (playerPublicId: string, status: AdminRsvpStatus) => void
+}) {
+  const changedCount = Object.keys(overrides).length
+
+  return (
+    <div
+      data-testid="admin-rsvp-override-section"
+      className="rounded-lg border border-border-subtle bg-admin-surface/40 px-3 py-3"
+    >
+      <div className="flex items-baseline justify-between gap-2 mb-1">
+        <h3 className="text-fg-high text-xs uppercase tracking-widest font-black">
+          Admin: Override RSVP
+        </h3>
+        <span
+          className="text-[10px] uppercase tracking-widest text-fg-low font-bold"
+          data-testid="admin-rsvp-override-changed-count"
+        >
+          {changedCount > 0 ? `${changedCount} pending` : '0 pending'}
+        </span>
+      </div>
+      <p className="text-fg-low text-[11px] mb-3">
+        Flip a roster player&apos;s RSVP for this matchday. Audit
+        trail records the admin and timestamp.
+      </p>
+
+      {loading && (
+        <p
+          className="text-[12px] text-fg-mid italic py-2"
+          data-testid="admin-rsvp-override-loading"
+        >
+          Loading roster…
+        </p>
+      )}
+
+      {error && !loading && (
+        <p
+          className="text-[12px] text-vibrant-pink py-2"
+          role="alert"
+          data-testid="admin-rsvp-override-error"
+        >
+          {error}
+        </p>
+      )}
+
+      {!loading && !error && roster.length === 0 && (
+        <p
+          className="text-[12px] text-fg-mid italic py-2"
+          data-testid="admin-rsvp-override-empty"
+        >
+          No active roster members.
+        </p>
+      )}
+
+      {!loading && !error && roster.length > 0 && (
+        <ul
+          className="space-y-2"
+          data-testid="admin-rsvp-override-rows"
+        >
+          {roster.map((entry, idx) => {
+            const status = getEffective(entry)
+            const dirty = entry.playerPublicId in overrides
+            return (
+              <li
+                key={entry.playerPublicId}
+                data-testid={`admin-rsvp-override-row-${idx}`}
+                data-player-id={entry.playerPublicId}
+                data-current-status={String(status ?? '')}
+                data-dirty={dirty ? '1' : '0'}
+                className="rounded-md bg-background border border-border-subtle px-3 py-2 flex items-center justify-between gap-2"
+              >
+                <span
+                  className="text-[13px] font-bold text-fg-high truncate"
+                  translate="no"
+                >
+                  {entry.name}
+                </span>
+                <div className="flex items-center gap-1 shrink-0">
+                  <StatusButton
+                    label="Going"
+                    active={status === 'GOING'}
+                    disabled={pending}
+                    onClick={() => onSet(entry.playerPublicId, 'GOING')}
+                    testId={`admin-rsvp-override-row-${idx}-going`}
+                  />
+                  <StatusButton
+                    label="Not going"
+                    active={status === 'NOT_GOING'}
+                    disabled={pending}
+                    onClick={() => onSet(entry.playerPublicId, 'NOT_GOING')}
+                    testId={`admin-rsvp-override-row-${idx}-not-going`}
+                  />
+                  <StatusButton
+                    label="Clear"
+                    active={status === null}
+                    disabled={pending}
+                    onClick={() => onSet(entry.playerPublicId, null)}
+                    testId={`admin-rsvp-override-row-${idx}-clear`}
+                  />
+                </div>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+function StatusButton({
+  label,
+  active,
+  disabled,
+  onClick,
+  testId,
+}: {
+  label: string
+  active: boolean
+  disabled: boolean
+  onClick: () => void
+  testId: string
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      data-testid={testId}
+      data-active={active ? '1' : '0'}
+      className={
+        active
+          ? 'px-2 py-1 rounded text-[10px] font-bold uppercase tracking-widest bg-primary text-on-primary disabled:opacity-50'
+          : 'px-2 py-1 rounded text-[10px] font-bold uppercase tracking-widest border border-border-default text-fg-mid hover:text-fg-high disabled:opacity-50'
+      }
+    >
+      {label}
+    </button>
   )
 }

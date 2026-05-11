@@ -125,6 +125,12 @@ model User {
   // replaced with per-row guest entries.
   authoredGuests MatchdayGuest[]
 
+  // v1.95.0 — audit trail for admin RSVP overrides. Set when this User
+  // (admin) uses the override section of the Add Guests modal to flip a
+  // roster player's RSVP. Cleared on the Availability row when the
+  // player re-RSVPs through `/api/rsvp`.
+  overriddenAvailabilities Availability[] @relation("AvailabilityOverriddenBy")
+
   // v1.84.0 — homepage redesign phase 1a. Per-user preferred league for
   // the persona-aware apex. Nullable; the column is purely additive in
   // this phase (no writes yet — phase 1b wires the writes from the
@@ -954,8 +960,23 @@ model Availability {
   participated ParticipatedStatus?
   updatedAt    DateTime            @updatedAt
 
-  player   Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
-  gameWeek GameWeek @relation(fields: [gameWeekId], references: [id], onDelete: Cascade)
+  // v1.95.0 — admin RSVP override audit. Set when an admin uses the
+  // override section of the Add Guests modal to flip a roster player's
+  // RSVP on their behalf. Cleared (both → NULL) when the player
+  // re-RSVPs through `/api/rsvp` — the player taking ownership back
+  // means the row is no longer "overridden" in the audit sense.
+  //
+  // overriddenById → FK to the admin User who last overrode this row.
+  // onDelete: SetNull preserves the historical override row even if
+  // the admin's User is deleted later.
+  // overriddenAt → distinct from `updatedAt` (which fires on every
+  // touch, including user re-RSVPs).
+  overriddenById String?
+  overriddenAt   DateTime?
+
+  player        Player  @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  gameWeek      GameWeek @relation(fields: [gameWeekId], references: [id], onDelete: Cascade)
+  overriddenBy  User?   @relation("AvailabilityOverriddenBy", fields: [overriddenById], references: [id], onDelete: SetNull)
 
   @@unique([playerId, gameWeekId])
   @@index([gameWeekId])

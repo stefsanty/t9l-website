@@ -77,6 +77,12 @@ async function persistRsvpToPrisma(args: {
       },
       update: {
         rsvp,
+        // v1.95.0 — clear the admin-override audit fields. The player
+        // re-RSVPing themselves means they've taken ownership back; the
+        // row is no longer "currently overridden" in the audit sense.
+        // No-op when the row was never overridden.
+        overriddenById: null,
+        overriddenAt: null,
       },
     })
   } catch (err) {
