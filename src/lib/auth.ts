@@ -464,6 +464,35 @@ async function syncUserAuthAccountName(
   });
 }
 
+/**
+ * v1.92.2 — write the LINE profile picture URL to `User.image` on every
+ * LINE sign-in. The PrismaAdapter creates the User row with `image=null`
+ * on first LINE login (LINE profile picture isn't part of NextAuth's
+ * canonical User shape), and pre-v1.92.2 nothing ever wrote it. Result:
+ * 33 of 37 LINE-auth Users in prod have `image=null` and the v1.92.0
+ * MatchdayAvailability avatar pill falls back to initials for them.
+ *
+ * Idempotent: `updateMany` with `NOT: { image: pictureUrl }` short-circuits
+ * when the value is already current. Failure is non-fatal — auth must not
+ * block on this cosmetic sync. Empty / null `pictureUrl` is a no-op (LINE
+ * may omit it on token refresh; never overwrite a known good value with
+ * null, mirroring the `trackLineLogin` upsert policy).
+ */
+async function syncUserImage(
+  userId: string,
+  pictureUrl: string | null | undefined,
+): Promise<void> {
+  if (!pictureUrl) return;
+  try {
+    await prisma.user.updateMany({
+      where: { id: userId, NOT: { image: pictureUrl } },
+      data: { image: pictureUrl },
+    });
+  } catch (err) {
+    console.error("[auth] syncUserImage failed userId=%s: %o", userId, err);
+  }
+}
+
 // Upsert a LineLogin row on every authenticated request. Powers the admin
 // "Assign Player" Flow B orphan-user dropdown. Failure is non-fatal — auth
 // must not block on the tracking write.
@@ -785,6 +814,16 @@ export const authOptions: AuthOptions = {
               token.lineId,
               err,
             ),
+          );
+          // v1.92.2 — also mirror the LINE profile picture into User.image
+          // so the public-data avatar pipeline (dbToPublicLeagueData) and
+          // any other `User.image`-reading surface picks up the LINE-CDN
+          // URL without a separate LineLogin lookup. Idempotent.
+          await syncUserImage(
+            user.id,
+            (profile as Record<string, unknown>).picture as
+              | string
+              | undefined,
           );
         }
         // Track this login in Prisma — first-seen population for Flow B.
