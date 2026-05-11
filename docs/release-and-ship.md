@@ -39,6 +39,26 @@ One sentence each. The full PR description, test counts, and verification detail
 
 Plans grounded in code audit + tests that verify the planned behavior may proceed to ship without orchestrator ack. The audit-grounded plan IS the gate. **Stop conditions still apply**: data destruction (Layer 3 / 5 / 5b / 5c), schema irreversibility (DROP COLUMN, type changes that lose data), prod write surprise, or ambiguity that's actually a product decision. Surface these immediately rather than guessing. The Neon-Vercel preview-env race is NOT a stop condition — it's documented and the fallback is `gh pr merge <num> --admin --merge` once Unit + tsc are green.
 
+## Auto-merge policy
+
+When shipping a PR, the executor **SHOULD merge via `gh pr merge --squash --admin` without waiting for explicit user confirmation** when all three conditions hold:
+
+1. **Unit + tsc tests pass** (the required CI checks). Vercel preview pending is fine — admin-merge with green Unit + tsc is the documented fallback per [Plan-then-ship autonomy](#plan-then-ship-autonomy).
+2. **Post-push self-verification surfaces no issues** — stash-pop regression-target verification ran clean, full vitest suite is green, the planned behaviour was demonstrated.
+3. **No architectural ambiguity was surfaced for user review** — no security trade-off, no destructive migration, no scope question, no premise audit finding the user should weigh in on.
+
+Applies to bug fixes, small features, hotfixes — anything with a clean ship path. The autonomy here is symmetric to plan-then-ship: the audit-grounded plan + green tests + clean self-review IS the merge gate.
+
+**Surface for confirmation ONLY when ambiguity/risk was flagged.** Examples that require user ack before merge:
+- Security trade-off (e.g. v1.94.1 slug-based vs token-based private join link — the executor surfaced both options).
+- Destructive migration (DROP COLUMN, data backfill, schema rename touching prod rows).
+- Scope question or premise audit finding (e.g. brief claim doesn't match codebase reality).
+- Stop condition triggered mid-execution that wasn't in the original plan.
+
+When confirmation IS needed, surface the trade-off in the PR body + a chat message; do NOT auto-merge. Once the user acks, the merge proceeds normally.
+
+The post-merge sequence (release tag, wait for prod, 11-point verification, ledger update) runs the same way under either gate.
+
 ## Backups & rollback runbook
 
 Every PR ≥ 2 has four parallel rollback paths.
