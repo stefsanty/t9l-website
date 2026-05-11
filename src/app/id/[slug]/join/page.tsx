@@ -21,11 +21,22 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params
   const leagueId = await getLeagueIdBySlug(slug)
   if (!leagueId) return { title: 'Join | T9L' }
+  // v1.94.2 — gate the league-name disclosure on the same
+  // `privateJoinLinkEnabled` predicate the page handler uses (line ~80).
+  // Pre-v1.94.2 the metadata function ran BEFORE the gate, so an
+  // existing slug with the link disabled still returned
+  // `Join <League Name> | <League Name>` in the document `<title>`,
+  // turning slug-guessing into a league-existence enumeration. The
+  // generic title matches what unknown slugs already return, so an
+  // attacker can't tell "league exists but link disabled" from "league
+  // does not exist" at all.
   const league = await prisma.league.findUnique({
     where: { id: leagueId },
-    select: { name: true, abbreviation: true },
+    select: { name: true, abbreviation: true, privateJoinLinkEnabled: true },
   })
-  if (!league) return { title: 'Join | T9L' }
+  if (!league || !league.privateJoinLinkEnabled) {
+    return { title: 'Join | T9L' }
+  }
   const short = league.abbreviation ?? league.name
   return { title: `Join ${short} | ${league.name}` }
 }
