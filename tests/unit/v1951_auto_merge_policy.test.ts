@@ -45,7 +45,7 @@ describe('v1.95.1 — CLAUDE.md standing-rules entry', () => {
 
   it('mentions the three conditions: tests green, self-verification, no ambiguity', () => {
     const block = CLAUDE_MD.match(
-      /\*\*Auto-merge policy\.\*\*[\s\S]+?(?=\*\*[A-Z]|\n##\s)/,
+      /\*\*Auto-merge policy\.\*\*[\s\S]+?(?=\n\n\*\*[A-Z]|\n##\s)/,
     )
     expect(block).toBeTruthy()
     const body = block![0]
@@ -56,14 +56,14 @@ describe('v1.95.1 — CLAUDE.md standing-rules entry', () => {
 
   it('references the canonical gh command', () => {
     const block = CLAUDE_MD.match(
-      /\*\*Auto-merge policy\.\*\*[\s\S]+?(?=\*\*[A-Z]|\n##\s)/,
+      /\*\*Auto-merge policy\.\*\*[\s\S]+?(?=\n\n\*\*[A-Z]|\n##\s)/,
     )
     expect(block![0]).toMatch(/gh pr merge --squash --admin/)
   })
 
   it('points readers at the full policy in docs/release-and-ship.md', () => {
     const block = CLAUDE_MD.match(
-      /\*\*Auto-merge policy\.\*\*[\s\S]+?(?=\*\*[A-Z]|\n##\s)/,
+      /\*\*Auto-merge policy\.\*\*[\s\S]+?(?=\n\n\*\*[A-Z]|\n##\s)/,
     )
     expect(block![0]).toMatch(/docs\/release-and-ship\.md#auto-merge-policy/)
   })
