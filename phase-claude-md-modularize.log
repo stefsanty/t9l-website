@@ -1,0 +1,148 @@
+# phase-claude-md-modularize.log — v1.97.6
+
+Goal: split CLAUDE.md so portable conventions live in their own doc that
+another project can copy, and the active per-PR ledger lives in its own
+doc. CLAUDE.md becomes a slim index pointing at both, plus the
+project-specific rules that don't fit either.
+
+## M1 — audit + borderline surfacing
+
+Audited CLAUDE.md (pre-PR: 146 lines, ~134 KB — the entire 51-entry
+recent ledger lived inline) and all 17 files under `docs/`. Catalogued
+every rule + section into three buckets:
+
+- **Portable** (any project on any stack could copy verbatim): stale-
+  worktree protocol, plan-then-ship autonomy, auto-merge policy + report-
+  back rule, version-bump rule, per-push reporting 3-point template, test
+  rule, end-to-end verification + stash-pop, maintenance rule, Bash
+  discipline, working-with-subagents (all 7 points), rollback Layer 1
+  pattern.
+- **Project-specific** (stays in CLAUDE.md or topical doc): t9l intro
+  paragraph + version pin, autonomy permissions list, admin-orthogonal-
+  UX, no-exports-from-'use server', cache-invalidation canonical, all
+  topical docs (architecture / auth / data-model / time-handling /
+  domain-migration / known-infra-issues / etc.).
+- **Borderline** (need operator call): migration SQL discipline, post-
+  deploy verification, rollback layer model, admin-orthogonal-UX (the
+  principle has portable shape but the signals are t9l-specific),
+  'use server' exports rule (Next.js-specific), cache invalidation (Next.
+  js-specific).
+
+Surfaced the borderline list to the operator with proposed splits for
+each. Operator confirmed all six: B1 (migration SQL) + B2 (post-deploy
+verification) + B3 (rollback layers) get portable principles in
+methodology.md WITH pointers to the project-specific implementation;
+B4–B6 stay entirely in their topical docs (admin-orthogonal-UX,
+'use server' exports, cache invalidation) because they're either
+Next.js-specific or use t9l-specific signals.
+
+## M2 — docs/methodology.md written
+
+New 200-line doc covering the portable conventions in 11 sections:
+Stale-worktree protocol / Plan-then-ship autonomy / Auto-merge policy /
+Version-bump rule / Per-push reporting / Test rule / End-to-end
+verification / Maintenance rule / ORM migration discipline / Post-deploy
+verification / Rollback layer model / Working with subagents / Bash
+discipline / Adopting this file in a new project.
+
+Style: prose mode, generic placeholders (`<parent-repo-path>` instead of
+`/Users/stefan/t9l-website`), references to "the project's
+release-and-ship.md" / "the ORM's create-only command" rather than
+named-stack specifics. The doc is meant to be copy-pasted into another
+project's `docs/methodology.md` with only the bottom "Adopting" section
+needing edits.
+
+Stack-agnostic regression target: a test asserts the file contains no
+literal `T9L`, `Tennozu`, or `t9l.me` strings — accidental leakage of
+project-specific terminology back into the portable doc would fail.
+
+## M3 — docs/ledger.md written
+
+Lifted the 52 active ledger paragraphs (v1.97.5 → v1.79.1) from CLAUDE.md
+into a new docs/ledger.md with a 13-line preamble + the entries +
+archive-pointer footer. Path rewrites for in-text markdown links:
+
+- `docs/release-and-ship.md` → `release-and-ship.md` (sister doc).
+- `docs/perf-phase3-lcp-handoff.md` → `perf-phase3-lcp-handoff.md`.
+- `handover-edit-details-audit.md` → `../handover-edit-details-audit.md`
+  (repo-root reference from docs/).
+- All 11 `phase-X.log` references → `../phase-X.log`.
+
+Verified zero broken relative links by listing each `](path)` occurrence
+and resolving from the docs/ledger.md location. The 113 KB ledger body
+was assembled via shell composition (`cat header + entries + footer`)
+rather than a single Write call to avoid blowing up the conversation
+token budget.
+
+## M4 — CLAUDE.md slimmed
+
+Rewrote CLAUDE.md from scratch as a 67-line index. Sections:
+
+1. Project intro paragraph (T9L.me, stack, multi-tenant slug routing).
+2. Current release + active ledger pointer + archive pointer.
+3. How conventions are organised (methodology.md vs CLAUDE.md vs topical
+   docs).
+4. Topical docs table (extended with rows for `docs/methodology.md` and
+   `docs/ledger.md`).
+5. Stale-worktree protocol — short, points at methodology.md for the
+   procedure, names this repo's specific paths (`/Users/stefan/t9l-website`).
+6. Project-specific standing rules: autonomy permissions list, plan-
+   then-ship stop conditions specific to t9l, auto-merge policy (kept
+   inline because the gh command + release-and-ship.md anchor are repo-
+   specific), version-bump target, admin-orthogonal-UX rule, no-exports
+   rule, cache-invalidation canonical, migration SQL Prisma-specific
+   pointer, post-deploy verification target, maintenance rule.
+
+Pre-PR line count: 146. Post-PR line count: 70. ~52 % reduction in
+lines and ~95 % reduction in bytes (since ledger entries were enormous).
+
+## M5 — verification + test migration + ship
+
+### M5a — test impact
+
+Found 21 test files referencing CLAUDE.md; of those only 7 actually call
+`readFileSync` against the file, and of those only 3 assert content that
+moved or was eliminated:
+
+- `v1.95.1` and `v1.95.2`: both assert a `**Auto-merge policy.**` block
+  exists in CLAUDE.md with various markers. Resolved by keeping a
+  one-paragraph auto-merge summary inline in CLAUDE.md's standing rules
+  — that paragraph is genuinely project-specific (it names the exact
+  `gh pr merge --squash --admin` command and the `docs/release-and-ship
+  .md#auto-merge-policy` anchor). The generic principle still lives in
+  methodology.md; the inline paragraph references it.
+- `v1.97.1`: asserts `## Recent ledger` section + top bullet in CLAUDE.
+  md. Migrated to read `docs/ledger.md` instead — the "top bullet is
+  newest" pin is still meaningful in the new home.
+
+The remaining 4 file-reading tests (`v187` retire-player, `v188` guest
+refactor, `v192` availability list-view, `v196` payment-banner toggle)
+only assert the `**Current release:**` header pattern, which is
+unchanged.
+
+### M5b — new regression-target test
+
+New `tests/unit/v1976_doc_modularisation.test.ts` pins the split:
+
+- APP_VERSION ≥ 1.97.6 + CLAUDE.md header matches.
+- `docs/methodology.md` exists with all 10 portable-rule section
+  headers (stale-worktree, plan-then-ship, auto-merge, version-bump,
+  per-push, ORM migration, post-deploy, rollback, subagents, Bash).
+- Methodology stack-agnostic: NO occurrence of `T9L` / `Tennozu` /
+  `t9l.me` in the doc.
+- `docs/ledger.md` exists, top bullet is recent (v1.9x.x pattern),
+  contains ≥10 bullets, references ledger-archive.md.
+- CLAUDE.md is ≤ 100 lines (slim-index discipline guard).
+- CLAUDE.md points at methodology.md AND ledger.md.
+- CLAUDE.md NO LONGER carries `## Recent ledger` section (regression
+  target — if a future PR drops ledger paragraphs back inline it fails).
+- Project-specific rules retained in CLAUDE.md: admin-orthogonal-UX
+  pointer, 'use server' rule, revalidate canonical, prisma migrate
+  create-only, post-deploy verification pointer.
+
+### M5c — local verification + ship
+
+Run vitest + tsc, push PR, self-merge per the v1.95.1 + v1.95.2 auto-
+merge policy. Tests should all pass; tsc should be clean (no source
+code changes outside `src/lib/version.ts`). Per-push report + post-
+deploy report follow the standard 3-point template.
