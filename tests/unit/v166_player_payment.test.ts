@@ -277,16 +277,21 @@ describe('v1.66.0 — UnpaidFeeBanner', () => {
 })
 
 describe('v1.66.0 — getUnpaidFeeBannerData hide branches', () => {
-  it('returns null on no session', () => {
-    expect(BANNER_RESOLVER_SRC).toMatch(/if\s*\(!session\)\s*return null/)
-  })
-
-  it('returns null when session has no userId (admin-credentials)', () => {
-    expect(BANNER_RESOLVER_SRC).toMatch(/if\s*\(!userId\)\s*return null/)
+  // v1.98.0 — the resolver no longer calls getServerSession itself;
+  // session + user are resolved via the shared `getViewer()` helper.
+  // The pre-v1.98.0 `if (!session) return null` and `if (!userId) return null`
+  // collapse into a single `if (!viewer.user) return null` gate, since
+  // `getViewer()` returns `user: null` for both the no-session and
+  // admin-credentials cases. The playerId gate moves from `user?.playerId`
+  // to `viewer.user.playerId`.
+  it('returns null when viewer has no resolved user (covers no-session + admin-credentials)', () => {
+    expect(BANNER_RESOLVER_SRC).toMatch(/if\s*\(!viewer\.user\)\s*return null/)
   })
 
   it('returns null when User has no playerId', () => {
-    expect(BANNER_RESOLVER_SRC).toMatch(/if\s*\(!user\?\.playerId\)\s*return null/)
+    expect(BANNER_RESOLVER_SRC).toMatch(
+      /if\s*\(!viewer\.user\.playerId\)\s*return null/,
+    )
   })
 
   it('returns null when no PLM in this league', () => {

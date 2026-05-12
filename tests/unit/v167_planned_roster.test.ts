@@ -367,15 +367,25 @@ describe('v1.67.0 admin-orthogonal recruiting state resolver', () => {
   })
 
   it('falls back to lineId when userId is missing or User has no playerId', () => {
-    expect(src).toMatch(/lineId/)
-    expect(src).toMatch(/!player\s*&&\s*lineId/)
-    // The fallback Player.findUnique by lineId must be present.
-    expect(src).toMatch(/where:\s*\{\s*lineId\s*\}/)
+    // v1.98.0 — the userId/lineId fallback dance moved into the shared
+    // `getViewer()` helper (src/lib/viewer.ts) so this resolver no
+    // longer carries the explicit `!player && lineId` branch. The
+    // fallback is now asserted in the v198 regression-target tests
+    // against viewer.ts. Here we just verify the resolver consumes the
+    // viewer's already-resolved player rather than re-resolving.
+    expect(src).toMatch(/import\s*\{\s*getViewer\s*\}\s*from\s*['"]@\/lib\/viewer['"]/)
+    expect(src).toMatch(/getViewer\(\)/)
   })
 
   it('returns no_player when neither userId nor lineId resolve', () => {
+    // v1.98.0 — the `!userId && !lineId` literal moved into viewer.ts;
+    // the resolver now reads `viewer.hasSession` and `viewer.player`.
+    // Without a session at all → unauthenticated (asserted via the
+    // existing console.warn / unauthenticated default test). Without a
+    // player → no_player (asserted here).
     const code = src.replace(/\/\*[\s\S]*?\*\//g, '')
-    expect(code).toMatch(/!userId\s*&&\s*!lineId/)
+    expect(code).toMatch(/!viewer\.player/)
+    expect(code).toMatch(/kind:\s*['"]no_player['"]/)
   })
 })
 

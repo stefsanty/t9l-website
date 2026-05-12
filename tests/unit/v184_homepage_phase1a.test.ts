@@ -166,9 +166,13 @@ describe('v1.84.0 — migration creates enum, column, FK, backfill', () => {
 
 describe('v1.84.0 — getLeagueFlags includes visibility', () => {
   it('selects visibility from Prisma alongside the legacy flags', () => {
-    expect(FLAGS_SRC).toMatch(
-      /select:\s*\{\s*preseasonMode:\s*true,\s*recruiting:\s*true,\s*visibility:\s*true\s*\}/,
-    )
+    // v1.98.0 — identity columns (id/name/abbreviation/ballType) were
+    // folded onto the same cached read. The select block now carries
+    // those plus the original three flags. Pin each column
+    // independently so the assertion survives ordering churn.
+    expect(FLAGS_SRC).toMatch(/preseasonMode:\s*true/)
+    expect(FLAGS_SRC).toMatch(/recruiting:\s*true/)
+    expect(FLAGS_SRC).toMatch(/visibility:\s*true/)
   })
 
   it('LeagueFlags interface includes visibility (PRIVATE | PUBLIC_CLOSED | PUBLIC_OPEN)', () => {

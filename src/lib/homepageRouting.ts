@@ -34,6 +34,7 @@
 
 import { prisma } from '@/lib/prisma'
 import { DEFAULT_LEAGUE_SLUG } from '@/lib/leagueSlug'
+import { getViewer } from '@/lib/viewer'
 
 export interface ApprovedMembership {
   leagueId: string
@@ -99,78 +100,27 @@ export async function getApprovedMembershipsAndDefault(input: ResolveInput): Pro
     return { memberships: [], defaultLeagueId: null }
   }
 
-  // Resolve the canonical User row up front so we can read
-  // `defaultLeagueId` AND its memberships in a single query. The lookup
-  // accepts either identifier (mirrors `requireSelfPlayerSession` in
-  // `account/player/actions.ts`) so legacy LINE-only sessions work.
-  let user
-  try {
-    if (userId) {
-      user = await prisma.user.findUnique({
-        where: { id: userId },
-        select: {
-          id: true,
-          defaultLeagueId: true,
-          playerId: true,
-        },
-      })
-    }
-    if (!user && lineId) {
-      user = await prisma.user.findUnique({
-        where: { lineId },
-        select: {
-          id: true,
-          defaultLeagueId: true,
-          playerId: true,
-        },
-      })
-    }
-  } catch (err) {
-    console.warn('[homepageRouting] user lookup failed; defaulting to directory:', err)
-    return { memberships: [], defaultLeagueId: null }
-  }
-
+  // v1.98.0 — session + user + player resolution lives in shared
+  // `getViewer()` (request-scoped via React `cache()`). The previous
+  // duplicate `prisma.user.findUnique` (selecting `defaultLeagueId: true`
+  // + `playerId: true`) is gone — viewer carries both fields. Tests
+  // assert this selection happens in `src/lib/viewer.ts` now.
+  const viewer = await getViewer()
+  const user = viewer.user
   if (!user) {
     return { memberships: [], defaultLeagueId: null }
   }
 
-  // Resolve the Player row: prefer User.playerId (canonical post-α.5),
-  // else fall back to Player.lineId for grandfathered sessions whose
-  // User.playerId was never backfilled.
+  // Per-league leagueAssignments query — genuinely scoped to the
+  // current viewer's player so still runs once per render. The shape
+  // (applicationStatus APPROVED + toGameWeek null + leagueTeamId not
+  // null) is the v1.85.0 semantic that distinguishes "real teammate"
+  // from "pending application".
   let player
   try {
-    if (user.playerId) {
+    if (viewer.player) {
       player = await prisma.player.findUnique({
-        where: { id: user.playerId },
-        select: {
-          id: true,
-          leagueAssignments: {
-            where: {
-              applicationStatus: 'APPROVED',
-              toGameWeek: null,
-              leagueTeamId: { not: null },
-            },
-            select: {
-              leagueTeam: {
-                select: {
-                  league: {
-                    select: {
-                      id: true,
-                      name: true,
-                      subdomain: true,
-                      isDefault: true,
-                    },
-                  },
-                },
-              },
-            },
-          },
-        },
-      })
-    }
-    if (!player && lineId) {
-      player = await prisma.player.findFirst({
-        where: { lineId },
+        where: { id: viewer.player.id },
         select: {
           id: true,
           leagueAssignments: {

@@ -1,9 +1,8 @@
 /**
- * v1.85.0 — homepage redesign phase 1c. Shared bundle of the seven
- * read calls that every league-page render needs:
+ * v1.85.0 — homepage redesign phase 1c. Shared bundle of the read
+ * calls every league-page render needs:
  *
  *   getPublicLeagueData, getLeagueFlags, getRecruitingViewerState,
- *   prisma.league.findUnique({ id, name, abbreviation, ballType }),
  *   getUnpaidFeeBannerData, getPlannedRosterStats, getLeagueDetails.
  *
  * Pre-v1.85.0 the same `Promise.all` block was duplicated across
@@ -16,9 +15,16 @@
  * Returns `null` from the catch branch so callers can render their own
  * fallback surface (every existing call site already does — they each
  * render the `<div>Data unavailable</div>` block).
+ *
+ * v1.98.0 — the standalone `prisma.league.findUnique` that populated
+ * `bundle.league` is gone. Identity columns (id, name, abbreviation,
+ * ballType) now ride on `getLeagueFlags` (which already cached the
+ * same row under the `leagues` tag for 30 s). One fewer Prisma
+ * round-trip per render — savings compound across the apex hub,
+ * /id/<slug>, /id/<slug>/md/<id>, /id/<slug>/join, /stats, /schedule
+ * — every league-scoped page that called this bundle.
  */
 
-import { prisma } from '@/lib/prisma'
 import type { LeagueData } from '@/types'
 import { getPublicLeagueData } from '@/lib/publicData'
 import { getLeagueFlags, type LeagueFlags } from '@/lib/leagueFlags'
@@ -38,6 +44,11 @@ export interface LeaguePageBundle {
   data: LeagueData
   flags: LeagueFlags
   recruitingState: RecruitingViewerState
+  /**
+   * v1.98.0 — pulled from `flags.league` instead of a standalone
+   * `prisma.league.findUnique`. The shape on the bundle is preserved
+   * so call sites that read `bundle.league` continue to compile.
+   */
   league: {
     id: string
     name: string
@@ -57,7 +68,6 @@ export async function getLeaguePageBundle(
       data,
       flags,
       recruitingState,
-      league,
       unpaidFee,
       plannedRosterStats,
       leagueDetails,
@@ -65,10 +75,6 @@ export async function getLeaguePageBundle(
       getPublicLeagueData(leagueId),
       getLeagueFlags(leagueId),
       getRecruitingViewerState(leagueId),
-      prisma.league.findUnique({
-        where: { id: leagueId },
-        select: { id: true, name: true, abbreviation: true, ballType: true },
-      }),
       getUnpaidFeeBannerData(leagueId),
       getPlannedRosterStats(leagueId),
       getLeagueDetails(leagueId),
@@ -77,7 +83,7 @@ export async function getLeaguePageBundle(
       data,
       flags,
       recruitingState,
-      league,
+      league: flags.league,
       unpaidFee,
       plannedRosterStats,
       leagueDetails,

@@ -22,11 +22,17 @@
  *
  * Defensive try/catch — Prisma read failure returns null (banner stays
  * hidden). Better to under-render than over-render an incorrect surface.
+ *
+ * v1.98.0 — session + user resolution moved into the shared
+ * `getViewer()` helper (request-scoped via React `cache()`). This
+ * function now skips the `getServerSession + user.findUnique`
+ * preamble and reads the cached viewer directly. The per-league
+ * `playerLeagueMembership.findFirst` + `league.findUnique` queries
+ * are unchanged — they're genuinely scoped to leagueId.
  */
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { resolvePlayerFee } from '@/lib/playerFee'
+import { getViewer } from '@/lib/viewer'
 
 export interface UnpaidFeeBannerData {
   membershipId: string
@@ -37,18 +43,16 @@ export interface UnpaidFeeBannerData {
 export async function getUnpaidFeeBannerData(
   leagueId: string,
 ): Promise<UnpaidFeeBannerData | null> {
-  const session = await getServerSession(authOptions)
-  if (!session) return null
-  const userId = (session as { userId?: string | null }).userId ?? null
-  if (!userId) return null
+  const viewer = await getViewer()
+  // Banner never renders for unauthenticated visitors OR for sessions
+  // without a public-side identifier (admin-credentials). Pre-v1.98.0
+  // the gate was `!session || !userId`; the new shape collapses both
+  // into `!viewer.user` since `getViewer()` returns user=null in both
+  // those branches.
+  if (!viewer.user) return null
+  if (!viewer.user.playerId) return null
 
   try {
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { playerId: true },
-    })
-    if (!user?.playerId) return null
-
     // Find the active PLM for this user in this league. Match by direct
     // leagueId column (v1.65.0 + dual-write) OR via leagueTeam.leagueId
     // (legacy backfilled rows). toGameWeek=null restricts to active.
@@ -56,7 +60,7 @@ export async function getUnpaidFeeBannerData(
     // owe the league fee.
     const plm = await prisma.playerLeagueMembership.findFirst({
       where: {
-        playerId: user.playerId,
+        playerId: viewer.user.playerId,
         toGameWeek: null,
         retiredAt: null,
         OR: [{ leagueId }, { leagueTeam: { leagueId } }],
