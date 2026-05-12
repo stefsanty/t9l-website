@@ -7,6 +7,20 @@ import { signOut } from 'next-auth/react'
 import { ChevronDown, LogOut, User, Menu, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { getCurrentCallbackUrl } from '@/lib/signInCallbackUrl'
+import { clearDefaultLeagueCookie } from '@/app/api/default-league/actions'
+
+// v1.97.5 — wrap NextAuth signOut so the `t9l_default_league` cookie
+// clears before the session token does. Fire-and-forget; on failure
+// the user still signs out and the stale cookie falls through on the
+// read side (memberships validation catches cross-user contamination).
+async function signOutWithCookieClear(): Promise<void> {
+  try {
+    await clearDefaultLeagueCookie()
+  } catch {
+    // Non-fatal — sign-out proceeds either way.
+  }
+  signOut({ callbackUrl: getCurrentCallbackUrl() })
+}
 
 interface AdminNavProps {
   adminName?: string | null
@@ -69,7 +83,7 @@ export default function AdminNav({ adminName }: AdminNavProps) {
               <div className="fixed inset-0 z-40" onClick={() => setDropdownOpen(false)} />
               <div className="absolute right-0 top-full mt-1 w-44 bg-admin-surface border border-admin-border rounded-lg shadow-xl z-50 py-1">
                 <button
-                  onClick={() => signOut({ callbackUrl: getCurrentCallbackUrl() })}
+                  onClick={signOutWithCookieClear}
                   className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-admin-text2 hover:text-admin-red hover:bg-admin-red-dim transition-colors"
                 >
                   <LogOut className="w-3.5 h-3.5" />
@@ -139,7 +153,7 @@ export default function AdminNav({ adminName }: AdminNavProps) {
                 <span className="text-admin-text2 text-sm truncate">{adminName ?? 'Admin'}</span>
               </div>
               <button
-                onClick={() => signOut({ callbackUrl: getCurrentCallbackUrl() })}
+                onClick={signOutWithCookieClear}
                 className="w-full flex items-center gap-2.5 px-3 py-3 text-sm text-admin-text2 hover:text-admin-red hover:bg-admin-red-dim transition-colors rounded-lg"
               >
                 <LogOut className="w-3.5 h-3.5" />

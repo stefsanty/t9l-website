@@ -8,6 +8,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { APP_VERSION } from '@/lib/version';
 import { getCurrentCallbackUrl } from '@/lib/signInCallbackUrl';
+import { clearDefaultLeagueCookie } from '@/app/api/default-league/actions';
 
 // v1.80.8 — perf phase 4c: defer SignInLightbox to its own async chunk
 // so the modal's ~9 KB / ~3 KB gzipped doesn't ship in the eager Header
@@ -386,7 +387,22 @@ export default function LineLoginButton() {
             )}
 
             <button
-              onClick={() => signOut({ callbackUrl: getCurrentCallbackUrl() })}
+              // v1.97.5 — clear the `t9l_default_league` cookie before
+              // NextAuth's signOut so the next user on this device
+              // doesn't inherit a stale league preference. The read-side
+              // validation would catch cross-user leakage anyway (the
+              // cookie value must match an APPROVED membership), but
+              // eager clearing keeps the contract clean. Fire-and-
+              // forget; on failure the user still signs out and the
+              // stale cookie falls through on the read side.
+              onClick={async () => {
+                try {
+                  await clearDefaultLeagueCookie()
+                } catch {
+                  // Non-fatal — sign-out proceeds either way.
+                }
+                signOut({ callbackUrl: getCurrentCallbackUrl() })
+              }}
               className="w-full flex items-center gap-2 px-4 py-3 text-[12px] font-bold text-fg-high hover:text-fg-mid hover:bg-surface-md transition-colors"
             >
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
