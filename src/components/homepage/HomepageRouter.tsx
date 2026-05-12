@@ -1,3 +1,4 @@
+import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
@@ -6,6 +7,10 @@ import {
   type HomepagePersona,
 } from '@/lib/homepageRouting'
 import { getDirectoryLeagues } from '@/lib/leagueDirectoryData'
+import {
+  DEFAULT_LEAGUE_COOKIE_NAME,
+  normaliseDefaultLeagueCookieValue,
+} from '@/lib/defaultLeagueCookie'
 import LeagueDirectory from './LeagueDirectory'
 import MultiLeagueHub from './MultiLeagueHub'
 
@@ -39,6 +44,14 @@ import MultiLeagueHub from './MultiLeagueHub'
  * alphabetical-first membership. Pinning the choice to the URL also
  * makes the switcher result shareable/bookmarkable.
  *
+ * v1.97.5 — reads the `t9l_default_league` cookie (set by the Header
+ * `<LeagueSwitcher>` pill-click) as a fast-path between the URL
+ * searchParam and the DB `User.defaultLeagueId`. Priority becomes
+ * URL > cookie > DB > alphabetical-first. The cookie is HttpOnly and
+ * never trusted blindly — `classifyPersona` validates the value
+ * against the viewer's APPROVED memberships exactly like it does for
+ * `preferredLeagueId`.
+ *
  * This is a server component. The persona resolver reads the session
  * once via `getServerSession`; calling that establishes the route as
  * dynamic per-request, which is what we want — every visitor has a
@@ -53,10 +66,21 @@ export default async function HomepageRouter({
   const userId = (session as { userId?: string | null } | null)?.userId ?? null
   const lineId = (session as { lineId?: string | null } | null)?.lineId ?? null
 
+  // v1.97.5 — read the cookie BEFORE awaiting the persona resolver so
+  // both reads can happen on the same tick. `cookies()` is the only
+  // sync-ish access from a server component (it returns a Promise in
+  // Next 15+ but completes off the request boundary it's already
+  // bound to).
+  const jar = await cookies()
+  const cookieLeagueId = normaliseDefaultLeagueCookieValue(
+    jar.get(DEFAULT_LEAGUE_COOKIE_NAME)?.value,
+  )
+
   const persona: HomepagePersona = await resolveHomepagePersona({
     userId,
     lineId,
     preferredLeagueId: preferredLeagueId ?? null,
+    cookieLeagueId,
   })
 
   if (persona.kind === 'single') {

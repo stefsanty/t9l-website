@@ -65,6 +65,17 @@ interface ResolveInput {
    * the user to a league they aren't in.
    */
   preferredLeagueId?: string | null
+  /**
+   * v1.97.5 — optional caller-provided cookie value (typically read
+   * from `t9l_default_league` via `cookies()` in `<HomepageRouter>`).
+   * Sits between `preferredLeagueId` (URL) and `User.defaultLeagueId`
+   * (DB) in the priority chain. The cookie write is fire-and-forget
+   * from the LeagueSwitcher pill-click; this read path picks it up on
+   * the next render to skip a Prisma round-trip on cold loads.
+   * Validated against memberships the same way `preferredLeagueId` is
+   * — an unknown / stale / tampered value silently falls through.
+   */
+  cookieLeagueId?: string | null
 }
 
 /**
@@ -243,8 +254,21 @@ export function classifyPersona(args: {
    * identically to v1.85.0.
    */
   preferredLeagueId?: string | null
+  /**
+   * v1.97.5 — optional cookie-backed preference. See
+   * `ResolveInput.cookieLeagueId` for the contract. Wins over the DB
+   * `defaultLeagueId` when both are present and both validate against
+   * memberships, so a returning visitor lands on whichever league
+   * they last clicked rather than whatever the DB happens to hold.
+   */
+  cookieLeagueId?: string | null
 }): HomepagePersona {
-  const { memberships, defaultLeagueId, preferredLeagueId = null } = args
+  const {
+    memberships,
+    defaultLeagueId,
+    preferredLeagueId = null,
+    cookieLeagueId = null,
+  } = args
   if (memberships.length === 0) {
     return { kind: 'directory' }
   }
@@ -252,17 +276,21 @@ export function classifyPersona(args: {
     return { kind: 'single', membership: memberships[0] }
   }
   // Priority: explicit preferredLeagueId (URL `?league=` from the
-  // switcher) → stored `User.defaultLeagueId` → alphabetical-first
-  // membership. Each branch validates against the memberships list, so
-  // an unknown id (URL tampering or stale stored default) silently
+  // switcher) → cookie (`t9l_default_league`, v1.97.5) → stored
+  // `User.defaultLeagueId` → alphabetical-first membership. Each
+  // branch validates against the memberships list, so an unknown id
+  // (URL tampering or stale stored default or stale cookie) silently
   // falls through to the next layer.
   const preferred = preferredLeagueId
     ? memberships.find((m) => m.leagueId === preferredLeagueId) ?? null
     : null
+  const cookied = cookieLeagueId
+    ? memberships.find((m) => m.leagueId === cookieLeagueId) ?? null
+    : null
   const stored = defaultLeagueId
     ? memberships.find((m) => m.leagueId === defaultLeagueId) ?? null
     : null
-  const active = preferred ?? stored ?? memberships[0]
+  const active = preferred ?? cookied ?? stored ?? memberships[0]
   return {
     kind: 'multi',
     memberships,
@@ -287,5 +315,6 @@ export async function resolveHomepagePersona(
     memberships,
     defaultLeagueId,
     preferredLeagueId: input.preferredLeagueId ?? null,
+    cookieLeagueId: input.cookieLeagueId ?? null,
   })
 }

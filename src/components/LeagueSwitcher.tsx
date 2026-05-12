@@ -6,6 +6,7 @@ import { useRouter, usePathname, useSearchParams } from 'next/navigation'
 import { ChevronDown } from 'lucide-react'
 import { useMemberships, type Membership } from './MembershipsProvider'
 import { useHubTransition } from './homepage/HubTransitionShell'
+import { setDefaultLeagueCookie } from '@/app/api/default-league/actions'
 
 /**
  * Header league-switcher: a chevron next to the brand title that opens a
@@ -230,6 +231,15 @@ export default function LeagueSwitcher({ leagueTitle }: LeagueSwitcherProps = {}
     e.preventDefault()
     setOpen(false)
     const href = buildHref(m)
+    // v1.97.5 — fire-and-forget cookie write. The server action sets
+    // an HttpOnly cookie so the next persona-aware apex render
+    // (`<HomepageRouter>` on `/test`) picks this league without a
+    // Prisma round-trip. We deliberately don't await: the navigation
+    // is the user-facing critical path, and the cookie only needs to
+    // exist by the time of the NEXT page render (typically seconds
+    // later). On failure the next render falls through to the DB
+    // `User.defaultLeagueId` — no regression beyond pre-v1.97.5 behaviour.
+    void setDefaultLeagueCookie(m.leagueId).catch(() => {})
     startNavigation(() => {
       setOptimisticActiveId(m.leagueId)
       router.push(href, { scroll: false })
