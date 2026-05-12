@@ -14,7 +14,6 @@ import ClassicLeagueHomepage from './ClassicLeagueHomepage';
 import RecruitingBanner from './RecruitingBanner';
 import UnpaidFeeBanner from './UnpaidFeeBanner';
 import RegistrationCountdown from './RegistrationCountdown';
-import { useHubTransition } from './homepage/HubTransitionShell';
 import type { UnpaidFeeBannerData } from '@/lib/unpaidFeeBanner';
 import type { RecruitingViewerState } from '@/lib/recruitingViewerState';
 import type { PlannedRosterStats as PlannedRosterStatsData } from '@/lib/plannedRosterStats';
@@ -223,6 +222,17 @@ interface DashboardProps {
    * Replaces the v1.91.0 `guestCounts` count map.
    */
   guests?: MatchdayGuests;
+  /**
+   * v1.99.0 — when true, Dashboard skips its built-in `<Header>` render.
+   * Used by the streaming shell in `/id/<slug>/page.tsx` and
+   * `<MultiLeagueHub>` which hoist `<Header>` ABOVE the Suspense
+   * boundary so the live `<LeagueSwitcher>` chevron paints with the
+   * shell instead of waiting for `getLeaguePageBundle` to resolve.
+   * Defaults false — legacy call sites (`/`, `/id/<slug>/md/<id>`,
+   * `/id/<slug>/join`, `/matchday/<id>`, `/stats`) keep their built-in
+   * Header for now.
+   */
+  noHeader?: boolean;
 }
 
 /**
@@ -262,18 +272,22 @@ export default function Dashboard({
   leagueDetails,
   topSlot,
   guests,
+  noHeader = false,
 }: DashboardProps) {
   const { data: session } = useSession();
   const [selectedMatchdayId, setSelectedMatchdayId] = useState(
     initialMatchdayId ?? nextMd?.matchday.id ?? matchdays[0]?.id ?? ''
   );
 
-  // v1.97.0 — body skeleton dim during a `<LeagueSwitcherTabs>` navigation.
-  // Reads the shared transition state established by `<HubTransitionShell>`
-  // (the `<MultiLeagueHub>` wrapper). On non-hub routes the context returns
-  // the default no-op `{ isPending: false }`, so the dim never fires — keeps
-  // `/id/<slug>` and `/id/<slug>/md/<id>` visually unchanged.
-  const { isPending: isHubPending } = useHubTransition();
+  // v1.99.0 — pre-v1.99.0 Dashboard's body wrapper toggled an
+  // `animate-pulse + pointer-events-none` className during a
+  // `<HubTransitionShell>` navigation (v1.97.0). The Suspense fallback
+  // introduced in v1.99.0 now handles the body's loading state during
+  // a league switch (the streaming shell suspends the body and shows
+  // `<DashboardBodySkeleton>` while `getLeaguePageBundle` resolves),
+  // so the body-pulse is gone. `<HubTransitionShell>` still renders
+  // its top-edge progress strip as the switcher's active-changing
+  // cue — that cue is independent of this component.
 
   const selectedMatchday =
     matchdays.find((m) => m.id === selectedMatchdayId) ?? matchdays[0];
@@ -364,7 +378,15 @@ export default function Dashboard({
 
   return (
     <div className="flex flex-col min-h-dvh pb-0 max-w-lg mx-auto bg-background selection:bg-vibrant-pink selection:text-white">
-      <Header hideStatsLink={preseasonMode} leagueTitle={league?.abbreviation ?? league?.name ?? null} />
+      {/* v1.99.0 — Header is hoisted to the page-level streaming shell on
+          `/id/<slug>` and `<MultiLeagueHub>` so the `<LeagueSwitcher>`
+          chevron paints with the shell instead of waiting for the
+          heavy data bundle. Legacy call sites (`/`, `/id/<slug>/md/<id>`,
+          `/id/<slug>/join`, `/matchday/<id>`, `/stats`) leave noHeader
+          unset so this branch still mounts Header inline. */}
+      {!noHeader && (
+        <Header hideStatsLink={preseasonMode} leagueTitle={league?.abbreviation ?? league?.name ?? null} />
+      )}
 
       <main className={`flex-1 px-4 relative z-10 pt-12 ${showRsvpBar ? 'pb-32' : 'pb-2'}`}>
         {/* v1.85.0 — optional slot rendered above the existing animated
@@ -373,24 +395,7 @@ export default function Dashboard({
             header (`pt-12` reserves space) and the animate-in column. */}
         {topSlot}
         <div className="animate-in pt-2">
-          {/* v1.97.0 — body skeleton dim during a multi-league switcher
-              navigation. The wrapper is mount-stable (always rendered),
-              and ONLY its className flips on `isHubPending`. The pulse
-              fires on the dashboard cards below the topSlot; the topSlot
-              itself stays interactive because it lives ABOVE this
-              wrapper inside <main>. On routes that don't mount
-              <HubTransitionShell>, `useHubTransition()` returns the
-              default no-op so this is a no-op. */}
-          <div
-            data-testid="dashboard-body"
-            aria-busy={isHubPending}
-            data-hub-busy={isHubPending ? 'true' : 'false'}
-            className={
-              isHubPending
-                ? 'animate-pulse pointer-events-none transition-opacity duration-150'
-                : 'transition-opacity duration-150'
-            }
-          >
+          <div data-testid="dashboard-body">
           {/* v1.66.0 — unpaid-fee banner renders ABOVE the recruiting
               banner. The unpaid-fee message takes priority because it's
               actionable for an existing roster member; recruiting is
