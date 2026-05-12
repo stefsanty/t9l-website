@@ -433,6 +433,12 @@ export async function updateLeagueDetails(input: {
    * banner forced on, regardless of `visibility`.
    */
   privateJoinLinkEnabled?: boolean
+  /**
+   * v1.96.0 — admin-toggleable suppression of the unpaid-fee banner.
+   * When false, the banner never renders, regardless of player
+   * paid-status. Default true preserves existing behavior.
+   */
+  paymentBannerEnabled?: boolean
 }): Promise<void> {
   await assertAdmin()
   if (!input.leagueId) throw new Error('leagueId is required')
@@ -530,6 +536,12 @@ export async function updateLeagueDetails(input: {
       throw new Error('privateJoinLinkEnabled must be a boolean')
     }
     data.privateJoinLinkEnabled = input.privateJoinLinkEnabled
+  }
+  if (input.paymentBannerEnabled !== undefined) {
+    if (typeof input.paymentBannerEnabled !== 'boolean') {
+      throw new Error('paymentBannerEnabled must be a boolean')
+    }
+    data.paymentBannerEnabled = input.paymentBannerEnabled
   }
 
   await prisma.league.update({

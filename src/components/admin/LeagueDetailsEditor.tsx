@@ -67,6 +67,9 @@ interface Props {
   // copy-to-clipboard affordance.
   initialPrivateJoinLinkEnabled: boolean
   leagueSubdomain: string | null
+  // v1.96.0 — admin-toggleable suppression of the unpaid-fee banner.
+  // Default true preserves existing behavior.
+  initialPaymentBannerEnabled: boolean
   // v1.75.5 — Fee fields (absorbed from LeagueFeesEditor).
   initialDefaultFee: number
   initialPositionFees: ReadonlyArray<FeeRow>
@@ -97,6 +100,7 @@ export default function LeagueDetailsEditor({
   initialIdRequired,
   initialPrivateJoinLinkEnabled,
   leagueSubdomain,
+  initialPaymentBannerEnabled,
   initialDefaultFee,
   initialPositionFees,
   initialPlannedPlayersPerTeam,
@@ -131,6 +135,9 @@ export default function LeagueDetailsEditor({
   const [idRequired, setIdRequired] = useState<boolean>(initialIdRequired)
   const [privateJoinLinkEnabled, setPrivateJoinLinkEnabled] = useState<boolean>(
     initialPrivateJoinLinkEnabled,
+  )
+  const [paymentBannerEnabled, setPaymentBannerEnabled] = useState<boolean>(
+    initialPaymentBannerEnabled,
   )
   const [copied, setCopied] = useState<boolean>(false)
 
@@ -193,6 +200,7 @@ export default function LeagueDetailsEditor({
             showLeagueDetails,
             idRequired,
             privateJoinLinkEnabled,
+            paymentBannerEnabled,
           }),
           updateLeagueFeeSettings({
             leagueId,
@@ -584,6 +592,34 @@ export default function LeagueDetailsEditor({
           data-testid="league-details-id-required-button"
         >
           {idRequired ? 'On' : 'Off'}
+        </button>
+      </div>
+
+      {/* v1.96.0 — Payment-reminder banner toggle. Default-on preserves
+          the v1.66.0 behavior; admins flip off for casual leagues that
+          don't want to bug players with the unpaid-fee banner. Gates the
+          ENTIRE banner regardless of player paid-status. */}
+      <div
+        className="flex items-center justify-between gap-3 pt-2"
+        data-testid="league-details-payment-banner-toggle"
+      >
+        <div>
+          <p className="text-sm font-medium text-admin-text">Show payment reminder banner to unpaid players</p>
+          <p className="text-xs text-admin-text3">When off, the unpaid-fee banner never appears for any player in this league.</p>
+        </div>
+        <button
+          type="button"
+          aria-pressed={paymentBannerEnabled}
+          onClick={() => setPaymentBannerEnabled(!paymentBannerEnabled)}
+          className={cn(
+            'rounded-full px-4 py-1.5 text-xs font-bold uppercase tracking-widest border transition-colors',
+            paymentBannerEnabled
+              ? 'border-admin-green bg-admin-green/15 text-admin-text'
+              : 'border-admin-border bg-admin-surface2 text-admin-text3',
+          )}
+          data-testid="league-details-payment-banner-button"
+        >
+          {paymentBannerEnabled ? 'On' : 'Off'}
         </button>
       </div>
 

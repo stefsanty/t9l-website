@@ -67,6 +67,8 @@ interface League {
   idRequired: boolean
   // v1.94.0 — admin-toggleable private join link.
   privateJoinLinkEnabled: boolean
+  // v1.96.0 — admin-toggleable suppression of the unpaid-fee banner.
+  paymentBannerEnabled: boolean
 }
 
 // JST calendar date as YYYY-MM-DD for `<input type="date">`. See lib/jst.ts.
@@ -690,6 +692,7 @@ export default function SettingsTab({ league }: SettingsTabProps) {
         initialIdRequired={league.idRequired}
         initialPrivateJoinLinkEnabled={league.privateJoinLinkEnabled}
         leagueSubdomain={league.subdomain ?? null}
+        initialPaymentBannerEnabled={league.paymentBannerEnabled}
         initialDefaultFee={league.defaultFee}
         initialPositionFees={league.positionFees}
         initialPlannedPlayersPerTeam={league.plannedPlayersPerTeam}
