@@ -35,8 +35,13 @@ const TEST_PAGE_SRC = readFileSync(
   join(REPO_ROOT, 'src/app/test/page.tsx'),
   'utf8',
 )
-const SWITCHER_TABS_SRC = readFileSync(
-  join(REPO_ROOT, 'src/components/homepage/LeagueSwitcherTabs.tsx'),
+// v1.97.1 — `LeagueSwitcherTabs.tsx` deleted. The Header chevron
+// (`src/components/LeagueSwitcher.tsx`) inherits the v1.93.0 switcher
+// behavior (Link prefetch, useOptimistic, useHubTransition,
+// startNavigation, power-user gestures, same-league short-circuit).
+// Those pins live in `tests/unit/v1971_header_chevron_bar.test.ts`.
+const HEADER_SWITCHER_SRC = readFileSync(
+  join(REPO_ROOT, 'src/components/LeagueSwitcher.tsx'),
   'utf8',
 )
 const MULTI_HUB_SRC = readFileSync(
@@ -76,10 +81,15 @@ describe('v1.93.0 — old server action surface is fully removed', () => {
     expect(existsSync(ACTIONS_PATH)).toBe(false)
   })
 
+  // v1.97.1 — switcher source moved from
+  // src/components/homepage/LeagueSwitcherTabs.tsx (deleted) to
+  // src/components/LeagueSwitcher.tsx (Header chevron). The
+  // "no setUserDefaultLeague" / "no router.refresh()" pins below
+  // continue against the new source so the removed primitives stay
+  // gone after the move.
+
   it('switcher source carries no executable reference to setUserDefaultLeague (regression target)', () => {
-    // Strip line comments so the historical mention in the docstring
-    // explaining what changed in v1.93.0 doesn't false-positive.
-    const code = stripComments(SWITCHER_TABS_SRC)
+    const code = stripComments(HEADER_SWITCHER_SRC)
     expect(code).not.toMatch(/setUserDefaultLeague/)
   })
 
@@ -88,7 +98,7 @@ describe('v1.93.0 — old server action surface is fully removed', () => {
     // The new flow uses router.push to a search-param URL; refresh
     // would re-fetch the page WITHOUT updating the URL, defeating
     // the prefetch entirely.
-    const code = stripComments(SWITCHER_TABS_SRC)
+    const code = stripComments(HEADER_SWITCHER_SRC)
     expect(code).not.toMatch(/router\.refresh\(\)/)
   })
 })
@@ -232,82 +242,12 @@ describe('v1.93.0 — /test page forwards searchParams.league', () => {
 // 5) Switcher uses Link + prefetch + useOptimistic + useTransition
 // ────────────────────────────────────────────────────────────────────────────
 
-describe('v1.93.0 — LeagueSwitcherTabs prefetch + optimistic flow', () => {
-  it('imports next/link Link and renders prefetched links per pill (regression target)', () => {
-    expect(SWITCHER_TABS_SRC).toMatch(
-      /import\s+Link\s+from\s+['"]next\/link['"]/,
-    )
-    expect(SWITCHER_TABS_SRC).toMatch(/<Link[\s\S]*?prefetch[\s\S]*?>/)
-  })
-
-  it('href points at the apex with the league as a query param (regression target)', () => {
-    // The switcher declares the URL as a `const href = …` so the same
-    // string can be passed both to `<Link href>` and to the
-    // `pickLeague` handler (router.push needs the same value). Pin
-    // both: the const declaration AND the prop wiring.
-    expect(SWITCHER_TABS_SRC).toMatch(
-      /const\s+href\s*=\s*`\/test\?league=\$\{encodeURIComponent\(m\.leagueId\)\}`/,
-    )
-    expect(SWITCHER_TABS_SRC).toMatch(/href=\{href\}/)
-  })
-
-  it('uses React useOptimistic for instant active-pill swap (regression target)', () => {
-    // Pre-v1.93.0 the switcher computed `selected` from
-    // `activeLeagueId` directly, so during pending the OLD active
-    // pill received the visual change — verified UX bug.
-    expect(SWITCHER_TABS_SRC).toMatch(
-      /import\s*\{[^}]*\buseOptimistic\b[^}]*\}\s+from\s+['"]react['"]/,
-    )
-    expect(SWITCHER_TABS_SRC).toMatch(/useOptimistic\(activeLeagueId\)/)
-    expect(SWITCHER_TABS_SRC).toMatch(/m\.leagueId\s*===\s*optimisticActiveId/)
-  })
-
-  it('shares the hub transition (no duplicate useTransition in the switcher)', () => {
-    expect(SWITCHER_TABS_SRC).toMatch(
-      /import\s*\{\s*useHubTransition\s*\}\s+from\s+['"]\.\/HubTransitionShell['"]/,
-    )
-    expect(SWITCHER_TABS_SRC).toMatch(/useHubTransition\(\)/)
-    // Switcher must not own its own useTransition — the shell is the
-    // single owner so the page-level progress strip stays in sync.
-    expect(SWITCHER_TABS_SRC).not.toMatch(/useTransition\(\)/)
-  })
-
-  it('navigates inside startNavigation so optimistic state and router.push share one transition', () => {
-    expect(SWITCHER_TABS_SRC).toMatch(
-      /startNavigation\(\(\)\s*=>\s*\{[\s\S]*?setOptimisticActiveId\(leagueId\)[\s\S]*?router\.push\(href[\s\S]*?\}\)/,
-    )
-  })
-
-  it('preserves power-user gestures (cmd / ctrl / shift / alt / middle-click)', () => {
-    // Without this the switcher would always preventDefault and break
-    // "open in new tab" semantics for keyboard / power users.
-    expect(SWITCHER_TABS_SRC).toMatch(/metaKey/)
-    expect(SWITCHER_TABS_SRC).toMatch(/ctrlKey/)
-    expect(SWITCHER_TABS_SRC).toMatch(/shiftKey/)
-    expect(SWITCHER_TABS_SRC).toMatch(/altKey/)
-    expect(SWITCHER_TABS_SRC).toMatch(/e\.button\s*!==\s*0/)
-  })
-
-  it('short-circuits same-league taps so we do not refetch the same RSC payload (regression target)', () => {
-    expect(SWITCHER_TABS_SRC).toMatch(/leagueId\s*===\s*activeLeagueId/)
-  })
-
-  it('shows tactile press via active:scale (CSS-only, no JS)', () => {
-    expect(SWITCHER_TABS_SRC).toMatch(/active:scale-\[0\.96\]/)
-  })
-
-  it('only spins the just-clicked pill (selected via OPTIMISTIC id, not stale active id)', () => {
-    // The v1.85.0 implementation pulsed the OLD active pill because
-    // `selected` was computed from `activeLeagueId`. With useOptimistic
-    // the spinner now follows the user's tap. Regression target:
-    // reverting `selected` back to `activeLeagueId` puts the spinner
-    // on the wrong pill again.
-    expect(SWITCHER_TABS_SRC).toMatch(
-      /const\s+selected\s*=\s*m\.leagueId\s*===\s*optimisticActiveId/,
-    )
-    expect(SWITCHER_TABS_SRC).toMatch(/showSpinner\s*=\s*isPending\s*&&\s*selected/)
-  })
-})
+// v1.97.1 — the "LeagueSwitcherTabs prefetch + optimistic flow"
+// describe block previously here has moved to
+// `tests/unit/v1971_header_chevron_bar.test.ts`, retargeted at the
+// Header chevron (`src/components/LeagueSwitcher.tsx`) which now
+// carries the same v1.93.0 behaviour (Link prefetch + useOptimistic +
+// useHubTransition + power-user gestures + same-league short-circuit).
 
 // ────────────────────────────────────────────────────────────────────────────
 // 6) HubTransitionShell shape
@@ -380,8 +320,11 @@ describe('v1.93.0 — MultiLeagueHub wiring', () => {
     expect(MULTI_HUB_SRC).toMatch(/<HubTransitionShell>[\s\S]*?<Dashboard/)
   })
 
-  it('switcher prop wiring is unchanged: memberships + activeLeagueId still flow through topSlot', () => {
+  it('topSlot prop wiring is preserved (handoff still threads through Dashboard)', () => {
+    // v1.97.1 — pre-v1.97.1 this also asserted `<LeagueSwitcherTabs`;
+    // the component is gone and the Header chevron has taken over,
+    // but the topSlot contract still exists for the recruiting-handoff
+    // card.
     expect(MULTI_HUB_SRC).toMatch(/topSlot=\{topSlot\}/)
-    expect(MULTI_HUB_SRC).toMatch(/<LeagueSwitcherTabs/)
   })
 })

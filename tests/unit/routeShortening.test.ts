@@ -115,10 +115,15 @@ describe('v1.54.0 — internal callers use /id/<slug> URL form', () => {
     expect(stripComments(src)).not.toMatch(/window\.location\.origin[^`]*`\/league\//)
   })
 
-  it('LeagueSwitcher router.push uses /id/<slug>', () => {
+  it('LeagueSwitcher navigates to /id/<slug>, never /league/<slug>', () => {
+    // v1.97.1 — the switcher's open state is a horizontal scrollable
+    // bar with per-pill `<Link href>` + `router.push(href)` (href is
+    // computed by a pathname-aware buildHref). The regression target
+    // is still "no /league/<slug>" — the off-hub branch must produce
+    // `/id/<slug>`.
     const src = read('src/components/LeagueSwitcher.tsx')
-    expect(src).toMatch(/router\.push\(`\/id\/\$\{m\.slug\}`\)/)
-    expect(stripComments(src)).not.toMatch(/router\.push\(`\/league\//)
+    expect(src).toMatch(/`\/id\/\$\{m\.slug\}`/)
+    expect(stripComments(src)).not.toMatch(/`\/league\//)
   })
 
   // v1.62.0 — AccountMenuLeagueSwitch is deleted (the dropdown entry was
