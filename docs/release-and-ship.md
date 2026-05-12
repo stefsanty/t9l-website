@@ -57,6 +57,8 @@ Applies to bug fixes, small features, hotfixes — anything with a clean ship pa
 
 When confirmation IS needed, surface the trade-off in the PR body + a chat message; do NOT auto-merge. Once the user acks, the merge proceeds normally.
 
+**Always report back on merge.** When an executor self-merges a PR per this policy, it MUST surface a final report including: PR #, merge SHA, version, what shipped (one-line), and post-deploy verification result (HTTP 200 + counts + migration status). Do NOT end the session silently after a clean merge — the orchestrator and user need to see the merge confirmation. If the session is about to time out before deploy completes, surface "merged at \<SHA\>, deploy still in progress" rather than going silent.
+
 The post-merge sequence (release tag, wait for prod, 11-point verification, ledger update) runs the same way under either gate.
 
 ## Backups & rollback runbook
