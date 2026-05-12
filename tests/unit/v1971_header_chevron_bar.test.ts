@@ -358,43 +358,40 @@ describe('v1.97.1 — rectangular pills + active glow (v1.96.1 visual preserved)
 })
 
 // ────────────────────────────────────────────────────────────────────────────
-// 9) Body skeleton overlay (v1.97.0) preserved on Dashboard
+// 9) Body skeleton overlay (v1.97.0) — superseded by v1.99.0 Suspense streaming
 // ────────────────────────────────────────────────────────────────────────────
+//
+// v1.99.0 replaced the body-pulse dim with a real Suspense boundary that
+// renders `<DashboardBodySkeleton />` while the heavy bundle streams in.
+// Dashboard no longer reads `useHubTransition()` — the switcher's
+// active-changing cue is now the top-edge progress strip owned by
+// `<HubTransitionShell>` alone. The body-wrapper testid is preserved
+// for downstream selectors, but the className flip is gone.
 
-describe('v1.97.1 — Dashboard body skeleton overlay preserved (v1.97.0 contract)', () => {
-  it('Dashboard imports useHubTransition from ./homepage/HubTransitionShell (regression target)', () => {
-    expect(DASHBOARD_SRC).toMatch(
-      /import\s*\{\s*useHubTransition\s*\}\s+from\s+['"]\.\/homepage\/HubTransitionShell['"]/,
-    )
-  })
-
+describe('v1.97.1 — Dashboard body wrapper testid preserved (v1.99.0 supersession)', () => {
   it('Dashboard renders a body wrapper with data-testid dashboard-body', () => {
     expect(DASHBOARD_SRC).toMatch(/data-testid=["']dashboard-body["']/)
   })
 
-  it('body wrapper binds aria-busy to isHubPending', () => {
-    expect(DASHBOARD_SRC).toMatch(/aria-busy=\{isHubPending\}/)
-  })
-
-  it('animate-pulse + pointer-events-none fire ONLY when isHubPending is true', () => {
-    expect(DASHBOARD_SRC).toMatch(
-      /isHubPending[\s\S]{0,80}animate-pulse[\s\S]{0,80}pointer-events-none/,
-    )
-  })
-
-  it('Header chevron reads useHubTransition so its in-place navigation drives the body dim', () => {
+  it('Header chevron still reads useHubTransition so its in-place navigation drives the top progress strip', () => {
     expect(HEADER_SWITCHER_SRC).toMatch(
       /import\s*\{\s*useHubTransition\s*\}\s+from\s+['"]\.\/homepage\/HubTransitionShell['"]/,
     )
     expect(HEADER_SWITCHER_SRC).toMatch(/useHubTransition\(\)/)
     // No private useTransition in the switcher — the shell owns the
-    // single transition so the body-skeleton + per-pill spinner stay
-    // in sync.
+    // single transition so the LeagueSwitcher pill state and the
+    // top-edge progress strip stay in sync.
     expect(HEADER_SWITCHER_SRC).not.toMatch(/useTransition\(\)/)
   })
 
-  it('MultiLeagueHub still wraps Dashboard in <HubTransitionShell>', () => {
-    expect(MULTI_HUB_SRC).toMatch(/<HubTransitionShell>[\s\S]*?<Dashboard/)
+  it('MultiLeagueHub still wraps the streaming hub body in <HubTransitionShell>', () => {
+    // v1.99.0 — Dashboard is now rendered by an async child
+    // (MultiLeagueHubBody) inside a Suspense, so the literal
+    // `<HubTransitionShell>...<Dashboard` adjacency from v1.97.x is
+    // gone. The contract is now: HubTransitionShell wraps the whole
+    // streaming subtree (Header + Suspense + MultiLeagueHubBody).
+    expect(MULTI_HUB_SRC).toMatch(/<HubTransitionShell>/)
+    expect(MULTI_HUB_SRC).toMatch(/MultiLeagueHubBody/)
   })
 })
 

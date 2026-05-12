@@ -1,7 +1,10 @@
 import type { Metadata } from 'next'
+import { Suspense } from 'react'
 import { notFound } from 'next/navigation'
 import { getServerSession } from 'next-auth'
 import Dashboard from '@/components/Dashboard'
+import DashboardBodySkeleton from '@/components/DashboardBodySkeleton'
+import Header from '@/components/Header'
 import { findNextMatchday } from '@/lib/stats'
 import { authOptions } from '@/lib/auth'
 import { normalizeLeagueSlug } from '@/lib/leagueSlug'
@@ -36,6 +39,31 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
  * `/league/<slug>` canonical form; both legacy paths are now 308-redirects
  * here so old shared links keep working.
  *
+ * v1.99.0 — Suspense streaming. Pre-v1.99.0 the whole page rendered as
+ * a single async function that awaited the heavy `Promise.all` BEFORE
+ * flushing any HTML. On the warm path that's 4-6 s of "dead screen" —
+ * the user saw nothing until the bundle resolved. On cold (Neon
+ * spin-up) it reached 10 s.
+ *
+ * Post-refactor the page resolves the slug → leagueId (single cached
+ * lookup, ~50 ms warm), then immediately flushes a streaming shell:
+ *   - `<Header>` with the live `<LeagueSwitcher>` chevron (the v1.97.x
+ *     in-place picker — memberships come from `<MembershipsProvider>`
+ *     seeded by `app/layout.tsx`, so the chevron is fully interactive
+ *     while the body still streams).
+ *   - `<Suspense fallback={<DashboardBodySkeleton />}>` around the
+ *     heavy-data branch.
+ *
+ * The async child `LeagueDashboardContents` awaits the existing
+ * 7-call `Promise.all` and renders `<Dashboard noHeader />` —
+ * Dashboard itself has been taught to skip its built-in Header when
+ * this prop is set, so the page-level shell Header is the only Header
+ * rendered on this path.
+ *
+ * `touchUserDefaultLeague` stays inside the async child (it's already
+ * `waitUntil`-wrapped, so it can't block streaming either way; keeping
+ * it co-located with the bundle keeps the page shell pure).
+ *
  * Why `/id/`: namespacing every tenant URL under a fixed prefix removes
  * the route-conflict surface entirely. A league slug "admin" no longer
  * threatens to shadow `/admin` (it would just be `/id/admin`); a slug
@@ -59,6 +87,29 @@ export default async function LeagueByIdPage({ params }: Props) {
   const leagueId = await getLeagueIdBySlug(slug)
   if (!leagueId) notFound()
 
+  return (
+    <>
+      {/* v1.99.0 — shell Header. Title falls back to the brand default
+          ("T9L '26 春") because the cached `getLeagueFlags` read still
+          lives inside the suspended bundle; awaiting it here would
+          delay the shell flush by the same ~150-300 ms it saves. The
+          LeagueSwitcher chevron + pill bar are fully interactive
+          immediately. */}
+      <Header leagueTitle={null} hideStatsLink={false} />
+      <Suspense fallback={<DashboardBodySkeleton />}>
+        <LeagueDashboardContents slug={slug} leagueId={leagueId} />
+      </Suspense>
+    </>
+  )
+}
+
+async function LeagueDashboardContents({
+  slug,
+  leagueId,
+}: {
+  slug: string
+  leagueId: string
+}) {
   // v1.85.0 — last-selected league tracker. Fire-and-forget write
   // (wrapped in `waitUntil` inside the helper) so the user's next
   // visit to the persona-aware apex (`/test`, swap-target `/`) lands
@@ -135,6 +186,7 @@ export default async function LeagueByIdPage({ params }: Props) {
 
   return (
     <Dashboard
+      noHeader
       teams={data.teams}
       players={data.players}
       matchdays={data.matchdays}
