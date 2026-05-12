@@ -67,20 +67,22 @@ function stripComments(source: string): string {
 // ────────────────────────────────────────────────────────────────────────────
 
 describe('v1.97.1 — version pin', () => {
-  it('APP_VERSION bumped to 1.97.1', () => {
-    expect(VERSION_SRC).toMatch(/APP_VERSION\s*=\s*['"]1\.97\.1['"]/)
+  it('APP_VERSION at 1.97.1 or higher (later patches relax this regex)', () => {
+    expect(VERSION_SRC).toMatch(/APP_VERSION\s*=\s*['"]1\.(97\.[1-9]|9[89]\.\d+|\d{3,}\.\d+)['"]/)
   })
 
-  it('CLAUDE.md header reflects v1.97.1', () => {
-    expect(CLAUDE_MD).toMatch(/\*\*Current release:\*\* v1\.97\.1\./)
+  it('CLAUDE.md header reflects v1.97.1 or a later release', () => {
+    expect(CLAUDE_MD).toMatch(/\*\*Current release:\*\* v1\.(97\.[1-9]|9[89]\.\d+|\d{3,}\.\d+)\./)
   })
 
-  it('CLAUDE.md ledger top entry is v1.97.1', () => {
+  it('CLAUDE.md ledger top entry is v1.97.1 or a later release', () => {
     // The "Recent ledger" section's first bullet should be the newest.
+    // Later patches relax this regex so they don't have to also edit
+    // the v1.97.1 test as they bump the ledger.
     const ledgerIdx = CLAUDE_MD.indexOf('## Recent ledger')
     expect(ledgerIdx).toBeGreaterThan(0)
     const firstBullet = CLAUDE_MD.slice(ledgerIdx).match(/-\s+\*\*v(\d+\.\d+\.\d+)\*\*/)
-    expect(firstBullet?.[1]).toBe('1.97.1')
+    expect(firstBullet?.[1]).toMatch(/^1\.(97\.[1-9]|9[89]\.\d+|\d{3,}\.\d+)$/)
   })
 })
 
