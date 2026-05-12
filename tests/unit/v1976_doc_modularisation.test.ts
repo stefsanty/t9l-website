@@ -128,7 +128,7 @@ describe('v1.97.6 — docs/ledger.md exists with active ledger entries', () => {
     const firstBullet = LEDGER.match(/-\s+\*\*v(\d+\.\d+\.\d+)\*\*/)
     expect(firstBullet).toBeTruthy()
     expect(firstBullet![1]).toMatch(
-      /^(?:1\.(?:9[0-9]\.\d+|\d{3,}\.\d+)|[2-9]\.\d+\.\d+)$/,
+      /^1\.(9[0-9]\.\d+|\d{3,}\.\d+)$/,
     )
   })
 

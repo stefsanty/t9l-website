@@ -200,13 +200,7 @@ describe('v1.75.1 preseasonMode decoupled from LeagueDetailsPanel visibility', (
   })
 
   it.each(sources)('%s passes _leagueDetails directly without preseasonMode ternary', (rel) => {
-    // v2.0.0 — `/id/[slug]` migrated to `getLeaguePageBundle`, so the
-    // `_leagueDetails = leagueDetails ?? null` assignment is replaced
-    // by direct `leagueDetails={bundle.leagueDetails ?? null}`. Either
-    // shape satisfies the "no preseasonMode gate" contract.
-    expect(read(rel)).toMatch(
-      /leagueDetails\s*=\s*_leagueDetails|leagueDetails=\{bundle\.leagueDetails/,
-    )
+    expect(read(rel)).toMatch(/leagueDetails\s*=\s*_leagueDetails/)
   })
 
   it.each(sources)('%s does NOT require flags.preseasonMode for plannedRosterStats', (rel) => {

@@ -326,12 +326,8 @@ describe('v1.66.0 — banner mounted on every league-scoped page', () => {
 
   for (const p of PAGES) {
     it(`${p} fetches getUnpaidFeeBannerData`, () => {
-      // v2.0.0 — `/id/[slug]` migrated to `getLeaguePageBundle` which
-      // calls `getUnpaidFeeBannerData` internally. Either the direct
-      // import or the bundle helper satisfies the contract that this
-      // banner is fetched at the page boundary.
       const src = readFileSync(join(REPO_ROOT, p), 'utf8')
-      expect(src).toMatch(/getUnpaidFeeBannerData|getLeaguePageBundle/)
+      expect(src).toMatch(/getUnpaidFeeBannerData/)
     })
   }
 

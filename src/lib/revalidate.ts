@@ -1,5 +1,4 @@
 import { updateTag, revalidateTag, revalidatePath } from 'next/cache'
-import { bumpDashboardVersionAsync } from '@/lib/dashboardCache'
 
 /**
  * Canonical revalidation entry point. ALL cache invalidation across server
@@ -77,11 +76,4 @@ export function revalidate({
   for (const p of paths) {
     revalidatePath(p)
   }
-  // v2.0.0 — bump the global dashboard-cache version. Fire-and-forget
-  // (the function catches its own Redis errors) so the response
-  // critical path never waits on Upstash. Every domain bumps because
-  // the dashboard bundle reads cross-cut all of them (public-data
-  // for matchday/team/player/goal state, leagues for visibility/
-  // preseason flags, settings for league-fee + planned-roster).
-  bumpDashboardVersionAsync()
 }

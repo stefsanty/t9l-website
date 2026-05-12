@@ -9,9 +9,12 @@ import { findNextMatchday } from '@/lib/stats'
 import { authOptions } from '@/lib/auth'
 import { normalizeLeagueSlug } from '@/lib/leagueSlug'
 import { getLeagueIdBySlug } from '@/lib/leagueSlugServer'
-import { getLeaguePageBundle } from '@/lib/leaguePageData'
-import { buildViewerKey } from '@/lib/dashboardCache'
-import { getViewer } from '@/lib/viewer'
+import { getPublicLeagueData } from '@/lib/publicData'
+import { getLeagueFlags } from '@/lib/leagueFlags'
+import { getRecruitingViewerState } from '@/lib/recruitingViewerState'
+import { getUnpaidFeeBannerData } from '@/lib/unpaidFeeBanner'
+import { getPlannedRosterStats } from '@/lib/plannedRosterStats'
+import { getLeagueDetails } from '@/lib/leagueDetailsServer'
 import { touchUserDefaultLeague } from '@/lib/userDefaultLeague'
 import { prisma } from '@/lib/prisma'
 
@@ -36,28 +39,37 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
  * `/league/<slug>` canonical form; both legacy paths are now 308-redirects
  * here so old shared links keep working.
  *
- * v1.99.0 — Suspense streaming. Outer page resolves slug → leagueId
- * (a single cached lookup, ~50 ms warm) and immediately flushes a
- * streaming shell (`<Header>` + `<Suspense>`). The heavy data fetch
- * lives in the async child `LeagueDashboardContents`; the shell
- * paints in ~14–22 ms (browser-measured) while the body streams in.
+ * v1.99.0 — Suspense streaming. Pre-v1.99.0 the whole page rendered as
+ * a single async function that awaited the heavy `Promise.all` BEFORE
+ * flushing any HTML. On the warm path that's 4-6 s of "dead screen" —
+ * the user saw nothing until the bundle resolved. On cold (Neon
+ * spin-up) it reached 10 s.
  *
- * v2.0.0 — Redis-backed dashboard cache. Pre-v2.0.0 the body-stream
- * time was the full Promise.all latency (3–6 s warm on real browser
- * measurements). The page now calls `getLeaguePageBundle(leagueId,
- * viewerKey)` which read-through caches the bundle under
- * `t9l:dash:v<version>:<leagueId>:<viewerKey>` with a 60 s TTL.
- * Repeat viewers render from a single Redis GET (~30–80 ms) instead
- * of re-running the 6-call Promise.all. Cache invalidates
- * automatically via the version-bump chained off
- * `revalidate({ domain })` — no per-call-site change needed.
+ * Post-refactor the page resolves the slug → leagueId (single cached
+ * lookup, ~50 ms warm), then immediately flushes a streaming shell:
+ *   - `<Header>` with the live `<LeagueSwitcher>` chevron (the v1.97.x
+ *     in-place picker — memberships come from `<MembershipsProvider>`
+ *     seeded by `app/layout.tsx`, so the chevron is fully interactive
+ *     while the body still streams).
+ *   - `<Suspense fallback={<DashboardBodySkeleton />}>` around the
+ *     heavy-data branch.
  *
- * Note on v1.99.0's inline-Promise.all: the inline shape was
- * preserved in v1.99.0 to keep the existing per-call test pins
- * (v167_planned_roster, v166_player_payment, v175_league_details,
- * v184_homepage_phase1a, etc.) green. v2.0.0 migrates to
- * `getLeaguePageBundle` because the Redis cache needs ONE entry
- * point — those tests are updated to assert the new shape.
+ * The async child `LeagueDashboardContents` awaits the existing
+ * 7-call `Promise.all` and renders `<Dashboard noHeader />` —
+ * Dashboard itself has been taught to skip its built-in Header when
+ * this prop is set, so the page-level shell Header is the only Header
+ * rendered on this path.
+ *
+ * `touchUserDefaultLeague` stays inside the async child (it's already
+ * `waitUntil`-wrapped, so it can't block streaming either way; keeping
+ * it co-located with the bundle keeps the page shell pure).
+ *
+ * Why `/id/`: namespacing every tenant URL under a fixed prefix removes
+ * the route-conflict surface entirely. A league slug "admin" no longer
+ * threatens to shadow `/admin` (it would just be `/id/admin`); a slug
+ * "auth" doesn't collide with `/auth`. The reserved-word policy slims
+ * down to a single recursive guard ("id" itself) since every other
+ * top-level platform route is a sibling of `/id/`, not a parent.
  *
  * Behaviorally identical to the v1.50.0 `/<slug>` and v1.51.0 `/league/<slug>`
  * pages: resolves the slug to a `League.id` via `getLeagueIdBySlug` (which
@@ -102,32 +114,60 @@ async function LeagueDashboardContents({
   // (wrapped in `waitUntil` inside the helper) so the user's next
   // visit to the persona-aware apex (`/test`, swap-target `/`) lands
   // on the league they were last looking at. No-op for unauth and
-  // non-member visitors.
-  //
-  // v2.0.0 — viewer resolved up-front via `getViewer()` (v1.98.0
-  // shared resolver, request-scoped via React `cache()`) so we can
-  // derive a stable cache key for the bundle read. The
-  // `touchUserDefaultLeague` call below still needs the raw session
-  // (its existing waitUntil-wrapped DB write reads `session.userId`
-  // / `session.lineId`); kept as a separate fetch but cheap because
-  // it doesn't drive any rendering.
-  const viewer = await getViewer()
-  const session = viewer.hasSession
-    ? await getServerSession(authOptions)
-    : null
+  // non-member visitors. Resolves the session inline because we don't
+  // already have it on this path.
+  const session = await getServerSession(authOptions)
   touchUserDefaultLeague({
     userId: (session as { userId?: string | null } | null)?.userId ?? null,
     lineId: (session as { lineId?: string | null } | null)?.lineId ?? null,
     leagueId,
   })
 
-  const viewerKey = buildViewerKey({
-    userId: viewer.userId,
-    lineId: viewer.lineId,
-  })
-
-  const bundle = await getLeaguePageBundle(leagueId, viewerKey)
-  if (!bundle) {
+  let data
+  let flags
+  let recruitingState
+  let leagueRow
+  let unpaidFee
+  let plannedRosterStats
+  let leagueDetails
+  try {
+    const [
+      _data,
+      _flags,
+      _recruitingState,
+      _leagueRow,
+      _unpaidFee,
+      _plannedRosterStats,
+      _leagueDetails,
+    ] = await Promise.all([
+      getPublicLeagueData(leagueId),
+      getLeagueFlags(leagueId),
+      getRecruitingViewerState(leagueId),
+      prisma.league.findUnique({
+        where: { id: leagueId },
+        // v1.82.0 — `ballType` flows into RecruitingBanner so the State D
+        // ApplyToLeagueModal renders the right position vocabulary.
+        select: { id: true, name: true, abbreviation: true, ballType: true },
+      }),
+      // v1.66.0 — unpaid-fee banner data; null when banner stays hidden.
+      getUnpaidFeeBannerData(leagueId),
+      // v1.67.0 — planned-roster panel data. v1.75.5 — threaded
+      // unconditionally so the public details panel can render the
+      // fee + planned teams + per-team + spots-left mini-section.
+      // The panel hides individual rows when value is unset/zero.
+      getPlannedRosterStats(leagueId),
+      // v1.75.0 — league details panel; v1.75.1 — preseasonMode gate
+      // removed; renders on both classic and preseason homepages.
+      getLeagueDetails(leagueId),
+    ])
+    data = _data
+    flags = _flags
+    recruitingState = _recruitingState
+    leagueRow = _leagueRow
+    unpaidFee = _unpaidFee
+    plannedRosterStats = _plannedRosterStats
+    leagueDetails = _leagueDetails
+  } catch {
     return (
       <div className="flex items-center justify-center min-h-dvh bg-midnight text-white px-6 text-center">
         <div>
@@ -142,29 +182,29 @@ async function LeagueDashboardContents({
     )
   }
 
-  const nextMd = findNextMatchday(bundle.data.matchdays)
+  const nextMd = findNextMatchday(data.matchdays)
 
   return (
     <Dashboard
       noHeader
-      teams={bundle.data.teams}
-      players={bundle.data.players}
-      matchdays={bundle.data.matchdays}
-      goals={bundle.data.goals}
-      availability={bundle.data.availability}
-      availabilityStatuses={bundle.data.availabilityStatuses}
-      played={bundle.data.played}
+      teams={data.teams}
+      players={data.players}
+      matchdays={data.matchdays}
+      goals={data.goals}
+      availability={data.availability}
+      availabilityStatuses={data.availabilityStatuses}
+      played={data.played}
       nextMd={nextMd}
       leagueSlug={normalizeLeagueSlug(slug)}
-      preseasonMode={bundle.flags.preseasonMode}
+      preseasonMode={flags.preseasonMode}
       // v1.84.0 — banner gate now reads `visibility === 'PUBLIC_OPEN'`.
-      recruiting={bundle.flags.visibility === 'PUBLIC_OPEN'}
-      recruitingState={bundle.recruitingState}
-      league={bundle.league ?? undefined}
-      unpaidFee={bundle.unpaidFee ?? null}
-      plannedRosterStats={bundle.plannedRosterStats ?? null}
-      leagueDetails={bundle.leagueDetails ?? null}
-      guests={bundle.data.guests}
+      recruiting={flags.visibility === 'PUBLIC_OPEN'}
+      recruitingState={recruitingState}
+      league={leagueRow ?? undefined}
+      unpaidFee={unpaidFee ?? null}
+      plannedRosterStats={plannedRosterStats ?? null}
+      leagueDetails={leagueDetails ?? null}
+      guests={data.guests}
     />
   )
 }

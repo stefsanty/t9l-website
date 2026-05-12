@@ -208,13 +208,7 @@ describe('v1.75.5 page-level threading: plannedRosterStats unconditional', () =>
     // gate is gone.
     expect(src).not.toMatch(/userId\s*&&\s*flags\.recruiting\s*\?\s*_plannedRosterStats/)
     // The relaxed assignment threads through unconditionally.
-    // v2.0.0 — `/id/[slug]` migrated to `getLeaguePageBundle` so the
-    // local variable assignment is replaced by direct prop threading
-    // (`plannedRosterStats={bundle.plannedRosterStats ?? null}`).
-    // Either shape satisfies the unconditional-thread contract.
-    expect(src).toMatch(
-      /plannedRosterStats\s*=\s*_plannedRosterStats|plannedRosterStats=\{bundle\.plannedRosterStats/,
-    )
+    expect(src).toMatch(/plannedRosterStats\s*=\s*_plannedRosterStats/)
   })
 
   // v1.85.0 — the `getServerSession` pin no longer applies to the

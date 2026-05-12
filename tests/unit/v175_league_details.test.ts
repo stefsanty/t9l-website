@@ -346,32 +346,18 @@ describe('v1.75.0 page-level wiring (apex + /id/<slug> + /id/<slug>/md/<id>)', (
   ]
 
   it.each(sources)('%s imports getLeagueDetails from leagueDetailsServer (v1.80.7 split)', (rel) => {
-    // v2.0.0 — `/id/[slug]` migrated to `getLeaguePageBundle` which
-    // imports `getLeagueDetails` internally; the direct import is no
-    // longer present in the page file. Either shape satisfies the
-    // "page uses the v1.80.7-split server-only module" contract.
-    expect(read(rel)).toMatch(
-      /import\s*\{\s*getLeagueDetails\s*\}\s+from\s+["']@\/lib\/leagueDetailsServer["']|import\s*\{\s*getLeaguePageBundle\s*\}\s+from\s+["']@\/lib\/leaguePageData["']/,
-    )
+    // Apex page.tsx uses double quotes; /id pages use single quotes — both valid.
+    expect(read(rel)).toMatch(/import \{ getLeagueDetails \} from ["']@\/lib\/leagueDetailsServer["']/)
   })
 
   it.each(sources)('%s threads leagueDetails to Dashboard', (rel) => {
-    // v2.0.0 — bundle replaces the local `leagueDetails` var with
-    // `bundle.leagueDetails`. Either prop shape satisfies the
-    // "leagueDetails is threaded to Dashboard" contract.
-    expect(read(rel)).toMatch(
-      /leagueDetails=\{(?:leagueDetails|bundle\.leagueDetails)\s*\?\?\s*null\}/,
-    )
+    expect(read(rel)).toMatch(/leagueDetails=\{leagueDetails \?\? null\}/)
   })
 
   it.each(sources)('%s passes _leagueDetails directly (no preseasonMode gate — v1.75.1)', (rel) => {
     // v1.75.1 removed the preseasonMode gate; leagueDetails now renders on
     // both classic and preseason homepages when showLeagueDetails=true.
-    // v2.0.0 — bundle migration replaces the local `_leagueDetails`
-    // assignment with `bundle.leagueDetails` directly threaded.
-    expect(read(rel)).toMatch(
-      /leagueDetails\s*=\s*_leagueDetails|leagueDetails=\{bundle\.leagueDetails/,
-    )
+    expect(read(rel)).toMatch(/leagueDetails\s*=\s*_leagueDetails/)
   })
 })
 

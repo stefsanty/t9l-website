@@ -79,7 +79,7 @@ describe('v1.99.0 — version pin', () => {
       line.startsWith('- **v'),
     )
     expect(firstBullet).toBeDefined()
-    expect(firstBullet).toMatch(/^- \*\*v(?:1\.99\.0|[2-9]\.\d+\.\d+)\*\*/)
+    expect(firstBullet).toMatch(/^- \*\*v1\.99\.0\*\*/)
   })
 })
 
@@ -211,12 +211,12 @@ describe('v1.99.0 — /id/[slug]/page.tsx hoists Header + suspends body', () => 
     )
   })
 
-  it('the suspense child runs the heavy data fetch', () => {
-    // v2.0.0 — the inline Promise.all moves to `getLeaguePageBundle`,
-    // so the child awaits the bundle helper instead of the 7-call
-    // Promise.all. Pin the bundle call so the structure can't
-    // accidentally regress.
-    expect(ID_SLUG_PAGE_SRC).toMatch(/await\s+getLeaguePageBundle\(/)
+  it('the suspense child runs the heavy Promise.all data fetch', () => {
+    // The legacy inline 7-call Promise.all moves into the suspended
+    // child. Pin a representative pair of calls so the structure
+    // can't accidentally regress to a single sequential await.
+    expect(ID_SLUG_PAGE_SRC).toMatch(/await\s+Promise\.all\(\[/)
+    expect(ID_SLUG_PAGE_SRC).toMatch(/getPublicLeagueData\(leagueId\)/)
   })
 
   it('regression target: heavy reads do NOT run in the outer page function', () => {
@@ -224,16 +224,16 @@ describe('v1.99.0 — /id/[slug]/page.tsx hoists Header + suspends body', () => 
     // refactor the only awaits in the OUTER `LeagueByIdPage` are
     // params + slug → leagueId resolution. We slice the source on
     // `async function LeagueDashboardContents` and assert the heavy
-    // calls live strictly in the child slice. v2.0.0 — bundle is the
-    // entry point; the test pins on the bundle helper rather than the
-    // inline `getPublicLeagueData` reference.
+    // calls live strictly in the child slice.
     const stripped = stripComments(ID_SLUG_PAGE_SRC)
     const idx = stripped.indexOf('async function LeagueDashboardContents')
     expect(idx).toBeGreaterThan(-1)
     const outer = stripped.slice(0, idx)
     const child = stripped.slice(idx)
-    expect(outer).not.toMatch(/getLeaguePageBundle\(/)
-    expect(child).toMatch(/getLeaguePageBundle\(/)
+    expect(outer).not.toMatch(/getPublicLeagueData\(/)
+    expect(outer).not.toMatch(/Promise\.all\(/)
+    expect(child).toMatch(/getPublicLeagueData\(/)
+    expect(child).toMatch(/Promise\.all\(/)
   })
 })
 

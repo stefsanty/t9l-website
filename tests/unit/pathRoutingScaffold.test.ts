@@ -57,15 +57,8 @@ describe('v1.54.0 — /id/[slug] canonical render', () => {
   })
 
   it('uses getPublicLeagueData with the resolved leagueId', () => {
-    // v2.0.0 — `/id/[slug]` migrated to `getLeaguePageBundle(leagueId,
-    // viewerKey)` which calls `getPublicLeagueData(leagueId)`
-    // internally. Either the direct call OR the bundle helper invocation
-    // satisfies the "page resolves leagueId via getPublicLeagueData"
-    // contract.
     const src = stripComments(read(routePath))
-    expect(src).toMatch(
-      /(?:getPublicLeagueData\(\s*leagueId\s*\)|getLeaguePageBundle\(\s*leagueId\b)/,
-    )
+    expect(src).toMatch(/getPublicLeagueData\(\s*leagueId\s*\)/)
   })
 
   it('handles getPublicLeagueData failure with the apex-style fallback', () => {
