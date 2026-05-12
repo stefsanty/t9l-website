@@ -33,7 +33,7 @@ const RELEASE_DOC = readFileSync(
 describe('v1.95.1 — version bump', () => {
   it('APP_VERSION is 1.95.1 or higher', () => {
     expect(VERSION_SRC).toMatch(
-      /APP_VERSION\s*=\s*['"]1\.95\.(1|[2-9]|\d{2,})['"]/,
+      /APP_VERSION\s*=\s*['"]1\.(95\.(1|[2-9]|\d{2,})|9[6-9]\.\d+|\d{3,}\.\d+)['"]|APP_VERSION\s*=\s*['"][2-9]\.\d+\.\d+['"]/,
     )
   })
 })

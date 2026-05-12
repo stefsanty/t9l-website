@@ -271,6 +271,15 @@ model League {
   // and the unpaid-fee banner stays hidden.
   defaultFee Int @default(0)
 
+  // v1.96.0 — admin-toggleable suppression of the unpaid-fee banner.
+  // When true (default — backward compatible), `getUnpaidFeeBannerData`
+  // surfaces the banner for any logged-in player with an unpaid PLM
+  // and a non-zero resolved fee. When false, the resolver returns null
+  // unconditionally — admins use this for casual leagues that don't
+  // want to bug players about payment, OR after off-platform settlement.
+  // Player-level gates (paid status, fee resolution) are unchanged.
+  paymentBannerEnabled Boolean @default(true)
+
   // v1.67.0 — planned-roster targets surfaced in the preseason stats
   // panel above the planned schedule. Defaults of 0 mean "not set"
   // for both numeric fields; the stats panel hides them in that case.

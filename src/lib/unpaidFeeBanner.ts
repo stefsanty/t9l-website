@@ -14,6 +14,7 @@
  *   - Player has no PLM in this league
  *   - PLM.paidStatus === 'PAID'
  *   - resolved fee is 0 (no fee configured for this league)
+ *   - League.paymentBannerEnabled === false (v1.96.0 — admin opt-out)
  *
  * Returns `{ membershipId, fee, leagueName }` when the banner SHOULD
  * render. The membershipId is included for future "pay now" CTA wiring;
@@ -75,10 +76,14 @@ export async function getUnpaidFeeBannerData(
       select: {
         name: true,
         defaultFee: true,
+        // v1.96.0 — admin-toggleable banner suppression. When the league
+        // has the toggle off, short-circuit before resolving the fee.
+        paymentBannerEnabled: true,
         positionFees: { select: { position: true, fee: true } },
       },
     })
     if (!league) return null
+    if (!league.paymentBannerEnabled) return null
 
     const fee = resolvePlayerFee(
       { position: plm.position, feeOverride: plm.feeOverride },
