@@ -1,6 +1,7 @@
 import { Suspense } from 'react'
 import { findNextMatchday } from '@/lib/stats'
 import { getLeaguePageBundle } from '@/lib/leaguePageData'
+import { buildViewerKey } from '@/lib/dashboardCache'
 import { touchUserDefaultLeague } from '@/lib/userDefaultLeague'
 import type { ApprovedMembership } from '@/lib/homepageRouting'
 import Dashboard from '@/components/Dashboard'
@@ -113,7 +114,18 @@ async function MultiLeagueHubBody({
     leagueId: activeLeagueId,
   })
 
-  const bundle = await getLeaguePageBundle(activeLeagueId)
+  // v2.0.0 — viewer-keyed Redis cache for the dashboard bundle.
+  // `buildViewerKey` collapses unauthenticated visitors to a single
+  // shared key, authenticated NextAuth sessions to their `userId`,
+  // and grandfathered LINE-only sessions to `line:<lineId>`. The
+  // hub's "viewer" prop already mirrors the same identifiers used by
+  // `<HomepageRouter>` so cache-key parity is automatic.
+  const viewerKey = buildViewerKey({
+    userId: viewer.userId,
+    lineId: viewer.lineId,
+  })
+
+  const bundle = await getLeaguePageBundle(activeLeagueId, viewerKey)
   if (!bundle) return <DataUnavailable />
 
   const nextMd = findNextMatchday(bundle.data.matchdays)

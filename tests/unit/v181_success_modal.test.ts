@@ -84,7 +84,7 @@ const VERSION_SRC = readFileSync(
 describe('v1.81.0 — APP_VERSION bumped', () => {
   it('APP_VERSION is at least 1.81.0', () => {
     expect(VERSION_SRC).toMatch(
-      /APP_VERSION\s*=\s*['"]1\.(81\.\d+|8[2-9]\.\d+|9\d?\.\d+)['"]/,
+      /APP_VERSION\s*=\s*['"](?:1\.(?:81\.\d+|8[2-9]\.\d+|9\d?\.\d+)|2\.\d+\.\d+)['"]/,
     )
   })
 })

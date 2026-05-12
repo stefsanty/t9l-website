@@ -54,7 +54,7 @@ const SWITCHER_SRC = readFileSync(
 describe('v1.97.2 — version bump', () => {
   it('APP_VERSION is 1.97.2 or higher', () => {
     expect(VERSION_SRC).toMatch(
-      /APP_VERSION\s*=\s*['"]1\.(9[7-9]|[1-9]\d{2,})\.([2-9]|\d{2,})['"]|APP_VERSION\s*=\s*['"]1\.(9[89]|[1-9]\d{2,})\.\d+['"]/,
+      /APP_VERSION\s*=\s*['"](?:1\..(9[7-9]|[1-9]\d{2,})\.([2-9]|\d{2,})|[2-9]\.\d+\.\d+)['"]|APP_VERSION\s*=\s*['"](?:1\..(9[89]|[1-9]\d{2,})\.\d+|[2-9]\.\d+\.\d+)['"]/,
     )
   })
 })

@@ -82,13 +82,13 @@ describe('v1.88.0 — version bump', () => {
   // CLAUDE.md ledger.
   it('APP_VERSION is 1.88.0 or higher', () => {
     expect(VERSION_SRC).toMatch(
-      /APP_VERSION\s*=\s*['"]1\.(8[8-9]|9\d?)\.\d+['"]/,
+      /APP_VERSION\s*=\s*['"](?:1\..(8[8-9]|9\d?)\.\d+|[2-9]\.\d+\.\d+)['"]/,
     )
   })
 
   it('CLAUDE.md current-release header lists v1.88.0 or higher', () => {
     expect(CLAUDE_MD).toMatch(
-      /\*\*Current release:\*\*\s+v1\.(8[8-9]|9\d?)\.\d+\./,
+      /\*\*Current release:\*\*\s+(?:v1\.(?:8[8-9]|9\d?)\.\d+|v[2-9]\.\d+\.\d+)\./,
     )
   })
 })

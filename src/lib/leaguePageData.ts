@@ -23,6 +23,16 @@
  * round-trip per render — savings compound across the apex hub,
  * /id/<slug>, /id/<slug>/md/<id>, /id/<slug>/join, /stats, /schedule
  * — every league-scoped page that called this bundle.
+ *
+ * v2.0.0 — optional Redis-backed read-through cache keyed by
+ * (viewerKey, leagueId), 60 s TTL, version-bump invalidation via
+ * `bumpDashboardVersion()` chained off `revalidate({ domain })`.
+ * Callers thread a `viewerKey` derived from `buildViewerKey({ userId,
+ * lineId })`. When omitted (backward compat for any call site that
+ * hasn't been migrated), the bundle runs the live Promise.all
+ * without touching Redis. See `src/lib/dashboardCache.ts` for the
+ * full architecture note. Browser-measured impact (warm /id/t9l on
+ * prod): 3–6 s body-stream window → ~80 ms Redis round-trip on a hit.
  */
 
 import type { LeagueData } from '@/types'
@@ -39,6 +49,7 @@ import {
 } from '@/lib/plannedRosterStats'
 import { getLeagueDetails } from '@/lib/leagueDetailsServer'
 import type { LeagueDetails } from '@/lib/leagueDetails'
+import { getCachedBundle } from '@/lib/dashboardCache'
 
 export interface LeaguePageBundle {
   data: LeagueData
@@ -60,7 +71,7 @@ export interface LeaguePageBundle {
   leagueDetails: LeagueDetails | null
 }
 
-export async function getLeaguePageBundle(
+async function readLeaguePageBundle(
   leagueId: string,
 ): Promise<LeaguePageBundle | null> {
   try {
@@ -92,4 +103,20 @@ export async function getLeaguePageBundle(
     console.warn('[leaguePageData] bundle read failed:', err)
     return null
   }
+}
+
+export async function getLeaguePageBundle(
+  leagueId: string,
+  viewerKey?: string,
+): Promise<LeaguePageBundle | null> {
+  if (!viewerKey) {
+    // Backward-compat path: callers that haven't been migrated to
+    // pass a viewerKey skip the Redis cache entirely. Keeps the
+    // contract narrow for the v2.0.0 cache rollout — only the two
+    // hot paths (`/id/<slug>` and `<MultiLeagueHub>`) opt in.
+    return readLeaguePageBundle(leagueId)
+  }
+  return getCachedBundle(leagueId, viewerKey, () =>
+    readLeaguePageBundle(leagueId),
+  )
 }

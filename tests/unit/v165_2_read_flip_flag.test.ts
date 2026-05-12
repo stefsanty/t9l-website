@@ -34,7 +34,7 @@ const VIEWER_STATE_SRC = readFileSync(
 describe('v1.65.2 — APP_VERSION bumped (chain ships sequentially)', () => {
   it('APP_VERSION is at least 1.65.2', () => {
     // Match any v1.65.[2-9] OR any higher minor.
-    expect(VERSION_SRC).toMatch(/APP_VERSION\s*=\s*['"]1\.(65\.[2-9]|6[6-9]\.\d+|[7-9]\d?\.\d+)['"]/)
+    expect(VERSION_SRC).toMatch(/APP_VERSION\s*=\s*['"](?:1\.(?:65\.[2-9]|6[6-9]\.\d+|[7-9]\d?\.\d+)|2\.\d+\.\d+)['"]/)
   })
 })
 

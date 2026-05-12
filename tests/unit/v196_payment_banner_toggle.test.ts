@@ -61,12 +61,12 @@ const MIGRATION_EXEC = MIGRATION.replace(/--.*$/gm, '').replace(/\/\*[\s\S]*?\*\
 describe('v1.96.0 — APP_VERSION bumped', () => {
   it('APP_VERSION is 1.96.0 or higher', () => {
     expect(VERSION_SRC).toMatch(
-      /APP_VERSION\s*=\s*['"]1\.(9[6-9]\.\d+|\d{3,}\.\d+)['"]|APP_VERSION\s*=\s*['"][2-9]\.\d+\.\d+['"]/,
+      /APP_VERSION\s*=\s*['"](?:1\.(?:9[6-9]\.\d+|\d{3,}\.\d+)|2\.\d+\.\d+)['"]|APP_VERSION\s*=\s*['"][2-9]\.\d+\.\d+['"]/,
     )
   })
   it('CLAUDE.md header pins v1.96.0 or higher current release', () => {
     expect(CLAUDE_MD).toMatch(
-      /\*\*Current release:\*\*\s*v1\.(9[6-9]\.\d+|\d{3,}\.\d+)|\*\*Current release:\*\*\s*v[2-9]\.\d+\.\d+/,
+      /\*\*Current release:\*\*\s*(?:v1\.(?:9[6-9]\.\d+|\d{3,}\.\d+)|v2\.\d+\.\d+)|\*\*Current release:\*\*\s*v[2-9]\.\d+\.\d+/,
     )
   })
 })

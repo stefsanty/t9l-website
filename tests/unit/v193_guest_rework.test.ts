@@ -90,7 +90,7 @@ const SYNTH_SRC = readFileSync(
 describe('v1.93.0 — version bump', () => {
   it('APP_VERSION is 1.93.0 or higher', () => {
     expect(VERSION_SRC).toMatch(
-      /APP_VERSION\s*=\s*['"]1\.(9[3-9]|[1-9]\d{2,})\.\d+['"]/,
+      /APP_VERSION\s*=\s*['"](?:1\..(9[3-9]|[1-9]\d{2,})\.\d+|[2-9]\.\d+\.\d+)['"]/,
     )
   })
 })

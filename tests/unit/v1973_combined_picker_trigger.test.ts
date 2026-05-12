@@ -57,7 +57,7 @@ function stripComments(src: string): string {
 describe('v1.97.3 — version bump', () => {
   it('APP_VERSION is 1.97.3 or higher', () => {
     expect(VERSION_SRC).toMatch(
-      /APP_VERSION\s*=\s*['"]1\.(97\.([3-9]|\d{2,})|9[89]\.\d+|\d{3,}\.\d+)['"]/,
+      /APP_VERSION\s*=\s*['"](?:1\..(97\.([3-9]|\d{2,})|9[89]\.\d+|\d{3,}\.\d+)|[2-9]\.\d+\.\d+)['"]/,
     )
   })
 })

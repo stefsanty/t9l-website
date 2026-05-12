@@ -58,7 +58,7 @@ function stripComments(src: string): string {
 describe('v1.65.4 — APP_VERSION bumped', () => {
   it('APP_VERSION is at least 1.65.4', () => {
     // Match any v1.65.[4-9] OR any higher minor.
-    expect(VERSION_SRC).toMatch(/APP_VERSION\s*=\s*['"]1\.(65\.[4-9]|6[6-9]\.\d+|[7-9]\d?\.\d+)['"]/)
+    expect(VERSION_SRC).toMatch(/APP_VERSION\s*=\s*['"](?:1\.(?:65\.[4-9]|6[6-9]\.\d+|[7-9]\d?\.\d+)|2\.\d+\.\d+)['"]/)
   })
 })
 

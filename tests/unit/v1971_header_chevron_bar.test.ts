@@ -69,11 +69,11 @@ function stripComments(source: string): string {
 
 describe('v1.97.1 — version pin', () => {
   it('APP_VERSION at 1.97.1 or higher (later patches relax this regex)', () => {
-    expect(VERSION_SRC).toMatch(/APP_VERSION\s*=\s*['"]1\.(97\.[1-9]|9[89]\.\d+|\d{3,}\.\d+)['"]/)
+    expect(VERSION_SRC).toMatch(/APP_VERSION\s*=\s*['"](?:1\.(?:97\.[1-9]|9[89]\.\d+|\d{3,}\.\d+)|2\.\d+\.\d+)['"]/)
   })
 
   it('CLAUDE.md header reflects v1.97.1 or a later release', () => {
-    expect(CLAUDE_MD).toMatch(/\*\*Current release:\*\* v1\.(97\.[1-9]|9[89]\.\d+|\d{3,}\.\d+)\./)
+    expect(CLAUDE_MD).toMatch(/\*\*Current release:\*\* (?:v1\.(?:97\.[1-9]|9[89]\.\d+|\d{3,}\.\d+)|v2\.\d+\.\d+)\./)
   })
 
   it('docs/ledger.md top entry is v1.97.1 or a later release', () => {
@@ -83,7 +83,7 @@ describe('v1.97.1 — version pin', () => {
     // CLAUDE.md, but the "top bullet is newest" pin still holds in
     // their new home.
     const firstBullet = LEDGER_MD.match(/-\s+\*\*v(\d+\.\d+\.\d+)\*\*/)
-    expect(firstBullet?.[1]).toMatch(/^1\.(97\.[1-9]|9[89]\.\d+|\d{3,}\.\d+)$/)
+    expect(firstBullet?.[1]).toMatch(/^(?:1\.(?:97\.[1-9]|9[89]\.\d+|\d{3,}\.\d+)|[2-9]\.\d+\.\d+)$/)
   })
 })
 

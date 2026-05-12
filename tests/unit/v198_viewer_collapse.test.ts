@@ -70,13 +70,13 @@ function stripComments(s: string): string {
 describe('v1.98.0 — version pin', () => {
   it('APP_VERSION at 1.98.0 or higher (relaxed at v1.99.0 ship)', () => {
     expect(VERSION_SRC).toMatch(
-      /APP_VERSION\s*=\s*['"]1\.(9[89]\.\d+|\d{3,}\.\d+)['"]/,
+      /APP_VERSION\s*=\s*['"](?:1\.(?:9[89]\.\d+|\d{3,}\.\d+)|2\.\d+\.\d+)['"]/,
     )
   })
 
   it('CLAUDE.md header reflects v1.98.0 or a later release', () => {
     expect(CLAUDE_MD).toMatch(
-      /\*\*Current release:\*\*\s*v1\.(9[89]\.\d+|\d{3,}\.\d+)/,
+      /\*\*Current release:\*\*\s*(?:v1\.(?:9[89]\.\d+|\d{3,}\.\d+)|v2\.\d+\.\d+)/,
     )
   })
 })

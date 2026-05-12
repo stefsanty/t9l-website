@@ -216,6 +216,6 @@ describe('v1.70.3 — version bump', () => {
   // literal forces unrelated patch bumps to touch this file.
   it('APP_VERSION is at v1.70.x floor or later', () => {
     const src = read('src/lib/version.ts')
-    expect(src).toMatch(/APP_VERSION = '1\.(7[0-9]|[89][0-9])\.\d+'/)
+    expect(src).toMatch(/APP_VERSION = '1\.(7[0-9]|[89][0-9])\.\d+'|'[2-9]\.\d+\.\d+'/)
   })
 })

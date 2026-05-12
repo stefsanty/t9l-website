@@ -270,7 +270,7 @@ describe('v1.71.1 — version bump', () => {
   it('APP_VERSION is at least 1.71.1', () => {
     const src = read('src/lib/version.ts')
     expect(src).toMatch(
-      /APP_VERSION\s*=\s*['"]1\.(71\.[1-9]\d*|7[2-9]\.\d+|[8-9]\d?\.\d+)['"]/,
+      /APP_VERSION\s*=\s*['"](?:1\.(?:71\.[1-9]\d*|7[2-9]\.\d+|[8-9]\d?\.\d+)|2\.\d+\.\d+)['"]/,
     )
   })
 })
