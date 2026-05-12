@@ -72,7 +72,7 @@ function bodyOf(src: string, exportName: string): string {
 describe('v1.81.2 — APP_VERSION bumped', () => {
   it('APP_VERSION is at least 1.81.2', () => {
     expect(VERSION_SRC).toMatch(
-      /APP_VERSION\s*=\s*['"]1\.(81\.[2-9]|81\.\d{2,}|8[2-9]\.\d+|9\d?\.\d+)['"]/,
+      /APP_VERSION\s*=\s*['"](?:1\.(?:81\.[2-9]|81\.\d{2,}|8[2-9]\.\d+|9\d?\.\d+)|2\.\d+\.\d+)['"]/,
     )
   })
 })

@@ -68,7 +68,7 @@ const VERSION_SRC = readFileSync(join(REPO_ROOT, 'src/lib/version.ts'), 'utf8')
 describe('v1.84.0 — APP_VERSION bumped', () => {
   it('APP_VERSION is at least 1.84.0', () => {
     expect(VERSION_SRC).toMatch(
-      /APP_VERSION\s*=\s*['"]1\.(84\.\d+|8[5-9]\.\d+|9\d?\.\d+)['"]/,
+      /APP_VERSION\s*=\s*['"](?:1\.(?:84\.\d+|8[5-9]\.\d+|9\d?\.\d+)|2\.\d+\.\d+)['"]/,
     )
   })
 })
@@ -205,10 +205,17 @@ describe('v1.84.0 — page consumers gate the banner on visibility === PUBLIC_OP
   })
 
   it('/id/[slug] derives recruiting prop from visibility', () => {
+    // v2.0.0 — `/id/[slug]` migrated to `getLeaguePageBundle`, so the
+    // threaded prop uses `bundle.flags.visibility` instead of
+    // `flags.visibility`. Either shape satisfies the "recruiting is
+    // gated on `=== PUBLIC_OPEN`, not on the legacy `flags.recruiting`
+    // boolean" contract.
     expect(ID_SLUG_SRC).toMatch(
-      /recruiting=\{flags\.visibility\s*===\s*['"]PUBLIC_OPEN['"]\}/,
+      /recruiting=\{(?:flags|bundle\.flags)\.visibility\s*===\s*['"]PUBLIC_OPEN['"]\}/,
     )
-    expect(ID_SLUG_SRC).not.toMatch(/recruiting=\{flags\.recruiting\}/)
+    expect(ID_SLUG_SRC).not.toMatch(
+      /recruiting=\{(?:flags|bundle\.flags)\.recruiting\}/,
+    )
   })
 
   it('/id/[slug]/md/[id] derives recruiting prop from visibility', () => {

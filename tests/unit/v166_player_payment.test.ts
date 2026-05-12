@@ -71,7 +71,7 @@ const MIGRATION_EXEC = MIGRATION.replace(/--.*$/gm, '').replace(/\/\*[\s\S]*?\*\
 describe('v1.66.0 — APP_VERSION bumped', () => {
   it('APP_VERSION is 1.66.0 or higher', () => {
     expect(VERSION_SRC).toMatch(
-      /APP_VERSION\s*=\s*['"]1\.(6[6-9]\.\d+|[7-9]\d?\.\d+)['"]/,
+      /APP_VERSION\s*=\s*['"](?:1\.(?:6[6-9]\.\d+|[7-9]\d?\.\d+)|2\.\d+\.\d+)['"]/,
     )
   })
 })
@@ -326,8 +326,12 @@ describe('v1.66.0 — banner mounted on every league-scoped page', () => {
 
   for (const p of PAGES) {
     it(`${p} fetches getUnpaidFeeBannerData`, () => {
+      // v2.0.0 — `/id/[slug]` migrated to `getLeaguePageBundle` which
+      // calls `getUnpaidFeeBannerData` internally. Either the direct
+      // import or the bundle helper satisfies the contract that this
+      // banner is fetched at the page boundary.
       const src = readFileSync(join(REPO_ROOT, p), 'utf8')
-      expect(src).toMatch(/getUnpaidFeeBannerData/)
+      expect(src).toMatch(/getUnpaidFeeBannerData|getLeaguePageBundle/)
     })
   }
 

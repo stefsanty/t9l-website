@@ -302,6 +302,6 @@ describe('v1.72.0 regression targets', () => {
     // Relaxed from literal '1.72.0' to any version >= 1.72.x per CLAUDE.md
     // pinned-literal policy: patch/minor bumps should not require touching
     // all prior-version test files.
-    expect(ver).toMatch(/APP_VERSION\s*=\s*'1\.(7[2-9]|[89]\d|\d{3,})\.\d+'/)
+    expect(ver).toMatch(/APP_VERSION\s*=\s*'1\.(7[2-9]|[89]\d|\d{3,})\.\d+'|'[2-9]\.\d+\.\d+'/)
   })
 })

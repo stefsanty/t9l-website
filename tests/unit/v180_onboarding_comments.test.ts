@@ -206,6 +206,6 @@ describe('v1.80.0 — version bump', () => {
 
   it('APP_VERSION is 1.80.0 or later', () => {
     // v1.81.0 — broaden the regex to include 1.81.x and beyond.
-    expect(version).toMatch(/APP_VERSION\s*=\s*'1\.(8[0-9]|9[0-9])\.[0-9]+'/)
+    expect(version).toMatch(/APP_VERSION\s*=\s*'1\.(8[0-9]|9[0-9])\.[0-9]+'|'[2-9]\.\d+\.\d+'/)
   })
 })

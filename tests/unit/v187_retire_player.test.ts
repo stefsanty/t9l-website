@@ -112,12 +112,12 @@ function sliceFn(src: string, name: string): string {
 describe('v1.87.0 — APP_VERSION + CLAUDE.md', () => {
   it('APP_VERSION is 1.87.0 or higher', () => {
     expect(VERSION_SRC).toMatch(
-      /APP_VERSION\s*=\s*['"]1\.(8[7-9]\.\d+|9\d?\.\d+)['"]/,
+      /APP_VERSION\s*=\s*['"](?:1\.(?:8[7-9]\.\d+|9\d?\.\d+)|2\.\d+\.\d+)['"]/,
     )
   })
 
   it('CLAUDE.md current release header reads v1.87 (or higher)', () => {
-    expect(CLAUDE_MD).toMatch(/\*\*Current release:\*\*\s+v1\.(8[7-9]|9\d?)\.\d+\./)
+    expect(CLAUDE_MD).toMatch(/\*\*Current release:\*\*\s+(?:v1\.(?:8[7-9]|9\d?)\.\d+|v[2-9]\.\d+\.\d+)\./)
   })
 })
 

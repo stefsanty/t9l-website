@@ -55,7 +55,7 @@ const VERSION_SRC = readFileSync(join(REPO_ROOT, 'src/lib/version.ts'), 'utf8')
 describe('v1.80.10 — APP_VERSION bumped', () => {
   it('APP_VERSION is at least 1.80.10', () => {
     expect(VERSION_SRC).toMatch(
-      /APP_VERSION\s*=\s*['"]1\.(80\.(?:1[0-9]|[2-9]\d?)|8[1-9]\.\d+|9\d?\.\d+)['"]/,
+      /APP_VERSION\s*=\s*['"](?:1\..(80\.(?:1[0-9]|[2-9]\d?)|8[1-9]\.\d+|9\d?\.\d+)|[2-9]\.\d+\.\d+)['"]/,
     )
   })
 })

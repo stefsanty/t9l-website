@@ -59,7 +59,7 @@ function blockOf(fnName: string, slice = 4000): string {
 describe('v1.80.11 — APP_VERSION bumped', () => {
   it('APP_VERSION is at least 1.80.11', () => {
     expect(VERSION_SRC).toMatch(
-      /APP_VERSION\s*=\s*['"]1\.(80\.(?:1[1-9]|[2-9]\d?)|8[1-9]\.\d+|9\d?\.\d+)['"]/,
+      /APP_VERSION\s*=\s*['"](?:1\..(80\.(?:1[1-9]|[2-9]\d?)|8[1-9]\.\d+|9\d?\.\d+)|[2-9]\.\d+\.\d+)['"]/,
     )
   })
 })

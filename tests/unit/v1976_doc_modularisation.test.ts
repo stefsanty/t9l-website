@@ -43,7 +43,7 @@ describe('v1.97.6 — version pin', () => {
 
   it('CLAUDE.md current-release header lists v1.97.6 or higher', () => {
     expect(CLAUDE_MD).toMatch(
-      /\*\*Current release:\*\*\s*v1\.(97\.([6-9]|\d{2,})|9[89]\.\d+|\d{3,}\.\d+)/,
+      /\*\*Current release:\*\*\s*(?:v1\.(?:97\.([6-9]|\d{2,})|9[89]\.\d+|\d{3,}\.\d+)|v[2-9]\.\d+\.\d+)/,
     )
   })
 })
@@ -128,7 +128,7 @@ describe('v1.97.6 — docs/ledger.md exists with active ledger entries', () => {
     const firstBullet = LEDGER.match(/-\s+\*\*v(\d+\.\d+\.\d+)\*\*/)
     expect(firstBullet).toBeTruthy()
     expect(firstBullet![1]).toMatch(
-      /^1\.(9[0-9]\.\d+|\d{3,}\.\d+)$/,
+      /^(?:1\.(?:9[0-9]\.\d+|\d{3,}\.\d+)|[2-9]\.\d+\.\d+)$/,
     )
   })
 

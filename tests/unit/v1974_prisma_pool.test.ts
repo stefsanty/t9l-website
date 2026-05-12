@@ -35,7 +35,7 @@ const PRISMA_SRC = readFileSync(
 describe('v1.97.4 — version bump', () => {
   it('APP_VERSION is 1.97.4 or higher', () => {
     expect(VERSION_SRC).toMatch(
-      /APP_VERSION\s*=\s*['"]1\.(97\.([4-9]|\d{2,})|9[89]\.\d+|\d{3,}\.\d+)['"]/,
+      /APP_VERSION\s*=\s*['"](?:1\..(97\.([4-9]|\d{2,})|9[89]\.\d+|\d{3,}\.\d+)|[2-9]\.\d+\.\d+)['"]/,
     )
   })
 })
