@@ -1,7 +1,5 @@
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
 import {
   resolveHomepagePersona,
   type HomepagePersona,
@@ -11,6 +9,7 @@ import {
   DEFAULT_LEAGUE_COOKIE_NAME,
   normaliseDefaultLeagueCookieValue,
 } from '@/lib/defaultLeagueCookie'
+import { getViewer } from '@/lib/viewer'
 import LeagueDirectory from './LeagueDirectory'
 import MultiLeagueHub from './MultiLeagueHub'
 
@@ -62,9 +61,16 @@ export default async function HomepageRouter({
 }: {
   preferredLeagueId?: string | null
 } = {}) {
-  const session = await getServerSession(authOptions)
-  const userId = (session as { userId?: string | null } | null)?.userId ?? null
-  const lineId = (session as { lineId?: string | null } | null)?.lineId ?? null
+  // v1.98.0 — viewer (session + user + player) is resolved once via
+  // the shared `getViewer()` helper. Every per-user reader that runs
+  // later in this render (`getRecruitingViewerState`,
+  // `getUnpaidFeeBannerData`, `homepageRouting.getApprovedMembershipsAndDefault`)
+  // calls `getViewer()` too, and React's `cache()` dedupes them onto
+  // this same Promise. Pre-v1.98.0 those readers each issued their
+  // own `getServerSession + user.findUnique [+ player.findUnique]`.
+  const viewer = await getViewer()
+  const userId = viewer.userId
+  const lineId = viewer.lineId
 
   // v1.97.5 — read the cookie BEFORE awaiting the persona resolver so
   // both reads can happen on the same tick. `cookies()` is the only

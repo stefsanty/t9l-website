@@ -230,10 +230,17 @@ describe('v1.63.0 — getLeagueFlags helper', () => {
     expect(HELPER_SRC).toMatch(/revalidate:\s*30/)
   })
 
-  it('selects only the flag columns from Prisma (v1.84.0 added `visibility`)', () => {
-    expect(HELPER_SRC).toMatch(
-      /select:\s*\{\s*preseasonMode:\s*true,\s*recruiting:\s*true,\s*visibility:\s*true\s*\}/,
-    )
+  it('selects the flag columns + identity columns from Prisma (v1.84.0 added `visibility`; v1.98.0 folded id/name/abbreviation/ballType)', () => {
+    // v1.98.0 — identity columns are folded onto the same cached
+    // read so `getLeaguePageBundle` no longer issues a standalone
+    // `prisma.league.findUnique` for league.{id,name,abbreviation,ballType}.
+    expect(HELPER_SRC).toMatch(/preseasonMode:\s*true/)
+    expect(HELPER_SRC).toMatch(/recruiting:\s*true/)
+    expect(HELPER_SRC).toMatch(/visibility:\s*true/)
+    expect(HELPER_SRC).toMatch(/\bid:\s*true/)
+    expect(HELPER_SRC).toMatch(/\bname:\s*true/)
+    expect(HELPER_SRC).toMatch(/abbreviation:\s*true/)
+    expect(HELPER_SRC).toMatch(/ballType:\s*true/)
   })
 
   it('exports a LeagueFlags interface with the right shape', () => {
@@ -254,6 +261,10 @@ describe('v1.63.0 — getLeagueFlags helper', () => {
             findUnique: vi
               .fn()
               .mockResolvedValue({
+                id: 'l-foo',
+                name: 'Foo League',
+                abbreviation: 'FOO',
+                ballType: 'SOCCER',
                 preseasonMode: true,
                 recruiting: false,
                 visibility: 'PUBLIC_OPEN',
@@ -267,6 +278,12 @@ describe('v1.63.0 — getLeagueFlags helper', () => {
         preseasonMode: true,
         recruiting: false,
         visibility: 'PUBLIC_OPEN',
+        league: {
+          id: 'l-foo',
+          name: 'Foo League',
+          abbreviation: 'FOO',
+          ballType: 'SOCCER',
+        },
       })
     })
 
@@ -282,6 +299,7 @@ describe('v1.63.0 — getLeagueFlags helper', () => {
         preseasonMode: false,
         recruiting: false,
         visibility: 'PUBLIC_CLOSED',
+        league: null,
       })
     })
 
@@ -300,6 +318,7 @@ describe('v1.63.0 — getLeagueFlags helper', () => {
         preseasonMode: false,
         recruiting: false,
         visibility: 'PUBLIC_CLOSED',
+        league: null,
       })
       expect(warn).toHaveBeenCalled()
       warn.mockRestore()

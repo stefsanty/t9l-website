@@ -227,8 +227,18 @@ describe('v1.85.0 — homepageRouting.classifyPersona', () => {
 // ────────────────────────────────────────────────────────────────────────────
 
 describe('v1.85.0 — HomepageRouter render decisions', () => {
-  it('reads session via getServerSession + authOptions', () => {
-    expect(HOMEPAGE_ROUTER_SRC).toMatch(/getServerSession\s*\(\s*authOptions\s*\)/)
+  it('reads session via getViewer() (v1.98.0 collapse) — session lookup canonicalised in src/lib/viewer.ts', () => {
+    // v1.98.0 — HomepageRouter no longer calls getServerSession directly.
+    // The session+user+player resolution is centralised in the shared
+    // `getViewer()` helper (request-scoped via React `cache()`) so the
+    // three per-render readers that all needed it (HomepageRouter,
+    // getRecruitingViewerState, getUnpaidFeeBannerData) dedupe onto a
+    // single Promise. The actual `getServerSession(authOptions)` call
+    // now lives in `src/lib/viewer.ts` and is asserted in v198 regression tests.
+    expect(HOMEPAGE_ROUTER_SRC).toMatch(/getViewer\s*\(\s*\)/)
+    expect(HOMEPAGE_ROUTER_SRC).toMatch(
+      /import\s*\{\s*getViewer\s*\}\s*from\s*['"]@\/lib\/viewer['"]/,
+    )
   })
 
   it('imports redirect from next/navigation', () => {
