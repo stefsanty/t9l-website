@@ -155,7 +155,21 @@ describe('v1.67.0 page-level plannedRosterStats wiring (post v1.75.5 uncondition
     'src/app/id/[slug]/md/[id]/page.tsx',
   ]) {
     it(`${path} fetches plannedRosterStats and threads it through Dashboard`, () => {
-      const src = read(path)
+      // v2.1.0 — /id/<slug> moved its data fetches into the
+      // LeagueBannersBlock + LeagueMatchdayContent child components.
+      // For that one path, read the full render tree (page +
+      // components) so the per-call regression target still finds
+      // the helper invocation + the prop thread.
+      const src =
+        path === 'src/app/id/[slug]/page.tsx'
+          ? read(path) +
+            '\n' +
+            read('src/components/LeagueBannersBlock.tsx') +
+            '\n' +
+            read('src/components/LeagueMatchdayContent.tsx') +
+            '\n' +
+            read('src/components/LeagueMatchdayClient.tsx')
+          : read(path)
       expect(src).toMatch(/getPlannedRosterStats\(leagueId\)/)
       expect(src).toMatch(/plannedRosterStats=\{plannedRosterStats\s*\?\?\s*null\}/)
     })

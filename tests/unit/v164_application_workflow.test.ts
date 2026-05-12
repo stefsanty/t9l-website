@@ -68,10 +68,18 @@ const APEX_PAGE_SRC = readFileSync(
   join(REPO_ROOT, 'src/app/page.tsx'),
   'utf8',
 )
-const ID_PAGE_SRC = readFileSync(
-  join(REPO_ROOT, 'src/app/id/[slug]/page.tsx'),
-  'utf8',
-)
+// v2.1.0 — /id/<slug> render tree is split across page.tsx +
+// LeagueBannersBlock + LeagueMatchdayContent + LeagueMatchdayClient.
+// Concat them so per-call regression targets still find the call site
+// wherever it ended up after the split.
+const ID_PAGE_SRC =
+  readFileSync(join(REPO_ROOT, 'src/app/id/[slug]/page.tsx'), 'utf8') +
+  '\n' +
+  readFileSync(join(REPO_ROOT, 'src/components/LeagueBannersBlock.tsx'), 'utf8') +
+  '\n' +
+  readFileSync(join(REPO_ROOT, 'src/components/LeagueMatchdayContent.tsx'), 'utf8') +
+  '\n' +
+  readFileSync(join(REPO_ROOT, 'src/components/LeagueMatchdayClient.tsx'), 'utf8')
 const MD_PAGE_SRC = readFileSync(
   join(REPO_ROOT, 'src/app/id/[slug]/md/[id]/page.tsx'),
   'utf8',
@@ -469,10 +477,20 @@ describe('v1.64.0 — page-level wiring threads recruitingState + league', () =>
     expect(APEX_PAGE_SRC).toMatch(/league=\{leagueRow/)
   })
 
-  it('/id/[slug] threads recruitingState + leagueRow', () => {
+  it('/id/[slug] threads recruitingState + league identity to RecruitingBanner', () => {
+    // v2.1.0 — on /id/<slug>, recruitingState + league identity now
+    // thread through <LeagueBannersBlock> instead of <Dashboard>. The
+    // banner block fetches getLeagueFlags + getRecruitingViewerState
+    // and passes them directly into <RecruitingBanner>. Identity is
+    // sourced from `flags.league` (folded onto getLeagueFlags in
+    // v1.98.0) rather than a separate `leagueRow` destructure.
     expect(ID_PAGE_SRC).toMatch(/getRecruitingViewerState\(leagueId\)/)
-    expect(ID_PAGE_SRC).toMatch(/recruitingState=\{recruitingState\}/)
-    expect(ID_PAGE_SRC).toMatch(/league=\{leagueRow/)
+    expect(ID_PAGE_SRC).toMatch(
+      /<RecruitingBanner[\s\S]{0,400}viewer=\{recruitingState\}/,
+    )
+    expect(ID_PAGE_SRC).toMatch(
+      /<RecruitingBanner[\s\S]{0,400}league=\{league\}/,
+    )
   })
 
   it('/id/[slug]/md/[id] threads recruitingState + leagueRow', () => {

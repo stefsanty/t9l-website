@@ -44,10 +44,31 @@ describe('v1.54.0 — /id/[slug] canonical render', () => {
     expect(src).toMatch(/getLeagueIdBySlug\(\s*slug\s*\)/)
   })
 
-  it('renders Dashboard with league data', () => {
-    const src = stripComments(read(routePath))
-    expect(src).toMatch(/import\s+Dashboard\s+from\s+['"]@\/components\/Dashboard['"]/)
-    expect(src).toMatch(/<Dashboard/)
+  // v2.1.0 — /id/<slug> render tree is split across page.tsx +
+  // LeagueBannersBlock + LeagueMatchdayContent + LeagueMatchdayClient.
+  // These v1.54.0 regression targets pin contracts that survive the
+  // split: the matchday surface still mounts, the heavy data still
+  // comes from getPublicLeagueData, the failure surface still shows
+  // "Data unavailable". They just live across the new component
+  // boundary now.
+  const idSlugTree = () =>
+    stripComments(read(routePath)) +
+    '\n' +
+    stripComments(read('src/components/LeagueBannersBlock.tsx')) +
+    '\n' +
+    stripComments(read('src/components/LeagueMatchdayContent.tsx')) +
+    '\n' +
+    stripComments(read('src/components/LeagueMatchdayClient.tsx'))
+
+  it('mounts a client matchday surface with league data', () => {
+    // v1.54.0 originally pinned `<Dashboard>`. v2.1.0 the matchday
+    // surface is rendered by `<LeagueMatchdayClient>` (server-fetched
+    // by `<LeagueMatchdayContent>`); legacy routes still use Dashboard.
+    const tree = idSlugTree()
+    expect(tree).toMatch(/<LeagueMatchdayClient/)
+    expect(tree).toMatch(
+      /import\s+LeagueMatchdayClient\s+from\s+['"]\.\/LeagueMatchdayClient['"]/,
+    )
   })
 
   it('calls notFound() when leagueId is null', () => {
@@ -57,14 +78,13 @@ describe('v1.54.0 — /id/[slug] canonical render', () => {
   })
 
   it('uses getPublicLeagueData with the resolved leagueId', () => {
-    const src = stripComments(read(routePath))
-    expect(src).toMatch(/getPublicLeagueData\(\s*leagueId\s*\)/)
+    expect(idSlugTree()).toMatch(/getPublicLeagueData\(\s*leagueId\s*\)/)
   })
 
   it('handles getPublicLeagueData failure with the apex-style fallback', () => {
-    const src = stripComments(read(routePath))
-    expect(src).toMatch(/Data unavailable/)
-    expect(src).toMatch(/Try again in a moment/)
+    const tree = idSlugTree()
+    expect(tree).toMatch(/Data unavailable/)
+    expect(tree).toMatch(/Try again in a moment/)
   })
 })
 
