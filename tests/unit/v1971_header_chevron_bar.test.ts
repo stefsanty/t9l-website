@@ -50,6 +50,7 @@ const DASHBOARD_SRC = readFileSync(
 )
 const GLOBALS_CSS = readFileSync(join(REPO_ROOT, 'src/app/globals.css'), 'utf8')
 const CLAUDE_MD = readFileSync(join(REPO_ROOT, 'CLAUDE.md'), 'utf8')
+const LEDGER_MD = readFileSync(join(REPO_ROOT, 'docs/ledger.md'), 'utf8')
 
 const LEAGUE_SWITCHER_TABS_PATH = join(
   REPO_ROOT,
@@ -75,13 +76,13 @@ describe('v1.97.1 — version pin', () => {
     expect(CLAUDE_MD).toMatch(/\*\*Current release:\*\* v1\.(97\.[1-9]|9[89]\.\d+|\d{3,}\.\d+)\./)
   })
 
-  it('CLAUDE.md ledger top entry is v1.97.1 or a later release', () => {
-    // The "Recent ledger" section's first bullet should be the newest.
-    // Later patches relax this regex so they don't have to also edit
-    // the v1.97.1 test as they bump the ledger.
-    const ledgerIdx = CLAUDE_MD.indexOf('## Recent ledger')
-    expect(ledgerIdx).toBeGreaterThan(0)
-    const firstBullet = CLAUDE_MD.slice(ledgerIdx).match(/-\s+\*\*v(\d+\.\d+\.\d+)\*\*/)
+  it('docs/ledger.md top entry is v1.97.1 or a later release', () => {
+    // The active ledger's first bullet should be the newest. Migrated
+    // from CLAUDE.md to docs/ledger.md as part of the v1.97.6 doc
+    // modularisation — the recent-ledger paragraphs no longer live in
+    // CLAUDE.md, but the "top bullet is newest" pin still holds in
+    // their new home.
+    const firstBullet = LEDGER_MD.match(/-\s+\*\*v(\d+\.\d+\.\d+)\*\*/)
     expect(firstBullet?.[1]).toMatch(/^1\.(97\.[1-9]|9[89]\.\d+|\d{3,}\.\d+)$/)
   })
 })
