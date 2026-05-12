@@ -168,10 +168,16 @@ describe('v1.59.0 — LeagueSwitcher reads from context (no fetch)', () => {
   })
 
   it('uses next/navigation router for switching to /id/<slug>', () => {
+    // v1.97.1 — the switcher uses a pathname-aware buildHref helper:
+    //   `/test?league=<id>` when on the multi-league hub
+    //   `/id/<slug>`        everywhere else
+    // It still routes via next/navigation; the `/id/${m.slug}` literal
+    // is in the source for the off-hub branch. The regression target
+    // remains "no /league/<slug>" — never reintroduce the legacy form.
     const src = stripComments(read(componentPath))
     expect(src).toMatch(/from\s+['"]next\/navigation['"]/)
-    expect(src).toMatch(/router\.push\(`\/id\/\$\{m\.slug\}`\)/)
-    expect(src).not.toMatch(/router\.push\(`\/league\//)
+    expect(src).toMatch(/`\/id\/\$\{m\.slug\}`/)
+    expect(src).not.toMatch(/`\/league\//)
   })
 
   it('outside-click + Escape close the dropdown', () => {
@@ -180,11 +186,15 @@ describe('v1.59.0 — LeagueSwitcher reads from context (no fetch)', () => {
     expect(src).toMatch(/Escape/)
   })
 
-  it('exposes test ids for trigger + menu + items', () => {
+  it('exposes test ids for trigger + bar + pills', () => {
+    // v1.97.1 — the open-state surface was renamed from "menu" (vertical
+    // dropdown shape) to "bar" (horizontal 1-line scrollable shape); the
+    // per-league items were renamed from "item" to "pill" to match the
+    // rectangular pill UI. The trigger testid is unchanged.
     const src = stripComments(read(componentPath))
     expect(src).toContain('data-testid="league-switcher-trigger"')
-    expect(src).toContain('data-testid="league-switcher-menu"')
-    expect(src).toMatch(/data-testid=\{`league-switcher-item-\$\{m\.slug\}`\}/)
+    expect(src).toContain('data-testid="league-switcher-bar"')
+    expect(src).toMatch(/data-testid=\{`league-switcher-pill-\$\{m\.slug\}`\}/)
   })
 
   it('exports useLeagueMemberships as a thin shim (compat)', () => {

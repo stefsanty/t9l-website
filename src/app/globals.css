@@ -365,6 +365,30 @@ html.light .pl-gradient {
   display: none;             /* Chrome, Safari, Opera */
 }
 
+/* v1.97.1 — thin styled horizontal scrollbar for pill / chip strips that
+   overflow horizontally (e.g. the Header <LeagueSwitcher /> open-state
+   1-line bar). Reintroduced after v1.97.0 removed it alongside the
+   dropped multi-league-hub pill strip; the Header chevron now reuses
+   this utility. Tokens-only (`--surface-md`, `--fg-low`) so it picks up
+   the same dark/light palette as the chrome around it. */
+.pill-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: var(--surface-md) transparent;
+}
+.pill-scrollbar::-webkit-scrollbar {
+  height: 4px;
+}
+.pill-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.pill-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--surface-md);
+  border-radius: 9999px;
+}
+.pill-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: var(--fg-low);
+}
+
 /* Google Translate Widget UI Overrides */
 .goog-te-banner-frame.skiptranslate,
 .goog-te-banner-frame,

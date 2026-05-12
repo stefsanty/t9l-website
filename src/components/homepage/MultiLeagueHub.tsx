@@ -3,7 +3,6 @@ import { getLeaguePageBundle } from '@/lib/leaguePageData'
 import { touchUserDefaultLeague } from '@/lib/userDefaultLeague'
 import type { ApprovedMembership } from '@/lib/homepageRouting'
 import Dashboard from '@/components/Dashboard'
-import LeagueSwitcherTabs from './LeagueSwitcherTabs'
 import RecruitingHandoff from './RecruitingHandoff'
 import HubTransitionShell from './HubTransitionShell'
 
@@ -14,21 +13,19 @@ import HubTransitionShell from './HubTransitionShell'
  * Renders the FULL classic Dashboard for the active league
  * (`activeLeagueId`, derived in `homepageRouting.classifyPersona` from
  * `searchParams.league` ∩ `User.defaultLeagueId` ∩ memberships, falling
- * back to the alphabetical-first APPROVED membership) and injects two
- * new surfaces into Dashboard's `topSlot`:
+ * back to the alphabetical-first APPROVED membership) and injects a
+ * recruiting handoff into Dashboard's `topSlot`:
  *
- *   1. `<LeagueSwitcherTabs>` — pill-strip tab UI for switching the
- *      active league. v1.93.0 navigates via `<Link prefetch>` instead
- *      of awaiting a server action; the persisted "last selection" is
- *      written here via `touchUserDefaultLeague`.
+ *   - `<RecruitingHandoff>` — capped (≤ 2) cards for PUBLIC_OPEN
+ *     leagues the viewer is NOT in. Renders nothing when no
+ *     candidates remain.
  *
- *   2. `<RecruitingHandoff>` — capped (≤ 2) cards for PUBLIC_OPEN
- *      leagues the viewer is NOT in. Renders nothing when no
- *      candidates remain.
- *
- * Both surfaces flow inline with the rest of the dashboard content
- * (same `max-w-lg` column, below the fixed Header) so the page layout
- * stays as a single uniform stack.
+ * v1.97.1 — the in-page `<LeagueSwitcherTabs>` is removed; the canonical
+ * league-picker UI is now the Header chevron (`<LeagueSwitcher>`),
+ * which on this route opens a 1-line horizontal scrollable pill bar
+ * directly under the Header. The Header chevron reads the same
+ * `useHubTransition()` context this shell provides, so its in-place
+ * `?league=<id>` navigation still drives Dashboard's body-skeleton dim.
  *
  * v1.93.0 changes:
  *   - Accepts a `viewer` prop carrying the resolved session identifiers
@@ -76,10 +73,6 @@ export default async function MultiLeagueHub({
 
   const topSlot = (
     <div data-testid="multi-league-hub-top">
-      <LeagueSwitcherTabs
-        memberships={memberships}
-        activeLeagueId={activeLeagueId}
-      />
       <RecruitingHandoff excludeLeagueIds={excludeIds} />
     </div>
   )

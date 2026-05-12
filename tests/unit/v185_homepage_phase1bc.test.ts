@@ -58,10 +58,12 @@ const MULTI_HUB_SRC = readFileSync(
   join(REPO_ROOT, 'src/components/homepage/MultiLeagueHub.tsx'),
   'utf8',
 )
-const SWITCHER_TABS_SRC = readFileSync(
-  join(REPO_ROOT, 'src/components/homepage/LeagueSwitcherTabs.tsx'),
-  'utf8',
-)
+// v1.97.1 — `LeagueSwitcherTabs.tsx` deleted. The canonical league picker
+// is the Header chevron (`src/components/LeagueSwitcher.tsx`) which opens
+// a 1-line scrollable bar. The behaviour previously pinned on the tabs
+// source (useOptimistic, useHubTransition, prefetch links, power-user
+// gestures, same-league short-circuit) is pinned on the new chevron in
+// `tests/unit/v1971_header_chevron_bar.test.ts`.
 const RECRUITING_HANDOFF_SRC = readFileSync(
   join(REPO_ROOT, 'src/components/homepage/RecruitingHandoff.tsx'),
   'utf8',
@@ -342,12 +344,16 @@ describe('v1.85.0 — MultiLeagueHub composition', () => {
     expect(MULTI_HUB_SRC).toMatch(/<Dashboard/)
   })
 
-  it('passes switcher + handoff via Dashboard topSlot prop (no Header double-mount)', () => {
-    // Regression target: rendering switcher OUTSIDE Dashboard would
+  it('passes handoff via Dashboard topSlot prop (no Header double-mount)', () => {
+    // Regression target: rendering the handoff OUTSIDE Dashboard would
     // be hidden behind the fixed Header. The topSlot prop is the
     // contract that makes the layout work.
+    //
+    // v1.97.1 — the in-page LeagueSwitcherTabs that previously also
+    // rode the topSlot has been removed; the canonical league picker is
+    // now the Header chevron (`<LeagueSwitcher />`). The Header is
+    // already rendered by Dashboard, so no double-mount happens.
     expect(MULTI_HUB_SRC).toMatch(/topSlot=\{topSlot\}/)
-    expect(MULTI_HUB_SRC).toMatch(/<LeagueSwitcherTabs/)
     expect(MULTI_HUB_SRC).toMatch(/<RecruitingHandoff/)
   })
 
@@ -368,38 +374,12 @@ describe('v1.85.0 — MultiLeagueHub composition', () => {
   })
 })
 
-describe('v1.85.0 — LeagueSwitcherTabs (Option A pill strip)', () => {
-  it('is a client component (uses "use client")', () => {
-    expect(SWITCHER_TABS_SRC).toMatch(/^['"]use client['"]/)
-  })
-
-  it('hides itself when memberships < 2 (defense; persona resolver should not even reach this)', () => {
-    expect(SWITCHER_TABS_SRC).toMatch(/memberships\.length\s*<\s*2/)
-    expect(SWITCHER_TABS_SRC).toMatch(/return\s+null/)
-  })
-
-  // v1.93.0 — switcher no longer routes through the deleted
-  // `setUserDefaultLeague` server action. The new behaviour
-  // (`<Link prefetch>` + `useOptimistic` + `useTransition`) is
-  // pinned in `tests/unit/v193_league_picker_perf.test.ts`.
-
-  it('renders pill testids per league for switcher targeting', () => {
-    expect(SWITCHER_TABS_SRC).toMatch(/data-testid=\{`league-switcher-tab-\$\{m\.slug\}`\}/)
-  })
-
-  it('marks the active tab via data-active + aria-pressed', () => {
-    expect(SWITCHER_TABS_SRC).toMatch(/data-active=\{selected\s*\?\s*['"]true['"]\s*:\s*['"]false['"]\}/)
-    expect(SWITCHER_TABS_SRC).toMatch(/aria-pressed=\{selected\}/)
-  })
-
-  it('renders rectangular pills with wrap behaviour (v1.97.0: flex-wrap inside the chevron-driven dropdown bar — replaces the v1.85.0 → v1.96.1 overflow-x-auto pill strip)', () => {
-    // Pre-v1.97.0 this asserted `overflow-x-auto` on the always-rendered
-    // horizontal-scroll pill strip. v1.97.0 collapses the strip into a
-    // chevron-collapsible dropdown bar (`<LeagueSwitcherTabs>` rebuild) —
-    // pills now wrap inside a fixed-width bar rather than scrolling.
-    expect(SWITCHER_TABS_SRC).toMatch(/flex-wrap/)
-  })
-})
+// v1.97.1 — the `<LeagueSwitcherTabs>` regression block previously here
+// has moved to `tests/unit/v1971_header_chevron_bar.test.ts`, which
+// re-pins the equivalent behaviour on the Header chevron
+// (`src/components/LeagueSwitcher.tsx`). `LeagueSwitcherTabs.tsx`
+// itself was deleted in v1.97.1 — the canonical league-picker is now
+// the Header chevron open-state 1-line scrollable bar.
 
 describe('v1.85.0 — RecruitingHandoff capped at 2 PUBLIC_OPEN cards', () => {
   it('reads only PUBLIC_OPEN leagues, take: 2', () => {
