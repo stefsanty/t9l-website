@@ -365,6 +365,31 @@ html.light .pl-gradient {
   display: none;             /* Chrome, Safari, Opera */
 }
 
+/* v1.96.1 — thin styled horizontal scrollbar for pill / chip strips that
+   genuinely overflow (e.g. <LeagueSwitcherTabs>). Pre-v1.96.1 the league
+   switcher applied a `no-scrollbar` class that did not exist anywhere in
+   globals.css, so the browser default scrollbar showed through — visually
+   inconsistent with the rest of the site. Tokens-only (`--surface-md`,
+   `--fg-low`) so it picks up the same dark/light palette as the chrome
+   around it. */
+.pill-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: var(--surface-md) transparent;
+}
+.pill-scrollbar::-webkit-scrollbar {
+  height: 4px;
+}
+.pill-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.pill-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--surface-md);
+  border-radius: 9999px;
+}
+.pill-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: var(--fg-low);
+}
+
 /* Google Translate Widget UI Overrides */
 .goog-te-banner-frame.skiptranslate,
 .goog-te-banner-frame,

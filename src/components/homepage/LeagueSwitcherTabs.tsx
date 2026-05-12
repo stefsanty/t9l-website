@@ -97,11 +97,29 @@ export default function LeagueSwitcherTabs({
     })
   }
 
+  // v1.96.1 — UX refresh:
+  //
+  //   1. Top margin (`pt-2`) matches the spacing between the fixed Header
+  //      and the recruiting banner on `/id/<slug>`. Pre-v1.96.1 the pill
+  //      strip butted directly against the bottom of the header.
+  //   2. The wrapper's scrollbar uses the new `.pill-scrollbar` utility
+  //      (defined in globals.css) — thin track, rounded surface-md thumb.
+  //      Pre-v1.96.1 we applied a `no-scrollbar` class that did not exist,
+  //      so the browser default scrollbar bled through.
+  //   3. Pills are visibly weightier: 44 px touch target (h-11), 2 px
+  //      border, slightly larger uppercase text, and a primary glow on
+  //      the active pill so the selected league is unambiguous.
+  //   4. Loading affordance swapped from a tiny `animate-pulse` dot to
+  //      the small `animate-spin` ring used by RsvpBar / RsvpButton /
+  //      every admin editor — the predominant in-flight pattern across
+  //      the codebase. The spinner still gates on `isPending && selected`,
+  //      and `selected` is computed against `optimisticActiveId`, so it
+  //      fires on the just-clicked pill (the v1.94.0 fix is preserved).
   return (
     <nav
       aria-label="Switch league"
       data-testid="league-switcher-tabs"
-      className="w-full overflow-x-auto no-scrollbar mb-3"
+      className="w-full overflow-x-auto pill-scrollbar pt-2 pb-1.5 mb-3"
     >
       <div className="flex items-center gap-2 min-w-max">
         {memberships.map((m) => {
@@ -118,10 +136,10 @@ export default function LeagueSwitcherTabs({
               data-testid={`league-switcher-tab-${m.slug}`}
               data-active={selected ? 'true' : 'false'}
               aria-pressed={selected}
-              className={`flex-shrink-0 inline-flex items-center h-9 px-4 rounded-full text-[11px] font-black uppercase tracking-widest transition-transform duration-100 active:scale-[0.96] ${
+              className={`flex-shrink-0 inline-flex items-center justify-center min-w-[44px] h-11 px-5 rounded-full border-2 text-xs font-black uppercase tracking-widest transition-all duration-150 active:scale-[0.96] no-underline ${
                 selected
-                  ? 'bg-primary text-primary-foreground'
-                  : 'bg-surface text-fg-mid hover:bg-surface-md'
+                  ? 'bg-primary text-primary-foreground border-primary shadow-[var(--glow-primary-md)]'
+                  : 'bg-card text-fg-mid border-border-default hover:bg-surface-md hover:text-fg-high hover:border-primary/40'
               }`}
             >
               <span>{m.leagueName}</span>
@@ -129,7 +147,7 @@ export default function LeagueSwitcherTabs({
                 <span
                   aria-hidden="true"
                   data-testid={`league-switcher-tab-spinner-${m.slug}`}
-                  className="ml-1.5 inline-block h-1.5 w-1.5 rounded-full bg-current opacity-70 animate-pulse"
+                  className="ml-2 inline-block w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin shrink-0 opacity-80"
                 />
               ) : null}
             </Link>
