@@ -155,17 +155,9 @@ describe('v1.67.0 page-level plannedRosterStats wiring (post v1.75.5 uncondition
     'src/app/id/[slug]/md/[id]/page.tsx',
   ]) {
     it(`${path} fetches plannedRosterStats and threads it through Dashboard`, () => {
-      // v2.0.0 — `/id/[slug]` migrated to `getLeaguePageBundle` which
-      // calls `getPlannedRosterStats` internally and exposes the
-      // result as `bundle.plannedRosterStats`. Either shape satisfies
-      // the "page fetches + threads plannedRosterStats" contract.
       const src = read(path)
-      expect(src).toMatch(
-        /getPlannedRosterStats\(leagueId\)|getLeaguePageBundle\(/,
-      )
-      expect(src).toMatch(
-        /plannedRosterStats=\{(?:plannedRosterStats|bundle\.plannedRosterStats)\s*\?\?\s*null\}/,
-      )
+      expect(src).toMatch(/getPlannedRosterStats\(leagueId\)/)
+      expect(src).toMatch(/plannedRosterStats=\{plannedRosterStats\s*\?\?\s*null\}/)
     })
   }
 })

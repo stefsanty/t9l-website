@@ -470,18 +470,9 @@ describe('v1.64.0 — page-level wiring threads recruitingState + league', () =>
   })
 
   it('/id/[slug] threads recruitingState + leagueRow', () => {
-    // v2.0.0 — `/id/[slug]` migrated to `getLeaguePageBundle` which
-    // internally calls `getRecruitingViewerState` and pulls
-    // `bundle.league` from the cached flags read. The threaded props
-    // become `bundle.recruitingState` and `bundle.league` instead of
-    // the inline-Promise.all `recruitingState` / `leagueRow` variables.
-    expect(ID_PAGE_SRC).toMatch(
-      /(?:getRecruitingViewerState\(leagueId\)|getLeaguePageBundle\()/,
-    )
-    expect(ID_PAGE_SRC).toMatch(
-      /recruitingState=\{(?:recruitingState|bundle\.recruitingState)\}/,
-    )
-    expect(ID_PAGE_SRC).toMatch(/league=\{(?:leagueRow|bundle\.league)/)
+    expect(ID_PAGE_SRC).toMatch(/getRecruitingViewerState\(leagueId\)/)
+    expect(ID_PAGE_SRC).toMatch(/recruitingState=\{recruitingState\}/)
+    expect(ID_PAGE_SRC).toMatch(/league=\{leagueRow/)
   })
 
   it('/id/[slug]/md/[id] threads recruitingState + leagueRow', () => {

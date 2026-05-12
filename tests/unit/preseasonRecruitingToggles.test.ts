@@ -343,16 +343,10 @@ describe('v1.63.0 — page wiring fetches + threads flags', () => {
   })
 
   it('/id/[slug] page fetches + threads flags', () => {
-    // v2.0.0 — `/id/[slug]` migrated to `getLeaguePageBundle` which
-    // internally calls `getLeagueFlags`. Either the direct import or
-    // the bundle import satisfies the "page reads flags" contract;
-    // the threaded prop uses `bundle.flags.<x>` instead of `flags.<x>`.
-    expect(ID_SLUG_PAGE_SRC).toMatch(/getLeagueFlags|getLeaguePageBundle/)
+    expect(ID_SLUG_PAGE_SRC).toMatch(/getLeagueFlags/)
+    expect(ID_SLUG_PAGE_SRC).toMatch(/preseasonMode=\{flags\.preseasonMode\}/)
     expect(ID_SLUG_PAGE_SRC).toMatch(
-      /preseasonMode=\{(?:flags|bundle\.flags)\.preseasonMode\}/,
-    )
-    expect(ID_SLUG_PAGE_SRC).toMatch(
-      /recruiting=\{(?:flags|bundle\.flags)\.visibility\s*===\s*['"]PUBLIC_OPEN['"]\}/,
+      /recruiting=\{flags\.visibility\s*===\s*['"]PUBLIC_OPEN['"]\}/,
     )
   })
 
@@ -366,14 +360,8 @@ describe('v1.63.0 — page wiring fetches + threads flags', () => {
 
   it('apex + /id/[slug] fetch flags in parallel with public data (Promise.all)', () => {
     // Avoids a serial Prisma round-trip — flags + LeagueData go together.
-    // v2.0.0 — `/id/[slug]` migrated to `getLeaguePageBundle` (the bundle
-    // helper preserves the same `Promise.all` shape internally; see
-    // `src/lib/leaguePageData.ts`). Either the direct inline Promise.all
-    // OR the bundle helper invocation satisfies the parallelism contract.
     expect(PAGE_SRC).toMatch(/Promise\.all\(\s*\[\s*getPublicLeagueData/)
-    expect(ID_SLUG_PAGE_SRC).toMatch(
-      /Promise\.all\(\s*\[\s*getPublicLeagueData|getLeaguePageBundle\(/,
-    )
+    expect(ID_SLUG_PAGE_SRC).toMatch(/Promise\.all\(\s*\[\s*getPublicLeagueData/)
   })
 })
 
