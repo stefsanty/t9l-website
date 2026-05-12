@@ -112,8 +112,11 @@ describe('v1.97.1 — LeagueSwitcherTabs deleted (regression target)', () => {
 // ────────────────────────────────────────────────────────────────────────────
 
 describe('v1.97.1 — Header chevron is the canonical trigger', () => {
-  it('Header still mounts <LeagueSwitcher /> next to the brand title', () => {
-    expect(HEADER_SRC).toMatch(/<LeagueSwitcher\s*\/>/)
+  it('Header still mounts <LeagueSwitcher .../> next to the brand title', () => {
+    // v1.97.3 — LeagueSwitcher may now carry a `leagueTitle` prop when
+    // it absorbs the brand-title surface. Accept either the prop-less
+    // self-closing form OR a prop-bearing form.
+    expect(HEADER_SRC).toMatch(/<LeagueSwitcher\b/)
   })
 
   it('LeagueSwitcher is a client component', () => {
