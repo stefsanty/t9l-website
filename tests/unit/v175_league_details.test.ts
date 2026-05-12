@@ -345,19 +345,48 @@ describe('v1.75.0 page-level wiring (apex + /id/<slug> + /id/<slug>/md/<id>)', (
     'src/app/id/[slug]/md/[id]/page.tsx',
   ]
 
+  // v2.1.0 — /id/<slug> moved its data-fetching tree into
+  // LeagueBannersBlock + LeagueMatchdayContent + LeagueMatchdayClient,
+  // so per-call regression targets read the concat of all four files
+  // for that one route. Legacy paths keep their inline-in-page reads.
+  function readTree(rel: string): string {
+    if (rel === 'src/app/id/[slug]/page.tsx') {
+      return (
+        read(rel) +
+        '\n' +
+        read('src/components/LeagueBannersBlock.tsx') +
+        '\n' +
+        read('src/components/LeagueMatchdayContent.tsx') +
+        '\n' +
+        read('src/components/LeagueMatchdayClient.tsx')
+      )
+    }
+    return read(rel)
+  }
+
   it.each(sources)('%s imports getLeagueDetails from leagueDetailsServer (v1.80.7 split)', (rel) => {
     // Apex page.tsx uses double quotes; /id pages use single quotes — both valid.
-    expect(read(rel)).toMatch(/import \{ getLeagueDetails \} from ["']@\/lib\/leagueDetailsServer["']/)
+    expect(readTree(rel)).toMatch(/import \{ getLeagueDetails \} from ["']@\/lib\/leagueDetailsServer["']/)
   })
 
-  it.each(sources)('%s threads leagueDetails to Dashboard', (rel) => {
-    expect(read(rel)).toMatch(/leagueDetails=\{leagueDetails \?\? null\}/)
+  it.each(sources)('%s threads leagueDetails to the matchday surface', (rel) => {
+    expect(readTree(rel)).toMatch(/leagueDetails=\{leagueDetails \?\? null\}/)
   })
 
-  it.each(sources)('%s passes _leagueDetails directly (no preseasonMode gate — v1.75.1)', (rel) => {
-    // v1.75.1 removed the preseasonMode gate; leagueDetails now renders on
-    // both classic and preseason homepages when showLeagueDetails=true.
-    expect(read(rel)).toMatch(/leagueDetails\s*=\s*_leagueDetails/)
+  it.each(sources)('%s threads leagueDetails unconditionally (no preseasonMode gate — v1.75.1)', (rel) => {
+    // v1.75.1 removed the preseasonMode gate at the call site; the
+    // details panel now renders on both classic and preseason homepages
+    // when showLeagueDetails=true. v2.1.0 — /id/<slug>'s old
+    // `_leagueDetails` destructure is gone with the page restructure;
+    // the prop-thread form (`leagueDetails={leagueDetails ?? null}`)
+    // is the post-v2.1.0 contract. Legacy paths keep the destructure.
+    if (rel === 'src/app/id/[slug]/page.tsx') {
+      const tree = readTree(rel)
+      expect(tree).toMatch(/leagueDetails=\{leagueDetails \?\? null\}/)
+      expect(tree).not.toMatch(/flags\.preseasonMode\s*\?\s*_leagueDetails/)
+    } else {
+      expect(read(rel)).toMatch(/leagueDetails\s*=\s*_leagueDetails/)
+    }
   })
 })
 

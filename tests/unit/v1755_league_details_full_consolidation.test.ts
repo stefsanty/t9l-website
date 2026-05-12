@@ -202,13 +202,36 @@ describe('v1.75.5 page-level threading: plannedRosterStats unconditional', () =>
     'src/app/id/[slug]/md/[id]/page.tsx',
   ]
 
-  it.each(sources)('%s passes _plannedRosterStats directly without recruiting/userId gate', (rel) => {
-    const src = read(rel)
-    // Regression target: the old `userId && flags.recruiting ? _plannedRosterStats : null`
-    // gate is gone.
-    expect(src).not.toMatch(/userId\s*&&\s*flags\.recruiting\s*\?\s*_plannedRosterStats/)
-    // The relaxed assignment threads through unconditionally.
-    expect(src).toMatch(/plannedRosterStats\s*=\s*_plannedRosterStats/)
+  it.each(sources)('%s threads plannedRosterStats unconditionally (no recruiting/userId gate)', (rel) => {
+    // Regression target: the old `userId && flags.recruiting ?
+    // _plannedRosterStats : null` gate is gone.
+    // v2.1.0 — /id/<slug>'s `_plannedRosterStats` destructuring is also
+    // gone (the page no longer holds the Promise.all). Post-v2.1.0
+    // contract: the matchday + banners blocks thread
+    // `plannedRosterStats ?? null` directly. Legacy paths keep the
+    // original `_plannedRosterStats` pin.
+    if (rel === 'src/app/id/[slug]/page.tsx') {
+      const tree =
+        read('src/app/id/[slug]/page.tsx') +
+        '\n' +
+        read('src/components/LeagueBannersBlock.tsx') +
+        '\n' +
+        read('src/components/LeagueMatchdayContent.tsx') +
+        '\n' +
+        read('src/components/LeagueMatchdayClient.tsx')
+      expect(tree).not.toMatch(
+        /userId\s*&&\s*flags\.recruiting\s*\?\s*_plannedRosterStats/,
+      )
+      expect(tree).toMatch(
+        /plannedRosterStats=\{plannedRosterStats\s*\?\?\s*null\}/,
+      )
+    } else {
+      const src = read(rel)
+      expect(src).not.toMatch(
+        /userId\s*&&\s*flags\.recruiting\s*\?\s*_plannedRosterStats/,
+      )
+      expect(src).toMatch(/plannedRosterStats\s*=\s*_plannedRosterStats/)
+    }
   })
 
   // v1.85.0 — the `getServerSession` pin no longer applies to the

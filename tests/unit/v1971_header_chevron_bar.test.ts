@@ -83,7 +83,7 @@ describe('v1.97.1 — version pin', () => {
     // CLAUDE.md, but the "top bullet is newest" pin still holds in
     // their new home.
     const firstBullet = LEDGER_MD.match(/-\s+\*\*v(\d+\.\d+\.\d+)\*\*/)
-    expect(firstBullet?.[1]).toMatch(/^1\.(97\.[1-9]|9[89]\.\d+|\d{3,}\.\d+)$/)
+    expect(firstBullet?.[1]).toMatch(/^(?:1\.(?:97\.[1-9]|9[89]\.\d+|\d{3,}\.\d+)|[2-9]\.\d+\.\d+)$/)
   })
 })
 

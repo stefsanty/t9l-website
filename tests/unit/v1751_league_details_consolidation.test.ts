@@ -196,11 +196,37 @@ describe('v1.75.1 preseasonMode decoupled from LeagueDetailsPanel visibility', (
   it.each(sources)('%s does NOT gate leagueDetails on flags.preseasonMode', (rel) => {
     // Regression target: re-adding the preseasonMode gate would silently
     // hide the details panel on classic league homepages.
-    expect(read(rel)).not.toMatch(/flags\.preseasonMode \? _leagueDetails : null/)
+    // v2.1.0 — /id/<slug> moved the data fetching into
+    // LeagueMatchdayContent; read the full render tree for that route.
+    const src =
+      rel === 'src/app/id/[slug]/page.tsx'
+        ? read(rel) +
+          '\n' +
+          read('src/components/LeagueBannersBlock.tsx') +
+          '\n' +
+          read('src/components/LeagueMatchdayContent.tsx') +
+          '\n' +
+          read('src/components/LeagueMatchdayClient.tsx')
+        : read(rel)
+    expect(src).not.toMatch(/flags\.preseasonMode \? _leagueDetails : null/)
+    expect(src).not.toMatch(/flags\.preseasonMode\s*\?\s*leagueDetails\s*:\s*null/)
   })
 
-  it.each(sources)('%s passes _leagueDetails directly without preseasonMode ternary', (rel) => {
-    expect(read(rel)).toMatch(/leagueDetails\s*=\s*_leagueDetails/)
+  it.each(sources)('%s passes leagueDetails through unconditionally (no preseasonMode ternary)', (rel) => {
+    // v2.1.0 — /id/<slug>'s `_leagueDetails` destructuring is gone (the
+    // page no longer holds the Promise.all). The post-v2.1.0 contract:
+    // the matchday content threads `leagueDetails={leagueDetails ?? null}`
+    // into <LeagueMatchdayClient> with no preseasonMode gate at the
+    // call site. Legacy paths keep the original `_leagueDetails` pin.
+    if (rel === 'src/app/id/[slug]/page.tsx') {
+      const tree =
+        read('src/components/LeagueMatchdayContent.tsx') +
+        '\n' +
+        read('src/components/LeagueMatchdayClient.tsx')
+      expect(tree).toMatch(/leagueDetails=\{leagueDetails\s*\?\?\s*null\}/)
+    } else {
+      expect(read(rel)).toMatch(/leagueDetails\s*=\s*_leagueDetails/)
+    }
   })
 
   it.each(sources)('%s does NOT require flags.preseasonMode for plannedRosterStats', (rel) => {

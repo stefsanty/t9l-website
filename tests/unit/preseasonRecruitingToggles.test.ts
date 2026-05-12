@@ -100,10 +100,20 @@ const PAGE_SRC = readFileSync(
   join(PROJECT_ROOT, 'src', 'app', 'page.tsx'),
   'utf-8',
 )
-const ID_SLUG_PAGE_SRC = readFileSync(
-  join(PROJECT_ROOT, 'src', 'app', 'id', '[slug]', 'page.tsx'),
-  'utf-8',
-)
+// v2.1.0 — `/id/<slug>` render tree is split across page.tsx +
+// LeagueBannersBlock + LeagueMatchdayContent + LeagueMatchdayClient.
+// Concat them all into ID_SLUG_PAGE_SRC so the cross-cutting wiring
+// assertions below (getLeagueFlags / preseasonMode prop / Promise.all
+// / `recruiting={flags.visibility === ...}`) match wherever they live
+// in the post-v2.1.0 tree.
+const ID_SLUG_PAGE_SRC =
+  readFileSync(join(PROJECT_ROOT, 'src', 'app', 'id', '[slug]', 'page.tsx'), 'utf-8') +
+  '\n' +
+  readFileSync(join(PROJECT_ROOT, 'src', 'components', 'LeagueBannersBlock.tsx'), 'utf-8') +
+  '\n' +
+  readFileSync(join(PROJECT_ROOT, 'src', 'components', 'LeagueMatchdayContent.tsx'), 'utf-8') +
+  '\n' +
+  readFileSync(join(PROJECT_ROOT, 'src', 'components', 'LeagueMatchdayClient.tsx'), 'utf-8')
 const ID_SLUG_MD_PAGE_SRC = readFileSync(
   join(PROJECT_ROOT, 'src', 'app', 'id', '[slug]', 'md', '[id]', 'page.tsx'),
   'utf-8',
@@ -345,8 +355,13 @@ describe('v1.63.0 — page wiring fetches + threads flags', () => {
   it('/id/[slug] page fetches + threads flags', () => {
     expect(ID_SLUG_PAGE_SRC).toMatch(/getLeagueFlags/)
     expect(ID_SLUG_PAGE_SRC).toMatch(/preseasonMode=\{flags\.preseasonMode\}/)
+    // v2.1.0 — the recruiting gate is computed inside
+    // <LeagueBannersBlock> as a local const (not a JSX prop), since
+    // the page no longer threads it through <Dashboard>. The
+    // visibility === 'PUBLIC_OPEN' derivation is the regression
+    // target, regardless of whether it's a JSX prop or a local.
     expect(ID_SLUG_PAGE_SRC).toMatch(
-      /recruiting=\{flags\.visibility\s*===\s*['"]PUBLIC_OPEN['"]\}/,
+      /flags\.visibility\s*===\s*['"]PUBLIC_OPEN['"]/,
     )
   })
 

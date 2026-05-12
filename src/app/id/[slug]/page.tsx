@@ -2,19 +2,14 @@ import type { Metadata } from 'next'
 import { Suspense } from 'react'
 import { notFound } from 'next/navigation'
 import { getServerSession } from 'next-auth'
-import Dashboard from '@/components/Dashboard'
-import DashboardBodySkeleton from '@/components/DashboardBodySkeleton'
 import Header from '@/components/Header'
-import { findNextMatchday } from '@/lib/stats'
+import LeagueBannersBlock from '@/components/LeagueBannersBlock'
+import LeagueBannersSkeleton from '@/components/LeagueBannersSkeleton'
+import LeagueMatchdayContent from '@/components/LeagueMatchdayContent'
+import LeagueMatchdayContentSkeleton from '@/components/LeagueMatchdayContentSkeleton'
+import SuccessConfirmationGate from '@/components/SuccessConfirmationGate'
 import { authOptions } from '@/lib/auth'
-import { normalizeLeagueSlug } from '@/lib/leagueSlug'
 import { getLeagueIdBySlug } from '@/lib/leagueSlugServer'
-import { getPublicLeagueData } from '@/lib/publicData'
-import { getLeagueFlags } from '@/lib/leagueFlags'
-import { getRecruitingViewerState } from '@/lib/recruitingViewerState'
-import { getUnpaidFeeBannerData } from '@/lib/unpaidFeeBanner'
-import { getPlannedRosterStats } from '@/lib/plannedRosterStats'
-import { getLeagueDetails } from '@/lib/leagueDetailsServer'
 import { touchUserDefaultLeague } from '@/lib/userDefaultLeague'
 import { prisma } from '@/lib/prisma'
 
@@ -39,47 +34,51 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
  * `/league/<slug>` canonical form; both legacy paths are now 308-redirects
  * here so old shared links keep working.
  *
- * v1.99.0 — Suspense streaming. Pre-v1.99.0 the whole page rendered as
- * a single async function that awaited the heavy `Promise.all` BEFORE
- * flushing any HTML. On the warm path that's 4-6 s of "dead screen" —
- * the user saw nothing until the bundle resolved. On cold (Neon
- * spin-up) it reached 10 s.
+ * v1.99.0 — Suspense streaming (single boundary). Pre-v1.99.0 the whole
+ * page rendered as one async function that awaited a 7-call
+ * `Promise.all` BEFORE flushing any HTML. v1.99.0 hoisted the shell
+ * `<Header>` and wrapped the bundle in a single `<Suspense>` so the
+ * header + LeagueSwitcher chevron painted in ~50 ms while the bundle
+ * resolved over the next 4-6 s warm / 10 s cold. User feedback:
+ * with one `<Suspense>` the whole body still flips in one go and a
+ * single `animate-pulse` skeleton was easy to miss.
  *
- * Post-refactor the page resolves the slug → leagueId (single cached
- * lookup, ~50 ms warm), then immediately flushes a streaming shell:
- *   - `<Header>` with the live `<LeagueSwitcher>` chevron (the v1.97.x
- *     in-place picker — memberships come from `<MembershipsProvider>`
- *     seeded by `app/layout.tsx`, so the chevron is fully interactive
- *     while the body still streams).
- *   - `<Suspense fallback={<DashboardBodySkeleton />}>` around the
- *     heavy-data branch.
+ * v2.1.0 — multi-boundary streaming. The body is now split into two
+ * independent Suspense regions that paint as soon as THEIR data
+ * resolves:
  *
- * The async child `LeagueDashboardContents` awaits the existing
- * 7-call `Promise.all` and renders `<Dashboard noHeader />` —
- * Dashboard itself has been taught to skip its built-in Header when
- * this prop is set, so the page-level shell Header is the only Header
- * rendered on this path.
+ *   1. `<LeagueBannersBlock>` (fast wave) — five lightweight reads
+ *      (cached `getLeagueFlags` / `getLeagueDetails`,
+ *      request-scoped `getRecruitingViewerState`, lean
+ *      `getUnpaidFeeBannerData` + `getPlannedRosterStats`). Skeleton
+ *      paints with a `<LoadingSpinner>` so the user sees an
+ *      unmistakeable rotating cue alongside the pulse.
  *
- * `touchUserDefaultLeague` stays inside the async child (it's already
- * `waitUntil`-wrapped, so it can't block streaming either way; keeping
- * it co-located with the bundle keeps the page shell pure).
+ *   2. `<LeagueMatchdayContent>` (slow wave) — wraps the
+ *      `getPublicLeagueData` Redis fanout. Owns the matchday
+ *      `selectedMatchdayId` state + RsvpBar. Skeleton mirrors the
+ *      ClassicLeagueHomepage footprint with a centred spinner inside
+ *      the matchday card.
  *
- * Why `/id/`: namespacing every tenant URL under a fixed prefix removes
- * the route-conflict surface entirely. A league slug "admin" no longer
- * threatens to shadow `/admin` (it would just be `/id/admin`); a slug
- * "auth" doesn't collide with `/auth`. The reserved-word policy slims
- * down to a single recursive guard ("id" itself) since every other
- * top-level platform route is a sibling of `/id/`, not a parent.
+ * The page-level `<Header>` (with the live `<LeagueSwitcher>`
+ * chevron + interactive pill bar — memberships come from
+ * `<MembershipsProvider>` seeded by `app/layout.tsx`) is still hoisted
+ * above all Suspense boundaries so it paints with the slug → leagueId
+ * resolution (~50 ms warm). `touchUserDefaultLeague` runs at the page
+ * level (it's `waitUntil`-wrapped, can't block streaming) and
+ * `<SuccessConfirmationGate>` sits at the bottom of the shell.
  *
- * Behaviorally identical to the v1.50.0 `/<slug>` and v1.51.0 `/league/<slug>`
- * pages: resolves the slug to a `League.id` via `getLeagueIdBySlug` (which
- * enforces format + the slim reserved-word policy before hitting the DB)
- * and renders the unified `Dashboard`.
+ * The `.animate-in` fade wrapper from `<Dashboard>` is intentionally
+ * NOT used here: the Suspense fallback → resolved swap is the visual
+ * transition for each section, and `.animate-in`'s `transform`
+ * keyframe would establish a containing block for `<RsvpBar>`'s
+ * `position: fixed` bottom anchor (the v1.63.1 bug). RsvpBar lives
+ * inside the matchday client component as a sibling of the matchday
+ * surface, with no transformed ancestor between it and the viewport.
  *
- * 404s when:
- *   - slug fails format validation (uppercase, non-alnum-non-hyphen, etc.)
- *   - slug is reserved (today: 'id' — recursive guard)
- *   - no League row matches the slug
+ * Behaviorally identical to v1.99.0: 404s on slug format / reserved
+ * recursive guard / missing League row; same DataUnavailable surface
+ * on Prisma blip; same metadata.
  */
 export default async function LeagueByIdPage({ params }: Props) {
   const { slug } = await params
@@ -87,35 +86,11 @@ export default async function LeagueByIdPage({ params }: Props) {
   const leagueId = await getLeagueIdBySlug(slug)
   if (!leagueId) notFound()
 
-  return (
-    <>
-      {/* v1.99.0 — shell Header. Title falls back to the brand default
-          ("T9L '26 春") because the cached `getLeagueFlags` read still
-          lives inside the suspended bundle; awaiting it here would
-          delay the shell flush by the same ~150-300 ms it saves. The
-          LeagueSwitcher chevron + pill bar are fully interactive
-          immediately. */}
-      <Header leagueTitle={null} hideStatsLink={false} />
-      <Suspense fallback={<DashboardBodySkeleton />}>
-        <LeagueDashboardContents slug={slug} leagueId={leagueId} />
-      </Suspense>
-    </>
-  )
-}
-
-async function LeagueDashboardContents({
-  slug,
-  leagueId,
-}: {
-  slug: string
-  leagueId: string
-}) {
   // v1.85.0 — last-selected league tracker. Fire-and-forget write
-  // (wrapped in `waitUntil` inside the helper) so the user's next
-  // visit to the persona-aware apex (`/test`, swap-target `/`) lands
-  // on the league they were last looking at. No-op for unauth and
-  // non-member visitors. Resolves the session inline because we don't
-  // already have it on this path.
+  // (wrapped in `waitUntil` inside the helper). v2.1.0 — moved to the
+  // page-level (was inside the v1.99.0 LeagueDashboardContents child)
+  // so it doesn't sit behind either Suspense boundary. Cheap path —
+  // short-circuits when the league is already the user's default.
   const session = await getServerSession(authOptions)
   touchUserDefaultLeague({
     userId: (session as { userId?: string | null } | null)?.userId ?? null,
@@ -123,88 +98,27 @@ async function LeagueDashboardContents({
     leagueId,
   })
 
-  let data
-  let flags
-  let recruitingState
-  let leagueRow
-  let unpaidFee
-  let plannedRosterStats
-  let leagueDetails
-  try {
-    const [
-      _data,
-      _flags,
-      _recruitingState,
-      _leagueRow,
-      _unpaidFee,
-      _plannedRosterStats,
-      _leagueDetails,
-    ] = await Promise.all([
-      getPublicLeagueData(leagueId),
-      getLeagueFlags(leagueId),
-      getRecruitingViewerState(leagueId),
-      prisma.league.findUnique({
-        where: { id: leagueId },
-        // v1.82.0 — `ballType` flows into RecruitingBanner so the State D
-        // ApplyToLeagueModal renders the right position vocabulary.
-        select: { id: true, name: true, abbreviation: true, ballType: true },
-      }),
-      // v1.66.0 — unpaid-fee banner data; null when banner stays hidden.
-      getUnpaidFeeBannerData(leagueId),
-      // v1.67.0 — planned-roster panel data. v1.75.5 — threaded
-      // unconditionally so the public details panel can render the
-      // fee + planned teams + per-team + spots-left mini-section.
-      // The panel hides individual rows when value is unset/zero.
-      getPlannedRosterStats(leagueId),
-      // v1.75.0 — league details panel; v1.75.1 — preseasonMode gate
-      // removed; renders on both classic and preseason homepages.
-      getLeagueDetails(leagueId),
-    ])
-    data = _data
-    flags = _flags
-    recruitingState = _recruitingState
-    leagueRow = _leagueRow
-    unpaidFee = _unpaidFee
-    plannedRosterStats = _plannedRosterStats
-    leagueDetails = _leagueDetails
-  } catch {
-    return (
-      <div className="flex items-center justify-center min-h-dvh bg-midnight text-white px-6 text-center">
-        <div>
-          <p className="font-display text-3xl font-black uppercase text-white/80 mb-2">
-            Data unavailable
-          </p>
-          <p className="text-sm text-white/80 font-bold uppercase tracking-widest">
-            Try again in a moment
-          </p>
-        </div>
-      </div>
-    )
-  }
-
-  const nextMd = findNextMatchday(data.matchdays)
-
   return (
-    <Dashboard
-      noHeader
-      teams={data.teams}
-      players={data.players}
-      matchdays={data.matchdays}
-      goals={data.goals}
-      availability={data.availability}
-      availabilityStatuses={data.availabilityStatuses}
-      played={data.played}
-      nextMd={nextMd}
-      leagueSlug={normalizeLeagueSlug(slug)}
-      preseasonMode={flags.preseasonMode}
-      // v1.84.0 — banner gate now reads `visibility === 'PUBLIC_OPEN'`.
-      recruiting={flags.visibility === 'PUBLIC_OPEN'}
-      recruitingState={recruitingState}
-      league={leagueRow ?? undefined}
-      unpaidFee={unpaidFee ?? null}
-      plannedRosterStats={plannedRosterStats ?? null}
-      leagueDetails={leagueDetails ?? null}
-      guests={data.guests}
-    />
+    <>
+      <Header leagueTitle={null} hideStatsLink={false} />
+      <div className="flex flex-col min-h-dvh pb-0 max-w-lg mx-auto bg-background selection:bg-vibrant-pink selection:text-white">
+        <main className="flex-1 px-4 relative z-10 pt-12 pb-2">
+          <div data-testid="dashboard-body" className="pt-2">
+            <Suspense fallback={<LeagueBannersSkeleton />}>
+              <LeagueBannersBlock leagueId={leagueId} leagueSlug={slug} />
+            </Suspense>
+            <Suspense fallback={<LeagueMatchdayContentSkeleton />}>
+              <LeagueMatchdayContent leagueId={leagueId} slug={slug} />
+            </Suspense>
+          </div>
+        </main>
+        <footer className="mt-3 mb-0 text-center px-4 pb-2">
+          <p className="text-[10px] font-black uppercase tracking-[0.3em] text-fg-low">
+            © 2026 Tennozu 9-Aside League • Tokyo
+          </p>
+        </footer>
+      </div>
+      <SuccessConfirmationGate />
+    </>
   )
 }

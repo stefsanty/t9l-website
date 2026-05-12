@@ -246,9 +246,20 @@ describe('v1.54.0 — apex / `/id/[slug]` thread leagueSlug; legacy `/league/[sl
     expect(APEX).toMatch(/<Dashboard[\s\S]{0,800}leagueSlug=\{DEFAULT_LEAGUE_SLUG\}/)
   })
 
-  it('/id/[slug]/page.tsx renders Dashboard with leagueSlug={normalizeLeagueSlug(slug)}', () => {
-    const PG = readFileSync(join(ROOT, 'src/app/id/[slug]/page.tsx'), 'utf-8')
-    expect(PG).toMatch(/<Dashboard[\s\S]{0,800}leagueSlug=\{normalizeLeagueSlug\(slug\)\}/)
+  it('/id/[slug] tree threads leagueSlug={normalizeLeagueSlug(slug)} into the matchday client', () => {
+    // v2.1.0 — the /id/<slug> render tree is split across the page +
+    // LeagueMatchdayContent (server) + LeagueMatchdayClient (client).
+    // `normalizeLeagueSlug(slug)` is computed in LeagueMatchdayContent
+    // and passed as the `leagueSlug` prop into LeagueMatchdayClient,
+    // which in turn threads it into ClassicLeagueHomepage.
+    const MATCHDAY = readFileSync(
+      join(ROOT, 'src/components/LeagueMatchdayContent.tsx'),
+      'utf-8',
+    )
+    expect(MATCHDAY).toMatch(/normalizeLeagueSlug\(slug\)/)
+    expect(MATCHDAY).toMatch(
+      /<LeagueMatchdayClient[\s\S]{0,1200}leagueSlug=\{[^}]*normalizeLeagueSlug\(slug\)\}/,
+    )
   })
 
   it('/league/[slug]/page.tsx is now a 308-redirect to /id/<slug> (regression target — pre-v1.54.0 it rendered Dashboard)', () => {

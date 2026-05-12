@@ -64,8 +64,8 @@ function stripComments(s: string): string {
 // 1) Version + release pins
 // ────────────────────────────────────────────────────────────────────────────
 
-describe('v1.99.0 — version pin', () => {
-  it('APP_VERSION reads 1.99.0', () => {
+describe('v1.99.0 — version pin (relaxed by v2.1.0)', () => {
+  it('APP_VERSION reads 1.99.0+', () => {
     expect(VERSION_SRC).toMatch(/APP_VERSION\s*=\s*['"](?:1\.99\.0|[2-9]\.\d+\.\d+)['"]/)
   })
 
@@ -73,13 +73,14 @@ describe('v1.99.0 — version pin', () => {
     expect(CLAUDE_MD).toMatch(/\*\*Current release:\*\*\s*(?:v1\.99\.0|v[2-9]\.\d+\.\d+)/)
   })
 
-  it('docs/ledger.md top entry is v1.99.0', () => {
-    // The active ledger's first bullet should be the newest.
+  it('docs/ledger.md top entry is at least v1.99.0', () => {
+    // v2.1.0 superseded v1.99.0's exact pin on the top bullet — the
+    // top is now v2.1.0. Relax to any v1.99+ / v2+ entry.
     const firstBullet = LEDGER_MD.split('\n').find((line) =>
       line.startsWith('- **v'),
     )
     expect(firstBullet).toBeDefined()
-    expect(firstBullet).toMatch(/^- \*\*v1\.99\.0\*\*/)
+    expect(firstBullet).toMatch(/^- \*\*v(?:1\.99\.\d+|[2-9]\.\d+\.\d+)\*\*/)
   })
 })
 
@@ -169,71 +170,40 @@ describe('v1.99.0 — Dashboard supports noHeader + no body-pulse', () => {
 // 4) /id/[slug]/page.tsx — Suspense streaming shell
 // ────────────────────────────────────────────────────────────────────────────
 
-describe('v1.99.0 — /id/[slug]/page.tsx hoists Header + suspends body', () => {
+describe('v1.99.0 — /id/[slug]/page.tsx Suspense streaming (superseded by v2.1.0)', () => {
+  // v2.1.0 replaced the v1.99.0 single-boundary structure on /id/<slug>
+  // with TWO independent Suspense boundaries (banners + matchday).
+  // The v1.99.0 pins below would have asserted Dashboard usage +
+  // `getPublicLeagueData` inline in the page + `DashboardBodySkeleton`
+  // as the fallback — all valid for v1.99.0 but architecturally
+  // wrong for v2.1.0. The new multi-boundary pins live in
+  // `tests/unit/v210_multiboundary_streaming.test.ts`.
+  //
+  // We keep one surviving v1.99.0 invariant: Header is rendered at
+  // the page-level shell, OUTSIDE every Suspense boundary, so the
+  // LeagueSwitcher chevron + pill bar paint immediately. That
+  // contract was the heart of v1.99.0's streaming refactor and
+  // survives the v2.1.0 split.
+
   it('imports Suspense from react', () => {
     expect(ID_SLUG_PAGE_SRC).toMatch(
       /import\s*\{\s*Suspense\s*\}\s+from\s+['"]react['"]/,
     )
   })
 
-  it('imports DashboardBodySkeleton + Header', () => {
-    expect(ID_SLUG_PAGE_SRC).toMatch(
-      /import\s+DashboardBodySkeleton\s+from\s+['"]@\/components\/DashboardBodySkeleton['"]/,
-    )
+  it('imports Header at the page level', () => {
     expect(ID_SLUG_PAGE_SRC).toMatch(
       /import\s+Header\s+from\s+['"]@\/components\/Header['"]/,
     )
   })
 
-  it('renders <Header> in the page-level shell (outside Suspense)', () => {
+  it('renders <Header> in the page-level shell (outside every Suspense)', () => {
     const stripped = stripComments(ID_SLUG_PAGE_SRC)
-    // Header appears BEFORE the Suspense element in the JSX tree.
     const headerIdx = stripped.search(/<Header\s/)
-    const suspenseIdx = stripped.search(/<Suspense\b/)
+    const firstSuspenseIdx = stripped.search(/<Suspense\b/)
     expect(headerIdx).toBeGreaterThan(-1)
-    expect(suspenseIdx).toBeGreaterThan(-1)
-    expect(headerIdx).toBeLessThan(suspenseIdx)
-  })
-
-  it('wraps the heavy data fetch in <Suspense fallback={<DashboardBodySkeleton />}>', () => {
-    expect(ID_SLUG_PAGE_SRC).toMatch(
-      /<Suspense\s+fallback=\{<DashboardBodySkeleton\s*\/?>\s*\}>/,
-    )
-  })
-
-  it('passes noHeader to Dashboard so the shell Header is the only one rendered', () => {
-    expect(ID_SLUG_PAGE_SRC).toMatch(/<Dashboard[\s\S]*?\bnoHeader\b/)
-  })
-
-  it('defines an async LeagueDashboardContents server component as the suspense child', () => {
-    expect(ID_SLUG_PAGE_SRC).toMatch(
-      /async\s+function\s+LeagueDashboardContents/,
-    )
-  })
-
-  it('the suspense child runs the heavy Promise.all data fetch', () => {
-    // The legacy inline 7-call Promise.all moves into the suspended
-    // child. Pin a representative pair of calls so the structure
-    // can't accidentally regress to a single sequential await.
-    expect(ID_SLUG_PAGE_SRC).toMatch(/await\s+Promise\.all\(\[/)
-    expect(ID_SLUG_PAGE_SRC).toMatch(/getPublicLeagueData\(leagueId\)/)
-  })
-
-  it('regression target: heavy reads do NOT run in the outer page function', () => {
-    // Pre-v1.99.0 the page itself awaited the Promise.all. After the
-    // refactor the only awaits in the OUTER `LeagueByIdPage` are
-    // params + slug → leagueId resolution. We slice the source on
-    // `async function LeagueDashboardContents` and assert the heavy
-    // calls live strictly in the child slice.
-    const stripped = stripComments(ID_SLUG_PAGE_SRC)
-    const idx = stripped.indexOf('async function LeagueDashboardContents')
-    expect(idx).toBeGreaterThan(-1)
-    const outer = stripped.slice(0, idx)
-    const child = stripped.slice(idx)
-    expect(outer).not.toMatch(/getPublicLeagueData\(/)
-    expect(outer).not.toMatch(/Promise\.all\(/)
-    expect(child).toMatch(/getPublicLeagueData\(/)
-    expect(child).toMatch(/Promise\.all\(/)
+    expect(firstSuspenseIdx).toBeGreaterThan(-1)
+    expect(headerIdx).toBeLessThan(firstSuspenseIdx)
   })
 })
 

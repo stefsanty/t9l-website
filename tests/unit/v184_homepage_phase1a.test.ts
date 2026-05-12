@@ -39,10 +39,17 @@ const MIGRATION_SRC = readFileSync(
 )
 const FLAGS_SRC = readFileSync(join(REPO_ROOT, 'src/lib/leagueFlags.ts'), 'utf8')
 const APEX_SRC = readFileSync(join(REPO_ROOT, 'src/app/page.tsx'), 'utf8')
-const ID_SLUG_SRC = readFileSync(
-  join(REPO_ROOT, 'src/app/id/[slug]/page.tsx'),
-  'utf8',
-)
+// v2.1.0 — /id/<slug> render tree is split across page.tsx +
+// LeagueBannersBlock + LeagueMatchdayContent + LeagueMatchdayClient.
+// Concat so cross-cutting regressions still find their target.
+const ID_SLUG_SRC =
+  readFileSync(join(REPO_ROOT, 'src/app/id/[slug]/page.tsx'), 'utf8') +
+  '\n' +
+  readFileSync(join(REPO_ROOT, 'src/components/LeagueBannersBlock.tsx'), 'utf8') +
+  '\n' +
+  readFileSync(join(REPO_ROOT, 'src/components/LeagueMatchdayContent.tsx'), 'utf8') +
+  '\n' +
+  readFileSync(join(REPO_ROOT, 'src/components/LeagueMatchdayClient.tsx'), 'utf8')
 const ID_SLUG_MD_SRC = readFileSync(
   join(REPO_ROOT, 'src/app/id/[slug]/md/[id]/page.tsx'),
   'utf8',
@@ -204,9 +211,14 @@ describe('v1.84.0 — page consumers gate the banner on visibility === PUBLIC_OP
     expect(APEX_SRC).not.toMatch(/recruiting=\{flags\.recruiting\}/)
   })
 
-  it('/id/[slug] derives recruiting prop from visibility', () => {
+  it('/id/[slug] derives recruiting gate from visibility', () => {
+    // v2.1.0 — on /id/<slug> the gate moved inside <LeagueBannersBlock>
+    // as `const recruiting = flags.visibility === 'PUBLIC_OPEN'`
+    // (a local, not a JSX prop). The semantic regression target — the
+    // gate derives from visibility, NOT from the legacy `flags.recruiting`
+    // bool — is unchanged.
     expect(ID_SLUG_SRC).toMatch(
-      /recruiting=\{flags\.visibility\s*===\s*['"]PUBLIC_OPEN['"]\}/,
+      /flags\.visibility\s*===\s*['"]PUBLIC_OPEN['"]/,
     )
     expect(ID_SLUG_SRC).not.toMatch(/recruiting=\{flags\.recruiting\}/)
   })
