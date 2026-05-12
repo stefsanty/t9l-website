@@ -231,9 +231,12 @@ describe('v1.62.0 — Switch league entry removed from account menu', () => {
   })
 
   it('Header still imports + renders LeagueSwitcher (header chevron survives)', () => {
+    // v1.97.3 — LeagueSwitcher may now carry a `leagueTitle` prop on
+    // the multi-league branch. Relax the closing-tag regex to accept
+    // a prop-bearing form.
     const src = stripComments(read('src/components/Header.tsx'))
     expect(src).toMatch(/import\s+LeagueSwitcher\s+from/)
-    expect(src).toMatch(/<LeagueSwitcher\s*\/?>/)
+    expect(src).toMatch(/<LeagueSwitcher\b/)
   })
 })
 

@@ -142,8 +142,13 @@ describe('v1.73.0 — Header', () => {
   })
 
   it('renders leagueTitle when provided (not hardcoded primary path)', () => {
-    // The primary render path must use leagueTitle, not hardcoded T9L text
-    expect(header).toMatch(/\{leagueTitle/)
+    // The primary render path must use leagueTitle, not hardcoded T9L text.
+    // v1.97.3 — Header now derives `titleText = leagueTitle ?? "T9L '26 春"`
+    // and threads it into both the multi-league `<LeagueSwitcher
+    // leagueTitle={titleText} />` branch and the single-league `<Link>`
+    // fallback span. Accept either the original `{leagueTitle` shape OR
+    // the v1.97.3 `leagueTitle ??` derivation.
+    expect(header).toMatch(/\{leagueTitle|leagueTitle\s*\?\?/)
   })
 
   it('the two hardcoded spans are gone (regression target: restoring them breaks test)', () => {

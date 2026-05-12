@@ -6,6 +6,7 @@ import ThemeToggle from './ThemeToggle';
 import LanguageToggle from './LanguageToggle';
 import LineLoginButton from './LineLoginButton';
 import LeagueSwitcher from './LeagueSwitcher';
+import { useMemberships } from './MembershipsProvider';
 
 interface HeaderProps {
   /**
@@ -27,6 +28,17 @@ interface HeaderProps {
 
 export default function Header({ hideStatsLink = false, leagueTitle }: HeaderProps) {
   const pathname = usePathname();
+  // v1.97.3 — combined league-name + chevron trigger for multi-league
+  // users. Pre-v1.97.3 the league name was always a `<Link href="/">`,
+  // which for users on `/test` (whose default league matches the page)
+  // felt like a no-op click ("nothing happens"). When the picker
+  // applies (memberships.length >= 2), LeagueSwitcher now owns the
+  // title-rendering surface AND toggles the bar on click. Single-
+  // league users keep the standalone Link → `/` as a home affordance
+  // (no picker exists for them, so the link is the only nav target).
+  const memberships = useMemberships();
+  const hasPicker = memberships.length >= 2;
+  const titleText = leagueTitle ?? "T9L '26 春";
 
   // v1.41.2 — mobile sizing trim. Pre-fix the header wrapped to two rows
   // on iPhone-width viewports because content (~366px including the Sign-in
@@ -38,17 +50,22 @@ export default function Header({ hideStatsLink = false, leagueTitle }: HeaderPro
   return (
     <header className="fixed top-0 left-1/2 -translate-x-1/2 w-full max-w-lg z-50 bg-header-bg backdrop-blur-md border-b border-border-default">
       <div className="flex items-center gap-2 px-3 md:px-4 h-12">
-        <Link href="/" className="font-display font-black uppercase tracking-tight leading-none flex items-baseline gap-1.5 shrink-0 hover:opacity-80 transition-opacity" data-testid="header-home-link">
-          <span className="text-xl text-fg-high" data-testid="header-league-title">
-            {leagueTitle ?? "T9L '26 春"}
-          </span>
-        </Link>
-
-        {/* v1.52.0 — league switcher chevron next to the brand. Hidden when
-            the user has < 2 league memberships (single-league users see no
-            extra chrome). The component lazy-loads memberships on first
-            open via /api/me/memberships. */}
-        <LeagueSwitcher />
+        {hasPicker ? (
+          // v1.97.3 — combined trigger. LeagueSwitcher renders the
+          // title + chevron inside one button so clicking the league
+          // name opens the picker. The `data-testid="header-league-title"`
+          // span lives inside LeagueSwitcher's button in this branch.
+          <LeagueSwitcher leagueTitle={titleText} />
+        ) : (
+          // Single-league fallback: keep the legacy Link → `/` home
+          // affordance. No picker means no trigger to combine with;
+          // the link remains a useful "go home" navigation target.
+          <Link href="/" className="font-display font-black uppercase tracking-tight leading-none flex items-baseline gap-1.5 shrink-0 hover:opacity-80 transition-opacity" data-testid="header-home-link">
+            <span className="text-xl text-fg-high" data-testid="header-league-title">
+              {titleText}
+            </span>
+          </Link>
+        )}
 
         {/* v1.63.0 — STATS nav suppressed when the active league is in
             pre-season mode. Direct visits to /stats are redirected at the

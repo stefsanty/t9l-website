@@ -73,6 +73,27 @@ import { useHubTransition } from './homepage/HubTransitionShell'
  *     The eager prefetch fires once per session per league on the
  *     `/test` route, mirroring Next.js's link-visibility prefetch
  *     behaviour without requiring the Links to render first.
+ *
+ * v1.97.3 — combined league-name + chevron trigger.
+ *   Pre-v1.97.3 the Header rendered `<Link href="/">{leagueTitle}</Link>`
+ *   followed by a chevron-only `<LeagueSwitcher />`. For multi-league
+ *   users viewing `/test`, clicking the league-name link navigated to
+ *   `/` — which renders the default-league dashboard. If their default
+ *   IS the league they're already viewing, the navigation feels like a
+ *   no-op ("clicking on t9l 2026 spring button still does nothing").
+ *   The user clarified the intent: the league name itself should open
+ *   the picker, not act as a hyperlink.
+ *
+ *   v1.97.3 collapses both surfaces into one trigger button. When
+ *   `leagueTitle` is provided AND the user has ≥ 2 memberships, the
+ *   button contains the title text + chevron and the whole region
+ *   toggles the bar. Without `leagueTitle` we fall back to the v1.97.1
+ *   chevron-only trigger (preserves any caller that mounts the
+ *   switcher in isolation). The `data-testid="header-league-title"`
+ *   span is mounted INSIDE the button so existing source-grep tests
+ *   keep passing. Header now renders the standalone `<Link href="/">`
+ *   only on the single-league fallback path (where the picker would
+ *   return null anyway).
  */
 
 export type { Membership }
@@ -95,7 +116,18 @@ export function useLeagueMemberships(): {
   }
 }
 
-export default function LeagueSwitcher() {
+interface LeagueSwitcherProps {
+  /**
+   * v1.97.3 — when provided, the trigger button renders the league
+   * name text inside the same surface as the chevron, so the whole
+   * `[Title] [Chevron]` region toggles the picker. Header threads the
+   * page-resolved abbreviation/name here; when omitted (legacy mount
+   * points), the trigger is chevron-only as in v1.97.1.
+   */
+  leagueTitle?: string | null
+}
+
+export default function LeagueSwitcher({ leagueTitle }: LeagueSwitcherProps = {}) {
   const memberships = useMemberships()
   const router = useRouter()
   const pathname = usePathname()
@@ -209,16 +241,31 @@ export default function LeagueSwitcher() {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="inline-flex items-center gap-0.5 text-fg-mid hover:text-fg-high transition-colors"
+        // v1.97.3 — when `leagueTitle` is provided the trigger doubles
+        // as the brand-title surface, so it adopts the original
+        // Header.tsx Link styling (font-display + uppercase + tracking)
+        // and reserves `gap-1.5` between title and chevron to match the
+        // legacy `gap-1.5` from the Header brand link. Without
+        // `leagueTitle` it stays chevron-only with the v1.97.1 styling.
+        className={
+          leagueTitle
+            ? 'inline-flex items-baseline gap-1.5 shrink-0 font-display font-black uppercase tracking-tight leading-none text-fg-high hover:opacity-80 transition-opacity'
+            : 'inline-flex items-center gap-0.5 text-fg-mid hover:text-fg-high transition-colors'
+        }
         aria-label={open ? 'Close league switcher' : 'Switch league'}
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls="league-switcher-bar"
         data-testid="league-switcher-trigger"
       >
+        {leagueTitle ? (
+          <span className="text-xl" data-testid="header-league-title">
+            {leagueTitle}
+          </span>
+        ) : null}
         <ChevronDown
           aria-hidden="true"
-          className={`w-4 h-4 transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
+          className={`w-4 h-4 transition-transform duration-200 ${open ? 'rotate-180' : ''} ${leagueTitle ? 'self-center text-fg-mid' : ''}`}
         />
       </button>
 

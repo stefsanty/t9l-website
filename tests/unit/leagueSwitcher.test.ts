@@ -219,9 +219,15 @@ describe('v1.59.0 — Header mounts LeagueSwitcher next to brand title', () => {
     expect(src).toMatch(/import\s+LeagueSwitcher\s+from\s+['"]\.\/LeagueSwitcher['"]/)
   })
 
-  it('mounts <LeagueSwitcher /> after the brand Link', () => {
+  it('mounts <LeagueSwitcher .../> in the Header', () => {
+    // v1.97.3 — LeagueSwitcher absorbed the brand-title surface for
+    // multi-league users. Header now renders `<LeagueSwitcher
+    // leagueTitle={titleText} />` in the multi-league branch and a
+    // standalone `<Link href="/">` in the single-league fallback. The
+    // assertion is relaxed to "LeagueSwitcher is rendered somewhere in
+    // Header" — the order-vs-Link constraint is gone.
     const src = stripComments(read(headerPath))
-    expect(src).toMatch(/<\/Link>[\s\S]{0,400}<LeagueSwitcher/)
+    expect(src).toMatch(/<LeagueSwitcher/)
   })
 })
 
