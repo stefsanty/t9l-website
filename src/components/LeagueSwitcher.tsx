@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useEffect, useOptimistic, useRef, useState, type MouseEvent } from 'react'
-import { useRouter, usePathname } from 'next/navigation'
+import { useRouter, usePathname, useSearchParams } from 'next/navigation'
 import { ChevronDown } from 'lucide-react'
 import { useMemberships, type Membership } from './MembershipsProvider'
 import { useHubTransition } from './homepage/HubTransitionShell'
@@ -53,6 +53,26 @@ import { useHubTransition } from './homepage/HubTransitionShell'
  *   7. Same-league taps short-circuit; power-user gestures
  *      (cmd/ctrl/shift/alt-click, middle-click) pass through to the
  *      browser so "open in new tab" still works.
+ *
+ * v1.97.2 — two fixes prompted by user-reported "click does nothing" +
+ * "loading too long" on /test:
+ *   - On the `/test` multi-league hub, `currentLeagueId` is now derived
+ *     from `useSearchParams().get('league')` (with a fallback to the
+ *     SSR-baked `isCurrent` flag for the no-searchParam case). Pre-
+ *     v1.97.2 `currentLeagueId` came only from `Membership.isCurrent`,
+ *     which is set at layout SSR from `session.leagueId` — a value that
+ *     doesn't change as the user navigates `?league=<id>` within the
+ *     hub. Result: a user viewing `/test?league=<other>` would see the
+ *     pill for their default league (e.g. t9l-2026-spring) styled as
+ *     "selected" and the same-league-tap short-circuit would silently
+ *     swallow the click, making the picker feel broken.
+ *   - Memberships are router-prefetched on mount when `onHub` is true.
+ *     Pre-v1.97.2 the `<Link prefetch>` only warmed when the bar was
+ *     open (because the Links don't mount until then), so tapping a
+ *     pill within ~200ms of opening the chevron hit a cold RSC fetch.
+ *     The eager prefetch fires once per session per league on the
+ *     `/test` route, mirroring Next.js's link-visibility prefetch
+ *     behaviour without requiring the Links to render first.
  */
 
 export type { Membership }
@@ -79,11 +99,46 @@ export default function LeagueSwitcher() {
   const memberships = useMemberships()
   const router = useRouter()
   const pathname = usePathname()
+  const searchParams = useSearchParams()
   const { isPending, startNavigation } = useHubTransition()
   const [open, setOpen] = useState(false)
   const containerRef = useRef<HTMLDivElement | null>(null)
-  const currentLeagueId = memberships.find((m) => m.isCurrent)?.leagueId ?? null
+  const onHub = pathname === '/test' || (pathname?.startsWith('/test/') ?? false)
+  // v1.97.2 — on `/test`, the URL's `?league=<id>` is the source of
+  // truth for the active league (the page-level RSC resolves it via
+  // `homepageRouting.classifyPersona`). The SSR-baked `Membership.isCurrent`
+  // flag comes from `session.leagueId` and doesn't track in-hub
+  // navigation, so reading it here would mis-identify the active league
+  // after the user has clicked through to a non-default league. Use the
+  // searchParam when present, fall back to `isCurrent` for the
+  // no-searchParam case (matches the page's own fallback chain:
+  // searchParam → defaultLeagueId → memberships[0]).
+  const urlLeagueId =
+    onHub && searchParams ? searchParams.get('league') : null
+  const verifiedUrlLeagueId =
+    urlLeagueId && memberships.some((m) => m.leagueId === urlLeagueId)
+      ? urlLeagueId
+      : null
+  const sessionCurrentLeagueId =
+    memberships.find((m) => m.isCurrent)?.leagueId ?? null
+  const currentLeagueId = verifiedUrlLeagueId ?? sessionCurrentLeagueId
   const [optimisticActiveId, setOptimisticActiveId] = useOptimistic(currentLeagueId)
+
+  // v1.97.2 — eager prefetch of each membership's hub destination when
+  // the user lands on `/test`. The `<Link prefetch>` inside the bar
+  // would only fire on mount/visibility — but the Links don't mount
+  // until the chevron is opened, so a fast click misses the warm
+  // window. Calling `router.prefetch()` here moves the warm-up to page
+  // load: subsequent pill taps land inside Next.js's route cache.
+  // Bounded by `memberships.length` (typically 2-4) so the prefetch
+  // cost is small even on multi-league users.
+  useEffect(() => {
+    if (!onHub) return
+    if (memberships.length < 2) return
+    for (const m of memberships) {
+      router.prefetch(`/test?league=${encodeURIComponent(m.leagueId)}`)
+    }
+  }, [onHub, memberships, router])
 
   // Outside-click + Escape close. Same listener shape as the prior
   // dropdown implementation; touchstart added so the close fires on
@@ -112,8 +167,6 @@ export default function LeagueSwitcher() {
   // Hide entirely for users without multiple memberships. SSR hydration
   // means this check is accurate on first render; no flash window.
   if (memberships.length < 2) return null
-
-  const onHub = pathname === '/test' || (pathname?.startsWith('/test/') ?? false)
 
   function buildHref(m: Membership): string {
     return onHub
