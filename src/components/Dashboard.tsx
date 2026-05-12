@@ -14,6 +14,7 @@ import ClassicLeagueHomepage from './ClassicLeagueHomepage';
 import RecruitingBanner from './RecruitingBanner';
 import UnpaidFeeBanner from './UnpaidFeeBanner';
 import RegistrationCountdown from './RegistrationCountdown';
+import { useHubTransition } from './homepage/HubTransitionShell';
 import type { UnpaidFeeBannerData } from '@/lib/unpaidFeeBanner';
 import type { RecruitingViewerState } from '@/lib/recruitingViewerState';
 import type { PlannedRosterStats as PlannedRosterStatsData } from '@/lib/plannedRosterStats';
@@ -267,6 +268,13 @@ export default function Dashboard({
     initialMatchdayId ?? nextMd?.matchday.id ?? matchdays[0]?.id ?? ''
   );
 
+  // v1.97.0 — body skeleton dim during a `<LeagueSwitcherTabs>` navigation.
+  // Reads the shared transition state established by `<HubTransitionShell>`
+  // (the `<MultiLeagueHub>` wrapper). On non-hub routes the context returns
+  // the default no-op `{ isPending: false }`, so the dim never fires — keeps
+  // `/id/<slug>` and `/id/<slug>/md/<id>` visually unchanged.
+  const { isPending: isHubPending } = useHubTransition();
+
   const selectedMatchday =
     matchdays.find((m) => m.id === selectedMatchdayId) ?? matchdays[0];
 
@@ -365,6 +373,24 @@ export default function Dashboard({
             header (`pt-12` reserves space) and the animate-in column. */}
         {topSlot}
         <div className="animate-in pt-2">
+          {/* v1.97.0 — body skeleton dim during a multi-league switcher
+              navigation. The wrapper is mount-stable (always rendered),
+              and ONLY its className flips on `isHubPending`. The pulse
+              fires on the dashboard cards below the topSlot; the topSlot
+              itself stays interactive because it lives ABOVE this
+              wrapper inside <main>. On routes that don't mount
+              <HubTransitionShell>, `useHubTransition()` returns the
+              default no-op so this is a no-op. */}
+          <div
+            data-testid="dashboard-body"
+            aria-busy={isHubPending}
+            data-hub-busy={isHubPending ? 'true' : 'false'}
+            className={
+              isHubPending
+                ? 'animate-pulse pointer-events-none transition-opacity duration-150'
+                : 'transition-opacity duration-150'
+            }
+          >
           {/* v1.66.0 — unpaid-fee banner renders ABOVE the recruiting
               banner. The unpaid-fee message takes priority because it's
               actionable for an existing roster member; recruiting is
@@ -457,6 +483,7 @@ export default function Dashboard({
               <p className="text-xs uppercase tracking-[0.5em] mt-4 text-white/65 font-black relative">{"See you in the Autumn!"}</p>
             </div>
           )}
+          </div>
         </div>
       </main>
 
