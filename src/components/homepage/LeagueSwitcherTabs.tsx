@@ -36,6 +36,24 @@ import type { ApprovedMembership } from '@/lib/homepageRouting'
  *
  *   4. `active:scale-[0.96]` gives a tactile press without any JS.
  *
+ * v1.96.1 — visual polish (UI-only):
+ *   - `pt-2` on the nav adds 8px breathing room below the fixed Header
+ *     (was flush at the 48px line).
+ *   - `picker-scrollbar` utility (defined in `globals.css`) replaces
+ *     `no-scrollbar` so the horizontal scroll surfaces a styled thin
+ *     scrollbar on overflow — mobile users now have a visual cue that
+ *     the strip scrolls.
+ *   - `py-2` inside the scroll viewport reserves 8px above/below so the
+ *     active pill's glow shadow isn't clipped by `overflow-x-auto`.
+ *   - Pills bumped to `h-11 px-5 text-[12px]` for ≥44px touch target and
+ *     more visual weight; inactive pills carry `border border-border-default`,
+ *     active pill carries `border-2 border-primary` plus the existing
+ *     primary glow shadow recipe.
+ *   - The just-clicked pill's pending cue switched from a 1.5px
+ *     `animate-pulse` dot to a `h-3 w-3 animate-spin` ring — matches the
+ *     `<RsvpButton>` / `<RsvpBar>` inline pending pattern used across
+ *     non-admin public UI.
+ *
  *   5. `User.defaultLeagueId` is no longer written from the click. The
  *      `<MultiLeagueHub>` server component fires
  *      `touchUserDefaultLeague(...)` via `waitUntil` on every render,
@@ -101,9 +119,13 @@ export default function LeagueSwitcherTabs({
     <nav
       aria-label="Switch league"
       data-testid="league-switcher-tabs"
-      className="w-full overflow-x-auto no-scrollbar mb-3"
+      className="w-full overflow-x-auto picker-scrollbar pt-2 mb-4"
     >
-      <div className="flex items-center gap-2 min-w-max">
+      {/* v1.96.1 — `py-2` inside the scroll viewport reserves 8px above
+          and below the pills so the active pill's `--glow-primary-bar`
+          shadow doesn't get clipped by `overflow-x-auto` (which forces
+          overflow-y to clip even though we didn't ask for it). */}
+      <div className="flex items-center gap-2 min-w-max py-2">
         {memberships.map((m) => {
           const selected = m.leagueId === optimisticActiveId
           const showSpinner = isPending && selected
@@ -118,10 +140,10 @@ export default function LeagueSwitcherTabs({
               data-testid={`league-switcher-tab-${m.slug}`}
               data-active={selected ? 'true' : 'false'}
               aria-pressed={selected}
-              className={`flex-shrink-0 inline-flex items-center h-9 px-4 rounded-full text-[11px] font-black uppercase tracking-widest transition-transform duration-100 active:scale-[0.96] ${
+              className={`flex-shrink-0 inline-flex items-center h-11 px-5 rounded-full text-[12px] font-black uppercase tracking-widest transition-all duration-150 active:scale-[0.96] ${
                 selected
-                  ? 'bg-primary text-primary-foreground'
-                  : 'bg-surface text-fg-mid hover:bg-surface-md'
+                  ? 'bg-primary text-primary-foreground border-2 border-primary shadow-[0_2px_10px_rgba(233,0,82,0.4)]'
+                  : 'bg-surface text-fg-mid border border-border-default hover:bg-surface-md hover:text-fg-high hover:border-border-default'
               }`}
             >
               <span>{m.leagueName}</span>
@@ -129,7 +151,7 @@ export default function LeagueSwitcherTabs({
                 <span
                   aria-hidden="true"
                   data-testid={`league-switcher-tab-spinner-${m.slug}`}
-                  className="ml-1.5 inline-block h-1.5 w-1.5 rounded-full bg-current opacity-70 animate-pulse"
+                  className="ml-2 inline-block h-3 w-3 border-2 border-current border-t-transparent rounded-full animate-spin opacity-80"
                 />
               ) : null}
             </Link>
