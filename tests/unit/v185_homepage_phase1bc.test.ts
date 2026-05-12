@@ -392,8 +392,12 @@ describe('v1.85.0 — LeagueSwitcherTabs (Option A pill strip)', () => {
     expect(SWITCHER_TABS_SRC).toMatch(/aria-pressed=\{selected\}/)
   })
 
-  it('uses overflow-x-auto so 5+ leagues scroll horizontally on mobile', () => {
-    expect(SWITCHER_TABS_SRC).toMatch(/overflow-x-auto/)
+  it('renders rectangular pills with wrap behaviour (v1.97.0: flex-wrap inside the chevron-driven dropdown bar — replaces the v1.85.0 → v1.96.1 overflow-x-auto pill strip)', () => {
+    // Pre-v1.97.0 this asserted `overflow-x-auto` on the always-rendered
+    // horizontal-scroll pill strip. v1.97.0 collapses the strip into a
+    // chevron-collapsible dropdown bar (`<LeagueSwitcherTabs>` rebuild) —
+    // pills now wrap inside a fixed-width bar rather than scrolling.
+    expect(SWITCHER_TABS_SRC).toMatch(/flex-wrap/)
   })
 })
 
