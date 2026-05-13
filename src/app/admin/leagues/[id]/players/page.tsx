@@ -22,7 +22,10 @@ export default async function PlayersPage({ params }: Props) {
     [
       assignments,
       leagueTeams,
-      gameWeeks,
+      // v2.2.0 — gameWeeks slot is no longer consumed here; the
+      // server actions resolve "next match" themselves. Kept in the
+      // tuple position so getLeaguePlayers' return shape is stable.
+      ,
       lineLoginsByLineId,
       activeInviteByPlayerId,
       pendingApplications,
@@ -253,7 +256,6 @@ export default async function PlayersPage({ params }: Props) {
   }
 
   const players = Array.from(playerMap.values())
-  const maxGameWeek = gameWeeks[0]?.weekNumber ?? 1
 
   // Serialize Date → ISO string for the client component boundary.
   const orphans = orphansRaw.map((o) => ({
@@ -278,7 +280,6 @@ export default async function PlayersPage({ params }: Props) {
       leagueId={id}
       players={players}
       leagueTeams={leagueTeams}
-      maxGameWeek={maxGameWeek}
       orphans={orphans}
       allLineLogins={allLineLogins}
       linkableCandidates={linkableCandidates}

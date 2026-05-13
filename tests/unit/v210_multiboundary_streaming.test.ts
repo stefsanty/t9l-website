@@ -77,12 +77,16 @@ describe('v2.1.0 — version pin', () => {
     )
   })
 
-  it('docs/ledger.md top entry is v2.1.0', () => {
+  it('docs/ledger.md top entry is v2.1.0 or later', () => {
+    // Per docs/testing.md "Version-pin tests" — use flexible patterns
+    // so future releases don't force every prior test to ship a commit.
     const firstBullet = LEDGER_MD.split('\n').find((line) =>
       line.startsWith('- **v'),
     )
     expect(firstBullet).toBeDefined()
-    expect(firstBullet).toMatch(/^- \*\*v2\.1\.\d+\*\*/)
+    expect(firstBullet).toMatch(
+      /^- \*\*(?:v2\.1\.\d+|v2\.[2-9]\d*\.\d+|v[3-9]\d*\.\d+\.\d+)\*\*/,
+    )
   })
 })
 

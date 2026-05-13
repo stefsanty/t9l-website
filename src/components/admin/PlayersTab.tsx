@@ -160,7 +160,6 @@ interface PlayersTabProps {
   leagueId: string
   players: PlayerRow[]
   leagueTeams: LeagueTeamRef[]
-  maxGameWeek: number
   orphans: OrphanLineLogin[]
   allLineLogins: AllLineLogin[]
   // v1.56.0 (PR 3 of route-shortening chain) — global Players that
@@ -217,7 +216,6 @@ export default function PlayersTab({
   leagueId,
   players,
   leagueTeams,
-  maxGameWeek,
   orphans,
   allLineLogins,
   linkableCandidates = [],
@@ -653,7 +651,6 @@ export default function PlayersTab({
                     currentAssignment={current}
                     leagueId={leagueId}
                     leagueTeams={leagueTeams}
-                    maxGameWeek={maxGameWeek}
                     onClose={() => setTransferPanelId(null)}
                   />
                 </div>
@@ -904,7 +901,6 @@ export default function PlayersTab({
                   currentAssignment={current}
                   leagueId={leagueId}
                   leagueTeams={leagueTeams}
-                  maxGameWeek={maxGameWeek}
                   onClose={() => setTransferPanelId(null)}
                 />
               )}
@@ -1015,7 +1011,6 @@ export default function PlayersTab({
           player={{ id: approveTarget.id, name: approveTarget.name, position: approveTarget.position }}
           leagueId={leagueId}
           leagueTeams={leagueTeams}
-          maxGameWeek={maxGameWeek}
           onClose={() => setApprovePlayerId(null)}
         />
       )}
@@ -1405,7 +1400,6 @@ interface TransferPanelProps {
   currentAssignment: Assignment
   leagueId: string
   leagueTeams: LeagueTeamRef[]
-  maxGameWeek: number
   onClose: () => void
 }
 
@@ -1423,7 +1417,6 @@ interface ApproveApplicationDialogProps {
   player: { id: string; name: string | null; position: string | null }
   leagueId: string
   leagueTeams: LeagueTeamRef[]
-  maxGameWeek: number
   onClose: () => void
 }
 
@@ -1431,12 +1424,10 @@ function ApproveApplicationDialog({
   player,
   leagueId,
   leagueTeams,
-  maxGameWeek,
   onClose,
 }: ApproveApplicationDialogProps) {
   const { toast } = useToast()
   const [leagueTeamId, setLeagueTeamId] = useState<string>(leagueTeams[0]?.id ?? '')
-  const [fromGameWeek, setFromGameWeek] = useState<number>(maxGameWeek > 0 ? maxGameWeek : 1)
   const [pending, startTransition] = useTransition()
 
   function handleSubmit(e: React.FormEvent) {
@@ -1447,11 +1438,12 @@ function ApproveApplicationDialog({
     }
     startTransition(async () => {
       try {
+        // v2.2.0 — fromGameWeek is resolved server-side via the
+        // next-match helper, so the admin no longer picks a GW.
         await adminApproveApplication({
           playerId: player.id,
           leagueId,
           leagueTeamId,
-          fromGameWeek,
         })
         toast(`${player.name ?? 'Player'} approved`)
         onClose()
@@ -1499,19 +1491,6 @@ function ApproveApplicationDialog({
                 ))}
               </select>
             </label>
-            <label className="block">
-              <span className="block text-admin-text3 text-[11px] uppercase tracking-wider font-bold mb-1">
-                Active from GW
-              </span>
-              <input
-                type="number"
-                min={1}
-                value={fromGameWeek}
-                onChange={(e) => setFromGameWeek(Math.max(1, Number(e.target.value)))}
-                className="w-full bg-admin-surface2 border border-admin-border rounded-md px-2.5 py-2 text-sm text-admin-text"
-                data-testid="approve-from-gw"
-              />
-            </label>
             <div className="flex gap-2 pt-2">
               <button
                 type="button"
@@ -1542,18 +1521,11 @@ function TransferPanel({
   currentAssignment,
   leagueId,
   leagueTeams,
-  maxGameWeek,
   onClose,
 }: TransferPanelProps) {
   const { toast } = useToast()
   const [toTeamId, setToTeamId] = useState('')
-  const [fromGW, setFromGW] = useState(currentAssignment.fromGameWeek + 1)
   const [pending, startTransition] = useTransition()
-
-  const futureGWs = Array.from(
-    { length: Math.max(0, maxGameWeek - currentAssignment.fromGameWeek) },
-    (_, i) => currentAssignment.fromGameWeek + i + 1,
-  )
 
   const otherTeams = leagueTeams.filter((lt) => lt.id !== currentAssignment.leagueTeam.id)
 
@@ -1561,7 +1533,9 @@ function TransferPanel({
     if (!toTeamId) return
     startTransition(async () => {
       try {
-        await transferPlayer(player.id, currentAssignment.leagueTeam.id, toTeamId, fromGW, leagueId)
+        // v2.2.0 — transferPlayer takes effect at the next unplayed
+        // game week, resolved server-side. Admin no longer picks a GW.
+        await transferPlayer(player.id, toTeamId, leagueId)
         toast(`${nameOrPlaceholder(player.name)} transferred`)
         onClose()
       } catch (err) {
@@ -1601,20 +1575,6 @@ function TransferPanel({
           </select>
         </div>
 
-        {/* Effective from GW */}
-        <div className="w-full md:w-auto flex flex-col gap-1.5">
-          <label className="text-[11px] font-semibold uppercase tracking-[1.5px] text-admin-text3">Effective from</label>
-          <select
-            value={fromGW}
-            onChange={(e) => setFromGW(Number(e.target.value))}
-            className="w-full md:w-auto bg-admin-surface2 border border-admin-border2 text-admin-text text-sm rounded-md px-3 py-[9px] font-mono outline-none"
-          >
-            {futureGWs.map((gw) => (
-              <option key={gw} value={gw}>GW{gw}</option>
-            ))}
-          </select>
-        </div>
-
         {/* Buttons */}
         <div className="flex gap-2">
           <button
@@ -1622,7 +1582,7 @@ function TransferPanel({
             disabled={!toTeamId || pending}
             className="flex-1 md:flex-none rounded-[6px] bg-admin-green px-3.5 py-1.5 text-[13px] font-semibold tracking-[0.2px] text-admin-ink hover:opacity-90 disabled:opacity-50"
           >
-            {pending ? 'Transferring…' : 'Confirm Transfer'}
+            {pending ? 'Transferring…' : 'Transfer now'}
           </button>
           <button
             onClick={onClose}
