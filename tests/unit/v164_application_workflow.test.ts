@@ -561,8 +561,13 @@ describe('v1.64.0 — getLeaguePlayers fetches pending applications (v1.65.4 —
 
   it('players page destructures the new tuple element', () => {
     // v1.85.0 — renamed from activeInviteCountByPlayerId to activeInviteByPlayerId.
+    // v2.2.0 — `gameWeeks` slot is no longer consumed by the page (admin
+    // actions resolve "next match" themselves). The regex now pins the
+    // ORDER of the remaining named slots; the 3rd slot may be `gameWeeks`,
+    // an empty hole (`, ,`), or commented-out — all valid since the
+    // underlying getLeaguePlayers return shape is unchanged.
     expect(PLAYERS_PAGE_SRC).toMatch(
-      /\[\s*assignments,\s*leagueTeams,\s*gameWeeks,\s*lineLoginsByLineId,\s*activeInviteByPlayerId,\s*pendingApplications,\s*idDataByPlayerId,?\s*\]/,
+      /\[\s*assignments,[\s\S]*?leagueTeams,[\s\S]*?lineLoginsByLineId,[\s\S]*?activeInviteByPlayerId,[\s\S]*?pendingApplications,[\s\S]*?idDataByPlayerId,?\s*\]/,
     )
   })
 

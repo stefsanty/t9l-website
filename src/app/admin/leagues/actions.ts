@@ -73,6 +73,42 @@ async function assertAdmin() {
   if (!session?.isAdmin) throw new Error('Unauthorized')
 }
 
+/**
+ * v2.2.0 — resolve the "next match" game week for a league, used by
+ * admin player-roster actions (`transferPlayer`, `adminApproveApplication`,
+ * `assignPlayer`) so the admin no longer has to pick a GW number.
+ *
+ * Returns the smallest `weekNumber` GameWeek with no COMPLETED matches
+ * (every match still SCHEDULED / IN_PROGRESS / CANCELLED / POSTPONED,
+ * or the GW has no matches yet — a future placeholder). If every GW
+ * has at least one COMPLETED match, returns `maxGameWeek + 1` so the
+ * action becomes forward-only and never reattributes historical
+ * matches. Empty league → 1.
+ *
+ * The COMPLETED-only check mirrors the player-facing "played" semantic
+ * in `dbToPublicLeagueData.ts` (which considers a match played when
+ * `status === 'COMPLETED'`, or it has events, or a scoreOverride).
+ * Using status alone is enough at the admin layer — events without a
+ * COMPLETED status is an admin oversight, not a transfer-blocking
+ * signal.
+ */
+async function computeNextGameWeek(leagueId: string): Promise<number> {
+  const gameWeeks = await prisma.gameWeek.findMany({
+    where: { leagueId },
+    select: {
+      weekNumber: true,
+      matches: { select: { status: true } },
+    },
+    orderBy: { weekNumber: 'asc' },
+  })
+  for (const gw of gameWeeks) {
+    const hasAnyPlayed = gw.matches.some((m) => m.status === 'COMPLETED')
+    if (!hasAnyPlayed) return gw.weekNumber
+  }
+  if (gameWeeks.length === 0) return 1
+  return gameWeeks[gameWeeks.length - 1].weekNumber + 1
+}
+
 // ── League ──────────────────────────────────────────────────────────────────
 
 export async function createLeague(formData: FormData) {
@@ -754,33 +790,76 @@ export async function removeTeamFromLeague(leagueTeamId: string, leagueId: strin
 
 // ── Players ──────────────────────────────────────────────────────────────────
 
-export async function assignPlayer(playerId: string, leagueTeamId: string, fromGameWeek: number) {
+/**
+ * v2.2.0 — admin-driven initial assignment. `fromGameWeek` is resolved
+ * server-side via `computeNextGameWeek` (next-match semantic, see helper
+ * comment) so callers no longer pass a GW number. Currently unused by
+ * the UI — the equivalent live flow is `adminApproveApplication`, which
+ * shares the same semantic. Kept for parity + future direct-assignment
+ * callers.
+ */
+export async function assignPlayer(playerId: string, leagueTeamId: string) {
   await assertAdmin()
+  const lt = await prisma.leagueTeam.findUnique({ where: { id: leagueTeamId }, select: { leagueId: true } })
+  if (!lt) throw new Error('League team not found')
+  const fromGameWeek = await computeNextGameWeek(lt.leagueId)
   // v1.34.0 (PR ζ) — admin-driven assignment carries `joinSource: ADMIN`.
   await prisma.playerLeagueMembership.create({
     data: { playerId, leagueTeamId, fromGameWeek, joinSource: 'ADMIN' },
   })
-  const lt = await prisma.leagueTeam.findUnique({ where: { id: leagueTeamId }, select: { leagueId: true } })
-  if (lt) {
-    revalidate({ domain: 'admin', paths: [`/admin/leagues/${lt.leagueId}/players`] })
-  }
+  revalidate({ domain: 'admin', paths: [`/admin/leagues/${lt.leagueId}/players`] })
 }
 
+/**
+ * v2.2.0 — admin transfers a player to a new team, effective at the
+ * next unplayed game week (see `computeNextGameWeek`). The admin no
+ * longer picks a GW — the action is immediate by construction.
+ *
+ * Overwrite case: if the player's current PLM started AT the same GW
+ * we're transferring at (e.g. they were just transferred or approved
+ * for this GW), delete that PLM rather than closing it at `nextGW - 1`
+ * (which would create a degenerate `fromGW=N, toGW=N-1` row). End
+ * state: the intermediate team is erased from history — admin gets a
+ * clean "X → B" transition instead of "X → A (zero-length) → B".
+ *
+ * Throws when the player has no active team in this league, or is
+ * already on the destination team.
+ */
 export async function transferPlayer(
   playerId: string,
-  fromLeagueTeamId: string,
   toLeagueTeamId: string,
-  fromGameWeek: number,
   leagueId: string,
 ) {
   await assertAdmin()
+  const nextGW = await computeNextGameWeek(leagueId)
   await prisma.$transaction(async (tx) => {
-    await tx.playerLeagueMembership.updateMany({
-      where: { playerId, leagueTeamId: fromLeagueTeamId, toGameWeek: null },
-      data: { toGameWeek: fromGameWeek - 1 },
+    const currentActive = await tx.playerLeagueMembership.findFirst({
+      where: {
+        playerId,
+        toGameWeek: null,
+        leagueTeam: { leagueId },
+      },
+      select: { id: true, leagueTeamId: true, fromGameWeek: true },
     })
+    if (!currentActive) throw new Error('Player has no active team in this league')
+    if (currentActive.leagueTeamId === toLeagueTeamId) {
+      throw new Error('Player is already on that team')
+    }
+    if (currentActive.fromGameWeek === nextGW) {
+      await tx.playerLeagueMembership.delete({ where: { id: currentActive.id } })
+    } else {
+      await tx.playerLeagueMembership.update({
+        where: { id: currentActive.id },
+        data: { toGameWeek: nextGW - 1 },
+      })
+    }
     await tx.playerLeagueMembership.create({
-      data: { playerId, leagueTeamId: toLeagueTeamId, fromGameWeek },
+      data: {
+        playerId,
+        leagueTeamId: toLeagueTeamId,
+        fromGameWeek: nextGW,
+        joinSource: 'ADMIN',
+      },
     })
   })
   revalidate({ domain: 'admin', paths: [`/admin/leagues/${leagueId}/players`] })
@@ -1206,7 +1285,6 @@ export async function adminApproveApplication(input: {
   playerId: string
   leagueId: string
   leagueTeamId: string
-  fromGameWeek?: number
 }): Promise<void> {
   await assertAdmin()
   if (!input.playerId) throw new Error('playerId is required')
@@ -1248,7 +1326,9 @@ export async function adminApproveApplication(input: {
     throw new Error('Team does not belong to this league')
   }
 
-  const fromGameWeek = input.fromGameWeek && input.fromGameWeek > 0 ? input.fromGameWeek : 1
+  // v2.2.0 — fromGameWeek is resolved server-side via the canonical
+  // next-match helper instead of being passed in by the admin UI.
+  const fromGameWeek = await computeNextGameWeek(input.leagueId)
 
   // Flip the existing PENDING PLM to APPROVED + assign team in one update.
   await prisma.playerLeagueMembership.update({
