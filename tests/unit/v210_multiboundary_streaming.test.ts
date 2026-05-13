@@ -67,13 +67,13 @@ function stripComments(s: string): string {
 describe('v2.1.0 — version pin', () => {
   it('APP_VERSION reads 2.1.0+', () => {
     expect(VERSION_SRC).toMatch(
-      /APP_VERSION\s*=\s*['"](?:2\.1\.0|2\.[2-9]\.\d+|[3-9]\.\d+\.\d+)['"]/,
+      /APP_VERSION\s*=\s*['"](?:2\.1\.\d+|2\.[2-9]\.\d+|[3-9]\.\d+\.\d+)['"]/,
     )
   })
 
   it('CLAUDE.md header reflects v2.1.0+ release', () => {
     expect(CLAUDE_MD).toMatch(
-      /\*\*Current release:\*\*\s*(?:v2\.1\.0|v2\.[2-9]\.\d+|v[3-9]\.\d+\.\d+)/,
+      /\*\*Current release:\*\*\s*(?:v2\.1\.\d+|v2\.[2-9]\.\d+|v[3-9]\.\d+\.\d+)/,
     )
   })
 
@@ -82,7 +82,7 @@ describe('v2.1.0 — version pin', () => {
       line.startsWith('- **v'),
     )
     expect(firstBullet).toBeDefined()
-    expect(firstBullet).toMatch(/^- \*\*v2\.1\.0\*\*/)
+    expect(firstBullet).toMatch(/^- \*\*v2\.1\.\d+\*\*/)
   })
 })
 

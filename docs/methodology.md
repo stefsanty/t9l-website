@@ -301,6 +301,19 @@ destructive Bash patterns (`git push --force*`, `git reset --hard*`,
 `rm -rf*`, plus any project-specific destructive commands like
 `prisma migrate reset*` or raw SQL `DROP / TRUNCATE / DELETE FROM`).
 
+## Cache cost awareness
+
+Every external cache backend (Redis, Memcached, KV store) has either a quota or a per-request cost. Before adding cache reads/writes, estimate the request volume:
+
+- Per-render reads × daily traffic = daily ops.
+- Per-write hooks × daily mutations = daily ops.
+
+If on a quota tier, a traffic spike can exhaust it within minutes. If on a per-request tier, the cost is real.
+
+**Before merging any PR that adds cache ops:** estimate the cost delta in the PR description.
+
+Prefer **in-memory / process-local caches** (Next.js `unstable_cache`, request-scoped memoization) over external cache for high-frequency read paths. External cache is best for state that genuinely needs cross-process consistency (sessions, locks, distributed state).
+
 ## Adopting this file in a new project
 
 1. Copy this file to `docs/methodology.md` (or wherever the project's
