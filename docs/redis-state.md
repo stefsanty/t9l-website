@@ -35,6 +35,20 @@ Two stores in this codebase use Redis as the canonical read source with Prisma a
 
 If the read frequency is **public dashboard render** (every page view, every authenticated user) AND the data has natural cardinality bounded per league/event/user (not unbounded relations), the Redis-canonical pattern fits. Otherwise the `unstable_cache` shape is simpler and adequate.
 
+## Redis cost awareness (Upstash pay-as-you-go)
+
+Every Redis command now costs real money (upgraded from free-tier 500K/day quota in May 2026). Before adding ANY new Redis read/write, estimate the request volume:
+
+- Per-render reads × daily page views = daily Redis ops.
+- Per-write hooks × daily mutations = daily Redis ops.
+- Multiply by Upstash pay-as-you-go pricing.
+
+The v2.0.0 dashboard cache incident (PR #281, reverted via #282) exhausted 500K daily ops within minutes because it hit Redis 2× per render. On pay-as-you-go that would be a real bill, not just degraded service.
+
+**Before merging any PR that adds Redis ops:** estimate the cost delta in the PR description. If unsure, prefer non-Redis alternatives (`unstable_cache`, request-scoped React `cache()`, or no caching).
+
+**Existing Redis usage** (state-on-Redis pattern for RSVP / availability, auth) is load-bearing — leave it alone unless explicitly optimizing.
+
 ## Recovery
 
 Three rollback layers are dedicated to Redis-canonical state — see [release-and-ship.md](release-and-ship.md):

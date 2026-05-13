@@ -2,7 +2,7 @@
 
 T9L.me — mobile-first website for the Tennozu 9-Aside League, a recreational football league in Tokyo. Multi-tenant: a single Vercel deployment serves multiple leagues, each at `/id/<slug>`. Players sign in (LINE / Google / email magic-link), claim a Player record, RSVP availability for matchdays, and view live league data backed by Postgres (Neon) + Upstash Redis.
 
-**Current release:** v2.1.0. Active per-PR ledger: [docs/ledger.md](docs/ledger.md). Pre-v1.78.0 condensed history: [docs/ledger-archive.md](docs/ledger-archive.md).
+**Current release:** v2.1.1. Active per-PR ledger: [docs/ledger.md](docs/ledger.md). Pre-v1.78.0 condensed history: [docs/ledger-archive.md](docs/ledger-archive.md).
 
 ## How this repo's conventions are organised
 
@@ -61,6 +61,8 @@ Portable rules (auto-merge policy, version-bump, per-push reporting, test rule, 
 **No exports from `'use server'` files (Next.js foot-gun).** Never `export const` (or any non-async value) from a file with `'use server'` at the top — Next.js converts every export into a server-action proxy on the client side, and constants become functions that crash on first use. Constants/types/interfaces shared between server actions and client components live in a separate neutral module. Standing since v1.59.2.
 
 **Cache invalidation canonical.** Cache busts go through [`src/lib/revalidate.ts#revalidate({ domain })`](src/lib/revalidate.ts). Direct `revalidateTag` / `revalidatePath` / `updateTag` calls outside that file are forbidden; the lint guard at [`tests/unit/revalidatePrimitivesGuard.test.ts`](tests/unit/revalidatePrimitivesGuard.test.ts) fails CI if any new primitive call leaks. See [docs/cache-invalidation.md](docs/cache-invalidation.md).
+
+**Redis cost awareness (Upstash pay-as-you-go).** Every Redis command now costs real money (upgraded from free-tier 500K/day quota). Before adding ANY new Redis read/write, estimate daily ops (per-render reads × page views, or per-write hooks × mutations). The v2.0.0 dashboard cache incident (PR #281, reverted #282) exhausted 500K ops within minutes. **Before merging any PR that adds Redis ops:** put the cost estimate in the PR description. If unsure, prefer `unstable_cache`, request-scoped `cache()`, or no caching. Existing Redis usage (RSVP / availability / auth) is load-bearing — leave alone unless explicitly optimizing. Full rule: [docs/redis-state.md § Redis cost awareness](docs/redis-state.md#redis-cost-awareness-upstash-pay-as-you-go). Generic principle: [docs/methodology.md § Cache cost awareness](docs/methodology.md#cache-cost-awareness).
 
 **Migration SQL authoring (Prisma + `@@map` foot-gun).** Generic principle is in [docs/methodology.md § ORM migration discipline](docs/methodology.md#orm-migration-discipline). The t9l-specific command is `npx prisma migrate dev --create-only --name <name>` — Prisma resolves `@@map` / `@map` to the correct SQL table/column names; hand-authored SQL does not. Permitted exception: pure-data `UPDATE`/`INSERT` statements appended after the generated DDL, provided all table and column names are verified against `@@map` directives. See [docs/migration-sql-lessons.md](docs/migration-sql-lessons.md) for the v1.86.0 post-mortem.
 
