@@ -202,6 +202,7 @@ export default function LeagueMatchdayClient({
         matches={submitMatches}
         players={players}
         teams={teams}
+        leagueSlug={leagueSlug}
       />
     ) : null;
 

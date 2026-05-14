@@ -8,6 +8,7 @@ import { recomputeMatchScore } from '@/lib/matchScore'
 import { evaluateSelfReportGate } from '@/lib/playerSelfReportGate'
 import { parseMatchPublicId } from '@/lib/matchPublicId'
 import { slugToPlayerId, playerIdToSlug, slugToTeamId } from '@/lib/ids'
+import { normalizeLeagueSlug } from '@/lib/leagueSlug'
 import type { GoalType } from '@prisma/client'
 
 const VALID_GOAL_TYPES = new Set<GoalType>([
@@ -49,6 +50,15 @@ const VALID_GOAL_TYPES = new Set<GoalType>([
  */
 export async function submitOwnMatchEvent(input: {
   matchPublicId: string // e.g. "md3-m2"
+  /**
+   * v2.2.5 — league context from the URL the form was rendered on
+   * (`/id/<slug>/...`). Required so the action resolves `md<wk>-m<i>`
+   * inside the right tenant. Pre-v2.2.5 the action picked the caller's
+   * first non-null league assignment, which collided for users who
+   * are members of multiple leagues (prod `t9l` + a seed/test league
+   * with the same `md3` weekNumber resolved to the wrong tenant).
+   */
+  leagueSlug: string
   goalType: GoalType
   /**
    * v1.82.0 — beneficiary team (the one the goal counts for). Required
@@ -153,9 +163,21 @@ export async function submitOwnMatchEvent(input: {
   const m = parseMatchPublicId(input.matchPublicId)
   if (!m) throw new Error(`Invalid matchPublicId: ${input.matchPublicId}`)
 
-  // Resolve the caller's league via their linked Player → assignment.
-  // (The callerPlayerSlug determines the league context; we don't trust
-  // form input for league selection.)
+  // v2.2.5 — resolve league from the form-provided slug (the URL the
+  // form was rendered on), not from the caller's first non-null
+  // assignment. Multi-league callers (members of prod `t9l` AND a
+  // seed/test league) hit whichever assignment Prisma returned first
+  // pre-v2.2.5, so `md3-m1` could resolve to the wrong tenant's match.
+  const slug = normalizeLeagueSlug(input.leagueSlug ?? '')
+  if (!slug) throw new Error('League context missing')
+  const league = await prisma.league.findUnique({
+    where: { subdomain: slug },
+    select: { id: true },
+  })
+  if (!league) throw new Error(`Unknown league: ${slug}`)
+  const leagueId = league.id
+
+  // Caller must have an active membership in THIS league.
   const callerPlayerId = slugToPlayerId(callerPlayerSlug)
   const callerPlayer = await prisma.player.findUnique({
     where: { id: callerPlayerId },
@@ -167,12 +189,13 @@ export async function submitOwnMatchEvent(input: {
   })
   if (!callerPlayer) throw new Error('Caller player not found')
   // v1.65.0 — leagueTeam nullable post-rework; only memberships with a
-  // real team can submit goals. Pick the first such membership.
-  const callerAssignment = callerPlayer.leagueAssignments.find((a) => a.leagueTeam !== null)
-  if (!callerAssignment || !callerAssignment.leagueTeam) {
-    throw new Error('Caller not assigned to a league')
+  // real team count. v2.2.5 — additionally constrain to the form's league.
+  const callerAssignment = callerPlayer.leagueAssignments.find(
+    (a) => a.leagueTeam !== null && a.leagueTeam.leagueId === leagueId,
+  )
+  if (!callerAssignment) {
+    throw new Error('Caller not assigned to this league')
   }
-  const leagueId = callerAssignment.leagueTeam.leagueId
 
   // Find the matchday + match within this league.
   const gameWeek = await prisma.gameWeek.findFirst({
@@ -241,15 +264,6 @@ export async function submitOwnMatchEvent(input: {
   } else if (sideMatches(match.awayTeam)) {
     beneficiaryTeamId = match.awayTeamId
   } else {
-    console.error('[submitOwnMatchEvent] beneficiary mismatch', {
-      matchPublicId: input.matchPublicId,
-      beneficiarySlug,
-      beneficiaryDbTeamId,
-      homeTeamId_DB: match.homeTeamId,
-      awayTeamId_DB: match.awayTeamId,
-      homeTeam_teamId: match.homeTeam.teamId,
-      awayTeam_teamId: match.awayTeam.teamId,
-    })
     throw new Error('Beneficiary team is not part of this match')
   }
 
