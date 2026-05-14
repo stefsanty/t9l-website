@@ -228,11 +228,17 @@ export async function submitOwnMatchEvent(input: {
   // own validator which accepts raw LeagueTeam.id.
   const beneficiarySlug = input.beneficiaryTeamId?.trim()
   if (!beneficiarySlug) throw new Error('Beneficiary team is required')
+  // v2.2.3 — tolerate Team.id rows that pre-date the `t-` prefix backfill.
+  // `slugToTeamId` always returns the prefixed form; `teamIdToSlug` only
+  // strips the prefix if present, so the round-trip is asymmetric for any
+  // Team.id stored without it. Accept either form on each side.
   const beneficiaryDbTeamId = slugToTeamId(beneficiarySlug)
+  const sideMatches = (lt: { teamId: string }) =>
+    lt.teamId === beneficiaryDbTeamId || lt.teamId === beneficiarySlug
   let beneficiaryTeamId: string
-  if (beneficiaryDbTeamId === match.homeTeam.teamId) {
+  if (sideMatches(match.homeTeam)) {
     beneficiaryTeamId = match.homeTeamId
-  } else if (beneficiaryDbTeamId === match.awayTeam.teamId) {
+  } else if (sideMatches(match.awayTeam)) {
     beneficiaryTeamId = match.awayTeamId
   } else {
     throw new Error('Beneficiary team is not part of this match')

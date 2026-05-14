@@ -365,6 +365,34 @@ describe('submitOwnMatchEvent (v1.82.0 cross-team scorer/assister)', () => {
     ).rejects.toThrow(/Beneficiary team is not part of this match/)
   })
 
+  it('v2.2.3 regression target: accepts slug when match Team.id lacks the `t-` prefix (asymmetric round-trip)', async () => {
+    // teamIdToSlug only strips `t-` if present; slugToTeamId always adds it.
+    // A Team.id stored bare ("home" instead of "t-home") surfaces as "home"
+    // in the dropdown, but slugToTeamId resolves "home" → "t-home", so the
+    // strict-equality check at v2.2.2 fails. v2.2.3 accepts either form.
+    gameWeekFindFirstMock.mockResolvedValueOnce({
+      matches: [
+        {
+          id: 'm-real',
+          homeTeamId: HOME_LT,
+          awayTeamId: AWAY_LT,
+          playedAt: PAST,
+          homeTeam: { teamId: HOME_SLUG },
+          awayTeam: { teamId: AWAY_SLUG },
+        },
+      ],
+    })
+    const result = await submitOwnMatchEvent({
+      matchPublicId: 'md1-m1',
+      beneficiaryTeamId: HOME_SLUG,
+      scorerPlayerSlug: 'aleksandr-ivankov',
+      goalType: 'OPEN_PLAY',
+    })
+    expect(result.id).toBe('me-zeta')
+    const data = matchEventCreateMock.mock.calls.at(-1)![0].data
+    expect(data.beneficiaryTeamId).toBe(HOME_LT)
+  })
+
   it('v1.82.0 regression target: rejects when beneficiaryTeamId is empty', async () => {
     await expect(
       submitOwnMatchEvent({
