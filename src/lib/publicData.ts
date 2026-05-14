@@ -12,6 +12,7 @@ import {
 } from './rsvpStore'
 import { mergeRsvpData, buildGwToMdMap } from './rsvpMerge'
 import { playerIdToSlug } from './ids'
+import { formatJstDate } from './jst'
 
 /**
  * Cached static read for the public site, plus an uncached RSVP merge.
@@ -171,10 +172,23 @@ async function getRsvpData(
   )
 
   const gameWeekIdToMatchdayId = buildGwToMdMap(gws, staticData.matchdays)
+
+  // v2.2.6 — matchdays whose JST calendar date has fully elapsed. A `GOING`
+  // RSVP for these renders as `'PLAYED'`. Cutoff is JST-midnight: same-day
+  // = still upcoming (e.g. on 2026-04-05, a matchday with date 2026-04-05
+  // is NOT past; from 2026-04-06 onward it IS past).
+  const todayJst = formatJstDate(new Date())
+  const pastMatchdayIds = new Set(
+    staticData.matchdays
+      .filter((md) => md.date !== null && md.date < todayJst)
+      .map((md) => md.id),
+  )
+
   return mergeRsvpData({
     rsvpByGameWeekId,
     gameWeekIdToMatchdayId,
     players: staticData.players,
+    pastMatchdayIds,
   })
 }
 

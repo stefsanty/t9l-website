@@ -622,10 +622,17 @@ export default function MatchdayAvailability({
           const retiredIds = new Set(
             players.filter((p) => p.retiredAt).map((p) => p.id),
           );
+          // v2.2.6 — PLAYED now represents Going on a past matchday (data
+          // layer maps GOING + past JST date → PLAYED in rsvpMerge.ts).
+          // Accept it here too so the count doesn't regress to 0 in the
+          // edge case where the matchday's JST date has elapsed but scores
+          // haven't been entered yet (so `isNext` is still true and this
+          // upcoming-branch renders). The dedicated past-branch (above)
+          // renders its own "played" counter via `mdPlayed`.
           const goingIds = allAvailIds.filter((id) => {
             if (retiredIds.has(id)) return false;
             const s = teamStatuses[id];
-            return s === 'GOING' || s === 'Y';
+            return s === 'GOING' || s === 'Y' || s === 'PLAYED';
           });
           const isExpanded = expandedTeams.has(team.id);
           const guestIds = guestIdsForTeam(team.id);

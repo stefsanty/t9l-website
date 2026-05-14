@@ -15,35 +15,43 @@ const MATCHDAYS: Matchday[] = [
 ]
 
 describe('mapAvailability — RsvpEntry → AvStatus', () => {
-  // Same precedence rules as the v1.6.x dbToPublicLeagueData adapter.
-  // PLAYED (admin-recorded fact) wins over RSVP (player intent).
+  // v2.2.6 — "Going = Played" simplification. GOING + past JST date → PLAYED.
+  // `participated` field is vestigial for display.
 
-  it('PLAYED takes precedence over GOING', () => {
-    expect(mapAvailability({ rsvp: 'GOING', participated: 'JOINED' })).toBe('PLAYED')
+  it('past matchday + GOING → PLAYED', () => {
+    expect(mapAvailability({ rsvp: 'GOING' }, true)).toBe('PLAYED')
   })
 
-  it('maps GOING when only rsvp set', () => {
-    expect(mapAvailability({ rsvp: 'GOING' })).toBe('GOING')
+  it('future matchday + GOING → GOING (unchanged)', () => {
+    expect(mapAvailability({ rsvp: 'GOING' }, false)).toBe('GOING')
   })
 
-  it('maps UNDECIDED when only rsvp UNDECIDED', () => {
-    expect(mapAvailability({ rsvp: 'UNDECIDED' })).toBe('UNDECIDED')
+  it('past matchday + NOT_GOING → null (unchanged)', () => {
+    expect(mapAvailability({ rsvp: 'NOT_GOING' }, true)).toBeNull()
+  })
+
+  it('past matchday + UNDECIDED → UNDECIDED (unchanged)', () => {
+    expect(mapAvailability({ rsvp: 'UNDECIDED' }, true)).toBe('UNDECIDED')
+  })
+
+  it('future matchday + UNDECIDED → UNDECIDED', () => {
+    expect(mapAvailability({ rsvp: 'UNDECIDED' }, false)).toBe('UNDECIDED')
   })
 
   it('returns null when entry is empty (player has no opinion yet)', () => {
-    expect(mapAvailability({})).toBeNull()
+    expect(mapAvailability({}, false)).toBeNull()
+    expect(mapAvailability({}, true)).toBeNull()
   })
 
-  it('returns null for NOT_GOING (so they do NOT show up in availability)', () => {
-    expect(mapAvailability({ rsvp: 'NOT_GOING' })).toBeNull()
+  it('participated is vestigial — JOINED alone (no rsvp) → null', () => {
+    // Pre-v2.2.6 this would have returned 'PLAYED'. The new rule ignores
+    // `participated` for display; only `rsvp` + past-flag drive output.
+    expect(mapAvailability({ participated: 'JOINED' }, true)).toBeNull()
+    expect(mapAvailability({ participated: 'JOINED' }, false)).toBeNull()
   })
 
-  it('JOINED participated alone maps to PLAYED (admin recorded show-up sans RSVP)', () => {
-    expect(mapAvailability({ participated: 'JOINED' })).toBe('PLAYED')
-  })
-
-  it('NO_SHOWED participated alone maps to null (no displayable signal)', () => {
-    expect(mapAvailability({ participated: 'NO_SHOWED' })).toBeNull()
+  it('participated is vestigial — GOING + JOINED on future matchday → GOING (not PLAYED)', () => {
+    expect(mapAvailability({ rsvp: 'GOING', participated: 'JOINED' }, false)).toBe('GOING')
   })
 })
 
@@ -74,7 +82,7 @@ describe('mergeRsvpData — Redis → LeagueData availability shape', () => {
     return new Map(entries.map(([slug, e]) => [slug, e as Parameters<typeof mapAvailability>[0]]))
   }
 
-  it('builds team-keyed availability with PLAYED separated into played[]', () => {
+  it('future matchday — GOING stays GOING, played[] is empty', () => {
     const result = mergeRsvpData({
       rsvpByGameWeekId: new Map([
         [
@@ -88,6 +96,7 @@ describe('mergeRsvpData — Redis → LeagueData availability shape', () => {
       ]),
       gameWeekIdToMatchdayId: new Map([['gw-1', 'md1']]),
       players: PLAYERS,
+      // pastMatchdayIds omitted → defaults to empty set (all future)
     })
 
     expect(result.availability.md1).toEqual({
@@ -97,14 +106,37 @@ describe('mergeRsvpData — Redis → LeagueData availability shape', () => {
     expect(result.availabilityStatuses.md1).toEqual({
       'mariners-fc': {
         'ian-noseda': 'GOING',
-        'aleksandr-ivankov': 'PLAYED',
+        'aleksandr-ivankov': 'GOING',
       },
       'fenix-fc': {
         'tomo-suzuki': 'UNDECIDED',
       },
     })
+    expect(result.played.md1 ?? {}).toEqual({})
+  })
+
+  it('past matchday — GOING flips to PLAYED and lands in played[]', () => {
+    const result = mergeRsvpData({
+      rsvpByGameWeekId: new Map([
+        [
+          'gw-1',
+          rsvp(
+            ['ian-noseda', { rsvp: 'GOING' }],
+            ['tomo-suzuki', { rsvp: 'UNDECIDED' }],
+          ),
+        ],
+      ]),
+      gameWeekIdToMatchdayId: new Map([['gw-1', 'md1']]),
+      players: PLAYERS,
+      pastMatchdayIds: new Set(['md1']),
+    })
+
+    expect(result.availabilityStatuses.md1).toEqual({
+      'mariners-fc': { 'ian-noseda': 'PLAYED' },
+      'fenix-fc': { 'tomo-suzuki': 'UNDECIDED' },
+    })
     expect(result.played.md1).toEqual({
-      'mariners-fc': ['aleksandr-ivankov'],
+      'mariners-fc': ['ian-noseda'],
     })
   })
 
