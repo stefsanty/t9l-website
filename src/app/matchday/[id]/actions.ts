@@ -241,6 +241,15 @@ export async function submitOwnMatchEvent(input: {
   } else if (sideMatches(match.awayTeam)) {
     beneficiaryTeamId = match.awayTeamId
   } else {
+    console.error('[submitOwnMatchEvent] beneficiary mismatch', {
+      matchPublicId: input.matchPublicId,
+      beneficiarySlug,
+      beneficiaryDbTeamId,
+      homeTeamId_DB: match.homeTeamId,
+      awayTeamId_DB: match.awayTeamId,
+      homeTeam_teamId: match.homeTeam.teamId,
+      awayTeam_teamId: match.awayTeam.teamId,
+    })
     throw new Error('Beneficiary team is not part of this match')
   }
 
