@@ -7,7 +7,7 @@ import { revalidate } from '@/lib/revalidate'
 import { recomputeMatchScore } from '@/lib/matchScore'
 import { evaluateSelfReportGate } from '@/lib/playerSelfReportGate'
 import { parseMatchPublicId } from '@/lib/matchPublicId'
-import { slugToPlayerId, playerIdToSlug } from '@/lib/ids'
+import { slugToPlayerId, playerIdToSlug, slugToTeamId } from '@/lib/ids'
 import type { GoalType } from '@prisma/client'
 
 const VALID_GOAL_TYPES = new Set<GoalType>([
@@ -180,7 +180,17 @@ export async function submitOwnMatchEvent(input: {
     include: {
       matches: {
         orderBy: { playedAt: 'asc' },
-        select: { id: true, homeTeamId: true, awayTeamId: true, playedAt: true },
+        select: {
+          id: true,
+          homeTeamId: true,
+          awayTeamId: true,
+          playedAt: true,
+          // v2.2.2 — Team.id of each side so we can resolve the form's
+          // public team slug (derived from Team.id, see dbToPublicLeagueData
+          // `ltToSlug`) back to a LeagueTeam.id for the FK on MatchEvent.
+          homeTeam: { select: { teamId: true } },
+          awayTeam: { select: { teamId: true } },
+        },
       },
     },
   })
@@ -207,9 +217,24 @@ export async function submitOwnMatchEvent(input: {
   // team for non-OG, opposite for OG) was correct only when the scorer
   // was a member of one of the match teams; cross-team scorers (guest
   // players) broke that, so the form has to send it explicitly.
-  const beneficiaryTeamId = input.beneficiaryTeamId?.trim()
-  if (!beneficiaryTeamId) throw new Error('Beneficiary team is required')
-  if (beneficiaryTeamId !== match.homeTeamId && beneficiaryTeamId !== match.awayTeamId) {
+  //
+  // v2.2.2 — the player-side form sources team ids from the public adapter
+  // (`dbToPublicLeagueData`), where each Match's home/away ids are *public
+  // team slugs* derived from Team.id, NOT LeagueTeam.id (`ltToSlug` maps
+  // LeagueTeam.id → teamIdToSlug(team.id)). Resolve the incoming slug back
+  // to the match's LeagueTeam.id via Team.id before comparing — and write
+  // the resolved LeagueTeam.id on the event (MatchEvent.beneficiaryTeamId
+  // FKs LeagueTeam). The admin path (admin/leagues/actions.ts) keeps its
+  // own validator which accepts raw LeagueTeam.id.
+  const beneficiarySlug = input.beneficiaryTeamId?.trim()
+  if (!beneficiarySlug) throw new Error('Beneficiary team is required')
+  const beneficiaryDbTeamId = slugToTeamId(beneficiarySlug)
+  let beneficiaryTeamId: string
+  if (beneficiaryDbTeamId === match.homeTeam.teamId) {
+    beneficiaryTeamId = match.homeTeamId
+  } else if (beneficiaryDbTeamId === match.awayTeam.teamId) {
+    beneficiaryTeamId = match.awayTeamId
+  } else {
     throw new Error('Beneficiary team is not part of this match')
   }
 

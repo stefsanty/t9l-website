@@ -72,6 +72,14 @@ const { parseMatchPublicId } = await import('@/lib/matchPublicId')
 
 const HOME_LT = 'lt-home'
 const AWAY_LT = 'lt-away'
+// v2.2.2 — the form sends *public team slugs* (derived from Team.id,
+// not LeagueTeam.id). The action resolves slug → Team.id → match
+// LeagueTeam.id; the mocked gameWeek therefore needs Team.id alongside
+// the LeagueTeam.id for each side.
+const HOME_TEAM = 't-home'
+const AWAY_TEAM = 't-away'
+const HOME_SLUG = 'home'
+const AWAY_SLUG = 'away'
 const NOW = Date.now()
 const PAST = new Date(NOW - 60_000)
 const FUTURE = new Date(NOW + 60 * 60_000)
@@ -115,7 +123,14 @@ beforeEach(() => {
   })
   gameWeekFindFirstMock.mockResolvedValue({
     matches: [
-      { id: 'm-real', homeTeamId: HOME_LT, awayTeamId: AWAY_LT, playedAt: PAST },
+      {
+        id: 'm-real',
+        homeTeamId: HOME_LT,
+        awayTeamId: AWAY_LT,
+        playedAt: PAST,
+        homeTeam: { teamId: HOME_TEAM },
+        awayTeam: { teamId: AWAY_TEAM },
+      },
     ],
   })
   // Default scorer/assister membership lookup returns "found" — used by
@@ -144,7 +159,7 @@ describe('submitOwnMatchEvent (v1.82.0 cross-team scorer/assister)', () => {
   it('happy path: creates event with explicit beneficiary, league-scope membership check, recomputes, revalidates', async () => {
     const result = await submitOwnMatchEvent({
       matchPublicId: 'md1-m1',
-      beneficiaryTeamId: HOME_LT,
+      beneficiaryTeamId: HOME_SLUG,
       scorerPlayerSlug: 'aleksandr-ivankov',
       goalType: 'OPEN_PLAY',
       assisterPlayerSlug: null,
@@ -177,7 +192,7 @@ describe('submitOwnMatchEvent (v1.82.0 cross-team scorer/assister)', () => {
     await expect(
       submitOwnMatchEvent({
         matchPublicId: 'md1-m1',
-        beneficiaryTeamId: HOME_LT,
+        beneficiaryTeamId: HOME_SLUG,
         scorerPlayerSlug: 'aleksandr-ivankov',
         goalType: 'OPEN_PLAY',
       }),
@@ -193,7 +208,7 @@ describe('submitOwnMatchEvent (v1.82.0 cross-team scorer/assister)', () => {
     await expect(
       submitOwnMatchEvent({
         matchPublicId: 'md1-m1',
-        beneficiaryTeamId: HOME_LT,
+        beneficiaryTeamId: HOME_SLUG,
         scorerPlayerSlug: 'aleksandr-ivankov',
         goalType: 'OPEN_PLAY',
       }),
@@ -206,7 +221,7 @@ describe('submitOwnMatchEvent (v1.82.0 cross-team scorer/assister)', () => {
     await expect(
       submitOwnMatchEvent({
         matchPublicId: 'md1-m1',
-        beneficiaryTeamId: HOME_LT,
+        beneficiaryTeamId: HOME_SLUG,
         scorerPlayerSlug: 'aleksandr-ivankov',
         goalType: 'OPEN_PLAY',
       }),
@@ -231,7 +246,7 @@ describe('submitOwnMatchEvent (v1.82.0 cross-team scorer/assister)', () => {
     })
     const result = await submitOwnMatchEvent({
       matchPublicId: 'md1-m1',
-      beneficiaryTeamId: HOME_LT,
+      beneficiaryTeamId: HOME_SLUG,
       scorerPlayerSlug: 'aleksandr-ivankov',
       goalType: 'OPEN_PLAY',
     })
@@ -263,7 +278,7 @@ describe('submitOwnMatchEvent (v1.82.0 cross-team scorer/assister)', () => {
     })
     const result = await submitOwnMatchEvent({
       matchPublicId: 'md1-m1',
-      beneficiaryTeamId: HOME_LT,
+      beneficiaryTeamId: HOME_SLUG,
       scorerPlayerSlug: 'aleksandr-ivankov',
       goalType: 'OPEN_PLAY',
     })
@@ -276,7 +291,7 @@ describe('submitOwnMatchEvent (v1.82.0 cross-team scorer/assister)', () => {
     await expect(
       submitOwnMatchEvent({
         matchPublicId: 'md1-m1',
-        beneficiaryTeamId: HOME_LT,
+        beneficiaryTeamId: HOME_SLUG,
         scorerPlayerSlug: 'aleksandr-ivankov',
         // @ts-expect-error — runtime guard
         goalType: 'BICYCLE',
@@ -288,7 +303,7 @@ describe('submitOwnMatchEvent (v1.82.0 cross-team scorer/assister)', () => {
     await expect(
       submitOwnMatchEvent({
         matchPublicId: 'bogus',
-        beneficiaryTeamId: HOME_LT,
+        beneficiaryTeamId: HOME_SLUG,
         scorerPlayerSlug: 'aleksandr-ivankov',
         goalType: 'OPEN_PLAY',
       }),
@@ -300,7 +315,7 @@ describe('submitOwnMatchEvent (v1.82.0 cross-team scorer/assister)', () => {
     await expect(
       submitOwnMatchEvent({
         matchPublicId: 'md9-m1',
-        beneficiaryTeamId: HOME_LT,
+        beneficiaryTeamId: HOME_SLUG,
         scorerPlayerSlug: 'aleksandr-ivankov',
         goalType: 'OPEN_PLAY',
       }),
@@ -317,7 +332,7 @@ describe('submitOwnMatchEvent (v1.82.0 cross-team scorer/assister)', () => {
     plaFindFirstMock.mockResolvedValue({ id: 'pla-third-team' })
     const result = await submitOwnMatchEvent({
       matchPublicId: 'md1-m1',
-      beneficiaryTeamId: HOME_LT,
+      beneficiaryTeamId: HOME_SLUG,
       scorerPlayerSlug: 'guest-player',
       goalType: 'OPEN_PLAY',
     })
@@ -332,7 +347,7 @@ describe('submitOwnMatchEvent (v1.82.0 cross-team scorer/assister)', () => {
     await expect(
       submitOwnMatchEvent({
         matchPublicId: 'md1-m1',
-        beneficiaryTeamId: HOME_LT,
+        beneficiaryTeamId: HOME_SLUG,
         scorerPlayerSlug: 'random-guy',
         goalType: 'OPEN_PLAY',
       }),
@@ -343,7 +358,7 @@ describe('submitOwnMatchEvent (v1.82.0 cross-team scorer/assister)', () => {
     await expect(
       submitOwnMatchEvent({
         matchPublicId: 'md1-m1',
-        beneficiaryTeamId: 'lt-third',
+        beneficiaryTeamId: 'third',
         scorerPlayerSlug: 'aleksandr-ivankov',
         goalType: 'OPEN_PLAY',
       }),
@@ -365,7 +380,7 @@ describe('submitOwnMatchEvent (v1.82.0 cross-team scorer/assister)', () => {
     await expect(
       submitOwnMatchEvent({
         matchPublicId: 'md1-m1',
-        beneficiaryTeamId: HOME_LT,
+        beneficiaryTeamId: HOME_SLUG,
         scorerPlayerSlug: '',
         goalType: 'OPEN_PLAY',
       }),
@@ -381,7 +396,7 @@ describe('submitOwnMatchEvent (v1.82.0 cross-team scorer/assister)', () => {
     await expect(
       submitOwnMatchEvent({
         matchPublicId: 'md1-m1',
-        beneficiaryTeamId: HOME_LT,
+        beneficiaryTeamId: HOME_SLUG,
         scorerPlayerSlug: 'aleksandr-ivankov',
         goalType: 'OPEN_PLAY',
       }),
@@ -392,7 +407,7 @@ describe('submitOwnMatchEvent (v1.82.0 cross-team scorer/assister)', () => {
     await expect(
       submitOwnMatchEvent({
         matchPublicId: 'md1-m1',
-        beneficiaryTeamId: HOME_LT,
+        beneficiaryTeamId: HOME_SLUG,
         scorerPlayerSlug: 'aleksandr-ivankov',
         goalType: 'OPEN_PLAY',
         assisterPlayerSlug: 'aleksandr-ivankov',
@@ -407,7 +422,7 @@ describe('submitOwnMatchEvent (v1.82.0 cross-team scorer/assister)', () => {
       .mockResolvedValueOnce({ id: 'pla-assister-other-team' })
     const result = await submitOwnMatchEvent({
       matchPublicId: 'md1-m1',
-      beneficiaryTeamId: HOME_LT,
+      beneficiaryTeamId: HOME_SLUG,
       scorerPlayerSlug: 'aleksandr-ivankov',
       goalType: 'OPEN_PLAY',
       assisterPlayerSlug: 'cross-team-assister',
@@ -424,7 +439,7 @@ describe('submitOwnMatchEvent (v1.82.0 cross-team scorer/assister)', () => {
     await expect(
       submitOwnMatchEvent({
         matchPublicId: 'md1-m1',
-        beneficiaryTeamId: HOME_LT,
+        beneficiaryTeamId: HOME_SLUG,
         scorerPlayerSlug: 'aleksandr-ivankov',
         goalType: 'OPEN_PLAY',
         assisterPlayerSlug: 'random-other',
@@ -438,7 +453,7 @@ describe('submitOwnMatchEvent (v1.82.0 cross-team scorer/assister)', () => {
     // the scorer's team membership.
     const result = await submitOwnMatchEvent({
       matchPublicId: 'md1-m1',
-      beneficiaryTeamId: AWAY_LT,
+      beneficiaryTeamId: AWAY_SLUG,
       scorerPlayerSlug: 'aleksandr-ivankov',
       goalType: 'OWN_GOAL',
     })
@@ -451,7 +466,7 @@ describe('submitOwnMatchEvent (v1.82.0 cross-team scorer/assister)', () => {
   it('audits createdById from session, scorer from input', async () => {
     await submitOwnMatchEvent({
       matchPublicId: 'md1-m1',
-      beneficiaryTeamId: HOME_LT,
+      beneficiaryTeamId: HOME_SLUG,
       scorerPlayerSlug: 'someone-else',
       goalType: 'OPEN_PLAY',
     })
@@ -463,7 +478,7 @@ describe('submitOwnMatchEvent (v1.82.0 cross-team scorer/assister)', () => {
   it('caller does NOT need to be on a match team to submit (open attribution)', async () => {
     const result = await submitOwnMatchEvent({
       matchPublicId: 'md1-m1',
-      beneficiaryTeamId: HOME_LT,
+      beneficiaryTeamId: HOME_SLUG,
       scorerPlayerSlug: 'aleksandr-ivankov',
       goalType: 'OPEN_PLAY',
     })
@@ -475,7 +490,7 @@ describe('submitOwnMatchEvent (v1.82.0 cross-team scorer/assister)', () => {
     await expect(
       submitOwnMatchEvent({
         matchPublicId: 'md1-m1',
-        beneficiaryTeamId: HOME_LT,
+        beneficiaryTeamId: HOME_SLUG,
         scorerPlayerSlug: 'aleksandr-ivankov',
         goalType: 'OPEN_PLAY',
         minute: 999,
