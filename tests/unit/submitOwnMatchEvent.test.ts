@@ -17,6 +17,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 const {
   playerFindUniqueMock,
+  userFindUniqueMock,
   gameWeekFindFirstMock,
   plaFindFirstMock,
   matchEventCreateMock,
@@ -26,6 +27,7 @@ const {
   getServerSessionMock,
 } = vi.hoisted(() => {
   const playerFindUniqueMock = vi.fn()
+  const userFindUniqueMock = vi.fn()
   const gameWeekFindFirstMock = vi.fn()
   const plaFindFirstMock = vi.fn()
   const matchEventCreateMock = vi.fn().mockResolvedValue({ id: 'me-zeta' })
@@ -35,6 +37,7 @@ const {
   })
   return {
     playerFindUniqueMock,
+    userFindUniqueMock,
     gameWeekFindFirstMock,
     plaFindFirstMock,
     matchEventCreateMock,
@@ -48,6 +51,7 @@ const {
 vi.mock('@/lib/prisma', () => ({
   prisma: {
     player: { findUnique: playerFindUniqueMock },
+    user: { findUnique: userFindUniqueMock },
     gameWeek: { findFirst: gameWeekFindFirstMock },
     playerLeagueMembership: { findFirst: plaFindFirstMock },
     $transaction: txMock,
@@ -74,6 +78,7 @@ const FUTURE = new Date(NOW + 60 * 60_000)
 
 beforeEach(() => {
   playerFindUniqueMock.mockReset()
+  userFindUniqueMock.mockReset()
   gameWeekFindFirstMock.mockReset()
   plaFindFirstMock.mockReset()
   matchEventCreateMock.mockReset()
@@ -89,6 +94,13 @@ beforeEach(() => {
   getServerSessionMock.mockResolvedValue({
     userId: 'u-stefan',
     playerId: 'stefan-santos',
+  })
+  // v2.2.1 — user lookup added to the gate so LINE-only sessions
+  // (lineId set, userId null) can still resolve. Default returns the
+  // calling User row with a linked playerId.
+  userFindUniqueMock.mockResolvedValue({
+    id: 'u-stefan',
+    playerId: 'p-stefan-santos',
   })
   // Caller's player record — drives the leagueId resolution.
   playerFindUniqueMock.mockResolvedValue({
@@ -169,12 +181,28 @@ describe('submitOwnMatchEvent (v1.82.0 cross-team scorer/assister)', () => {
         scorerPlayerSlug: 'aleksandr-ivankov',
         goalType: 'OPEN_PLAY',
       }),
-    ).rejects.toThrow(/Not signed in/)
+    ).rejects.toThrow(/Sign in to submit a goal/)
     expect(matchEventCreateMock).not.toHaveBeenCalled()
+  })
+
+  it('rejects when session has neither userId nor lineId', async () => {
+    // v2.2.1 — admin-credentials session (no userId, no lineId). Pre-fix
+    // this was the "Not signed in" branch. The neutral copy replaces the
+    // misleading old wording.
+    getServerSessionMock.mockResolvedValue({ userId: null, lineId: null })
+    await expect(
+      submitOwnMatchEvent({
+        matchPublicId: 'md1-m1',
+        beneficiaryTeamId: HOME_LT,
+        scorerPlayerSlug: 'aleksandr-ivankov',
+        goalType: 'OPEN_PLAY',
+      }),
+    ).rejects.toThrow(/Sign in to submit a goal/)
   })
 
   it('rejects when caller has no linked player', async () => {
     getServerSessionMock.mockResolvedValue({ userId: 'u-x', playerId: null })
+    userFindUniqueMock.mockResolvedValue({ id: 'u-x', playerId: null })
     await expect(
       submitOwnMatchEvent({
         matchPublicId: 'md1-m1',
@@ -183,6 +211,65 @@ describe('submitOwnMatchEvent (v1.82.0 cross-team scorer/assister)', () => {
         goalType: 'OPEN_PLAY',
       }),
     ).rejects.toThrow(/No linked player/)
+  })
+
+  it('v2.2.1 regression target: LINE-only session (lineId set, userId null) submits successfully', async () => {
+    // Pre-v2.2.1 grandfathered LINE-auth sessions whose JWT predates the
+    // v1.28.0 NextAuth migration carry lineId but no userId — the gate
+    // rejected with "Not signed in" (digest=1570823256 in prod). The fix
+    // mirrors v1.80.10 / v1.80.11: accept the session, resolve User by
+    // lineId, derive caller player from User.playerId.
+    getServerSessionMock.mockResolvedValue({
+      userId: null,
+      lineId: 'U-line-stefan',
+      playerId: null,
+    })
+    // sessionUserId is null, so only the lineId lookup branch runs.
+    userFindUniqueMock.mockResolvedValue({
+      id: 'u-stefan',
+      playerId: 'p-stefan-santos',
+    })
+    const result = await submitOwnMatchEvent({
+      matchPublicId: 'md1-m1',
+      beneficiaryTeamId: HOME_LT,
+      scorerPlayerSlug: 'aleksandr-ivankov',
+      goalType: 'OPEN_PLAY',
+    })
+    expect(result.id).toBe('me-zeta')
+    // User lookup falls back to lineId — both branches consulted.
+    const userCalls = userFindUniqueMock.mock.calls
+    expect(userCalls.length).toBeGreaterThanOrEqual(1)
+    const lineLookup = userCalls.find(
+      (c: unknown[]) => (c[0] as { where: { lineId?: string } }).where.lineId === 'U-line-stefan',
+    )
+    expect(lineLookup).toBeDefined()
+    const data = matchEventCreateMock.mock.calls[0][0].data
+    // createdById sourced from the resolved canonical User row.
+    expect(data.createdById).toBe('u-stefan')
+  })
+
+  it('v2.2.1 regression target: session.playerId missing — falls back to User.playerId', async () => {
+    // LINE-only viewer where the session JWT carries lineId but no
+    // userId AND no playerId (the JWT-callback didn't decorate that
+    // field). The action must resolve the caller via User.playerId.
+    getServerSessionMock.mockResolvedValue({
+      userId: 'u-stefan',
+      lineId: null,
+      playerId: null,
+    })
+    userFindUniqueMock.mockResolvedValue({
+      id: 'u-stefan',
+      playerId: 'p-stefan-santos',
+    })
+    const result = await submitOwnMatchEvent({
+      matchPublicId: 'md1-m1',
+      beneficiaryTeamId: HOME_LT,
+      scorerPlayerSlug: 'aleksandr-ivankov',
+      goalType: 'OPEN_PLAY',
+    })
+    expect(result.id).toBe('me-zeta')
+    const data = matchEventCreateMock.mock.calls[0][0].data
+    expect(data.createdById).toBe('u-stefan')
   })
 
   it('rejects on invalid goalType', async () => {

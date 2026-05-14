@@ -7,7 +7,7 @@ import { revalidate } from '@/lib/revalidate'
 import { recomputeMatchScore } from '@/lib/matchScore'
 import { evaluateSelfReportGate } from '@/lib/playerSelfReportGate'
 import { parseMatchPublicId } from '@/lib/matchPublicId'
-import { slugToPlayerId } from '@/lib/ids'
+import { slugToPlayerId, playerIdToSlug } from '@/lib/ids'
 import type { GoalType } from '@prisma/client'
 
 const VALID_GOAL_TYPES = new Set<GoalType>([
@@ -74,11 +74,53 @@ export async function submitOwnMatchEvent(input: {
   isGuestAssister?: boolean
   minute?: number | null
 }): Promise<{ id: string }> {
+  // v2.2.1 — admin-orthogonal-UX gate (mirrors v1.80.10 / v1.80.11). Accept
+  // a session keyed by `userId` OR `lineId` so grandfathered LINE-auth
+  // sessions (JWT predates the v1.28.0 NextAuth migration → lineId set,
+  // userId null) can still submit goals. Pre-v2.2.1 the gate required
+  // session.userId and threw "Not signed in" for any LINE-only session,
+  // surfacing in prod as a digest-redacted RSC error.
   const session = await getServerSession(authOptions)
-  const userId = session?.userId
-  const callerPlayerSlug = session?.playerId
-
-  if (!session || !userId) throw new Error('Not signed in')
+  if (!session) throw new Error('Sign in to submit a goal')
+  const sessionUserId = (session as { userId?: string | null }).userId ?? null
+  const sessionLineId = (session as { lineId?: string | null }).lineId ?? null
+  const sessionPlayerSlug = (session as { playerId?: string | null }).playerId ?? null
+  if (!sessionUserId && !sessionLineId) {
+    throw new Error('Sign in to submit a goal')
+  }
+  // Resolve the canonical User row so `createdById` references a real
+  // FK. Look up by userId first, fall back to lineId (User.lineId is
+  // @unique). Same shape as `requireSelfPlayerSession` in
+  // src/app/account/player/actions.ts.
+  let user: { id: string; playerId: string | null } | null = null
+  if (sessionUserId) {
+    user = await prisma.user.findUnique({
+      where: { id: sessionUserId },
+      select: { id: true, playerId: true },
+    })
+  }
+  if (!user && sessionLineId) {
+    user = await prisma.user.findUnique({
+      where: { lineId: sessionLineId },
+      select: { id: true, playerId: true },
+    })
+  }
+  if (!user) throw new Error('Sign in to submit a goal')
+  const userId = user.id
+  // Resolve the calling player slug: session first, then User.playerId,
+  // then Player.lineId. The action requires a linked player as the
+  // "submitter" — the form is gated behind sign-in + player linkage.
+  let callerPlayerSlug = sessionPlayerSlug
+  if (!callerPlayerSlug && user.playerId) {
+    callerPlayerSlug = playerIdToSlug(user.playerId)
+  }
+  if (!callerPlayerSlug && sessionLineId) {
+    const linkedPlayer = await prisma.player.findUnique({
+      where: { lineId: sessionLineId },
+      select: { id: true },
+    })
+    if (linkedPlayer) callerPlayerSlug = playerIdToSlug(linkedPlayer.id)
+  }
   if (!callerPlayerSlug) throw new Error('No linked player on this account')
   if (!VALID_GOAL_TYPES.has(input.goalType)) {
     throw new Error(`Invalid goalType: ${input.goalType}`)
