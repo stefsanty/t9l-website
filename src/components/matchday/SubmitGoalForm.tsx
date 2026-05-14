@@ -29,6 +29,7 @@ export default function SubmitGoalForm({
   matches,
   players,
   teams,
+  leagueSlug,
 }: {
   matchday: Matchday
   /** All matches in the selected matchday (we no longer filter to user's team). */
@@ -43,6 +44,12 @@ export default function SubmitGoalForm({
   players: Player[]
   /** All teams in the league — used to label the scorer dropdown groups. */
   teams: Team[]
+  /**
+   * v2.2.5 — current league slug (the `/id/<slug>/...` URL the form is
+   * rendered under). Passed through to `submitOwnMatchEvent` so the
+   * action scopes the match lookup to the right tenant.
+   */
+  leagueSlug: string
 }) {
   const [open, setOpen] = useState(false)
 
@@ -74,6 +81,7 @@ export default function SubmitGoalForm({
           matches={matches}
           players={players}
           teams={teams}
+          leagueSlug={leagueSlug}
           onClose={() => setOpen(false)}
           onSuccess={() => setOpen(false)}
         />
@@ -104,6 +112,7 @@ function SubmitGoalModal({
   matches,
   players,
   teams,
+  leagueSlug,
   onClose,
   onSuccess,
 }: {
@@ -117,6 +126,7 @@ function SubmitGoalModal({
   }>
   players: Player[]
   teams: Team[]
+  leagueSlug: string
   onClose: () => void
   onSuccess: () => void
 }) {
@@ -317,6 +327,7 @@ function SubmitGoalModal({
       try {
         await submitOwnMatchEvent({
           matchPublicId,
+          leagueSlug,
           beneficiaryTeamId,
           scorerPlayerSlug: isGuestScorer ? null : scorerSlug,
           isGuestScorer,

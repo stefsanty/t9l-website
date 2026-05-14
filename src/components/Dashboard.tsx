@@ -20,6 +20,7 @@ import type { PlannedRosterStats as PlannedRosterStatsData } from '@/lib/planned
 import type { LeagueDetails as LeagueDetailsData } from '@/lib/leagueDetails';
 import { selfReportGateOpen } from '@/lib/playerSelfReportGate';
 import { combineJstDateAndTime } from '@/lib/jst';
+import { DEFAULT_LEAGUE_SLUG } from '@/lib/leagueSlug';
 
 // v1.80.3 — phase 2 H3: split below-fold dashboard widgets out of the
 // initial route bundle. Keep Header / UnpaidFeeBanner / RecruitingBanner /
@@ -373,6 +374,7 @@ export default function Dashboard({
         matches={submitMatches}
         players={players}
         teams={teams}
+        leagueSlug={leagueSlug ?? DEFAULT_LEAGUE_SLUG}
       />
     ) : null;
 
