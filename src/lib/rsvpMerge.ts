@@ -26,15 +26,18 @@ export type AvStatus = 'Y' | 'EXPECTED' | 'PLAYED' | 'GOING' | 'UNDECIDED'
  * Map a single RsvpEntry to the public-side AvStatus the dashboard expects,
  * or `null` if the player has no displayable signal for this matchday.
  *
- * Precedence: PLAYED (admin-recorded "actually showed up") wins over RSVP
- * intent. NOT_GOING and missing/empty signals collapse to null — they don't
- * appear in the availability list.
+ * v2.2.6 — "Going = Played" simplification. A `GOING` RSVP on a matchday
+ * whose JST date has fully elapsed renders as `'PLAYED'`. The pre-v2.2.6
+ * source of `'PLAYED'` (admin-recorded `participated === 'JOINED'`) is no
+ * longer the determining factor; `participated` writes still happen on
+ * admin paths but are vestigial for display purposes. NOT_GOING and
+ * missing/empty signals collapse to null — they don't appear in the
+ * availability list.
  *
  * Pure — exported for unit testing.
  */
-export function mapAvailability(entry: RsvpEntry): AvStatus | null {
-  if (entry.participated === 'JOINED') return 'PLAYED'
-  if (entry.rsvp === 'GOING') return 'GOING'
+export function mapAvailability(entry: RsvpEntry, isPast: boolean): AvStatus | null {
+  if (entry.rsvp === 'GOING') return isPast ? 'PLAYED' : 'GOING'
   if (entry.rsvp === 'UNDECIDED') return 'UNDECIDED'
   return null
 }
@@ -55,12 +58,16 @@ export function mergeRsvpData(args: {
   rsvpByGameWeekId: Map<string, GwRsvpMap>
   gameWeekIdToMatchdayId: Map<string, string>
   players: Player[]
+  // v2.2.6 — matchday ids whose JST date has fully elapsed. Going RSVPs in
+  // these matchdays render as 'PLAYED'. Built in `publicData.ts` from the
+  // static `matchdays[].date` comparison against `formatJstDate(now)`.
+  pastMatchdayIds?: Set<string>
 }): {
   availability: Availability
   availabilityStatuses: AvailabilityStatuses
   played: PlayedStatus
 } {
-  const { rsvpByGameWeekId, gameWeekIdToMatchdayId, players } = args
+  const { rsvpByGameWeekId, gameWeekIdToMatchdayId, players, pastMatchdayIds } = args
 
   // playerSlug → teamSlug index for O(1) team lookup during projection.
   const teamByPlayer = new Map<string, string>()
@@ -76,8 +83,9 @@ export function mergeRsvpData(args: {
     const mdId = gameWeekIdToMatchdayId.get(gwId)
     if (!mdId) continue
 
+    const isPast = pastMatchdayIds?.has(mdId) ?? false
     for (const [playerSlug, entry] of rsvpMap) {
-      const status = mapAvailability(entry)
+      const status = mapAvailability(entry, isPast)
       if (!status) continue
       const teamSlug = teamByPlayer.get(playerSlug)
       if (!teamSlug) continue
