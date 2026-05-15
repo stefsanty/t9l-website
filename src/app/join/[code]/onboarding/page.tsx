@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import OnboardingForm from './OnboardingForm'
+import { getTeamPickerOptions } from '@/lib/onboarding-team-options'
 
 /**
  * v1.34.0 (PR ζ) — onboarding form, reached after `redeemInvite`
@@ -57,7 +58,15 @@ export default async function OnboardingPage({ params }: Props) {
       // v1.82.0 — `ballType` drives the position chip vocabulary.
       // v1.93.0 — `idRequired` controls whether the ID-upload section
       // renders in `RegistrationFields`.
-      select: { id: true, name: true, subdomain: true, ballType: true, idRequired: true },
+      select: {
+        id: true,
+        name: true,
+        subdomain: true,
+        ballType: true,
+        idRequired: true,
+        // v2.2.9 — gates the onboarding team-picker step. Default false.
+        allowPlayerTeamPick: true,
+      },
     }),
     prisma.playerLeagueMembership.findFirst({
       where: {
@@ -85,6 +94,12 @@ export default async function OnboardingPage({ params }: Props) {
     redirect(`/join/${code}`)
   }
   const initialEmail = userRow?.email && userRow?.emailVerified ? userRow.email : ''
+
+  // v2.2.9 — fetch team-picker options only when the toggle is ON; an
+  // empty array keeps the form-side conditional simple.
+  const teamPickerOptions = league.allowPlayerTeamPick
+    ? await getTeamPickerOptions(league.id, currentBinding.player.id, league.ballType)
+    : []
 
   return (
     <main
@@ -122,6 +137,8 @@ export default async function OnboardingPage({ params }: Props) {
           }
           ballType={league.ballType}
           idRequired={league.idRequired}
+          allowPlayerTeamPick={league.allowPlayerTeamPick}
+          teamPickerOptions={teamPickerOptions}
         />
       </div>
     </main>
