@@ -5,6 +5,7 @@ import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { normalizeLeagueSlug } from '@/lib/leagueSlug'
 import { getLeagueIdBySlug } from '@/lib/leagueSlugServer'
+import { getTeamPickerOptions } from '@/lib/onboarding-team-options'
 import RegistrationForm from './RegistrationForm'
 
 /**
@@ -58,7 +59,19 @@ export default async function RecruitPage({ params }: Props) {
     where: { id: leagueId },
     // v1.82.0 — `ballType` drives the position chip vocabulary in
     // RegistrationFields (SOCCER → 12 codes; FUTSAL → GK/FIXO/ALA/PIVOT).
-    select: { id: true, name: true, recruiting: true, subdomain: true, ballType: true, idRequired: true },
+    // v2.2.11 — also select `allowPlayerTeamPick` so the recruit
+    // self-serve form can mount `TeamPickerSection` when the toggle is
+    // on. Closes the recruit-flow picker-bypass surface identified in
+    // the v2.2.11 entry-path audit.
+    select: {
+      id: true,
+      name: true,
+      recruiting: true,
+      subdomain: true,
+      ballType: true,
+      idRequired: true,
+      allowPlayerTeamPick: true,
+    },
   })
   if (!league) notFound()
 
@@ -108,6 +121,16 @@ export default async function RecruitPage({ params }: Props) {
   }
   const initialEmail = user.email && user.emailVerified ? user.email : ''
 
+  // v2.2.11 — fetch team-picker options only when the toggle is ON. The
+  // recruit form is the State C entry path (fresh Player, no
+  // currentPlayerId yet), so `getTeamPickerOptions` is called with
+  // `currentPlayerId = null` — every active member of every team in the
+  // league shows up (no self-exclusion). Mirrors the shape used by
+  // `src/app/join/[code]/onboarding/page.tsx`.
+  const teamPickerOptions = league.allowPlayerTeamPick
+    ? await getTeamPickerOptions(league.id, null, league.ballType)
+    : []
+
   return (
     <main
       className="min-h-dvh flex items-start justify-center px-4 py-8 bg-background"
@@ -130,6 +153,8 @@ export default async function RecruitPage({ params }: Props) {
           initialEmail={initialEmail}
           ballType={league.ballType}
           idRequired={league.idRequired}
+          allowPlayerTeamPick={league.allowPlayerTeamPick}
+          teamPickerOptions={teamPickerOptions}
         />
       </div>
     </main>
