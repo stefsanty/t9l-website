@@ -635,6 +635,16 @@ export interface CompleteOnboardingWithIdInput {
    *   undefined — not supplied (toggle was off, or older client).
    */
   chosenTeamId?: string | null
+  /**
+   * v2.2.12 — when true, the user opted to reuse the ID images already
+   * stored on their `User` row from a previous league. The action
+   * re-verifies `idFrontUrl` / `idBackUrl` / `idUploadedAt` are all set
+   * on the User before honouring the reuse path (a forged true on a
+   * brand-new user is rejected with a friendly consent error). Honoured
+   * paths skip the Blob URL validation + the User.id* write, and set
+   * `PlayerLeagueMembership.idShared = true` on this league's PLM.
+   */
+  reuseExistingId?: boolean
 }
 
 export async function completeOnboardingWithId(
@@ -652,17 +662,41 @@ export async function completeOnboardingWithId(
   // v1.80.11 — resolve User row by userId first, falling back to
   // lineId. Selecting `email` here folds the v1.78.0 lookup at
   // L536-539 into the same query.
-  let user: { id: string; lineId: string | null; email: string | null } | null = null
+  // v2.2.12 — also select the existing-ID columns so the reuse path
+  // can be server-verified without a second round-trip. All three must
+  // be set for `hasExistingIds` to be true (matches the form-side gate).
+  let user: {
+    id: string
+    lineId: string | null
+    email: string | null
+    idFrontUrl: string | null
+    idBackUrl: string | null
+    idUploadedAt: Date | null
+  } | null = null
   if (sessionUserId) {
     user = await prisma.user.findUnique({
       where: { id: sessionUserId },
-      select: { id: true, lineId: true, email: true },
+      select: {
+        id: true,
+        lineId: true,
+        email: true,
+        idFrontUrl: true,
+        idBackUrl: true,
+        idUploadedAt: true,
+      },
     })
   }
   if (!user && sessionLineId) {
     user = await prisma.user.findUnique({
       where: { lineId: sessionLineId },
-      select: { id: true, lineId: true, email: true },
+      select: {
+        id: true,
+        lineId: true,
+        email: true,
+        idFrontUrl: true,
+        idBackUrl: true,
+        idUploadedAt: true,
+      },
     })
   }
   if (!user) throw new Error('User not found')
@@ -718,13 +752,27 @@ export async function completeOnboardingWithId(
 
   const idPrefix = `/player-id/${input.playerId}/`
   const picPrefix = `/player-profile/${input.playerId}/`
-  if (invite.league?.idRequired ?? true) {
+  // v2.2.12 — existing-ID reuse path. The form sets `reuseExistingId`
+  // when the user opted in via the consent checkbox. Server-side we
+  // re-verify the User actually has IDs on file before honouring it.
+  const hasExistingIds = !!(
+    user.idFrontUrl && user.idBackUrl && user.idUploadedAt
+  )
+  const reuseExistingId = !!input.reuseExistingId
+  if ((invite.league?.idRequired ?? true) && !reuseExistingId) {
     if (!isOwnedBlobUrl(input.idFrontUrl, idPrefix)) {
       throw new Error('Front of ID is required')
     }
     if (!isOwnedBlobUrl(input.idBackUrl, idPrefix)) {
       throw new Error('Back of ID is required')
     }
+  }
+  if ((invite.league?.idRequired ?? true) && reuseExistingId && !hasExistingIds) {
+    // Defence-in-depth: a forged `reuseExistingId: true` on a user with
+    // no IDs on file gets the same friendly error the form would surface.
+    throw new Error(
+      "Please confirm consent to share your ID with this league's organizers.",
+    )
   }
   if (input.profilePictureUrl && !isOwnedBlobUrl(input.profilePictureUrl, picPrefix)) {
     throw new Error('profilePictureUrl is not for this player')
@@ -796,7 +844,11 @@ export async function completeOnboardingWithId(
           // v1.93.0 — only persist ID-upload columns when the league
           // required ID. When `league.idRequired === false` the form
           // sends empty URLs; we leave the columns unchanged.
-          ...((invite.league?.idRequired ?? true)
+          // v2.2.12 — also skip when the user opted to reuse the IDs
+          // already on file. The columns already hold the canonical
+          // images; the reuse path only writes `idShared=true` on the
+          // PLM below.
+          ...(((invite.league?.idRequired ?? true) && !reuseExistingId)
             ? {
                 idFrontUrl: input.idFrontUrl,
                 idBackUrl: input.idBackUrl,
@@ -837,6 +889,12 @@ export async function completeOnboardingWithId(
           // here. When the toggle is off, or the user didn't make a
           // selection, leave the existing leagueTeamId untouched.
           ...(chosenLeagueTeamWrite ?? {}),
+          // v2.2.12 — when the user reused the IDs already on file,
+          // record explicit consent on THIS league's PLM. The v2.2.8
+          // admin-proxy `/api/admin/id-image/[userId]/[side]` gates on
+          // `idShared=true` per-league, so this is what authorises this
+          // league's organizers to view the images.
+          ...(reuseExistingId ? { idShared: true } : {}),
         },
       })
     })

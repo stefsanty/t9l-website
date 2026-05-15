@@ -85,7 +85,16 @@ export default async function OnboardingPage({ params }: Props) {
     }),
     prisma.user.findUnique({
       where: { id: userId },
-      select: { email: true, emailVerified: true },
+      // v2.2.12 — also pull the existing-ID columns so the form can
+      // render the consent-checkbox reuse path when the user already
+      // has IDs on file from a previous league.
+      select: {
+        email: true,
+        emailVerified: true,
+        idFrontUrl: true,
+        idBackUrl: true,
+        idUploadedAt: true,
+      },
     }),
   ])
 
@@ -94,6 +103,12 @@ export default async function OnboardingPage({ params }: Props) {
     redirect(`/join/${code}`)
   }
   const initialEmail = userRow?.email && userRow?.emailVerified ? userRow.email : ''
+  // v2.2.12 — existing-ID-on-file gate. All three columns must be set
+  // for the reuse path to make sense (matches the security audit's
+  // "completed ID upload" definition and the server-side re-verify).
+  const hasExistingIds = !!(
+    userRow?.idFrontUrl && userRow?.idBackUrl && userRow?.idUploadedAt
+  )
 
   // v2.2.9 — fetch team-picker options only when the toggle is ON; an
   // empty array keeps the form-side conditional simple.
@@ -139,6 +154,7 @@ export default async function OnboardingPage({ params }: Props) {
           idRequired={league.idRequired}
           allowPlayerTeamPick={league.allowPlayerTeamPick}
           teamPickerOptions={teamPickerOptions}
+          hasExistingIds={hasExistingIds}
         />
       </div>
     </main>

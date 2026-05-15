@@ -3,6 +3,7 @@
 import { useRef, useState, useTransition } from 'react'
 import { upload } from '@vercel/blob/client'
 import PositionMultiSelect from '@/components/PositionMultiSelect'
+import IdExamplesModal from '@/components/registration/IdExamplesModal'
 import { MAX_PREFERRED_POSITIONS, type BallType } from '@/lib/positions'
 
 /**
@@ -60,6 +61,16 @@ export interface RegistrationFieldsSubmit {
   profilePictureUrl: string | null
   /** v1.80.0 — optional free-text comments for the admin. */
   comments: string
+  /**
+   * v2.2.12 — when true, the user opted to reuse the IDs already stored
+   * on their `User` record (from a previous league). The form sends
+   * empty `idFrontUrl` / `idBackUrl` strings in this case, and the
+   * server action skips the Blob upload write path entirely (only
+   * `PlayerLeagueMembership.idShared = true` is set on the current
+   * league's PLM). `false` means a fresh upload was performed in this
+   * submit and the URLs are populated.
+   */
+  reuseExistingId: boolean
 }
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -106,6 +117,17 @@ export interface RegistrationFieldsProps {
    * Defaults to `true` so existing callers continue to require ID.
    */
   idRequired?: boolean
+  /**
+   * v2.2.12 — when true, the calling user already has ID images on
+   * their `User` record (idFrontUrl + idBackUrl + idUploadedAt all set).
+   * RegistrationFields will hide the upload fields by default and
+   * surface a single consent checkbox + an "Upload new ID instead"
+   * affordance to switch back to the upload flow. When `idRequired`
+   * is false, this prop is ignored. Defaults to false. The server
+   * action re-verifies the user's existing-ID state before honouring
+   * the reuse path (a forged true is rejected).
+   */
+  hasExistingIds?: boolean
   /** Submit button label, e.g. "Apply to T9L" or "Save and finish". */
   submitLabel: string
   /**
@@ -139,6 +161,7 @@ export default function RegistrationFields({
   initialSecondaryPositions,
   ballType = null,
   idRequired = true,
+  hasExistingIds = false,
   submitLabel,
   uploadPathPrefix,
   picturePathPrefix,
@@ -159,6 +182,13 @@ export default function RegistrationFields({
     initialSecondaryPositions ? [...initialSecondaryPositions] : [],
   )
   const [error, setError] = useState<string | null>(null)
+  const [idExamplesOpen, setIdExamplesOpen] = useState(false)
+  // v2.2.12 — existing-ID reuse path. Default to reuse when the user
+  // already has IDs on file; otherwise stay false so the upload flow
+  // is the default (back-compat for every recruit-flow path that
+  // doesn't thread the prop).
+  const [useExistingId, setUseExistingId] = useState<boolean>(hasExistingIds)
+  const [consentExistingId, setConsentExistingId] = useState<boolean>(false)
 
   const idFrontRef = useRef<HTMLInputElement>(null)
   const idBackRef = useRef<HTMLInputElement>(null)
@@ -235,11 +265,20 @@ export default function RegistrationFields({
       setError(`Preferred positions: pick at most ${MAX_PREFERRED_POSITIONS}.`)
       return
     }
-    if (idRequired && !idFrontFile) {
+    // v2.2.12 — when the user opted to reuse the existing ID on file,
+    // gate on the consent checkbox instead of the upload-fields. Server
+    // action re-verifies the user actually has IDs (defends against a
+    // forged useExistingId flip on a brand-new user).
+    const reusing = idRequired && hasExistingIds && useExistingId
+    if (idRequired && reusing && !consentExistingId) {
+      setError("Please confirm consent to share your ID with this league's organizers.")
+      return
+    }
+    if (idRequired && !reusing && !idFrontFile) {
       setError('Front of ID is required')
       return
     }
-    if (idRequired && !idBackFile) {
+    if (idRequired && !reusing && !idBackFile) {
       setError('Back of ID is required')
       return
     }
@@ -247,10 +286,13 @@ export default function RegistrationFields({
     startTransition(async () => {
       try {
         const ts = Date.now()
-        const idFrontPath = idFrontFile
+        // v2.2.12 — when reusing, never upload ID files even if a
+        // stale File object lingers in state (defence-in-depth).
+        const shouldUploadId = !reusing
+        const idFrontPath = idFrontFile && shouldUploadId
           ? `${uploadPathPrefix}/id-front-${ts}.${extOf(idFrontFile.name)}`
           : null
-        const idBackPath = idBackFile
+        const idBackPath = idBackFile && shouldUploadId
           ? `${uploadPathPrefix}/id-back-${ts}.${extOf(idBackFile.name)}`
           : null
         const picPath = picFile
@@ -298,6 +340,7 @@ export default function RegistrationFields({
           idBackUrl: back?.url ?? '',
           profilePictureUrl: pic?.url ?? null,
           comments: comments.trim(),
+          reuseExistingId: reusing,
         })
       } catch (err) {
         if (err && typeof err === 'object' && 'digest' in err) {
@@ -309,13 +352,19 @@ export default function RegistrationFields({
     })
   }
 
+  // v2.2.12 — when reusing the existing ID, gate on the consent
+  // checkbox. When uploading new (either no existing IDs, or the user
+  // clicked "Upload new ID instead"), gate on both files present.
+  const reusingNow = idRequired && hasExistingIds && useExistingId
+  const idGateOk = !idRequired ||
+    (reusingNow ? consentExistingId : !!(idFrontFile && idBackFile))
   const submitDisabled =
     pending ||
     !name.trim() ||
     !email.trim() ||
     preferredPositions.length === 0 ||
     preferredPositions.length > MAX_PREFERRED_POSITIONS ||
-    (idRequired && (!idFrontFile || !idBackFile))
+    !idGateOk
 
   return (
     <form
@@ -323,15 +372,14 @@ export default function RegistrationFields({
       className="space-y-5"
       data-testid="registration-fields"
     >
-      {/* v2.2.10 — section header for the name + email pair. Matches the
-          canonical join-flow small-section heading style used by
-          `RedeemCodePicker`. */}
-      <h3
-        className="text-fg-mid text-xs uppercase tracking-wider font-bold mb-1.5"
+      {/* v2.2.12 — section header promoted to <h2> using canonical
+          display typography to match the onboarding hierarchy. */}
+      <h2
+        className="font-display text-2xl font-black uppercase tracking-tight text-fg-high leading-tight"
         data-testid="registration-section-about"
       >
         About you
-      </h3>
+      </h2>
       <label className="block">
         <span className="block text-fg-mid text-xs uppercase tracking-widest font-bold mb-1.5">
           Name <span className="text-vibrant-pink">*</span>
@@ -368,14 +416,14 @@ export default function RegistrationFields({
         </span>
       </label>
 
-      {/* v2.2.10 — section header for the positions pair (preferred +
-          secondary). */}
-      <h3
-        className="text-fg-mid text-xs uppercase tracking-wider font-bold mb-1.5"
+      {/* v2.2.12 — section header promoted to <h2> using canonical
+          display typography. */}
+      <h2
+        className="font-display text-2xl font-black uppercase tracking-tight text-fg-high leading-tight"
         data-testid="registration-section-positions"
       >
         Positions
-      </h3>
+      </h2>
 
       <div className="block">
         <div className="flex items-baseline justify-between mb-1.5">
@@ -427,19 +475,21 @@ export default function RegistrationFields({
 
       {idRequired && (
         <>
-          {/* v2.2.9 — reworded callout. Subheader flipped to "Share Your ID"
-              and body expanded to three explicit paragraphs covering
-              motivation, scope, and access control (verbatim per the
-              v2.2.9 brief). */}
+          {/* v2.2.12 — "Share Your ID" heading lifted OUT of the callout
+              box and promoted to a canonical <h2>, so the section header
+              sits ABOVE the callout (matching About you / Positions). */}
+          <h2
+            className="font-display text-2xl font-black uppercase tracking-tight text-fg-high leading-tight"
+            data-testid="registration-section-id"
+          >
+            Share Your ID
+          </h2>
           <div
             className="rounded-lg border border-warning/40 bg-warning/10 px-4 py-3 text-sm text-fg-high leading-relaxed"
             data-testid="registration-id-callout"
           >
-            {/* v2.2.10 — section heading promoted from <p> to <h3> so the
-                callout matches the other onboarding section headers. */}
-            <h3 className="font-bold mb-1.5 text-fg-high">Share Your ID</h3>
             <p className="text-fg-mid mb-2">
-              We require your ID strictly to enable more regular league games!
+              We require your ID to enable more regular league games!
             </p>
             <p className="text-fg-mid mb-2">
               To serve you the best league experience possible, we require league members to share your ID with us in order to book more courts.
@@ -448,30 +498,101 @@ export default function RegistrationFields({
               Your ID will only ever be shared to the organizers, and is secured so that no one but the organizers may access your ID.
             </p>
           </div>
+          {hasExistingIds && useExistingId ? (
+            // v2.2.12 — reuse-existing-ID consent path. Replaces the
+            // two upload fields with a single checkbox + explainer.
+            <div className="space-y-2" data-testid="registration-id-reuse">
+              <p className="text-xs text-fg-mid">
+                We already have your ID on file from a previous league.
+                Confirm below to share it with this league&apos;s organizers.
+              </p>
+              <label className="flex items-start gap-2 text-sm text-fg-high cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={consentExistingId}
+                  onChange={(e) => setConsentExistingId(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 accent-primary"
+                  data-testid="registration-id-reuse-consent"
+                />
+                <span>
+                  I consent to share my existing ID with the organizers of this
+                  league.
+                </span>
+              </label>
+              <div className="flex items-center gap-3 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setIdExamplesOpen(true)}
+                  className="text-xs text-primary underline underline-offset-2 hover:opacity-80"
+                  data-testid="registration-id-examples-trigger"
+                >
+                  Which IDs are accepted?
+                </button>
+                <span aria-hidden className="text-fg-low text-xs">·</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setUseExistingId(false)
+                    setConsentExistingId(false)
+                  }}
+                  className="text-xs text-primary underline underline-offset-2 hover:opacity-80"
+                  data-testid="registration-id-upload-new-trigger"
+                >
+                  Upload new ID instead
+                </button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setIdExamplesOpen(true)}
+                  className="text-xs text-primary underline underline-offset-2 hover:opacity-80"
+                  data-testid="registration-id-examples-trigger"
+                >
+                  Which IDs are accepted?
+                </button>
+                {hasExistingIds && (
+                  <>
+                    <span aria-hidden className="text-fg-low text-xs">·</span>
+                    <button
+                      type="button"
+                      onClick={() => setUseExistingId(true)}
+                      className="text-xs text-primary underline underline-offset-2 hover:opacity-80"
+                      data-testid="registration-id-use-existing-trigger"
+                    >
+                      Use existing ID instead
+                    </button>
+                  </>
+                )}
+              </div>
 
-          <FileField
-            label="Front of ID"
-            required
-            accept={ID_ACCEPT}
-            preview={idFrontPreview}
-            inputRef={idFrontRef}
-            onChange={(f) =>
-              handleFileChange(f, setIdFrontFile, setIdFrontPreview, ID_MAX_BYTES, 'Front of ID')
-            }
-            testid="registration-id-front"
-          />
+              <FileField
+                label="Front of ID"
+                required
+                accept={ID_ACCEPT}
+                preview={idFrontPreview}
+                inputRef={idFrontRef}
+                onChange={(f) =>
+                  handleFileChange(f, setIdFrontFile, setIdFrontPreview, ID_MAX_BYTES, 'Front of ID')
+                }
+                testid="registration-id-front"
+              />
 
-          <FileField
-            label="Back of ID"
-            required
-            accept={ID_ACCEPT}
-            preview={idBackPreview}
-            inputRef={idBackRef}
-            onChange={(f) =>
-              handleFileChange(f, setIdBackFile, setIdBackPreview, ID_MAX_BYTES, 'Back of ID')
-            }
-            testid="registration-id-back"
-          />
+              <FileField
+                label="Back of ID"
+                required
+                accept={ID_ACCEPT}
+                preview={idBackPreview}
+                inputRef={idBackRef}
+                onChange={(f) =>
+                  handleFileChange(f, setIdBackFile, setIdBackPreview, ID_MAX_BYTES, 'Back of ID')
+                }
+                testid="registration-id-back"
+              />
+            </>
+          )}
         </>
       )}
 
@@ -518,6 +639,8 @@ export default function RegistrationFields({
           {error}
         </p>
       )}
+
+      <IdExamplesModal open={idExamplesOpen} onClose={() => setIdExamplesOpen(false)} />
     </form>
   )
 }

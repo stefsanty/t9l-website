@@ -174,9 +174,10 @@ describe('[v1.93.0] RegistrationFields — preferred/secondary + idRequired', ()
   it('accepts `idRequired` prop (defaults true) — hides ID UI when false', () => {
     expect(src).toMatch(/idRequired\?: boolean/)
     expect(src).toMatch(/idRequired\s*=\s*true,?/)
-    // Gate on `idRequired &&` to skip the ID required-validation.
-    expect(src).toMatch(/idRequired && !idFrontFile/)
-    expect(src).toMatch(/idRequired && !idBackFile/)
+    // v2.2.12 widened the gate to include `!reusing` so the existing-ID
+    // reuse path also skips the file-presence requirement.
+    expect(src).toMatch(/idRequired\s*&&\s*!reusing\s*&&\s*!idFrontFile/)
+    expect(src).toMatch(/idRequired\s*&&\s*!reusing\s*&&\s*!idBackFile/)
     // ID callout + file fields wrapped in `{idRequired && (`.
     expect(src).toMatch(/\{idRequired && \(/)
   })

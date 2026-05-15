@@ -336,11 +336,15 @@ describe('onboarding-team-options — qualifying-member filter (v2.2.9)', () => 
 
 describe('RegistrationFields — "Share Your ID" callout (v2.2.9)', () => {
   it('uses the new subheader', () => {
-    expect(REG_FIELDS_SRC).toMatch(/>Share Your ID</)
+    // v2.2.12 — heading lifted out of the callout box and promoted to <h2>
+    // sitting ABOVE the callout. Match the text regardless of intervening
+    // whitespace from JSX formatting.
+    expect(REG_FIELDS_SRC).toMatch(/>\s*Share Your ID\s*</)
   })
 
-  it('contains all three paragraphs of the v2.2.9 callout copy', () => {
-    expect(REG_FIELDS_SRC).toMatch(/We require your ID strictly to enable more regular league games!/)
+  it('contains all three paragraphs of the v2.2.12 callout copy ("strictly" dropped)', () => {
+    expect(REG_FIELDS_SRC).toMatch(/We require your ID to enable more regular league games!/)
+    expect(REG_FIELDS_SRC).not.toMatch(/We require your ID strictly to enable/)
     expect(REG_FIELDS_SRC).toMatch(/we require league members to share your ID/)
     expect(REG_FIELDS_SRC).toMatch(/no one but the organizers may access your ID/)
   })

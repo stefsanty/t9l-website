@@ -96,48 +96,67 @@ describe('v2.2.10 — /join/[code] resolver detours through /onboarding when tog
   })
 })
 
-describe('v2.2.10 — RegistrationFields section h3 headers', () => {
-  it('renders an h3 "About you" before the name + email pair', () => {
-    expect(REG_FIELDS_SRC).toMatch(/<h3[^>]*>\s*About you\s*<\/h3>/)
+describe('v2.2.12 — RegistrationFields section h2 headers', () => {
+  // v2.2.12 promoted these section headers from <h3> to canonical <h2>
+  // (display typography). The testid pins remain so downstream tests
+  // can still locate each section.
+  it('renders an h2 "About you" before the name + email pair', () => {
+    expect(REG_FIELDS_SRC).toMatch(/<h2[^>]*>\s*About you\s*<\/h2>/)
     expect(REG_FIELDS_SRC).toMatch(/data-testid="registration-section-about"/)
   })
 
-  it('renders an h3 "Positions" before the position pickers', () => {
-    expect(REG_FIELDS_SRC).toMatch(/<h3[^>]*>\s*Positions\s*<\/h3>/)
+  it('renders an h2 "Positions" before the position pickers', () => {
+    expect(REG_FIELDS_SRC).toMatch(/<h2[^>]*>\s*Positions\s*<\/h2>/)
     expect(REG_FIELDS_SRC).toMatch(/data-testid="registration-section-positions"/)
   })
 
-  it('promotes the "Share Your ID" heading from <p> to <h3>', () => {
-    expect(REG_FIELDS_SRC).toMatch(/<h3[^>]*>Share Your ID<\/h3>/)
-    // The previous shape was <p className="font-bold mb-1.5 text-fg-high">Share Your ID</p>.
+  it('renders the "Share Your ID" heading as an h2 ABOVE the callout box', () => {
+    expect(REG_FIELDS_SRC).toMatch(/<h2[^>]*>\s*Share Your ID\s*<\/h2>/)
+    // Pre-v2.2.10: <p>. Pre-v2.2.12: <h3> INSIDE the callout. v2.2.12: <h2> ABOVE.
     expect(REG_FIELDS_SRC).not.toMatch(/<p[^>]*>Share Your ID<\/p>/)
+    expect(REG_FIELDS_SRC).not.toMatch(/<h3[^>]*>Share Your ID<\/h3>/)
+    // h2 must appear BEFORE the callout div in source order.
+    const h2Idx = REG_FIELDS_SRC.search(/<h2[^>]*data-testid="registration-section-id"/)
+    const calloutIdx = REG_FIELDS_SRC.indexOf('data-testid="registration-id-callout"')
+    expect(h2Idx).toBeGreaterThan(0)
+    expect(calloutIdx).toBeGreaterThan(h2Idx)
   })
 
-  it('uses the canonical join-flow small-section heading style', () => {
-    // Matches the style used by RedeemCodePicker.tsx:76 — keeps the
-    // section headings visually consistent across the join flow.
+  it('uses canonical display-h2 typography on every section header', () => {
+    // font-display + text-2xl + font-black + uppercase + tracking-tight is
+    // the canonical h2 vocabulary used by ApplyToLeagueModal, MatchdayCard,
+    // SuccessConfirmationModal, etc. The team-picker h2 below matches.
     const aboutIdx = REG_FIELDS_SRC.indexOf('About you')
     expect(aboutIdx).toBeGreaterThan(0)
-    const block = REG_FIELDS_SRC.slice(Math.max(0, aboutIdx - 300), aboutIdx)
-    expect(block).toMatch(/text-fg-mid\s+text-xs\s+uppercase\s+tracking-wider\s+font-bold/)
+    const block = REG_FIELDS_SRC.slice(Math.max(0, aboutIdx - 400), aboutIdx)
+    expect(block).toMatch(/font-display\s+text-2xl\s+font-black\s+uppercase\s+tracking-tight\s+text-fg-high/)
   })
 })
 
-describe('v2.2.10 — TeamPickerSection section/h3 swap', () => {
+describe('v2.2.12 — TeamPickerSection h2 + 2-col grid + Current players label', () => {
   it('wraps the picker in <section> instead of <fieldset>', () => {
     expect(TEAM_PICKER_SRC).toMatch(/<section[^>]*data-testid="onboarding-team-picker"/)
     expect(TEAM_PICKER_SRC).not.toMatch(/<fieldset/)
   })
 
-  it('uses an <h3> for the "Choose your team" heading (was <legend>)', () => {
-    expect(TEAM_PICKER_SRC).toMatch(/<h3[\s\S]*?Choose your team/)
+  it('uses an <h2> for the "Choose your team" heading', () => {
+    expect(TEAM_PICKER_SRC).toMatch(/<h2[\s\S]*?Choose your team/)
     expect(TEAM_PICKER_SRC).not.toMatch(/<legend/)
+    // Sanity: no leftover h3 for this heading.
+    expect(TEAM_PICKER_SRC).not.toMatch(/<h3[\s\S]*?Choose your team/)
   })
 
   it('preserves aria-labelledby wiring to the heading id', () => {
-    // Accessible name still derives from the section heading via
-    // aria-labelledby — the swap doesn't lose this semantics.
     expect(TEAM_PICKER_SRC).toMatch(/aria-labelledby=\{`\$\{groupId\}-label`\}/)
     expect(TEAM_PICKER_SRC).toMatch(/id=\{`\$\{groupId\}-label`\}/)
+  })
+
+  it('uses a responsive 2-column grid for the team cards', () => {
+    // Single column on mobile, two columns from md: up.
+    expect(TEAM_PICKER_SRC).toMatch(/grid-cols-1\s+md:grid-cols-2/)
+  })
+
+  it('renders a "Current players:" mini-label above each populated roster', () => {
+    expect(TEAM_PICKER_SRC).toContain('Current players:')
   })
 })
