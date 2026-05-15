@@ -135,3 +135,35 @@ export function buildGwToMdMap(
   }
   return map
 }
+
+/**
+ * v2.2.7 — derive the set of matchday ids whose kickoff has already occurred.
+ *
+ * Cutoff is `gw.startDate < now` (precise instant), not JST midnight: the
+ * moment the match kicks off, the result is locked and GOING flips to PLAYED.
+ * Example: matchday with `startDate = 2026-04-05T19:00:00+09:00` is still
+ * upcoming at 13:00 JST that day, and becomes past at 19:01.
+ *
+ * `gws[].startDate` is `Date | null`; nulls (TBD matchdays) are never past.
+ *
+ * Pure — exported for unit testing.
+ */
+export function computePastMatchdayIds(
+  gws: { id: string; weekNumber: number; startDate: Date | null }[],
+  matchdays: Matchday[],
+  now: Date,
+): Set<string> {
+  const mdByWeek = new Map<number, string>()
+  for (const md of matchdays) {
+    const m = md.id.match(/^md(\d+)$/)
+    if (m) mdByWeek.set(parseInt(m[1], 10), md.id)
+  }
+  const past = new Set<string>()
+  for (const gw of gws) {
+    if (gw.startDate === null) continue
+    if (gw.startDate >= now) continue
+    const mdId = mdByWeek.get(gw.weekNumber)
+    if (mdId) past.add(mdId)
+  }
+  return past
+}
