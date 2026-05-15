@@ -68,8 +68,13 @@ describe('v1.68.0 shared RegistrationFields component', () => {
     // conditional ID gate); match against the multi-line expression
     // rather than a single line.
     expect(code).toMatch(/submitDisabled\s*=[\s\S]*?!name\.trim\(\)/)
-    // v1.93.0 — idFront/idBack gating only when `idRequired` is true.
-    expect(code).toMatch(/idRequired && \(!idFrontFile \|\| !idBackFile\)/)
+    // v2.2.12 — idGateOk replaces the inline `idRequired && (!idFrontFile || !idBackFile)`
+    // expression so the existing-ID reuse path can substitute a consent
+    // checkbox gate. The submitDisabled expression now ends in `!idGateOk`.
+    expect(code).toMatch(/!idGateOk/)
+    // The new computation explicitly references both the file gate and
+    // the consent gate (re-verified below in v2212_existing_id_reuse).
+    expect(code).toMatch(/idFrontFile\s*&&\s*idBackFile/)
     // Picture is NOT in the gate (regression target).
     expect(code).not.toMatch(/!picFile/)
   })

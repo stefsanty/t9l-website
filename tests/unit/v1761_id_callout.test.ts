@@ -39,8 +39,13 @@ describe('v1.76.1 / v2.2.9 — ID upload callout', () => {
     expect(calloutIdx).toBeLessThan(idFrontIdx)
   })
 
-  it('callout contains the exact v2.2.9 operator-mandated wording', () => {
+  it('callout contains the exact v2.2.12 operator-mandated wording', () => {
+    // v2.2.12 dropped the word "strictly" per the operator's softer-tone
+    // preference. Other paragraphs unchanged from v2.2.9.
     expect(src).toContain(
+      'We require your ID to enable more regular league games!'
+    )
+    expect(src).not.toContain(
       'We require your ID strictly to enable more regular league games!'
     )
     expect(src).toContain(

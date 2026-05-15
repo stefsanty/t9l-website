@@ -55,20 +55,20 @@ export default function TeamPickerSection({
       data-testid="onboarding-team-picker"
       aria-labelledby={`${groupId}-label`}
     >
-      {/* v2.2.10 — promoted fieldset/legend to section/h3 so the picker
-          matches the canonical onboarding section-heading style used by
-          the other RegistrationFields sections. */}
-      <h3
+      {/* v2.2.12 — promoted to <h2> with canonical display typography
+          so the team picker matches the About you / Positions / Share
+          Your ID hierarchy. */}
+      <h2
         id={`${groupId}-label`}
-        className="text-fg-mid text-xs uppercase tracking-wider font-bold mb-1.5"
+        className="font-display text-2xl font-black uppercase tracking-tight text-fg-high leading-tight"
       >
         Choose your team <span className="text-vibrant-pink">*</span>
-      </h3>
+      </h2>
       <p className="text-fg-low text-xs mt-0.5 mb-3">
         Please choose the team you want to join. If you&apos;d rather let the organizer place you on a balanced team, choose the last option.
       </p>
 
-      <div className="grid grid-cols-1 gap-3">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {options.map((opt) => {
           const selected = value === opt.leagueTeamId
           const visibleMembers = opt.members.slice(0, MAX_VISIBLE_MEMBERS)
@@ -111,7 +111,11 @@ export default function TeamPickerSection({
                   No members yet — be the first.
                 </div>
               ) : (
-                <ul className="space-y-1">
+                <>
+                  <div className="text-[10px] uppercase tracking-widest font-bold text-fg-low mb-1">
+                    Current players:
+                  </div>
+                  <ul className="space-y-1">
                   {visibleMembers.map((m) => (
                     <li
                       key={m.playerId}
@@ -133,7 +137,8 @@ export default function TeamPickerSection({
                       +{overflowCount} more
                     </li>
                   )}
-                </ul>
+                  </ul>
+                </>
               )}
             </button>
           )

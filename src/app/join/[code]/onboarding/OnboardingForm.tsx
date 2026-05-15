@@ -53,6 +53,13 @@ interface Props {
   allowPlayerTeamPick?: boolean
   /** v2.2.9 — eligible teams + member rosters for the picker cards. */
   teamPickerOptions?: ReadonlyArray<TeamPickerOption>
+  /**
+   * v2.2.12 — true when this User already has ID images on file from
+   * a previous league. Threaded into RegistrationFields so it can
+   * render the consent-checkbox reuse path instead of the upload fields.
+   * Server action re-verifies the User state before honouring reuse.
+   */
+  hasExistingIds?: boolean
 }
 
 // v2.2.9 — sentinel for "no selection yet" (distinct from `null`, which
@@ -70,6 +77,7 @@ export default function OnboardingForm({
   idRequired = true,
   allowPlayerTeamPick = false,
   teamPickerOptions = [],
+  hasExistingIds = false,
 }: Props) {
   const [teamSelection, setTeamSelection] = useState<TeamSelection>(NO_SELECTION)
   const [teamPickerError, setTeamPickerError] = useState<string | null>(null)
@@ -99,6 +107,7 @@ export default function OnboardingForm({
       profilePictureUrl: input.profilePictureUrl,
       comments: input.comments || null,
       chosenTeamId,
+      reuseExistingId: input.reuseExistingId,
     })
     // completeOnboardingWithId redirects on success — anything past
     // here only runs if the action returns instead of throwing/redirecting.
@@ -132,6 +141,7 @@ export default function OnboardingForm({
         initialPositions={initialPositions}
         ballType={ballType}
         idRequired={idRequired}
+        hasExistingIds={hasExistingIds}
         submitLabel="Save and finish"
         uploadPathPrefix={`player-id/${playerId}`}
         picturePathPrefix={`player-profile/${playerId}`}
