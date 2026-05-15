@@ -78,7 +78,18 @@ function AssignModal({ onDismiss }: { onDismiss: () => void }) {
 }
 
 
-export default function LineLoginButton() {
+interface LineLoginButtonProps {
+  /**
+   * v2.2.13 — when the parent page resolved a URL-scoped league (e.g.
+   * `/id/<slug>`), it threads that league's `allowSelfLink` here so the
+   * self-link affordances follow the URL's league rather than the
+   * session's default league. Falls back to `session.allowSelfLink`
+   * (legacy behaviour) when undefined.
+   */
+  allowSelfLinkOverride?: boolean;
+}
+
+export default function LineLoginButton({ allowSelfLinkOverride }: LineLoginButtonProps = {}) {
     const { data: session, status } = useSession();
   const [open, setOpen] = useState(false);
   const [showAssignModal, setShowAssignModal] = useState(false);
@@ -104,10 +115,19 @@ export default function LineLoginButton() {
   // to land on the disabled surface would be confusing UX. Any
   // authenticated session with no playerId AND allowSelfLink === true
   // sees the popup once (until they dismiss it).
+  // v2.2.13 — prefer the URL-scoped override when the page provided one;
+  // otherwise fall back to session's value (legacy default-league
+  // behaviour). Pre-v2.2.13 the modal could pop on /id/<non-default
+  // league> pages even when that league had self-linking disabled.
+  const effectiveAllowSelfLink =
+    allowSelfLinkOverride !== undefined
+      ? allowSelfLinkOverride
+      : session?.allowSelfLink !== false;
+
   useEffect(() => {
     if (
       status === 'authenticated' &&
-      session?.allowSelfLink &&
+      effectiveAllowSelfLink &&
       !session?.playerId &&
       (session?.lineId || session?.userId)
     ) {
@@ -116,7 +136,7 @@ export default function LineLoginButton() {
         setShowAssignModal(true);
       }
     }
-  }, [status, session?.lineId, session?.userId, session?.playerId, session?.allowSelfLink]);
+  }, [status, session?.lineId, session?.userId, session?.playerId, effectiveAllowSelfLink]);
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -234,7 +254,13 @@ export default function LineLoginButton() {
   // gate is per-league via `session.allowSelfLink` (computed in the JWT
   // callback). When OFF, the dropdown shows the friendly "Need an invite"
   // message instead of the picker CTA.
-  const allowSelfLink = session.allowSelfLink !== false; // default-true
+  // v2.2.13 — see `effectiveAllowSelfLink` above; URL-scoped override
+  // wins when present so cross-league pages gate against the URL's
+  // league, not the session's default league.
+  const allowSelfLink =
+    allowSelfLinkOverride !== undefined
+      ? allowSelfLinkOverride
+      : session.allowSelfLink !== false; // default-true
 
   return (
     <>

@@ -86,6 +86,21 @@ export default async function LeagueByIdPage({ params }: Props) {
   const leagueId = await getLeagueIdBySlug(slug)
   if (!leagueId) notFound()
 
+  // v2.2.13 — fetch URL-scoped league fields so the header title +
+  // self-link button reflect THIS league, not the session's default
+  // league. Pre-v2.2.13 the page passed `leagueTitle={null}`, which
+  // forced Header to its hardcoded fallback ("T9L '26 春"), and the
+  // self-link button read `session.allowSelfLink` — computed in the JWT
+  // callback against `getDefaultLeagueId()` (the default tenant), not
+  // the URL slug. Mirrors the v2.2.5 cross-league scoping pattern.
+  const leagueForHeader = await prisma.league.findUnique({
+    where: { id: leagueId },
+    select: { name: true, abbreviation: true, allowSelfLink: true },
+  })
+  const headerTitle =
+    leagueForHeader?.abbreviation ?? leagueForHeader?.name ?? null
+  const headerAllowSelfLink = leagueForHeader?.allowSelfLink ?? true
+
   // v1.85.0 — last-selected league tracker. Fire-and-forget write
   // (wrapped in `waitUntil` inside the helper). v2.1.0 — moved to the
   // page-level (was inside the v1.99.0 LeagueDashboardContents child)
@@ -100,7 +115,11 @@ export default async function LeagueByIdPage({ params }: Props) {
 
   return (
     <>
-      <Header leagueTitle={null} hideStatsLink={false} />
+      <Header
+        leagueTitle={headerTitle}
+        hideStatsLink={false}
+        allowSelfLinkOverride={headerAllowSelfLink}
+      />
       <div className="flex flex-col min-h-dvh pb-0 max-w-lg mx-auto bg-background selection:bg-vibrant-pink selection:text-white">
         <main className="flex-1 px-4 relative z-10 pt-12 pb-2">
           <div data-testid="dashboard-body" className="pt-2">
