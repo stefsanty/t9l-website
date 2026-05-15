@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import { mapAvailability, mergeRsvpData, buildGwToMdMap } from '@/lib/rsvpMerge'
+import {
+  mapAvailability,
+  mergeRsvpData,
+  buildGwToMdMap,
+  computePastMatchdayIds,
+} from '@/lib/rsvpMerge'
 import type { Player, Matchday } from '@/types'
 import type { GwRsvpMap } from '@/lib/rsvpStore'
 
@@ -74,6 +79,40 @@ describe('buildGwToMdMap — GameWeek id ↔ matchday id', () => {
       MATCHDAYS,
     )
     expect(m.has('cuid-99')).toBe(false)
+  })
+})
+
+describe('computePastMatchdayIds — kickoff-precise cutoff (v2.2.7)', () => {
+  // Cutoff is `gw.startDate < now`, not JST midnight. A matchday that
+  // kicks off at 19:00 JST is still upcoming at 13:00 JST that same day
+  // (GOING displays as GOING) and becomes past at 19:01 (GOING → PLAYED).
+  const KICKOFF = new Date('2026-04-05T19:00:00+09:00') // 10:00:00Z
+  const GW = [{ id: 'gw-1', weekNumber: 1, startDate: KICKOFF }]
+
+  it('13:00 JST on kickoff day → matchday is NOT past (still upcoming)', () => {
+    const now = new Date('2026-04-05T13:00:00+09:00')
+    expect(computePastMatchdayIds(GW, MATCHDAYS, now).has('md1')).toBe(false)
+  })
+
+  it('19:01 JST on kickoff day → matchday IS past (locked)', () => {
+    const now = new Date('2026-04-05T19:01:00+09:00')
+    expect(computePastMatchdayIds(GW, MATCHDAYS, now).has('md1')).toBe(true)
+  })
+
+  it('exactly at kickoff → not yet past (strict less-than)', () => {
+    const now = new Date('2026-04-05T19:00:00+09:00')
+    expect(computePastMatchdayIds(GW, MATCHDAYS, now).has('md1')).toBe(false)
+  })
+
+  it('null startDate (TBD matchday) → never past', () => {
+    const tbd = [{ id: 'gw-tbd', weekNumber: 1, startDate: null }]
+    const now = new Date('2099-01-01T00:00:00+09:00')
+    expect(computePastMatchdayIds(tbd, MATCHDAYS, now).size).toBe(0)
+  })
+
+  it('GameWeek with no matching matchday entry is skipped', () => {
+    const orphan = [{ id: 'gw-99', weekNumber: 99, startDate: new Date('2020-01-01') }]
+    expect(computePastMatchdayIds(orphan, MATCHDAYS, new Date()).size).toBe(0)
   })
 })
 

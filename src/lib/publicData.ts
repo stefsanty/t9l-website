@@ -10,9 +10,8 @@ import {
   type GwRsvpMap,
   type RsvpReadResult,
 } from './rsvpStore'
-import { mergeRsvpData, buildGwToMdMap } from './rsvpMerge'
+import { mergeRsvpData, buildGwToMdMap, computePastMatchdayIds } from './rsvpMerge'
 import { playerIdToSlug } from './ids'
-import { formatJstDate } from './jst'
 
 /**
  * Cached static read for the public site, plus an uncached RSVP merge.
@@ -173,16 +172,14 @@ async function getRsvpData(
 
   const gameWeekIdToMatchdayId = buildGwToMdMap(gws, staticData.matchdays)
 
-  // v2.2.6 — matchdays whose JST calendar date has fully elapsed. A `GOING`
-  // RSVP for these renders as `'PLAYED'`. Cutoff is JST-midnight: same-day
-  // = still upcoming (e.g. on 2026-04-05, a matchday with date 2026-04-05
-  // is NOT past; from 2026-04-06 onward it IS past).
-  const todayJst = formatJstDate(new Date())
-  const pastMatchdayIds = new Set(
-    staticData.matchdays
-      .filter((md) => md.date !== null && md.date < todayJst)
-      .map((md) => md.id),
-  )
+  // v2.2.7 — matchdays whose kickoff (`GameWeek.startDate`) is before `now`.
+  // A `GOING` RSVP for these renders as `'PLAYED'`. Cutoff is the precise
+  // kickoff instant, not JST midnight: at 13:00 JST on a 19:00-kickoff day
+  // the match is still upcoming; at 19:01 it locks to PLAYED. We compare
+  // against `gw.startDate` (the DateTime source-of-truth) rather than the
+  // JST-date string on the public `Matchday` so the comparison is precise
+  // to the minute the result is final.
+  const pastMatchdayIds = computePastMatchdayIds(gws, staticData.matchdays, new Date())
 
   return mergeRsvpData({
     rsvpByGameWeekId,
