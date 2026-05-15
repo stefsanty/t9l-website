@@ -45,3 +45,47 @@ export function selectIdSectionMode(input: IdSectionInputs): IdSectionMode {
   if (input.hasExistingIds) return 'reuse-existing'
   return 'upload'
 }
+
+/**
+ * v2.2.15 — pure resolver for the invite-time external-ID preset.
+ *
+ * When an admin creates an invite and ticks "User has ID on file
+ * externally", we capture two columns on the LeagueInvite:
+ * `presetIdCollectedExternally: boolean` and an optional
+ * `presetIdCollectedExternallyNotes: string`. On redemption,
+ * `redeemInvite` consults this resolver to decide whether to set
+ * `User.idCollectedExternally = true` and what notes string to write.
+ *
+ * Idempotency lives at the call site, not here — the action only
+ * invokes the resolver when the User row's flag is currently false.
+ *
+ * Fallback note: when the admin ticks the box but supplies no notes,
+ * we still want SOMETHING in the audit column so admins viewing the
+ * user-detail page later can tell why the flag is set. The canonical
+ * fallback string `'Pre-marked at invite creation'` is the operator-
+ * approved phrasing.
+ */
+export interface InvitePresetExternalIdInput {
+  flag: boolean
+  notes: string | null | undefined
+}
+
+export interface InvitePresetExternalIdResult {
+  collected: boolean
+  /** Non-empty trimmed string when `collected: true`; null otherwise. */
+  notes: string | null
+}
+
+export const INVITE_PRESET_EXTERNAL_FALLBACK_NOTE =
+  'Pre-marked at invite creation'
+
+export function resolveInvitePresetExternalId(
+  input: InvitePresetExternalIdInput,
+): InvitePresetExternalIdResult {
+  if (!input.flag) return { collected: false, notes: null }
+  const trimmed = typeof input.notes === 'string' ? input.notes.trim() : ''
+  return {
+    collected: true,
+    notes: trimmed || INVITE_PRESET_EXTERNAL_FALLBACK_NOTE,
+  }
+}

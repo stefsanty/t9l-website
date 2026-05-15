@@ -109,6 +109,11 @@ describe('v1.33.0 (PR ε) — buildInviteCreateData', () => {
       expiresAt,
       maxUses: 1,
       skipOnboarding: false,
+      // v2.2.15 — invite-time external-ID preset defaults to off/null
+      // when the caller doesn't supply it. Test fixture above omits
+      // both fields, so the build helper writes the neutral baseline.
+      presetIdCollectedExternally: false,
+      presetIdCollectedExternallyNotes: null,
     })
   })
 

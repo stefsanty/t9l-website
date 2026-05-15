@@ -143,6 +143,13 @@ export interface BuildInviteCreateDataArgs {
   expiresAt: Date | null
   skipOnboarding: boolean
   createdById: string | null
+  // v2.2.15 — invite-time external-ID preset. When `true`, redemption
+  // auto-sets `User.idCollectedExternally = true` on the bound User
+  // (with notes from `presetIdCollectedExternallyNotes` or the
+  // canonical fallback). Both fields default to false/null so existing
+  // call sites work unchanged.
+  presetIdCollectedExternally?: boolean
+  presetIdCollectedExternallyNotes?: string | null
 }
 export interface InviteCreateData {
   leagueId: string
@@ -153,6 +160,8 @@ export interface InviteCreateData {
   expiresAt: Date | null
   maxUses: number | null
   skipOnboarding: boolean
+  presetIdCollectedExternally: boolean
+  presetIdCollectedExternallyNotes: string | null
 }
 
 export function buildInviteCreateData(args: BuildInviteCreateDataArgs): InviteCreateData {
@@ -165,6 +174,11 @@ export function buildInviteCreateData(args: BuildInviteCreateDataArgs): InviteCr
     expiresAt: args.expiresAt,
     maxUses: args.targetPlayerId ? 1 : null, // PERSONAL invites are single-use
     skipOnboarding: args.skipOnboarding,
+    presetIdCollectedExternally: !!args.presetIdCollectedExternally,
+    presetIdCollectedExternallyNotes:
+      args.presetIdCollectedExternally
+        ? (args.presetIdCollectedExternallyNotes?.trim() || null)
+        : null,
   }
 }
 

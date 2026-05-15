@@ -1103,6 +1103,16 @@ model LeagueInvite {
   // Default false — onboarding form is the safe path.
   skipOnboarding Boolean @default(false)
 
+  // v2.2.15 — invite-time preset for the external-ID attestation. When
+  // true, redemption auto-sets `User.idCollectedExternally = true` on
+  // the bound User (with `idCollectedExternallyAt = now()` and notes
+  // copied from `presetIdCollectedExternallyNotes`, or a default
+  // fallback when no notes were supplied). Idempotent — never
+  // overwrites an already-true flag, so a second invite redemption
+  // doesn't churn the notes column.
+  presetIdCollectedExternally      Boolean @default(false)
+  presetIdCollectedExternallyNotes String?
+
   league League @relation(fields: [leagueId], references: [id], onDelete: Cascade)
 
   @@index([leagueId])

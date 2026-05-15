@@ -20,7 +20,11 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'fs'
 import { resolve } from 'path'
-import { selectIdSectionMode } from '@/lib/registration-helpers'
+import {
+  selectIdSectionMode,
+  resolveInvitePresetExternalId,
+  INVITE_PRESET_EXTERNAL_FALLBACK_NOTE,
+} from '@/lib/registration-helpers'
 
 const root = resolve(__dirname, '../..')
 const read = (rel: string) => readFileSync(resolve(root, rel), 'utf8')
@@ -367,3 +371,176 @@ describe('v2.2.15 (E) — admin UsersList surfaces the new flags', () => {
     expect(src).toMatch(/admin-users-badge-reupload/)
   })
 })
+
+// ── (F) Invite-time external-ID preset ──────────────────────────────
+
+describe('v2.2.15 (F) — resolveInvitePresetExternalId helper', () => {
+  it('returns {collected: false} when the flag is off', () => {
+    expect(resolveInvitePresetExternalId({ flag: false, notes: null })).toEqual({
+      collected: false,
+      notes: null,
+    })
+    expect(
+      resolveInvitePresetExternalId({ flag: false, notes: 'whatever' }),
+    ).toEqual({ collected: false, notes: null })
+  })
+
+  it('returns {collected: true, notes: trimmed} when flag + non-empty notes', () => {
+    expect(
+      resolveInvitePresetExternalId({ flag: true, notes: '  WhatsApp 2026-03-15  ' }),
+    ).toEqual({ collected: true, notes: 'WhatsApp 2026-03-15' })
+  })
+
+  it('falls back to the canonical note when flag is true but notes are blank', () => {
+    expect(resolveInvitePresetExternalId({ flag: true, notes: null })).toEqual({
+      collected: true,
+      notes: INVITE_PRESET_EXTERNAL_FALLBACK_NOTE,
+    })
+    expect(resolveInvitePresetExternalId({ flag: true, notes: '' })).toEqual({
+      collected: true,
+      notes: INVITE_PRESET_EXTERNAL_FALLBACK_NOTE,
+    })
+    expect(resolveInvitePresetExternalId({ flag: true, notes: '   ' })).toEqual({
+      collected: true,
+      notes: INVITE_PRESET_EXTERNAL_FALLBACK_NOTE,
+    })
+    expect(resolveInvitePresetExternalId({ flag: true, notes: undefined })).toEqual({
+      collected: true,
+      notes: INVITE_PRESET_EXTERNAL_FALLBACK_NOTE,
+    })
+  })
+
+  it('exports a stable fallback-note constant', () => {
+    expect(typeof INVITE_PRESET_EXTERNAL_FALLBACK_NOTE).toBe('string')
+    expect(INVITE_PRESET_EXTERNAL_FALLBACK_NOTE.length).toBeGreaterThan(0)
+  })
+})
+
+describe('v2.2.15 (F) — schema + migration carry the LeagueInvite preset columns', () => {
+  const schema = read('prisma/schema.prisma')
+  const sql = read(
+    'prisma/migrations/20260605000000_add_user_id_attestation_fields/migration.sql',
+  )
+
+  it('declares presetIdCollectedExternally Boolean @default(false) on LeagueInvite', () => {
+    expect(schema).toMatch(
+      /presetIdCollectedExternally\s+Boolean\s+@default\(false\)/,
+    )
+  })
+
+  it('declares presetIdCollectedExternallyNotes String? on LeagueInvite', () => {
+    expect(schema).toMatch(/presetIdCollectedExternallyNotes\s+String\?/)
+  })
+
+  it('the migration adds both LeagueInvite columns', () => {
+    expect(sql).toMatch(
+      /ALTER TABLE\s+"LeagueInvite"\s+ADD COLUMN\s+"presetIdCollectedExternally"\s+BOOLEAN\s+NOT NULL DEFAULT false/,
+    )
+    expect(sql).toMatch(
+      /ALTER TABLE\s+"LeagueInvite"\s+ADD COLUMN\s+"presetIdCollectedExternallyNotes"\s+TEXT/,
+    )
+  })
+})
+
+describe('v2.2.15 (F) — adminGenerateInvite + buildInviteCreateData carry the preset', () => {
+  const inviteCodes = read('src/lib/inviteCodes.ts')
+  const adminActions = read('src/app/admin/leagues/actions.ts')
+
+  it('BuildInviteCreateDataArgs accepts the two new optional fields', () => {
+    expect(inviteCodes).toMatch(
+      /presetIdCollectedExternally\?:\s*boolean/,
+    )
+    expect(inviteCodes).toMatch(
+      /presetIdCollectedExternallyNotes\?:\s*string\s*\|\s*null/,
+    )
+  })
+
+  it('buildInviteCreateData persists the preset onto the Prisma create shape', () => {
+    expect(inviteCodes).toMatch(
+      /presetIdCollectedExternally:\s*!!args\.presetIdCollectedExternally/,
+    )
+    // Notes are nulled when the flag is off — defence against accidental
+    // notes-leak when the admin unchecks the box.
+    expect(inviteCodes).toMatch(
+      /presetIdCollectedExternally\s*\?\s*\(args\.presetIdCollectedExternallyNotes\?\.trim\(\)\s*\|\|\s*null\)\s*:\s*null/,
+    )
+  })
+
+  it('adminGenerateInvite accepts the preset and passes it through to buildInviteCreateData', () => {
+    expect(adminActions).toMatch(
+      /presetIdCollectedExternally\?:\s*boolean/,
+    )
+    expect(adminActions).toMatch(
+      /presetIdCollectedExternallyNotes\?:\s*string\s*\|\s*null/,
+    )
+    // Length cap mirrors the user-level admin actions (500 chars).
+    expect(adminActions).toMatch(/Notes must be 500 characters or fewer/)
+  })
+
+  it('adminGenerateInvitesBulk also forwards the preset (whole batch shares it)', () => {
+    // Bulk action signature carries both new optional inputs.
+    expect(adminActions).toMatch(
+      /adminGenerateInvitesBulk[\s\S]{0,1200}presetIdCollectedExternally\?:\s*boolean/,
+    )
+  })
+})
+
+describe('v2.2.15 (F) — GenerateInviteDialog UI carries the checkbox + notes', () => {
+  const src = read('src/components/admin/GenerateInviteDialog.tsx')
+
+  it('renders an "invite-preset-external-id" checkbox', () => {
+    expect(src).toMatch(/data-testid="invite-preset-external-id"/)
+  })
+
+  it('renders a notes textarea conditional on the checkbox being on', () => {
+    expect(src).toMatch(/data-testid="invite-preset-external-id-notes"/)
+    // The textarea is rendered inside `{presetExternal && (`.
+    expect(src).toMatch(/\{presetExternal && \(/)
+  })
+
+  it('threads the preset into both adminGenerateInvite + adminGenerateInvitesBulk', () => {
+    expect(src).toMatch(/adminGenerateInvite\(\{[\s\S]{0,400}presetIdCollectedExternally:\s*presetExternal/)
+    expect(src).toMatch(
+      /adminGenerateInvitesBulk\(\{[\s\S]{0,400}presetIdCollectedExternally:\s*presetExternal/,
+    )
+  })
+})
+
+describe('v2.2.15 (F) — redeemInvite honours the preset (idempotently)', () => {
+  const src = read('src/app/join/[code]/actions.ts')
+
+  it('imports the resolveInvitePresetExternalId helper', () => {
+    expect(src).toMatch(
+      /import\s*\{\s*resolveInvitePresetExternalId\s*\}\s*from\s*'@\/lib\/registration-helpers'/,
+    )
+  })
+
+  it('selects idCollectedExternally on the resolved User row so idempotency can be checked', () => {
+    expect(src).toMatch(
+      /redeemInvite[\s\S]{0,2000}select:\s*\{\s*id:\s*true,\s*lineId:\s*true,\s*idCollectedExternally:\s*true/,
+    )
+  })
+
+  it('captures the prior state into userExternalAlreadySet', () => {
+    expect(src).toMatch(/const\s+userExternalAlreadySet\s*=\s*user\.idCollectedExternally/)
+  })
+
+  it('only applies the preset write when the user is NOT already externally attested', () => {
+    expect(src).toMatch(/if \(!userExternalAlreadySet\)/)
+  })
+
+  it('writes the three external columns inside the transaction when preset.collected', () => {
+    // The write site sits inside the `tx.user.update` under the
+    // `if (preset.collected)` branch.
+    expect(src).toMatch(
+      /if \(preset\.collected\)[\s\S]{0,500}tx\.user\.update[\s\S]{0,500}idCollectedExternally:\s*true/,
+    )
+    expect(src).toMatch(
+      /preset\.collected[\s\S]{0,500}idCollectedExternallyAt:\s*new Date\(\)/,
+    )
+    expect(src).toMatch(
+      /preset\.collected[\s\S]{0,500}idCollectedExternallyNotes:\s*preset\.notes/,
+    )
+  })
+})
+

@@ -11,6 +11,7 @@ import { linkUserToPlayer } from '@/lib/identityLink'
 import { deleteMapping } from '@/lib/playerMappingStore'
 import { sendMail } from '@/lib/email'
 import { applicationReceivedEmail } from '@/lib/emailTemplates'
+import { resolveInvitePresetExternalId } from '@/lib/registration-helpers'
 import {
   legacyPositionFromArray,
   normalizePositions,
@@ -95,23 +96,33 @@ export async function redeemInvite(input: RedeemInviteInput): Promise<RedeemInvi
   // (legacy pre-v1.28.0 LINE sessions; LINE-auth admins whose role is
   // orthogonal to player binding). Mirrors v1.80.10 in
   // `api/recruiting/actions.ts`.
-  let user: { id: string; lineId: string | null } | null = null
+  // v2.2.15 — also select `idCollectedExternally` on the calling User
+  // so the invite-time external-ID preset (applied below from
+  // `invite.presetIdCollectedExternally`) can be idempotent: never
+  // overwrite an already-true flag, never churn the notes column on a
+  // second invite redemption.
+  let user: {
+    id: string
+    lineId: string | null
+    idCollectedExternally: boolean
+  } | null = null
   if (sessionUserId) {
     user = await prisma.user.findUnique({
       where: { id: sessionUserId },
-      select: { id: true, lineId: true },
+      select: { id: true, lineId: true, idCollectedExternally: true },
     })
   }
   if (!user && sessionLineId) {
     user = await prisma.user.findUnique({
       where: { lineId: sessionLineId },
-      select: { id: true, lineId: true },
+      select: { id: true, lineId: true, idCollectedExternally: true },
     })
   }
   if (!user) {
     return { ok: false, error: 'User not found' }
   }
   const userId = user.id
+  const userExternalAlreadySet = user.idCollectedExternally
   // Use the canonical User.lineId (not session.lineId) when telling
   // `linkUserToPlayer` to also stamp Player.lineId. For Google/email
   // sign-ins the User row's lineId is null and the helper will skip
@@ -252,6 +263,30 @@ export async function redeemInvite(input: RedeemInviteInput): Promise<RedeemInvi
       where: { id: invite.id },
       data: { usedCount: { increment: 1 } },
     })
+
+    // (d) v2.2.15 — invite-time external-ID preset. When the admin
+    // ticked "User has ID on file externally" at invite creation,
+    // propagate that attestation to the bound User on redemption.
+    // Idempotent: skip when the User.idCollectedExternally flag is
+    // already true (a second invite redemption mustn't churn the
+    // notes column). The pure helper centralises the resolver +
+    // fallback-note logic; tests pin it directly.
+    if (!userExternalAlreadySet) {
+      const preset = resolveInvitePresetExternalId({
+        flag: invite.presetIdCollectedExternally,
+        notes: invite.presetIdCollectedExternallyNotes,
+      })
+      if (preset.collected) {
+        await tx.user.update({
+          where: { id: userId },
+          data: {
+            idCollectedExternally: true,
+            idCollectedExternallyAt: new Date(),
+            idCollectedExternallyNotes: preset.notes,
+          },
+        })
+      }
+    }
   })
 
   revalidate({ domain: 'admin', paths: [`/admin/leagues/${invite.leagueId}/players`] })
