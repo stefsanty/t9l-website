@@ -131,6 +131,28 @@ export async function redeemInvite(input: RedeemInviteInput): Promise<RedeemInvi
     return { ok: false, error: 'Invite not found' }
   }
 
+  // v2.2.11 — the league's `allowPlayerTeamPick` toggle overrides
+  // `LeagueInvite.skipOnboarding`. When the league has opted into the
+  // team-picker, the user MUST pass through `/onboarding` (the only
+  // surface that mounts the picker) regardless of what the admin set
+  // on the invite. Operator requirement: "all user types should see
+  // the picker when registering." Without this override, admin-issued
+  // `skipOnboarding=true` invites short-circuit straight to COMPLETED
+  // and the picker is never rendered.
+  //
+  // Lookup is conditional on `invite.skipOnboarding === true` — there's
+  // nothing to override when the invite already routes through
+  // /onboarding, so we skip the extra round-trip on the common path.
+  let teamPickWins = false
+  if (invite.skipOnboarding) {
+    const inviteLeague = await prisma.league.findUnique({
+      where: { id: invite.leagueId },
+      select: { allowPlayerTeamPick: true },
+    })
+    teamPickWins = !!inviteLeague?.allowPlayerTeamPick
+  }
+  const effectiveSkipOnboarding = invite.skipOnboarding && !teamPickWins
+
   // Resolve the target Player.
   let targetPlayerId: string
   if (invite.kind === 'PERSONAL') {
@@ -171,7 +193,7 @@ export async function redeemInvite(input: RedeemInviteInput): Promise<RedeemInvi
     }
   }
 
-  const newOnboardingStatus = invite.skipOnboarding ? 'COMPLETED' : 'NOT_YET'
+  const newOnboardingStatus = effectiveSkipOnboarding ? 'COMPLETED' : 'NOT_YET'
   const newJoinSource = invite.kind === 'PERSONAL' ? 'PERSONAL' : 'CODE'
 
   await prisma.$transaction(async (tx) => {
@@ -244,7 +266,10 @@ export async function redeemInvite(input: RedeemInviteInput): Promise<RedeemInvi
   //     it fires after the user completes the form).
   // Using subroutes (not query params) keeps the URL shareable /
   // refreshable in case the user closes the tab mid-flow.
-  const redirectTo = invite.skipOnboarding
+  // v2.2.11 — same toggle-wins logic for the destination: when the
+  // league has the team-picker enabled, even a `skipOnboarding=true`
+  // invite must route the user to `/onboarding` so they can pick a team.
+  const redirectTo = effectiveSkipOnboarding
     ? `/join/${invite.code}/welcome?submitted=redeemInvite`
     : `/join/${invite.code}/onboarding`
 

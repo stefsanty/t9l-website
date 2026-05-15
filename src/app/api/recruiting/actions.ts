@@ -416,6 +416,20 @@ export interface RegisterToLeagueInput {
    * page that doesn't bounce. The form passes `/id/<slug>` directly.
    */
   originPath?: string | null
+  /**
+   * v2.2.11 — player-selected team. Only honoured when the league has
+   * `allowPlayerTeamPick === true`; ignored otherwise (defensive — a
+   * stale client should not be able to nominate a team on a league that
+   * disabled the toggle after the form rendered). Mirrors the v2.2.9
+   * shape in `completeOnboardingWithId`.
+   *
+   *   string    — leagueTeamId. Validated to belong to the target
+   *               league; rejected with "Invalid team selection" otherwise.
+   *   null      — "balanced team" opt-out. PLM created with
+   *               `leagueTeamId: null` (the existing default).
+   *   undefined — not supplied (toggle off, or older client).
+   */
+  chosenTeamId?: string | null
 }
 
 export async function registerToLeague(
@@ -463,7 +477,17 @@ export async function registerToLeague(
     // v1.82.0 — also pulls `ballType` for position-vocabulary validation.
     // v1.93.0 — also pulls `idRequired` so the ID-upload gates are
     // conditional on the league's setting.
-    select: { id: true, recruiting: true, name: true, subdomain: true, ballType: true, idRequired: true },
+    // v2.2.11 — also select `allowPlayerTeamPick` so the action can
+    // honour player-side team choice (cross-league guard re-checks).
+    select: {
+      id: true,
+      recruiting: true,
+      name: true,
+      subdomain: true,
+      ballType: true,
+      idRequired: true,
+      allowPlayerTeamPick: true,
+    },
   })
   if (!league) return { ok: false, error: 'League not found' }
   if (!league.recruiting) {
@@ -544,6 +568,28 @@ export async function registerToLeague(
   // just keep the verified one.
   const shouldWriteEmail = !user.email
 
+  // v2.2.11 — chosen-team validation. Only honoured when the league has
+  // opted in. `chosenTeamId === null` = explicit "balanced team" opt-out
+  // (PLM created with the default `leagueTeamId: null`, admin assigns on
+  // approval). `chosenTeamId === string` must resolve to a leagueTeam in
+  // the SAME league as the target league (cross-league scoping guard,
+  // mirrors the v2.2.5 area). Mirrors the v2.2.9 logic in
+  // `completeOnboardingWithId`.
+  const allowTeamPick = league.allowPlayerTeamPick
+  let chosenLeagueTeamId: string | null = null
+  if (allowTeamPick && input.chosenTeamId !== undefined) {
+    if (input.chosenTeamId !== null) {
+      const chosen = await prisma.leagueTeam.findUnique({
+        where: { id: input.chosenTeamId },
+        select: { id: true, leagueId: true },
+      })
+      if (!chosen || chosen.leagueId !== league.id) {
+        return { ok: false, error: 'Invalid team selection' }
+      }
+      chosenLeagueTeamId = chosen.id
+    }
+  }
+
   // Atomic transaction: Player + User.playerId mirror + PLM(PENDING)
   // with every URL populated up-front. Onboarding is COMPLETE — the
   // user filled everything in one shot, no follow-up step.
@@ -584,7 +630,11 @@ export async function registerToLeague(
       await tx.playerLeagueMembership.create({
         data: {
           playerId: created.id,
-          leagueTeamId: null,
+          // v2.2.11 — `chosenLeagueTeamId` is null unless the toggle is
+          // on AND the user picked a non-balanced card; in either of
+          // those cases the column is null (admin assigns on approval),
+          // matching the pre-v2.2.11 default.
+          leagueTeamId: chosenLeagueTeamId,
           leagueId: league.id,
           fromGameWeek: 1,
           applicationStatus: 'PENDING',

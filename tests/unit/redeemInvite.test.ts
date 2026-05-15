@@ -69,6 +69,11 @@ const {
 vi.mock('@/lib/prisma', () => ({
   prisma: {
     leagueInvite: { findUnique: inviteFindUniqueMock, update: inviteUpdateMock },
+    // v2.2.11 — `redeemInvite` reads `league.allowPlayerTeamPick` when
+    // `invite.skipOnboarding === true` (toggle-wins override). Default
+    // mock returns undefined → `teamPickWins = false` → behaviour
+    // unchanged from pre-v2.2.11 for every test that doesn't opt in.
+    league: { findUnique: vi.fn().mockResolvedValue(null) },
     player: { findUnique: playerFindUniqueMock, update: playerUpdateMock },
     user: { findUnique: userFindUniqueMock, update: userUpdateMock },
     playerLeagueMembership: {
@@ -247,6 +252,41 @@ describe('v1.34.0 (PR ζ) — redeemInvite — PERSONAL happy path', () => {
     // `?submitted=redeemInvite` so the welcome page mounts the
     // post-submit success popup.
     inviteFindUniqueMock.mockResolvedValue(personalInvite({ skipOnboarding: true }))
+    const r = await redeemInvite({ code: 'ABCD1234EFGH' })
+    expect(r).toMatchObject({
+      ok: true,
+      onboardingStatus: 'COMPLETED',
+      redirectTo: '/join/ABCD1234EFGH/welcome?submitted=redeemInvite',
+    })
+  })
+
+  it('v2.2.11 — league.allowPlayerTeamPick=true overrides skipOnboarding=true (toggle wins)', async () => {
+    // Operator requirement: "all user types should see the picker when
+    // registering." With the toggle on, a `skipOnboarding=true` invite
+    // must still route the user to /onboarding so they can pick a team;
+    // status stays NOT_YET (the form flips to COMPLETED on submit).
+    const { prisma } = (await import('@/lib/prisma')) as unknown as {
+      prisma: { league: { findUnique: ReturnType<typeof vi.fn> } }
+    }
+    inviteFindUniqueMock.mockResolvedValue(personalInvite({ skipOnboarding: true }))
+    prisma.league.findUnique.mockResolvedValueOnce({ allowPlayerTeamPick: true })
+    const r = await redeemInvite({ code: 'ABCD1234EFGH' })
+    expect(r).toMatchObject({
+      ok: true,
+      onboardingStatus: 'NOT_YET',
+      redirectTo: '/join/ABCD1234EFGH/onboarding',
+    })
+  })
+
+  it('v2.2.11 — toggle off + skipOnboarding=true → terminal /welcome (override does not fire)', async () => {
+    // Symmetric pin: when the league has NOT opted in, `skipOnboarding`
+    // still routes to /welcome as before. Defends against an accidental
+    // future change that always overrides regardless of the toggle.
+    const { prisma } = (await import('@/lib/prisma')) as unknown as {
+      prisma: { league: { findUnique: ReturnType<typeof vi.fn> } }
+    }
+    inviteFindUniqueMock.mockResolvedValue(personalInvite({ skipOnboarding: true }))
+    prisma.league.findUnique.mockResolvedValueOnce({ allowPlayerTeamPick: false })
     const r = await redeemInvite({ code: 'ABCD1234EFGH' })
     expect(r).toMatchObject({
       ok: true,

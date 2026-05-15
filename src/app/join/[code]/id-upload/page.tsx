@@ -56,7 +56,11 @@ export default async function IdUploadPage({ params }: Props) {
   const [league, assignment, user] = await Promise.all([
     prisma.league.findUnique({
       where: { id: invite.leagueId },
-      select: { id: true, name: true, subdomain: true },
+      // v2.2.11 — also select `allowPlayerTeamPick` so this page can
+      // mirror the v2.2.10 resolver guard. Without this gate a bookmarked
+      // / shared `/id-upload` URL bypasses the team-picker even when the
+      // league has opted in (the picker only mounts on `/onboarding`).
+      select: { id: true, name: true, subdomain: true, allowPlayerTeamPick: true },
     }),
     prisma.playerLeagueMembership.findFirst({
       where: {
@@ -83,6 +87,14 @@ export default async function IdUploadPage({ params }: Props) {
   // Idempotent re-visit handling.
   if (assignment.onboardingStatus === 'COMPLETED') {
     redirect(`/join/${code}/welcome`)
+  }
+  // v2.2.11 — toggle-on guard. The team-picker only mounts on
+  // `/onboarding`; route any not-yet-completed visitor through there
+  // when the league has opted in, regardless of whether the form has
+  // already collected a name. Mirrors the v2.2.10 resolver branch at
+  // `src/app/join/[code]/page.tsx:130`.
+  if (league.allowPlayerTeamPick) {
+    redirect(`/join/${code}/onboarding`)
   }
   if (!assignment.player.name) {
     // Form not submitted yet — route them through the form first.
