@@ -86,7 +86,10 @@ export default async function JoinPage({ params }: Props) {
   // 3. Resolve preview data — league + (for PERSONAL) the target Player.
   const league = await prisma.league.findUnique({
     where: { id: invite.leagueId },
-    select: { id: true, name: true, subdomain: true },
+    // v2.2.10 — also select `allowPlayerTeamPick` so the resolver can
+    // detour pre-named invitees through `/onboarding` (where the
+    // team-picker lives) instead of jumping straight to `/id-upload`.
+    select: { id: true, name: true, subdomain: true, allowPlayerTeamPick: true },
   })
   if (!league) {
     // League was deleted out from under the invite — treat as not-found.
@@ -116,8 +119,16 @@ export default async function JoinPage({ params }: Props) {
       //   COMPLETED                   → /welcome
       //   NOT_YET + name set          → /id-upload (form done, ID pending)
       //   NOT_YET + no name           → /onboarding (form not done)
+      //
+      // v2.2.10 — when the league opted into the team-picker, route any
+      // not-yet-completed invitee through `/onboarding` regardless of
+      // whether `Player.name` was pre-filled at slot creation. Otherwise
+      // pre-named invitees skip the picker entirely (it only mounts on
+      // `/onboarding`).
       if (existingBinding.onboardingStatus === 'COMPLETED') {
         redirect(`/join/${code}/welcome`)
+      } else if (league.allowPlayerTeamPick) {
+        redirect(`/join/${code}/onboarding`)
       } else if (existingBinding.player.name) {
         redirect(`/join/${code}/id-upload`)
       } else {

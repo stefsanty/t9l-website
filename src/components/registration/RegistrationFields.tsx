@@ -323,6 +323,15 @@ export default function RegistrationFields({
       className="space-y-5"
       data-testid="registration-fields"
     >
+      {/* v2.2.10 — section header for the name + email pair. Matches the
+          canonical join-flow small-section heading style used by
+          `RedeemCodePicker`. */}
+      <h3
+        className="text-fg-mid text-xs uppercase tracking-wider font-bold mb-1.5"
+        data-testid="registration-section-about"
+      >
+        About you
+      </h3>
       <label className="block">
         <span className="block text-fg-mid text-xs uppercase tracking-widest font-bold mb-1.5">
           Name <span className="text-vibrant-pink">*</span>
@@ -358,6 +367,15 @@ export default function RegistrationFields({
           We'll use this for league notifications and to follow up on your application.
         </span>
       </label>
+
+      {/* v2.2.10 — section header for the positions pair (preferred +
+          secondary). */}
+      <h3
+        className="text-fg-mid text-xs uppercase tracking-wider font-bold mb-1.5"
+        data-testid="registration-section-positions"
+      >
+        Positions
+      </h3>
 
       <div className="block">
         <div className="flex items-baseline justify-between mb-1.5">
@@ -417,7 +435,9 @@ export default function RegistrationFields({
             className="rounded-lg border border-warning/40 bg-warning/10 px-4 py-3 text-sm text-fg-high leading-relaxed"
             data-testid="registration-id-callout"
           >
-            <p className="font-bold mb-1.5 text-fg-high">Share Your ID</p>
+            {/* v2.2.10 — section heading promoted from <p> to <h3> so the
+                callout matches the other onboarding section headers. */}
+            <h3 className="font-bold mb-1.5 text-fg-high">Share Your ID</h3>
             <p className="text-fg-mid mb-2">
               We require your ID strictly to enable more regular league games!
             </p>

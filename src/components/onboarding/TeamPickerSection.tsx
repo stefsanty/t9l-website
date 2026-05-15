@@ -50,17 +50,20 @@ export default function TeamPickerSection({
   const groupId = useId()
 
   return (
-    <fieldset
+    <section
       className="space-y-3"
       data-testid="onboarding-team-picker"
       aria-labelledby={`${groupId}-label`}
     >
-      <legend
+      {/* v2.2.10 — promoted fieldset/legend to section/h3 so the picker
+          matches the canonical onboarding section-heading style used by
+          the other RegistrationFields sections. */}
+      <h3
         id={`${groupId}-label`}
-        className="block text-fg-mid text-xs uppercase tracking-widest font-bold mb-1.5"
+        className="text-fg-mid text-xs uppercase tracking-wider font-bold mb-1.5"
       >
         Choose your team <span className="text-vibrant-pink">*</span>
-      </legend>
+      </h3>
       <p className="text-fg-low text-xs mt-0.5 mb-3">
         Please choose the team you want to join. If you&apos;d rather let the organizer place you on a balanced team, choose the last option.
       </p>
@@ -158,6 +161,6 @@ export default function TeamPickerSection({
           </div>
         </button>
       </div>
-    </fieldset>
+    </section>
   )
 }
