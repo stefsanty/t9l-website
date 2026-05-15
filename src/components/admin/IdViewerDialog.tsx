@@ -14,28 +14,30 @@ import ConfirmDialog from './ConfirmDialog'
  * three Player columns). Purge requires confirmation via ConfirmDialog
  * so a misclick can't accidentally wipe the upload.
  *
- * The Blob URLs are public (the Vercel Blob `access: 'public'` choice
- * — operator decision 2026-05-02 favored simplicity over signed-URL
- * complexity), so the <img> renders directly. Admin-only by route gate
- * (this component only mounts inside the /admin shell).
+ * v2.2.8 — image bytes are served via the authenticated proxy at
+ * `/api/admin/id-image/[userId]/[side]` rather than direct Blob URLs.
+ * The proxy enforces admin role + `PlayerLeagueMembership.idShared`
+ * consent. `userId` is the User.id (where ID columns live since v1.70).
  */
 
 interface Props {
   playerId: string
+  userId: string
   playerName: string | null
   leagueId: string
-  idFrontUrl: string | null
-  idBackUrl: string | null
+  hasFront: boolean
+  hasBack: boolean
   idUploadedAt: string // ISO; required for the dialog to mount per the page-level guard
   onClose: () => void
 }
 
 export default function IdViewerDialog({
   playerId,
+  userId,
   playerName,
   leagueId,
-  idFrontUrl,
-  idBackUrl,
+  hasFront,
+  hasBack,
   idUploadedAt,
   onClose,
 }: Props) {
@@ -105,8 +107,16 @@ export default function IdViewerDialog({
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-5">
-          <IdImagePane label="Front" url={idFrontUrl} testid="id-viewer-front" />
-          <IdImagePane label="Back" url={idBackUrl} testid="id-viewer-back" />
+          <IdImagePane
+            label="Front"
+            src={hasFront ? `/api/admin/id-image/${userId}/front` : null}
+            testid="id-viewer-front"
+          />
+          <IdImagePane
+            label="Back"
+            src={hasBack ? `/api/admin/id-image/${userId}/back` : null}
+            testid="id-viewer-back"
+          />
         </div>
 
         <div className="flex items-center justify-between border-t border-admin-border pt-4">
@@ -138,14 +148,14 @@ export default function IdViewerDialog({
 
 function IdImagePane({
   label,
-  url,
+  src,
   testid,
 }: {
   label: string
-  url: string | null
+  src: string | null
   testid: string
 }) {
-  if (!url) {
+  if (!src) {
     return (
       <div className="rounded-md border border-admin-border bg-admin-surface2 p-4 text-center text-admin-text3 text-xs italic">
         {label}: not available
@@ -157,10 +167,10 @@ function IdImagePane({
       <p className="text-admin-text3 text-[10px] font-bold uppercase tracking-widest mb-1.5">
         {label}
       </p>
-      <a href={url} target="_blank" rel="noopener noreferrer" data-testid={`${testid}-link`}>
+      <a href={src} target="_blank" rel="noopener noreferrer" data-testid={`${testid}-link`}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
-          src={url}
+          src={src}
           alt={`${label} of ID`}
           className="w-full max-h-80 object-contain rounded bg-background"
           data-testid={testid}

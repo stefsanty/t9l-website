@@ -89,9 +89,13 @@ export default async function PlayersPage({ params }: Props) {
     // re-display the existing invite without regenerating.
     activeInvite: { code: string; expiresAt: string | null; skipOnboarding: boolean } | null
     // v1.35.0 (PR η) — uploaded ID URLs + timestamp. Null when no upload yet.
+    // v2.2.8 — `idFrontUrl`/`idBackUrl` are presence sentinels for the
+    // existence check; the admin UI reads bytes via the authenticated
+    // proxy at `/api/admin/id-image/[idUserId]/[side]`, not these URLs.
     idFrontUrl: string | null
     idBackUrl: string | null
     idUploadedAt: string | null  // ISO string (cache-safe; same pattern as lineLastSeenAt)
+    idUserId: string | null  // v2.2.8 — User.id of the ID owner; proxy route key
     lineId: string | null
     lineDisplayName: string | null
     linePictureUrl: string | null
@@ -180,6 +184,7 @@ export default async function PlayersPage({ params }: Props) {
         idFrontUrl: idDataByPlayerId[a.player.id]?.idFrontUrl ?? null,
         idBackUrl: idDataByPlayerId[a.player.id]?.idBackUrl ?? null,
         idUploadedAt: idDataByPlayerId[a.player.id]?.idUploadedAt ?? null,
+        idUserId: idDataByPlayerId[a.player.id]?.userId ?? null,
         lineId: a.player.lineId ?? null,
         lineDisplayName: ll?.name ?? null,
         linePictureUrl: ll?.pictureUrl ?? null,
@@ -240,6 +245,7 @@ export default async function PlayersPage({ params }: Props) {
       idFrontUrl: idDataByPlayerId[p.id]?.idFrontUrl ?? null,
       idBackUrl: idDataByPlayerId[p.id]?.idBackUrl ?? null,
       idUploadedAt: idDataByPlayerId[p.id]?.idUploadedAt ?? null,
+      idUserId: idDataByPlayerId[p.id]?.userId ?? null,
       lineId: p.lineId ?? null,
       lineDisplayName: ll?.name ?? null,
       linePictureUrl: ll?.pictureUrl ?? null,

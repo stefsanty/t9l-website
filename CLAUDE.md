@@ -2,7 +2,7 @@
 
 T9L.me — mobile-first website for the Tennozu 9-Aside League, a recreational football league in Tokyo. Multi-tenant: a single Vercel deployment serves multiple leagues, each at `/id/<slug>`. Players sign in (LINE / Google / email magic-link), claim a Player record, RSVP availability for matchdays, and view live league data backed by Postgres (Neon) + Upstash Redis.
 
-**Current release:** v2.2.2. Active per-PR ledger: [docs/ledger.md](docs/ledger.md). Pre-v1.78.0 condensed history: [docs/ledger-archive.md](docs/ledger-archive.md).
+**Current release:** v2.2.8. Active per-PR ledger: [docs/ledger.md](docs/ledger.md). Pre-v1.78.0 condensed history: [docs/ledger-archive.md](docs/ledger-archive.md).
 
 ## How this repo's conventions are organised
 

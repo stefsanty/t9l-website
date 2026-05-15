@@ -123,11 +123,17 @@ export async function POST(request: Request): Promise<NextResponse> {
         }
         const isPic =
           pathname.includes('/profile-') || pathname.startsWith('player-profile/')
+        // v2.2.8 — ID uploads (`isPlayerId`) get `addRandomSuffix: true` so
+        // the Blob path is not guessable from playerId + timestamp. Reads
+        // route through the authenticated proxy at
+        // `/api/admin/id-image/[userId]/[side]`. Profile pictures stay at
+        // stable paths because they're intentionally public on the player
+        // avatar in the UI.
         return {
           allowedContentTypes: isPic ? PIC_CONTENT_TYPES : ID_CONTENT_TYPES,
           maximumSizeInBytes: isPic ? PIC_MAX_BYTES : ID_MAX_BYTES,
-          addRandomSuffix: false,
-          allowOverwrite: true,
+          addRandomSuffix: isPlayerId ? true : false,
+          allowOverwrite: !isPlayerId,
         }
       },
       onUploadCompleted: async () => {

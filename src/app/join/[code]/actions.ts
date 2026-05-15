@@ -492,18 +492,19 @@ export async function submitIdUpload(formData: FormData): Promise<void> {
   if (!invite) throw new Error('Invite not found')
 
   const { put } = await import('@vercel/blob')
-  // Upload-or-overwrite at stable paths so a re-upload doesn't orphan
-  // the prior asset. `addRandomSuffix: false` is required for the path
-  // to be stable (default is true).
+  // v2.2.8 — `addRandomSuffix: true` so the Blob path is not
+  // guessable from playerId + upload timestamp. Reads now go through
+  // the authenticated `/api/admin/id-image/[userId]/[side]` proxy, so
+  // bearer-URL exposure is no longer the access-control mechanism.
   const [frontResult, backResult] = await Promise.all([
     put(`player-id/${playerId}/front-${Date.now()}.${extOf(front.name)}`, front, {
       access: 'public',
-      addRandomSuffix: false,
+      addRandomSuffix: true,
       contentType: front.type || 'application/octet-stream',
     }),
     put(`player-id/${playerId}/back-${Date.now()}.${extOf(back.name)}`, back, {
       access: 'public',
-      addRandomSuffix: false,
+      addRandomSuffix: true,
       contentType: back.type || 'application/octet-stream',
     }),
   ])

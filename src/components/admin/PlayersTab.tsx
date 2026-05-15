@@ -112,6 +112,9 @@ interface PlayerRow {
   idFrontUrl: string | null
   idBackUrl: string | null
   idUploadedAt: string | null
+  // v2.2.8 — User.id of the ID owner; required to build the
+  // authenticated proxy URL `/api/admin/id-image/[idUserId]/[side]`.
+  idUserId: string | null
   lineId: string | null
   lineDisplayName: string | null
   linePictureUrl: string | null
@@ -988,14 +991,15 @@ export default function PlayersTab({
           affordance that DELs the Blob assets and nulls the columns. */}
       {idViewerPlayerId && (() => {
         const target = players.find((p) => p.id === idViewerPlayerId)
-        if (!target || !target.idUploadedAt) return null
+        if (!target || !target.idUploadedAt || !target.idUserId) return null
         return (
           <IdViewerDialog
             playerId={target.id}
+            userId={target.idUserId}
             playerName={target.name}
             leagueId={leagueId}
-            idFrontUrl={target.idFrontUrl}
-            idBackUrl={target.idBackUrl}
+            hasFront={target.idFrontUrl != null}
+            hasBack={target.idBackUrl != null}
             idUploadedAt={target.idUploadedAt}
             onClose={() => setIdViewerPlayerId(null)}
           />
