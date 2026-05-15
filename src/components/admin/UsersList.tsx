@@ -2,8 +2,14 @@
 
 import { useMemo, useState, useTransition } from 'react'
 import Link from 'next/link'
-import { Search, Filter, ExternalLink, Unlink2, Shield, Mail, Smartphone, Eye, X } from 'lucide-react'
+import { Search, Filter, ExternalLink, Unlink2, Shield, Mail, Smartphone, Eye, X, FileCheck2, RefreshCw } from 'lucide-react'
 import { adminUnlinkUserFromPlayer } from '@/app/admin/leagues/actions'
+import {
+  markUserIdExternal,
+  revokeUserIdExternal,
+  requestUserIdReupload,
+  cancelUserIdReuploadRequest,
+} from '@/app/admin/users/actions'
 import { useToast } from './ToastProvider'
 import AdminPlayerAvatar from './AdminPlayerAvatar'
 import { formatJstDayMonth } from '@/lib/jst'
@@ -27,6 +33,13 @@ export interface UserRow {
   idFrontUrl: string | null
   idBackUrl: string | null
   idUploadedAt: string | null
+  // v2.2.15 — attestation + reupload-request audit fields
+  idCollectedExternally: boolean
+  idCollectedExternallyAt: string | null
+  idCollectedExternallyNotes: string | null
+  idReuploadRequested: boolean
+  idReuploadRequestedAt: string | null
+  idReuploadRequestedNotes: string | null
 }
 
 interface UsersListProps {
@@ -69,6 +82,10 @@ export default function UsersList({ users }: UsersListProps) {
   const [pending, startTransition] = useTransition()
   const [pendingUserId, setPendingUserId] = useState<string | null>(null)
   const [viewingIdUser, setViewingIdUser] = useState<UserRow | null>(null)
+  // v2.2.15 — modals for the two new admin actions. Each modal carries
+  // the target user; closing nulls the state and rolls back focus.
+  const [markExternalUser, setMarkExternalUser] = useState<UserRow | null>(null)
+  const [requestReuploadUser, setRequestReuploadUser] = useState<UserRow | null>(null)
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -106,6 +123,38 @@ export default function UsersList({ users }: UsersListProps) {
     })
   }
 
+  // v2.2.15 — admin toggles for the new attestation + reupload flags.
+  // `revokeExternal` and `cancelReupload` are the off-paths (no notes
+  // needed); `markExternal` and `requestReupload` open a modal that
+  // collects optional notes before invoking the action.
+  function handleRevokeExternal(userRow: UserRow) {
+    setPendingUserId(userRow.id)
+    startTransition(async () => {
+      try {
+        await revokeUserIdExternal(userRow.id)
+        toast(`Cleared external-ID flag for ${userRow.name ?? userRow.email ?? 'user'}`)
+      } catch (err) {
+        toast(err instanceof Error ? err.message : 'Failed to revoke', 'error')
+      } finally {
+        setPendingUserId(null)
+      }
+    })
+  }
+
+  function handleCancelReupload(userRow: UserRow) {
+    setPendingUserId(userRow.id)
+    startTransition(async () => {
+      try {
+        await cancelUserIdReuploadRequest(userRow.id)
+        toast(`Cancelled re-upload request for ${userRow.name ?? userRow.email ?? 'user'}`)
+      } catch (err) {
+        toast(err instanceof Error ? err.message : 'Failed to cancel', 'error')
+      } finally {
+        setPendingUserId(null)
+      }
+    })
+  }
+
   const linkedCount = users.filter((u) => u.linkedPlayer).length
   const unlinkedCount = users.length - linkedCount
 
@@ -113,6 +162,26 @@ export default function UsersList({ users }: UsersListProps) {
     <div className="px-4 md:px-8 py-6">
       {viewingIdUser && (
         <UserIdModal user={viewingIdUser} onClose={() => setViewingIdUser(null)} />
+      )}
+      {markExternalUser && (
+        <MarkExternalIdModal
+          user={markExternalUser}
+          onClose={() => setMarkExternalUser(null)}
+          onConfirmed={(name) => {
+            toast(`Marked ID on file (external) for ${name}`)
+            setMarkExternalUser(null)
+          }}
+        />
+      )}
+      {requestReuploadUser && (
+        <RequestReuploadModal
+          user={requestReuploadUser}
+          onClose={() => setRequestReuploadUser(null)}
+          onConfirmed={(name) => {
+            toast(`Requested ID re-upload from ${name}`)
+            setRequestReuploadUser(null)
+          }}
+        />
       )}
       {/* Header */}
       <div className="mb-5">
@@ -170,7 +239,7 @@ export default function UsersList({ users }: UsersListProps) {
           <div className="hidden md:block">
             <div
               className="grid items-center gap-3 px-5 py-2 border-b border-admin-border text-[10px] font-semibold uppercase tracking-[1.5px] text-admin-text3"
-              style={{ gridTemplateColumns: '40px 1fr 180px 200px 48px 100px 80px' }}
+              style={{ gridTemplateColumns: '40px 1fr 180px 200px 48px 100px 132px' }}
             >
               <span />
               <span>Name / email</span>
@@ -185,7 +254,7 @@ export default function UsersList({ users }: UsersListProps) {
                 <li
                   key={u.id}
                   className="grid items-center gap-3 px-5 py-3 hover:bg-admin-surface2/40"
-                  style={{ gridTemplateColumns: '40px 1fr 180px 200px 48px 100px 80px' }}
+                  style={{ gridTemplateColumns: '40px 1fr 180px 200px 48px 100px 132px' }}
                   data-testid={`admin-users-row-${u.id}`}
                 >
                   <AdminPlayerAvatar name={u.name} pictureUrl={u.image ?? u.pictureUrl} size={32} />
@@ -201,6 +270,7 @@ export default function UsersList({ users }: UsersListProps) {
                           Admin
                         </span>
                       )}
+                      <IdFlagBadges user={u} />
                     </p>
                     <p className="mt-0.5 truncate text-[11px] text-admin-text3 font-mono">
                       {u.email ?? '—'}
@@ -217,17 +287,63 @@ export default function UsersList({ users }: UsersListProps) {
                       ? formatJstDayMonth(new Date(u.lineLastSeenAt))
                       : '—'}
                   </span>
-                  <div className="flex justify-end">
+                  <div className="flex justify-end gap-1">
+                    {/* v2.2.15 — mark external / revoke external */}
+                    {u.idCollectedExternally ? (
+                      <button
+                        type="button"
+                        onClick={() => handleRevokeExternal(u)}
+                        disabled={pending && pendingUserId === u.id}
+                        title="Revoke external ID attestation"
+                        className="inline-flex items-center justify-center rounded-[6px] border border-admin-border2 px-1.5 py-1 text-admin-text hover:bg-admin-surface3 disabled:opacity-50"
+                        data-testid={`admin-users-revoke-external-${u.id}`}
+                      >
+                        <FileCheck2 className="w-3 h-3" />
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setMarkExternalUser(u)}
+                        title="Mark ID on file (external)"
+                        className="inline-flex items-center justify-center rounded-[6px] border border-admin-border2 px-1.5 py-1 text-admin-text2 hover:bg-admin-surface3 hover:text-admin-text"
+                        data-testid={`admin-users-mark-external-${u.id}`}
+                      >
+                        <FileCheck2 className="w-3 h-3" />
+                      </button>
+                    )}
+                    {/* v2.2.15 — request reupload / cancel request */}
+                    {u.idReuploadRequested ? (
+                      <button
+                        type="button"
+                        onClick={() => handleCancelReupload(u)}
+                        disabled={pending && pendingUserId === u.id}
+                        title="Cancel re-upload request"
+                        className="inline-flex items-center justify-center rounded-[6px] border border-admin-border2 px-1.5 py-1 text-admin-amber hover:bg-admin-surface3 disabled:opacity-50"
+                        data-testid={`admin-users-cancel-reupload-${u.id}`}
+                      >
+                        <RefreshCw className="w-3 h-3" />
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setRequestReuploadUser(u)}
+                        title="Request ID re-upload"
+                        className="inline-flex items-center justify-center rounded-[6px] border border-admin-border2 px-1.5 py-1 text-admin-text2 hover:bg-admin-surface3 hover:text-admin-text"
+                        data-testid={`admin-users-request-reupload-${u.id}`}
+                      >
+                        <RefreshCw className="w-3 h-3" />
+                      </button>
+                    )}
                     {u.linkedPlayer && (
                       <button
                         type="button"
                         onClick={() => handleUnlink(u)}
                         disabled={pending && pendingUserId === u.id}
-                        className="inline-flex items-center gap-1 rounded-[6px] border border-admin-border2 px-2 py-1 text-[11px] font-semibold text-admin-text hover:bg-admin-surface3 disabled:opacity-50"
+                        title="Unlink from player"
+                        className="inline-flex items-center justify-center rounded-[6px] border border-admin-border2 px-1.5 py-1 text-admin-text hover:bg-admin-surface3 disabled:opacity-50"
                         data-testid={`admin-users-unlink-${u.id}`}
                       >
                         <Unlink2 className="w-3 h-3" />
-                        Unlink
                       </button>
                     )}
                   </div>
@@ -255,6 +371,7 @@ export default function UsersList({ users }: UsersListProps) {
                           Admin
                         </span>
                       )}
+                      <IdFlagBadges user={u} />
                     </p>
                     <p className="mt-0.5 truncate text-[11px] text-admin-text3 font-mono">
                       {u.email ?? '—'}
@@ -279,6 +396,48 @@ export default function UsersList({ users }: UsersListProps) {
                       >
                         <Eye className="w-3 h-3" />
                         ID
+                      </button>
+                    )}
+                    {/* v2.2.15 — mobile mark/revoke external */}
+                    {u.idCollectedExternally ? (
+                      <button
+                        type="button"
+                        onClick={() => handleRevokeExternal(u)}
+                        disabled={pending && pendingUserId === u.id}
+                        className="inline-flex items-center gap-1 rounded-[6px] border border-admin-border2 px-2 py-1 text-[11px] font-semibold text-admin-text hover:bg-admin-surface3 disabled:opacity-50"
+                        data-testid={`admin-users-revoke-external-mobile-${u.id}`}
+                      >
+                        <FileCheck2 className="w-3 h-3" />
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setMarkExternalUser(u)}
+                        className="inline-flex items-center gap-1 rounded-[6px] border border-admin-border2 px-2 py-1 text-[11px] font-semibold text-admin-text2 hover:bg-admin-surface3 hover:text-admin-text"
+                        data-testid={`admin-users-mark-external-mobile-${u.id}`}
+                      >
+                        <FileCheck2 className="w-3 h-3" />
+                      </button>
+                    )}
+                    {/* v2.2.15 — mobile request/cancel reupload */}
+                    {u.idReuploadRequested ? (
+                      <button
+                        type="button"
+                        onClick={() => handleCancelReupload(u)}
+                        disabled={pending && pendingUserId === u.id}
+                        className="inline-flex items-center gap-1 rounded-[6px] border border-admin-border2 px-2 py-1 text-[11px] font-semibold text-admin-amber hover:bg-admin-surface3 disabled:opacity-50"
+                        data-testid={`admin-users-cancel-reupload-mobile-${u.id}`}
+                      >
+                        <RefreshCw className="w-3 h-3" />
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setRequestReuploadUser(u)}
+                        className="inline-flex items-center gap-1 rounded-[6px] border border-admin-border2 px-2 py-1 text-[11px] font-semibold text-admin-text2 hover:bg-admin-surface3 hover:text-admin-text"
+                        data-testid={`admin-users-request-reupload-mobile-${u.id}`}
+                      >
+                        <RefreshCw className="w-3 h-3" />
                       </button>
                     )}
                     {u.linkedPlayer && (
@@ -482,5 +641,200 @@ function LinkedPlayerCell({
       </span>
       <ExternalLink className="w-3 h-3 shrink-0 text-admin-text3" />
     </Link>
+  )
+}
+
+// v2.2.15 — inline pills for the two attestation/reupload flags.
+// Rendered next to the Admin pill in the Name column on both desktop +
+// mobile rows. Returns nothing when both flags are off.
+function IdFlagBadges({ user }: { user: UserRow }) {
+  return (
+    <>
+      {user.idCollectedExternally && (
+        <span
+          className="ml-2 inline-flex items-center gap-1 rounded-[4px] bg-admin-green/15 px-1.5 py-[1px] text-[9px] font-bold uppercase tracking-[1px] text-admin-green"
+          data-testid={`admin-users-badge-external-${user.id}`}
+        >
+          <FileCheck2 className="w-2.5 h-2.5" />
+          ID external
+        </span>
+      )}
+      {user.idReuploadRequested && (
+        <span
+          className="ml-2 inline-flex items-center gap-1 rounded-[4px] bg-admin-amber/15 px-1.5 py-[1px] text-[9px] font-bold uppercase tracking-[1px] text-admin-amber"
+          data-testid={`admin-users-badge-reupload-${user.id}`}
+        >
+          <RefreshCw className="w-2.5 h-2.5" />
+          Re-upload requested
+        </span>
+      )}
+    </>
+  )
+}
+
+// v2.2.15 — "Mark ID on file (external)" confirmation modal with an
+// optional notes textarea. Mirrors the lightweight modal shape used
+// elsewhere in the admin shell.
+function MarkExternalIdModal({
+  user,
+  onClose,
+  onConfirmed,
+}: {
+  user: UserRow
+  onClose: () => void
+  onConfirmed: (displayName: string) => void
+}) {
+  const [notes, setNotes] = useState('')
+  const [pending, startTransition] = useTransition()
+  const [error, setError] = useState<string | null>(null)
+  const displayName = user.name ?? user.email ?? 'this user'
+  function handleConfirm() {
+    setError(null)
+    startTransition(async () => {
+      try {
+        await markUserIdExternal(user.id, notes.trim() || null)
+        onConfirmed(displayName)
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to mark external')
+      }
+    })
+  }
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center"
+      data-testid="admin-users-mark-external-modal"
+    >
+      <div className="absolute inset-0 bg-black/70" onClick={onClose} />
+      <div className="relative bg-admin-surface border border-admin-border rounded-xl p-6 w-full max-w-md mx-4 shadow-2xl">
+        <h3 className="text-admin-text font-condensed font-bold text-lg mb-1">
+          Mark ID on file (external)
+        </h3>
+        <p className="text-admin-text3 text-xs mb-3">
+          Confirms an ID for <strong className="text-admin-text">{displayName}</strong> is held outside the app. They&apos;ll never be asked to upload in-app.
+        </p>
+        <label className="block">
+          <span className="block text-[10px] font-bold uppercase tracking-widest text-admin-text3 mb-1">
+            Notes (optional)
+          </span>
+          <textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            rows={3}
+            maxLength={500}
+            placeholder="e.g. WhatsApp 2026-03-15"
+            className="w-full rounded-[6px] border border-admin-border2 bg-admin-surface2 px-2 py-1.5 text-sm text-admin-text outline-none focus:border-admin-green/60"
+            data-testid="admin-users-mark-external-notes"
+          />
+        </label>
+        {error && (
+          <p className="text-vibrant-pink text-xs mt-2" role="alert">
+            {error}
+          </p>
+        )}
+        <div className="mt-4 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={pending}
+            className="rounded-[6px] border border-admin-border2 px-3 py-1.5 text-xs font-semibold text-admin-text2 hover:bg-admin-surface3 disabled:opacity-50"
+            data-testid="admin-users-mark-external-cancel"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleConfirm}
+            disabled={pending}
+            className="rounded-[6px] bg-admin-green px-3 py-1.5 text-xs font-bold text-admin-ink hover:opacity-90 disabled:opacity-50"
+            data-testid="admin-users-mark-external-confirm"
+          >
+            {pending ? 'Saving…' : 'Mark on file'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// v2.2.15 — "Request ID re-upload" confirmation modal with optional
+// reason textarea.
+function RequestReuploadModal({
+  user,
+  onClose,
+  onConfirmed,
+}: {
+  user: UserRow
+  onClose: () => void
+  onConfirmed: (displayName: string) => void
+}) {
+  const [notes, setNotes] = useState('')
+  const [pending, startTransition] = useTransition()
+  const [error, setError] = useState<string | null>(null)
+  const displayName = user.name ?? user.email ?? 'this user'
+  function handleConfirm() {
+    setError(null)
+    startTransition(async () => {
+      try {
+        await requestUserIdReupload(user.id, notes.trim() || null)
+        onConfirmed(displayName)
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to request reupload')
+      }
+    })
+  }
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center"
+      data-testid="admin-users-request-reupload-modal"
+    >
+      <div className="absolute inset-0 bg-black/70" onClick={onClose} />
+      <div className="relative bg-admin-surface border border-admin-border rounded-xl p-6 w-full max-w-md mx-4 shadow-2xl">
+        <h3 className="text-admin-text font-condensed font-bold text-lg mb-1">
+          Request ID re-upload
+        </h3>
+        <p className="text-admin-text3 text-xs mb-3">
+          Forces <strong className="text-admin-text">{displayName}</strong> to upload a fresh ID at the next form touchpoint. Clears automatically when they complete the upload.
+        </p>
+        <label className="block">
+          <span className="block text-[10px] font-bold uppercase tracking-widest text-admin-text3 mb-1">
+            Reason (optional, shown to user)
+          </span>
+          <textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            rows={3}
+            maxLength={500}
+            placeholder="e.g. previous ID expired"
+            className="w-full rounded-[6px] border border-admin-border2 bg-admin-surface2 px-2 py-1.5 text-sm text-admin-text outline-none focus:border-admin-green/60"
+            data-testid="admin-users-request-reupload-notes"
+          />
+        </label>
+        {error && (
+          <p className="text-vibrant-pink text-xs mt-2" role="alert">
+            {error}
+          </p>
+        )}
+        <div className="mt-4 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={pending}
+            className="rounded-[6px] border border-admin-border2 px-3 py-1.5 text-xs font-semibold text-admin-text2 hover:bg-admin-surface3 disabled:opacity-50"
+            data-testid="admin-users-request-reupload-cancel"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleConfirm}
+            disabled={pending}
+            className="rounded-[6px] bg-admin-amber px-3 py-1.5 text-xs font-bold text-admin-ink hover:opacity-90 disabled:opacity-50"
+            data-testid="admin-users-request-reupload-confirm"
+          >
+            {pending ? 'Saving…' : 'Request re-upload'}
+          </button>
+        </div>
+      </div>
+    </div>
   )
 }

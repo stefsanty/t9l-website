@@ -135,8 +135,11 @@ describe('UsersList — ID column header (v1.71.2)', () => {
     expect(usersListSrc).toMatch(/<span>ID<\/span>/)
   })
 
-  it('desktop grid column template includes 48px ID column', () => {
-    expect(usersListSrc).toContain('40px 1fr 180px 200px 48px 100px 80px')
+  it('desktop grid column template includes 48px ID column (v2.2.15 widened Actions to 132px)', () => {
+    // v2.2.15 — Actions column bumped 80px → 132px to fit two new
+    // icon-only buttons (mark-external + request-reupload) alongside
+    // the existing Unlink. ID column stays 48px.
+    expect(usersListSrc).toContain('40px 1fr 180px 200px 48px 100px 132px')
   })
 })
 

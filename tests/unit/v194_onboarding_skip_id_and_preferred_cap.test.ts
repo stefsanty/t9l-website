@@ -174,12 +174,17 @@ describe('[v1.93.0] RegistrationFields — preferred/secondary + idRequired', ()
   it('accepts `idRequired` prop (defaults true) — hides ID UI when false', () => {
     expect(src).toMatch(/idRequired\?: boolean/)
     expect(src).toMatch(/idRequired\s*=\s*true,?/)
-    // v2.2.12 widened the gate to include `!reusing` so the existing-ID
-    // reuse path also skips the file-presence requirement.
-    expect(src).toMatch(/idRequired\s*&&\s*!reusing\s*&&\s*!idFrontFile/)
-    expect(src).toMatch(/idRequired\s*&&\s*!reusing\s*&&\s*!idBackFile/)
-    // ID callout + file fields wrapped in `{idRequired && (`.
-    expect(src).toMatch(/\{idRequired && \(/)
+    // v2.2.15 — submit gate is driven by the `selectIdSectionMode()`
+    // pure helper. `mustUpload` widens the v2.2.12 `!reusing` semantic
+    // to also cover the new `reupload-requested` mode (admin-forced
+    // fresh upload). The `mustUpload && !idFrontFile` / `!idBackFile`
+    // shape replaces the v2.2.12 `idRequired && !reusing && …` pair.
+    expect(src).toMatch(/mustUpload\s*&&\s*!idFrontFile/)
+    expect(src).toMatch(/mustUpload\s*&&\s*!idBackFile/)
+    // v2.2.15 — ID section wrapped in `{sectionMode !== 'none' && (`
+    // (replaces v2.2.12's `{idRequired && (` — same semantic since
+    // `selectIdSectionMode` returns `'none'` iff `!idRequired`).
+    expect(src).toMatch(/\{sectionMode !== 'none' && \(/)
   })
 
   it('preferred picker is capped via maxSelected={MAX_PREFERRED_POSITIONS}', () => {

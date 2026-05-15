@@ -52,7 +52,17 @@ export async function GET(
 
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { idFrontUrl: true, idBackUrl: true, playerId: true },
+    select: {
+      idFrontUrl: true,
+      idBackUrl: true,
+      playerId: true,
+      // v2.2.15 — externally-attested users have no Blob URL on file
+      // (the operator holds the original out of band). Return a
+      // distinct 404 shape so the admin UI can surface "stored
+      // externally — see notes" instead of a broken image.
+      idCollectedExternally: true,
+      idCollectedExternallyNotes: true,
+    },
   })
   if (!user) {
     return NextResponse.json({ error: 'not_found' }, { status: 404 })
@@ -60,6 +70,17 @@ export async function GET(
 
   const url = side === 'front' ? user.idFrontUrl : user.idBackUrl
   if (!url) {
+    // v2.2.15 — distinguish "ID held externally" from "no ID on file
+    // at all" so the admin UI renders a useful surface for the former.
+    if (user.idCollectedExternally) {
+      return NextResponse.json(
+        {
+          error: 'external_id',
+          notes: user.idCollectedExternallyNotes,
+        },
+        { status: 404 },
+      )
+    }
     return NextResponse.json({ error: 'not_found' }, { status: 404 })
   }
 

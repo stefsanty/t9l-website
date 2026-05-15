@@ -60,6 +60,20 @@ interface Props {
    * Server action re-verifies the User state before honouring reuse.
    */
   hasExistingIds?: boolean
+  /**
+   * v2.2.15 — when true, the calling User has an admin-attested
+   * external ID on file. The ID section in RegistrationFields renders
+   * a quiet "already on file" panel; no upload, no consent checkbox.
+   */
+  idCollectedExternally?: boolean
+  /**
+   * v2.2.15 — when true, an admin has requested a fresh ID upload.
+   * Overrides external + existing-IDs paths; forces upload-mode at the
+   * next onboarding submit. Cleared server-side on successful upload.
+   */
+  idReuploadRequested?: boolean
+  /** v2.2.15 — optional admin-supplied reason shown under the prompt. */
+  idReuploadRequestedNotes?: string | null
 }
 
 // v2.2.9 — sentinel for "no selection yet" (distinct from `null`, which
@@ -78,6 +92,9 @@ export default function OnboardingForm({
   allowPlayerTeamPick = false,
   teamPickerOptions = [],
   hasExistingIds = false,
+  idCollectedExternally = false,
+  idReuploadRequested = false,
+  idReuploadRequestedNotes = null,
 }: Props) {
   const [teamSelection, setTeamSelection] = useState<TeamSelection>(NO_SELECTION)
   const [teamPickerError, setTeamPickerError] = useState<string | null>(null)
@@ -142,6 +159,9 @@ export default function OnboardingForm({
         ballType={ballType}
         idRequired={idRequired}
         hasExistingIds={hasExistingIds}
+        idCollectedExternally={idCollectedExternally}
+        idReuploadRequested={idReuploadRequested}
+        idReuploadRequestedNotes={idReuploadRequestedNotes}
         submitLabel="Save and finish"
         uploadPathPrefix={`player-id/${playerId}`}
         picturePathPrefix={`player-profile/${playerId}`}
