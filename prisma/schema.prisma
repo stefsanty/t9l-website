@@ -110,6 +110,28 @@ model User {
   idBackUrl    String?
   idUploadedAt DateTime?
 
+  // v2.2.15 — external-ID attestation. Operator collects some IDs out
+  // of band (e.g. over WhatsApp); these users should never be asked to
+  // upload in-app. The `idCollectedExternally` flag is an attestation
+  // only — no image is stored in-app. The admin proxy
+  // `/api/admin/id-image/[userId]/[side]` returns 404 `external_id`
+  // for these users so the admin UI can surface "stored externally"
+  // rather than a broken image. The notes column holds free-form
+  // operator notes (channel + date, e.g. "WhatsApp 2026-03-15").
+  idCollectedExternally       Boolean   @default(false)
+  idCollectedExternallyAt     DateTime?
+  idCollectedExternallyNotes  String?
+
+  // v2.2.15 — admin-triggered "please re-upload your ID" request.
+  // Cleared automatically when the user completes a new upload. Takes
+  // priority over the existing-ID reuse path so an admin can force a
+  // fresh capture (e.g. when the existing ID is expired). Applies to
+  // ALL users regardless of current ID state. Notes column carries the
+  // admin's optional reason.
+  idReuploadRequested       Boolean   @default(false)
+  idReuploadRequestedAt     DateTime?
+  idReuploadRequestedNotes  String?
+
   accounts Account[]
 
   // v1.42.0 (epic match events PR α) — audit trail for who entered each
@@ -1080,6 +1102,16 @@ model LeagueInvite {
   // the player's data and just needs the User-Player binding established.
   // Default false — onboarding form is the safe path.
   skipOnboarding Boolean @default(false)
+
+  // v2.2.15 — invite-time preset for the external-ID attestation. When
+  // true, redemption auto-sets `User.idCollectedExternally = true` on
+  // the bound User (with `idCollectedExternallyAt = now()` and notes
+  // copied from `presetIdCollectedExternallyNotes`, or a default
+  // fallback when no notes were supplied). Idempotent — never
+  // overwrites an already-true flag, so a second invite redemption
+  // doesn't churn the notes column.
+  presetIdCollectedExternally      Boolean @default(false)
+  presetIdCollectedExternallyNotes String?
 
   league League @relation(fields: [leagueId], references: [id], onDelete: Cascade)
 

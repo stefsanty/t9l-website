@@ -94,6 +94,11 @@ export default async function OnboardingPage({ params }: Props) {
         idFrontUrl: true,
         idBackUrl: true,
         idUploadedAt: true,
+        // v2.2.15 — admin-attestation + reupload-request fields drive
+        // the onboarding ID-section mode-decider.
+        idCollectedExternally: true,
+        idReuploadRequested: true,
+        idReuploadRequestedNotes: true,
       },
     }),
   ])
@@ -155,6 +160,9 @@ export default async function OnboardingPage({ params }: Props) {
           allowPlayerTeamPick={league.allowPlayerTeamPick}
           teamPickerOptions={teamPickerOptions}
           hasExistingIds={hasExistingIds}
+          idCollectedExternally={userRow?.idCollectedExternally ?? false}
+          idReuploadRequested={userRow?.idReuploadRequested ?? false}
+          idReuploadRequestedNotes={userRow?.idReuploadRequestedNotes ?? null}
         />
       </div>
     </main>

@@ -78,8 +78,14 @@ describe('v2.2.12 — RegistrationFields existing-ID reuse path', () => {
     )
   })
 
-  it('gates the submit button on the consent checkbox when reusing, else on file presence', () => {
-    expect(REG_FIELDS_SRC).toMatch(/reusingNow\s*\?\s*consentExistingId\s*:\s*!!\(idFrontFile\s*&&\s*idBackFile\)/)
+  it('gates the submit button on the consent checkbox when reusing, else on file presence (v2.2.15: mode-decider shape)', () => {
+    // v2.2.15 — gate routed through `sectionMode` (the pure helper's
+    // output). Reuse branch: consent checkbox. Other upload branches:
+    // both files. External + none: gate is open. Same semantic, new
+    // shape — pinning the mode-decider key clause.
+    expect(REG_FIELDS_SRC).toMatch(
+      /sectionMode === 'reuse-existing' && useExistingId\s*\?\s*consentExistingId\s*:\s*!!\(idFrontFile && idBackFile\)/,
+    )
   })
 
   it('skips file uploads on the reuse branch (defence-in-depth)', () => {
@@ -138,10 +144,12 @@ describe('v2.2.12 — completeOnboardingWithId server-side reuse gate', () => {
     )
   })
 
-  it('skips the Blob URL gate when reuseExistingId is true', () => {
-    expect(ACTIONS_SRC).toMatch(
-      /\(invite\.league\?\.idRequired\s*\?\?\s*true\)\s*&&\s*!reuseExistingId/,
-    )
+  it('skips the Blob URL gate when reuseExistingId is true (v2.2.15: priority chain)', () => {
+    // v2.2.15 — the gate is now a priority chain that mirrors
+    // `selectIdSectionMode()`: reupload-requested wins, external wins
+    // over reuse, reuse wins over default. The default `!reuseExistingId`
+    // branch still exists but is now inside an `else if`.
+    expect(ACTIONS_SRC).toMatch(/idRequired\s*&&\s*!reuseExistingId/)
   })
 
   it('throws the consent error when reuse is requested but user has no IDs on file', () => {
@@ -151,14 +159,29 @@ describe('v2.2.12 — completeOnboardingWithId server-side reuse gate', () => {
     )
   })
 
-  it('skips the User.update id-column write on the reuse path', () => {
-    // The conditional spread on the User.update includes `!reuseExistingId`.
+  it('skips the User.update id-column write on the reuse path (v2.2.15: shouldWriteIdColumns)', () => {
+    // v2.2.15 — the conditional spread on User.update now keys on
+    // `shouldWriteIdColumns`, a derived bool that excludes
+    // reuse-existing AND external-attestation. The reuse-skip semantic
+    // is preserved.
+    expect(ACTIONS_SRC).toMatch(/shouldWriteIdColumns/)
+    // The derivation must reference both reuseExistingId AND
+    // idCollectedExternally as exclusions.
     expect(ACTIONS_SRC).toMatch(
-      /\(\(invite\.league\?\.idRequired\s*\?\?\s*true\)\s*&&\s*!reuseExistingId\)[\s\S]{0,400}idFrontUrl:\s*input\.idFrontUrl/,
+      /shouldWriteIdColumns[\s\S]{0,200}!reuseExistingId/,
+    )
+    expect(ACTIONS_SRC).toMatch(
+      /shouldWriteIdColumns[\s\S]{0,200}!user\.idCollectedExternally/,
     )
   })
 
-  it('writes idShared: true on the PLM update when reusing', () => {
-    expect(ACTIONS_SRC).toMatch(/reuseExistingId\s*\?\s*\{\s*idShared:\s*true\s*\}/)
+  it('writes idShared: true on the PLM update when reusing (v2.2.15: also for external)', () => {
+    // v2.2.15 — the idShared write is now also triggered for
+    // externally-attested users so the admin proxy's consent gate
+    // passes (it then returns 404 `external_id` and the admin UI
+    // surfaces "stored externally" instead of a broken image).
+    expect(ACTIONS_SRC).toMatch(
+      /reuseExistingId\s*\|\|\s*user\.idCollectedExternally[\s\S]{0,80}idShared:\s*true/,
+    )
   })
 })

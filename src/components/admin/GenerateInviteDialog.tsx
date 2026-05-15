@@ -58,6 +58,14 @@ export default function GenerateInviteDialog(props: Props) {
   const { toast } = useToast()
   const [pending, startTransition] = useTransition()
   const [skipOnboarding, setSkipOnboarding] = useState(false)
+  // v2.2.15 — invite-time preset for the external-ID attestation.
+  // When the admin ticks the checkbox, redemption will auto-set
+  // `User.idCollectedExternally = true` on the bound user (with the
+  // optional `presetNotes` or a canonical fallback). The single +
+  // bulk paths share the same toggle since the preset semantics are
+  // per-invite, not per-target.
+  const [presetExternal, setPresetExternal] = useState(false)
+  const [presetNotes, setPresetNotes] = useState('')
   const [singleResult, setSingleResult] = useState<SingleResult | null>(null)
   const [bulkResult, setBulkResult] = useState<{ results: BulkResultRow[]; csv: string } | null>(null)
 
@@ -78,6 +86,10 @@ export default function GenerateInviteDialog(props: Props) {
             leagueId: props.leagueId,
             targetPlayerId: props.target.id,
             skipOnboarding,
+            presetIdCollectedExternally: presetExternal,
+            presetIdCollectedExternallyNotes: presetExternal
+              ? (presetNotes.trim() || null)
+              : null,
           })
           setSingleResult({
             code: invite.code,
@@ -91,6 +103,10 @@ export default function GenerateInviteDialog(props: Props) {
             leagueId: props.leagueId,
             targetPlayerIds: props.targets.map((t) => t.id),
             skipOnboarding,
+            presetIdCollectedExternally: presetExternal,
+            presetIdCollectedExternallyNotes: presetExternal
+              ? (presetNotes.trim() || null)
+              : null,
           })
           setBulkResult({
             results: result.results.map((r) => ({
@@ -246,7 +262,7 @@ export default function GenerateInviteDialog(props: Props) {
               </div>
             )}
 
-            <label className="mb-5 flex items-start gap-2 text-sm text-admin-text2 cursor-pointer bg-admin-surface2 border border-admin-border rounded-md p-3">
+            <label className="mb-3 flex items-start gap-2 text-sm text-admin-text2 cursor-pointer bg-admin-surface2 border border-admin-border rounded-md p-3">
               <input
                 type="checkbox"
                 checked={skipOnboarding}
@@ -263,6 +279,46 @@ export default function GenerateInviteDialog(props: Props) {
                 </span>
               </span>
             </label>
+
+            {/* v2.2.15 — invite-time external-ID preset. When ticked,
+                redemption auto-sets User.idCollectedExternally = true.
+                Notes textarea only shows when the checkbox is on. */}
+            <div className="mb-5 bg-admin-surface2 border border-admin-border rounded-md p-3">
+              <label className="flex items-start gap-2 text-sm text-admin-text2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={presetExternal}
+                  onChange={(e) => setPresetExternal(e.target.checked)}
+                  className="mt-0.5"
+                  data-testid="invite-preset-external-id"
+                />
+                <span>
+                  <span className="font-medium text-admin-text">
+                    User has ID on file externally
+                  </span>
+                  <span className="block text-xs text-admin-text3 mt-0.5">
+                    Pre-mark this user as having their ID collected outside the app
+                    (e.g. over WhatsApp). They&apos;ll never be asked to upload in-app.
+                  </span>
+                </span>
+              </label>
+              {presetExternal && (
+                <label className="block mt-3">
+                  <span className="block text-[10px] font-bold uppercase tracking-widest text-admin-text3 mb-1">
+                    Notes (optional)
+                  </span>
+                  <textarea
+                    value={presetNotes}
+                    onChange={(e) => setPresetNotes(e.target.value)}
+                    rows={2}
+                    maxLength={500}
+                    placeholder="e.g. WhatsApp 2026-03-15"
+                    className="w-full rounded-[6px] border border-admin-border2 bg-admin-surface px-2 py-1.5 text-sm text-admin-text outline-none focus:border-admin-green/60"
+                    data-testid="invite-preset-external-id-notes"
+                  />
+                </label>
+              )}
+            </div>
 
             <div className="flex gap-3 justify-end">
               <button

@@ -166,7 +166,10 @@ describe('v1.80.11 — submitIdUpload gate accepts userId OR lineId', () => {
 })
 
 describe('v1.80.11 — completeOnboardingWithId gate accepts userId OR lineId', () => {
-  const block = blockOf('completeOnboardingWithId', 7000)
+  // v2.2.15 — bumped 7000 → 9500 so the `shouldWriteEmail = !user.email`
+  // assertion below stays in the slice after the v2.2.15 additions to
+  // the ID-gate block lengthened the function.
+  const block = blockOf('completeOnboardingWithId', 9500)
 
   it('pulls both identifiers from session', () => {
     expect(block).toMatch(/sessionUserId\s*=\s*\(session as[\s\S]*\.userId/)

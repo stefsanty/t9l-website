@@ -5,6 +5,7 @@ import { upload } from '@vercel/blob/client'
 import PositionMultiSelect from '@/components/PositionMultiSelect'
 import IdExamplesModal from '@/components/registration/IdExamplesModal'
 import { MAX_PREFERRED_POSITIONS, type BallType } from '@/lib/positions'
+import { selectIdSectionMode } from '@/lib/registration-helpers'
 
 /**
  * v1.68.0 — shared registration fields component.
@@ -128,6 +129,27 @@ export interface RegistrationFieldsProps {
    * the reuse path (a forged true is rejected).
    */
   hasExistingIds?: boolean
+  /**
+   * v2.2.15 — when true, the calling user has been marked as having
+   * their ID collected outside the app (e.g. over WhatsApp). The ID
+   * section renders a quiet confirmation panel; no upload, no consent
+   * checkbox, no rejection on submit. Overrides `hasExistingIds`.
+   */
+  idCollectedExternally?: boolean
+  /**
+   * v2.2.15 — when true, an admin has asked this user to upload a
+   * fresh ID. The ID section flips to upload-mode regardless of
+   * existing-ID / external state. Takes priority over all other ID
+   * gates so an admin can force a fresh capture even when an existing
+   * or external attestation is on record.
+   */
+  idReuploadRequested?: boolean
+  /**
+   * v2.2.15 — optional admin-supplied reason shown to the user when
+   * `idReuploadRequested === true`. Falsy → just the canonical
+   * "please upload a fresh ID" sentence.
+   */
+  idReuploadRequestedNotes?: string | null
   /** Submit button label, e.g. "Apply to T9L" or "Save and finish". */
   submitLabel: string
   /**
@@ -162,6 +184,9 @@ export default function RegistrationFields({
   ballType = null,
   idRequired = true,
   hasExistingIds = false,
+  idCollectedExternally = false,
+  idReuploadRequested = false,
+  idReuploadRequestedNotes = null,
   submitLabel,
   uploadPathPrefix,
   picturePathPrefix,
@@ -265,20 +290,40 @@ export default function RegistrationFields({
       setError(`Preferred positions: pick at most ${MAX_PREFERRED_POSITIONS}.`)
       return
     }
-    // v2.2.12 — when the user opted to reuse the existing ID on file,
-    // gate on the consent checkbox instead of the upload-fields. Server
-    // action re-verifies the user actually has IDs (defends against a
-    // forged useExistingId flip on a brand-new user).
-    const reusing = idRequired && hasExistingIds && useExistingId
-    if (idRequired && reusing && !consentExistingId) {
+    // v2.2.15 — pure state-decider drives the gate. `reupload-requested`
+    // and `external` are new modes; `reuse-existing` (v2.2.12) and
+    // `upload` (default) keep their semantics. The reuse path requires
+    // the consent checkbox; the upload path requires both files;
+    // external requires nothing; reupload-requested ALWAYS requires
+    // the upload-fields path even when existing IDs are on file.
+    const mode = selectIdSectionMode({
+      idRequired,
+      hasExistingIds,
+      idCollectedExternally,
+      // The `useExistingId` toggle only matters when the mode would
+      // otherwise be `reuse-existing` (no admin overrides). We feed
+      // the raw flags into the helper; the branch below then refines.
+      idReuploadRequested,
+    })
+    const reusing = mode === 'reuse-existing' && useExistingId
+    if (mode === 'reuse-existing' && useExistingId && !consentExistingId) {
       setError("Please confirm consent to share your ID with this league's organizers.")
       return
     }
-    if (idRequired && !reusing && !idFrontFile) {
+    // Upload required when:
+    //   - mode === 'upload' (default upload path), OR
+    //   - mode === 'reupload-requested' (admin forced fresh), OR
+    //   - mode === 'reuse-existing' BUT user clicked "Upload new ID
+    //     instead" (useExistingId === false).
+    const mustUpload =
+      mode === 'upload' ||
+      mode === 'reupload-requested' ||
+      (mode === 'reuse-existing' && !useExistingId)
+    if (mustUpload && !idFrontFile) {
       setError('Front of ID is required')
       return
     }
-    if (idRequired && !reusing && !idBackFile) {
+    if (mustUpload && !idBackFile) {
       setError('Back of ID is required')
       return
     }
@@ -352,12 +397,21 @@ export default function RegistrationFields({
     })
   }
 
-  // v2.2.12 — when reusing the existing ID, gate on the consent
-  // checkbox. When uploading new (either no existing IDs, or the user
-  // clicked "Upload new ID instead"), gate on both files present.
-  const reusingNow = idRequired && hasExistingIds && useExistingId
-  const idGateOk = !idRequired ||
-    (reusingNow ? consentExistingId : !!(idFrontFile && idBackFile))
+  // v2.2.15 — submit-disabled gate mirrors the handleSubmit branches.
+  // The pure-mode helper centralises the priority; this just maps mode
+  // → required-state.
+  const sectionMode = selectIdSectionMode({
+    idRequired,
+    hasExistingIds,
+    idCollectedExternally,
+    idReuploadRequested,
+  })
+  const idGateOk =
+    sectionMode === 'none' ||
+    sectionMode === 'external' ||
+    (sectionMode === 'reuse-existing' && useExistingId
+      ? consentExistingId
+      : !!(idFrontFile && idBackFile))
   const submitDisabled =
     pending ||
     !name.trim() ||
@@ -473,7 +527,7 @@ export default function RegistrationFields({
         </span>
       </div>
 
-      {idRequired && (
+      {sectionMode !== 'none' && (
         <>
           {/* v2.2.12 — "Share Your ID" heading lifted OUT of the callout
               box and promoted to a canonical <h2>, so the section header
@@ -484,21 +538,52 @@ export default function RegistrationFields({
           >
             Share Your ID
           </h2>
-          <div
-            className="rounded-lg border border-warning/40 bg-warning/10 px-4 py-3 text-sm text-fg-high leading-relaxed"
-            data-testid="registration-id-callout"
-          >
-            <p className="text-fg-mid mb-2">
-              We require your ID to enable more regular league games!
-            </p>
-            <p className="text-fg-mid mb-2">
-              To serve you the best league experience possible, we require league members to share your ID with us in order to book more courts.
-            </p>
-            <p className="text-fg-mid">
-              Your ID will only ever be shared to the organizers, and is secured so that no one but the organizers may access your ID.
-            </p>
-          </div>
-          {hasExistingIds && useExistingId ? (
+          {sectionMode === 'external' ? (
+            // v2.2.15 — externally-collected attestation. Quiet
+            // confirmation panel; no upload, no consent, no rejection.
+            <div
+              className="rounded-lg border border-tertiary/40 bg-tertiary/10 px-4 py-3 text-sm text-fg-high leading-relaxed"
+              data-testid="registration-id-external"
+            >
+              <p className="text-fg-mid">
+                Your ID is on file with the organizer — nothing further needed.
+              </p>
+            </div>
+          ) : (
+            <>
+              <div
+                className="rounded-lg border border-warning/40 bg-warning/10 px-4 py-3 text-sm text-fg-high leading-relaxed"
+                data-testid="registration-id-callout"
+              >
+                {sectionMode === 'reupload-requested' && (
+                  // v2.2.15 — admin-forced re-upload. Surfaced ABOVE the
+                  // canonical callout so the prompt is the first thing
+                  // the user sees in this section.
+                  <div className="mb-3" data-testid="registration-id-reupload-note">
+                    <p className="text-fg-high font-semibold mb-1">
+                      Your league organizer has asked you to upload a fresh ID.
+                    </p>
+                    {idReuploadRequestedNotes && (
+                      <p
+                        className="text-fg-mid text-xs"
+                        data-testid="registration-id-reupload-reason"
+                      >
+                        {idReuploadRequestedNotes}
+                      </p>
+                    )}
+                  </div>
+                )}
+                <p className="text-fg-mid mb-2">
+                  We require your ID to enable more regular league games!
+                </p>
+                <p className="text-fg-mid mb-2">
+                  To serve you the best league experience possible, we require league members to share your ID with us in order to book more courts.
+                </p>
+                <p className="text-fg-mid">
+                  Your ID will only ever be shared to the organizers, and is secured so that no one but the organizers may access your ID.
+                </p>
+              </div>
+              {sectionMode === 'reuse-existing' && useExistingId ? (
             // v2.2.12 — reuse-existing-ID consent path. Replaces the
             // two upload fields with a single checkbox + explainer.
             <div className="space-y-2" data-testid="registration-id-reuse">
@@ -553,7 +638,7 @@ export default function RegistrationFields({
                 >
                   Which IDs are accepted?
                 </button>
-                {hasExistingIds && (
+                {sectionMode === 'reuse-existing' && (
                   <>
                     <span aria-hidden className="text-fg-low text-xs">·</span>
                     <button
@@ -591,6 +676,8 @@ export default function RegistrationFields({
                 }
                 testid="registration-id-back"
               />
+            </>
+          )}
             </>
           )}
         </>

@@ -591,6 +591,15 @@ export async function getAllUsersForAdmin(): Promise<
     idFrontUrl: string | null
     idBackUrl: string | null
     idUploadedAt: string | null
+    // v2.2.15 — attestation + reupload-request audit fields. Surfaced
+    // on the admin Users list so each row's badges + toggle buttons
+    // reflect current state.
+    idCollectedExternally: boolean
+    idCollectedExternallyAt: string | null
+    idCollectedExternallyNotes: string | null
+    idReuploadRequested: boolean
+    idReuploadRequestedAt: string | null
+    idReuploadRequestedNotes: string | null
   }>
 > {
   const users = await prisma.user.findMany({
@@ -608,6 +617,12 @@ export async function getAllUsersForAdmin(): Promise<
       idFrontUrl: true,
       idBackUrl: true,
       idUploadedAt: true,
+      idCollectedExternally: true,
+      idCollectedExternallyAt: true,
+      idCollectedExternallyNotes: true,
+      idReuploadRequested: true,
+      idReuploadRequestedAt: true,
+      idReuploadRequestedNotes: true,
       accounts: { select: { provider: true } },
     },
   })
@@ -687,6 +702,16 @@ export async function getAllUsersForAdmin(): Promise<
       idFrontUrl: u.idFrontUrl,
       idBackUrl: u.idBackUrl,
       idUploadedAt: u.idUploadedAt ? u.idUploadedAt.toISOString() : null,
+      idCollectedExternally: u.idCollectedExternally,
+      idCollectedExternallyAt: u.idCollectedExternallyAt
+        ? u.idCollectedExternallyAt.toISOString()
+        : null,
+      idCollectedExternallyNotes: u.idCollectedExternallyNotes,
+      idReuploadRequested: u.idReuploadRequested,
+      idReuploadRequestedAt: u.idReuploadRequestedAt
+        ? u.idReuploadRequestedAt.toISOString()
+        : null,
+      idReuploadRequestedNotes: u.idReuploadRequestedNotes,
     }
   })
 }

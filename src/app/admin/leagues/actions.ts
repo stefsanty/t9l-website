@@ -1840,6 +1840,13 @@ export async function adminGenerateInvite(input: {
   targetPlayerId: string
   skipOnboarding?: boolean
   expiresAt?: Date | null // omit = +7 days; null = no expiry
+  // v2.2.15 — invite-time external-ID preset. When true, redemption
+  // auto-sets `User.idCollectedExternally = true` on the bound user
+  // (with notes from the optional `presetIdCollectedExternallyNotes`
+  // or the canonical fallback). Both default to off/null so existing
+  // call sites work unchanged.
+  presetIdCollectedExternally?: boolean
+  presetIdCollectedExternallyNotes?: string | null
 }): Promise<{
   id: string
   code: string
@@ -1853,6 +1860,19 @@ export async function adminGenerateInvite(input: {
   if (!targetPlayerId) throw new Error('targetPlayerId is required')
 
   const skipOnboarding = !!input.skipOnboarding
+  const presetIdCollectedExternally = !!input.presetIdCollectedExternally
+  // Validate notes length matches the server-side cap used by the
+  // direct user-level admin actions (`markUserIdExternal`).
+  const presetIdCollectedExternallyNotes =
+    typeof input.presetIdCollectedExternallyNotes === 'string'
+      ? input.presetIdCollectedExternallyNotes.trim()
+      : null
+  if (
+    presetIdCollectedExternallyNotes &&
+    presetIdCollectedExternallyNotes.length > 500
+  ) {
+    throw new Error('Notes must be 500 characters or fewer')
+  }
   const expiresAt =
     input.expiresAt === undefined
       ? computeInviteExpiry(new Date(), INVITE_DEFAULT_EXPIRY_DAYS)
@@ -1907,6 +1927,11 @@ export async function adminGenerateInvite(input: {
           expiresAt,
           skipOnboarding,
           createdById,
+          presetIdCollectedExternally,
+          presetIdCollectedExternallyNotes:
+            presetIdCollectedExternally
+              ? (presetIdCollectedExternallyNotes || null)
+              : null,
         }),
       })
       revalidate({ domain: 'admin', paths: [`/admin/leagues/${leagueId}/players`] })
@@ -1953,6 +1978,10 @@ export async function adminGenerateInvitesBulk(input: {
   targetPlayerIds: string[]
   skipOnboarding?: boolean
   expiresAt?: Date | null
+  // v2.2.15 — invite-time external-ID preset, applied to every invite
+  // in the bulk batch. Same semantics as the single-invite path.
+  presetIdCollectedExternally?: boolean
+  presetIdCollectedExternallyNotes?: string | null
 }): Promise<{
   results: Array<{
     playerId: string
@@ -2032,6 +2061,9 @@ export async function adminGenerateInvitesBulk(input: {
         targetPlayerId: playerId,
         skipOnboarding: input.skipOnboarding,
         expiresAt: input.expiresAt,
+        presetIdCollectedExternally: input.presetIdCollectedExternally,
+        presetIdCollectedExternallyNotes:
+          input.presetIdCollectedExternallyNotes ?? null,
       })
       results.push({
         playerId,

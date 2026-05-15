@@ -11,6 +11,7 @@ import { linkUserToPlayer } from '@/lib/identityLink'
 import { deleteMapping } from '@/lib/playerMappingStore'
 import { sendMail } from '@/lib/email'
 import { applicationReceivedEmail } from '@/lib/emailTemplates'
+import { resolveInvitePresetExternalId } from '@/lib/registration-helpers'
 import {
   legacyPositionFromArray,
   normalizePositions,
@@ -95,23 +96,33 @@ export async function redeemInvite(input: RedeemInviteInput): Promise<RedeemInvi
   // (legacy pre-v1.28.0 LINE sessions; LINE-auth admins whose role is
   // orthogonal to player binding). Mirrors v1.80.10 in
   // `api/recruiting/actions.ts`.
-  let user: { id: string; lineId: string | null } | null = null
+  // v2.2.15 — also select `idCollectedExternally` on the calling User
+  // so the invite-time external-ID preset (applied below from
+  // `invite.presetIdCollectedExternally`) can be idempotent: never
+  // overwrite an already-true flag, never churn the notes column on a
+  // second invite redemption.
+  let user: {
+    id: string
+    lineId: string | null
+    idCollectedExternally: boolean
+  } | null = null
   if (sessionUserId) {
     user = await prisma.user.findUnique({
       where: { id: sessionUserId },
-      select: { id: true, lineId: true },
+      select: { id: true, lineId: true, idCollectedExternally: true },
     })
   }
   if (!user && sessionLineId) {
     user = await prisma.user.findUnique({
       where: { lineId: sessionLineId },
-      select: { id: true, lineId: true },
+      select: { id: true, lineId: true, idCollectedExternally: true },
     })
   }
   if (!user) {
     return { ok: false, error: 'User not found' }
   }
   const userId = user.id
+  const userExternalAlreadySet = user.idCollectedExternally
   // Use the canonical User.lineId (not session.lineId) when telling
   // `linkUserToPlayer` to also stamp Player.lineId. For Google/email
   // sign-ins the User row's lineId is null and the helper will skip
@@ -252,6 +263,30 @@ export async function redeemInvite(input: RedeemInviteInput): Promise<RedeemInvi
       where: { id: invite.id },
       data: { usedCount: { increment: 1 } },
     })
+
+    // (d) v2.2.15 — invite-time external-ID preset. When the admin
+    // ticked "User has ID on file externally" at invite creation,
+    // propagate that attestation to the bound User on redemption.
+    // Idempotent: skip when the User.idCollectedExternally flag is
+    // already true (a second invite redemption mustn't churn the
+    // notes column). The pure helper centralises the resolver +
+    // fallback-note logic; tests pin it directly.
+    if (!userExternalAlreadySet) {
+      const preset = resolveInvitePresetExternalId({
+        flag: invite.presetIdCollectedExternally,
+        notes: invite.presetIdCollectedExternallyNotes,
+      })
+      if (preset.collected) {
+        await tx.user.update({
+          where: { id: userId },
+          data: {
+            idCollectedExternally: true,
+            idCollectedExternallyAt: new Date(),
+            idCollectedExternallyNotes: preset.notes,
+          },
+        })
+      }
+    }
   })
 
   revalidate({ domain: 'admin', paths: [`/admin/leagues/${invite.leagueId}/players`] })
@@ -665,6 +700,11 @@ export async function completeOnboardingWithId(
   // v2.2.12 — also select the existing-ID columns so the reuse path
   // can be server-verified without a second round-trip. All three must
   // be set for `hasExistingIds` to be true (matches the form-side gate).
+  // v2.2.15 — also select idCollectedExternally + idReuploadRequested
+  // so the action can honour admin-attested external IDs (skip upload
+  // requirement, auto-set PLM.idShared) and admin-triggered re-upload
+  // requests (reject when the user submits with no new files; clear
+  // the request fields on successful upload).
   let user: {
     id: string
     lineId: string | null
@@ -672,6 +712,8 @@ export async function completeOnboardingWithId(
     idFrontUrl: string | null
     idBackUrl: string | null
     idUploadedAt: Date | null
+    idCollectedExternally: boolean
+    idReuploadRequested: boolean
   } | null = null
   if (sessionUserId) {
     user = await prisma.user.findUnique({
@@ -683,6 +725,8 @@ export async function completeOnboardingWithId(
         idFrontUrl: true,
         idBackUrl: true,
         idUploadedAt: true,
+        idCollectedExternally: true,
+        idReuploadRequested: true,
       },
     })
   }
@@ -696,6 +740,8 @@ export async function completeOnboardingWithId(
         idFrontUrl: true,
         idBackUrl: true,
         idUploadedAt: true,
+        idCollectedExternally: true,
+        idReuploadRequested: true,
       },
     })
   }
@@ -759,7 +805,31 @@ export async function completeOnboardingWithId(
     user.idFrontUrl && user.idBackUrl && user.idUploadedAt
   )
   const reuseExistingId = !!input.reuseExistingId
-  if ((invite.league?.idRequired ?? true) && !reuseExistingId) {
+  const idRequired = invite.league?.idRequired ?? true
+  const hasNewUpload =
+    isOwnedBlobUrl(input.idFrontUrl, idPrefix) &&
+    isOwnedBlobUrl(input.idBackUrl, idPrefix)
+  // v2.2.15 — priority order mirrors `selectIdSectionMode()`:
+  //   1. admin re-upload request → require fresh files (overrides
+  //      external + existing). A satisfied request clears the three
+  //      reupload columns below.
+  //   2. external attestation → skip the upload gate entirely; the
+  //      PLM write below auto-sets idShared so the admin-image-proxy
+  //      doesn't 403 (even though there are no images to fetch — the
+  //      proxy will 404 `external_id` and the admin UI handles that).
+  //   3. existing-ID reuse → re-verify the User actually has IDs, then
+  //      record consent on the PLM (v2.2.12 path).
+  //   4. default → require fresh files (v1.93.0 path).
+  if (idRequired && user.idReuploadRequested) {
+    if (!hasNewUpload) {
+      throw new Error(
+        'Please upload a fresh ID — your organizer has requested it.',
+      )
+    }
+  } else if (idRequired && user.idCollectedExternally) {
+    // External attestation — nothing to verify, server skips upload
+    // requirement entirely. No-op here.
+  } else if (idRequired && !reuseExistingId) {
     if (!isOwnedBlobUrl(input.idFrontUrl, idPrefix)) {
       throw new Error('Front of ID is required')
     }
@@ -767,7 +837,7 @@ export async function completeOnboardingWithId(
       throw new Error('Back of ID is required')
     }
   }
-  if ((invite.league?.idRequired ?? true) && reuseExistingId && !hasExistingIds) {
+  if (idRequired && reuseExistingId && !hasExistingIds) {
     // Defence-in-depth: a forged `reuseExistingId: true` on a user with
     // no IDs on file gets the same friendly error the form would surface.
     throw new Error(
@@ -838,6 +908,18 @@ export async function completeOnboardingWithId(
             : {}),
         },
       })
+      // v2.2.15 — when the admin requested a re-upload and the user
+      // delivered fresh files, persist the new URLs AND clear the
+      // re-upload-request flag fields so the next render goes back to
+      // the regular reuse / upload path. The external-attestation case
+      // doesn't write ID columns (operator has the original out of
+      // band); existing-reuse doesn't either (v2.2.12 behaviour).
+      const reuploadSatisfied =
+        idRequired && user.idReuploadRequested && hasNewUpload
+      const shouldWriteIdColumns =
+        idRequired &&
+        !user.idCollectedExternally &&
+        (reuploadSatisfied || !reuseExistingId)
       await tx.user.update({
         where: { id: userId },
         data: {
@@ -848,11 +930,21 @@ export async function completeOnboardingWithId(
           // already on file. The columns already hold the canonical
           // images; the reuse path only writes `idShared=true` on the
           // PLM below.
-          ...(((invite.league?.idRequired ?? true) && !reuseExistingId)
+          // v2.2.15 — also skip when the user is externally attested.
+          // When an admin-triggered reupload is satisfied, write AND
+          // clear the three reupload-request columns.
+          ...(shouldWriteIdColumns
             ? {
                 idFrontUrl: input.idFrontUrl,
                 idBackUrl: input.idBackUrl,
                 idUploadedAt: new Date(),
+              }
+            : {}),
+          ...(reuploadSatisfied
+            ? {
+                idReuploadRequested: false,
+                idReuploadRequestedAt: null,
+                idReuploadRequestedNotes: null,
               }
             : {}),
           // v1.78.0 — conditionally write email; do not overwrite a
@@ -894,7 +986,13 @@ export async function completeOnboardingWithId(
           // admin-proxy `/api/admin/id-image/[userId]/[side]` gates on
           // `idShared=true` per-league, so this is what authorises this
           // league's organizers to view the images.
-          ...(reuseExistingId ? { idShared: true } : {}),
+          // v2.2.15 — also auto-set idShared for externally-attested
+          // users so the admin proxy's consent gate passes; the proxy
+          // then returns 404 `external_id` and the admin UI surfaces
+          // "stored externally" instead of a broken image.
+          ...((reuseExistingId || user.idCollectedExternally)
+            ? { idShared: true }
+            : {}),
         },
       })
     })
