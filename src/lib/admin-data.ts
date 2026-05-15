@@ -196,6 +196,7 @@ export const getLeaguePlayers = unstable_cache(
           idUploadedAt: { not: null },
         },
         select: {
+          id: true,
           playerId: true,
           idFrontUrl: true,
           idBackUrl: true,
@@ -262,11 +263,12 @@ export const getLeaguePlayers = unstable_cache(
     // value (same v1.17.1 cache-Date trap defense as `lastSeenAt`).
     const idDataByPlayerId: Record<
       string,
-      { idFrontUrl: string | null; idBackUrl: string | null; idUploadedAt: string }
+      { userId: string; idFrontUrl: string | null; idBackUrl: string | null; idUploadedAt: string }
     > = {}
     for (const u of idUsers) {
       if (!u.playerId || !u.idUploadedAt) continue
       idDataByPlayerId[u.playerId] = {
+        userId: u.id,
         idFrontUrl: u.idFrontUrl,
         idBackUrl: u.idBackUrl,
         idUploadedAt: u.idUploadedAt.toISOString(),

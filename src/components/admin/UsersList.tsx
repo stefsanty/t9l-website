@@ -354,7 +354,7 @@ function IdThumbnailCell({ user, onView }: { user: UserRow; onView: () => void }
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
-        src={user.idFrontUrl}
+        src={`/api/admin/id-image/${user.id}/front`}
         alt="ID front thumbnail"
         className="w-full h-full object-cover"
       />
@@ -401,16 +401,24 @@ function UserIdModal({ user, onClose }: { user: UserRow; onClose: () => void }) 
           </button>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <IdModalPane label="Front" url={user.idFrontUrl} testid="user-id-modal-front" />
-          <IdModalPane label="Back" url={user.idBackUrl} testid="user-id-modal-back" />
+          <IdModalPane
+            label="Front"
+            src={user.idFrontUrl ? `/api/admin/id-image/${user.id}/front` : null}
+            testid="user-id-modal-front"
+          />
+          <IdModalPane
+            label="Back"
+            src={user.idBackUrl ? `/api/admin/id-image/${user.id}/back` : null}
+            testid="user-id-modal-back"
+          />
         </div>
       </div>
     </div>
   )
 }
 
-function IdModalPane({ label, url, testid }: { label: string; url: string | null; testid: string }) {
-  if (!url) {
+function IdModalPane({ label, src, testid }: { label: string; src: string | null; testid: string }) {
+  if (!src) {
     return (
       <div className="rounded-md border border-admin-border bg-admin-surface2 p-4 text-center text-admin-text3 text-xs italic">
         {label}: not available
@@ -422,10 +430,10 @@ function IdModalPane({ label, url, testid }: { label: string; url: string | null
       <p className="text-admin-text3 text-[10px] font-bold uppercase tracking-widest mb-1.5">
         {label}
       </p>
-      <a href={url} target="_blank" rel="noopener noreferrer" data-testid={`${testid}-link`}>
+      <a href={src} target="_blank" rel="noopener noreferrer" data-testid={`${testid}-link`}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
-          src={url}
+          src={src}
           alt={`${label} of ID`}
           className="w-full max-h-80 object-contain rounded bg-background"
           data-testid={testid}

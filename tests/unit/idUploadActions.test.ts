@@ -242,13 +242,13 @@ describe('v1.35.0 (PR η) — submitIdUpload (v1.70.0 writes to User)', () => {
     delete process.env.BLOB_READ_WRITE_TOKEN
   })
 
-  it('uploads with addRandomSuffix=false + access=public so the URL is stable', async () => {
+  it('uploads with addRandomSuffix=true + access=public (v2.2.8 — bytes flow through the authenticated proxy, path no longer needs to be guessable)', async () => {
     process.env.BLOB_READ_WRITE_TOKEN = 'fake-token'
     await expect(submitIdUpload(makeFormData())).rejects.toThrow('NEXT_REDIRECT')
     expect(putMock).toHaveBeenCalledWith(
       expect.stringMatching(/^player-id\/p-1\/(front|back)-\d+\.jpg$/),
       expect.any(File),
-      expect.objectContaining({ access: 'public', addRandomSuffix: false }),
+      expect.objectContaining({ access: 'public', addRandomSuffix: true }),
     )
     delete process.env.BLOB_READ_WRITE_TOKEN
   })
