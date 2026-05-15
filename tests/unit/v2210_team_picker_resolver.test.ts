@@ -151,9 +151,11 @@ describe('v2.2.12 — TeamPickerSection h2 + 2-col grid + Current players label'
     expect(TEAM_PICKER_SRC).toMatch(/id=\{`\$\{groupId\}-label`\}/)
   })
 
-  it('uses a responsive 2-column grid for the team cards', () => {
-    // Single column on mobile, two columns from md: up.
-    expect(TEAM_PICKER_SRC).toMatch(/grid-cols-1\s+md:grid-cols-2/)
+  it('uses a 2-column grid for the team cards at every breakpoint (v2.2.13)', () => {
+    // v2.2.13 — operator wanted 2-col on mobile too; v2.2.12 was
+    // `grid-cols-1 md:grid-cols-2` and wasted vertical space.
+    expect(TEAM_PICKER_SRC).toMatch(/grid grid-cols-2 gap-3/)
+    expect(TEAM_PICKER_SRC).not.toMatch(/grid-cols-1\s+md:grid-cols-2/)
   })
 
   it('renders a "Current players:" mini-label above each populated roster', () => {

@@ -123,8 +123,12 @@ describe('/api/assign-player — v1.61.0 unified gate', () => {
 })
 
 describe('LineLoginButton — v1.61.0 dropdown gates by allowSelfLink (not by hasLine)', () => {
-  it('exports an `allowSelfLink` derived flag from session.allowSelfLink', () => {
-    expect(HEADER_SRC).toMatch(/const\s+allowSelfLink\s*=\s*session\.allowSelfLink\s*!==\s*false/)
+  it('exports an `allowSelfLink` derived flag with override > session (v2.2.13)', () => {
+    // v2.2.13 — gate now prefers the URL-scoped `allowSelfLinkOverride`
+    // prop when the parent page passed one; falls back to
+    // `session.allowSelfLink !== false` otherwise (legacy default-true).
+    expect(HEADER_SRC).toMatch(/allowSelfLinkOverride !== undefined/)
+    expect(HEADER_SRC).toMatch(/session\.allowSelfLink\s*!==\s*false/)
   })
 
   it('the v1.39.2 `hasLine` derived flag is GONE (regression target)', () => {

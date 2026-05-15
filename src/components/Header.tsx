@@ -24,9 +24,20 @@ interface HeaderProps {
    * without a league context, e.g. /assign-player, /stats, /schedule).
    */
   leagueTitle?: string | null;
+  /**
+   * v2.2.13 — per-URL override for the self-link gate. Pre-v2.2.13 the
+   * account-menu "No player assigned yet" affordance always read
+   * `session.allowSelfLink`, which the JWT callback computes against
+   * `getDefaultLeagueId()` — so on `/id/<non-default-league>/*` the
+   * button followed the wrong league's toggle. Pages that resolve a
+   * URL-scoped league pass this to override; pages that don't (admin,
+   * /assign-player, /stats, /schedule) leave it undefined and the
+   * button falls back to `session.allowSelfLink` (legacy behaviour).
+   */
+  allowSelfLinkOverride?: boolean;
 }
 
-export default function Header({ hideStatsLink = false, leagueTitle }: HeaderProps) {
+export default function Header({ hideStatsLink = false, leagueTitle, allowSelfLinkOverride }: HeaderProps) {
   const pathname = usePathname();
   // v1.97.3 — combined league-name + chevron trigger for multi-league
   // users. Pre-v1.97.3 the league name was always a `<Link href="/">`,
@@ -87,7 +98,7 @@ export default function Header({ hideStatsLink = false, leagueTitle }: HeaderPro
         <div className="flex-1 flex justify-end items-center gap-1.5 md:gap-2">
           <ThemeToggle />
           <LanguageToggle />
-          <LineLoginButton />
+          <LineLoginButton allowSelfLinkOverride={allowSelfLinkOverride} />
         </div>
       </div>
     </header>

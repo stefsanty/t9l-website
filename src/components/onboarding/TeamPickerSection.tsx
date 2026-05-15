@@ -68,7 +68,9 @@ export default function TeamPickerSection({
         Please choose the team you want to join. If you&apos;d rather let the organizer place you on a balanced team, choose the last option.
       </p>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+      {/* v2.2.13 — 2-col at all breakpoints; v2.2.12 had grid-cols-1 on
+          mobile which wasted vertical space on small viewports. */}
+      <div className="grid grid-cols-2 gap-3">
         {options.map((opt) => {
           const selected = value === opt.leagueTeamId
           const visibleMembers = opt.members.slice(0, MAX_VISIBLE_MEMBERS)
