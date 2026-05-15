@@ -239,19 +239,19 @@ export function joinPositions(positions: ReadonlyArray<string>): string {
  * GK → yellow  |  DF → blue  |  MF → green  |  FW → red
  * Futsal: GK → yellow, FIXO (DF) → blue, ALA (MF) → green, PIVOT (FW) → red
  *
- * v2.2.13 — explicit light/dark text shades. Pre-v2.2.13 used only the
- * `text-{c}-300` (light) shades, which fell below WCAG AA against
- * light-mode backgrounds (especially the green/yellow pills on the
- * onboarding team-picker cards). Light-mode now uses `-800` text with a
- * slightly heavier MF green bg to keep the contrast band consistent
- * across the four buckets. Dark mode unchanged.
+ * v2.2.14 — opaque pills (was translucent `bg-{c}-500/20` per v2.2.13).
+ * Translucent backgrounds rendered differently against light vs. dark
+ * page backgrounds, breaking visual continuity when toggling themes.
+ * Solid `bg-{c}-200 + text-{c}-900` is self-contained — same chip in
+ * both modes, contrast ratio ~13:1 (well above WCAG AA), no `dark:`
+ * variant needed.
  */
 export function positionPillColor(code: string): string {
   switch (getPositionBucket(code)) {
-    case 'GK': return 'bg-yellow-500/20 text-yellow-800 dark:text-yellow-300'
-    case 'DF': return 'bg-blue-500/20 text-blue-800 dark:text-blue-300'
-    case 'MF': return 'bg-green-600/25 text-green-800 dark:text-green-300'
-    case 'FW': return 'bg-red-500/20 text-red-800 dark:text-red-300'
+    case 'GK': return 'bg-yellow-200 text-yellow-900'
+    case 'DF': return 'bg-blue-200 text-blue-900'
+    case 'MF': return 'bg-green-200 text-green-900'
+    case 'FW': return 'bg-red-200 text-red-900'
   }
 }
 
