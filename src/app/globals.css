@@ -14,6 +14,13 @@
   --card: #251629;
   --accent: #FF1A6B;
 
+  /* v2.2.14 — brand "electric green" is now theme-aware (was a fixed
+     #00FF85 hex in @theme inline). Dark mode keeps the neon; light mode
+     overrides below to the same WCAG-AA darker shade used by --success
+     so account-menu links and other text-electric-green sites stay
+     readable on the light background. */
+  --electric-green: #00FF85;
+
   /* Semantic opacity tokens — dark */
   --fg-high: rgba(255, 255, 255, 0.95);
   --fg-mid: rgba(255, 255, 255, 0.65);
@@ -62,6 +69,11 @@ html.light {
   --border: #D9C8E6;
   --card: #F5EEF9;
   --accent: #E0005A;
+
+  /* v2.2.14 — darker electric-green for light mode (was #00FF85 neon
+     globally) so text-electric-green hyperlinks clear WCAG AA against
+     the light background. Same shade as --success above. */
+  --electric-green: #006633;
 
   /* Semantic opacity tokens — light */
   --fg-high: rgba(26, 15, 30, 0.95);
@@ -119,6 +131,9 @@ html.light {
     --glow-primary-md: none;
     --glow-primary-bar: none;
     --glow-primary-subtle: none;
+    /* v2.2.14 — mirror html.light's electric-green override in the
+       SSR/no-JS prefers-color-scheme branch. */
+    --electric-green: #006633;
   }
 }
 
@@ -199,7 +214,11 @@ html.light {
   --color-midnight: #1a0f1e;
   --color-vibrant-pink: #FF1A6B;
   --color-electric-violet: #AC66FF;
-  --color-electric-green: #00FF85;
+  /* v2.2.14 — track the per-mode --electric-green CSS variable (set in
+     :root for dark and html.light / :root:not(.dark) for light) so
+     text-/bg-/border-electric-green Tailwind utilities pick up the
+     darker WCAG-AA shade automatically in light mode. */
+  --color-electric-green: var(--electric-green);
   --color-tertiary-accent: #00FF8599;
 
   --font-display: var(--font-barlow-condensed);

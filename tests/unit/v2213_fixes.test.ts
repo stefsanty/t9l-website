@@ -60,33 +60,35 @@ describe('v2.2.13 — fix 2: futsal codes map to the right pill bucket', () => {
   })
 })
 
-describe('v2.2.13 — fix 3: light-mode dual-shade pill colours', () => {
-  it('GK pill has light `text-yellow-800` and dark `text-yellow-300`', () => {
-    expect(positionPillColor('GK')).toBe(
-      'bg-yellow-500/20 text-yellow-800 dark:text-yellow-300',
-    )
+describe('v2.2.14 — opaque pills (replaces v2.2.13 translucent dual-shade)', () => {
+  it('GK pill is opaque `bg-yellow-200 text-yellow-900`', () => {
+    expect(positionPillColor('GK')).toBe('bg-yellow-200 text-yellow-900')
   })
 
-  it('DF/FIXO pill has light `text-blue-800` and dark `text-blue-300`', () => {
-    expect(positionPillColor('CB')).toBe('bg-blue-500/20 text-blue-800 dark:text-blue-300')
-    expect(positionPillColor('FIXO')).toBe('bg-blue-500/20 text-blue-800 dark:text-blue-300')
+  it('DF/FIXO pill is opaque `bg-blue-200 text-blue-900`', () => {
+    expect(positionPillColor('CB')).toBe('bg-blue-200 text-blue-900')
+    expect(positionPillColor('FIXO')).toBe('bg-blue-200 text-blue-900')
   })
 
-  it('MF/ALA pill uses heavier `bg-green-600/25` + dual-shade text', () => {
-    expect(positionPillColor('CM')).toBe('bg-green-600/25 text-green-800 dark:text-green-300')
-    expect(positionPillColor('ALA')).toBe('bg-green-600/25 text-green-800 dark:text-green-300')
+  it('MF/ALA pill is opaque `bg-green-200 text-green-900`', () => {
+    expect(positionPillColor('CM')).toBe('bg-green-200 text-green-900')
+    expect(positionPillColor('ALA')).toBe('bg-green-200 text-green-900')
   })
 
-  it('FW/PIVOT pill has light `text-red-800` and dark `text-red-300`', () => {
-    expect(positionPillColor('ST')).toBe('bg-red-500/20 text-red-800 dark:text-red-300')
-    expect(positionPillColor('PIVOT')).toBe(
-      'bg-red-500/20 text-red-800 dark:text-red-300',
-    )
+  it('FW/PIVOT pill is opaque `bg-red-200 text-red-900`', () => {
+    expect(positionPillColor('ST')).toBe('bg-red-200 text-red-900')
+    expect(positionPillColor('PIVOT')).toBe('bg-red-200 text-red-900')
   })
 
-  it('every bucket includes a `dark:` variant for the dark-mode text shade', () => {
+  it('no bucket carries a `dark:` variant (single shape in both modes)', () => {
     for (const code of ['GK', 'CB', 'CM', 'ST', 'FIXO', 'ALA', 'PIVOT']) {
-      expect(positionPillColor(code)).toMatch(/dark:text-/)
+      expect(positionPillColor(code)).not.toMatch(/dark:/)
+    }
+  })
+
+  it('no bucket uses translucent `/20` or `/25` alpha modifiers', () => {
+    for (const code of ['GK', 'CB', 'CM', 'ST', 'FIXO', 'ALA', 'PIVOT']) {
+      expect(positionPillColor(code)).not.toMatch(/\/\d+/)
     }
   })
 })

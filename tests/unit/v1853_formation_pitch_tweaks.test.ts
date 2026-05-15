@@ -5,62 +5,61 @@ import type { Player } from '@/types'
 
 // ── positionPillColor ─────────────────────────────────────────────────────
 
-// v2.2.13 — `positionPillColor` now emits dual-shade light/dark text
-// classes (`text-{c}-800 dark:text-{c}-300`) and the MF chip uses
-// `bg-green-600/25` for WCAG-AA contrast in light mode. Original v1.85.3
-// regression intent (bucket → colour family) is preserved; the exact
-// class string is the v2.2.13 shape.
+// v2.2.14 — `positionPillColor` returns opaque solid pills
+// (`bg-{c}-200 text-{c}-900`) — same chip in both light and dark mode.
+// Original v1.85.3 regression intent (bucket → colour family) is
+// preserved; the class strings track the v2.2.14 shape.
 describe('[v1.85.3 regression] positionPillColor — soccer codes', () => {
   it('GK → yellow classes', () => {
-    expect(positionPillColor('GK')).toBe('bg-yellow-500/20 text-yellow-800 dark:text-yellow-300')
+    expect(positionPillColor('GK')).toBe('bg-yellow-200 text-yellow-900')
   })
 
   it('DF codes → blue classes', () => {
-    expect(positionPillColor('LB')).toBe('bg-blue-500/20 text-blue-800 dark:text-blue-300')
-    expect(positionPillColor('CB')).toBe('bg-blue-500/20 text-blue-800 dark:text-blue-300')
-    expect(positionPillColor('RB')).toBe('bg-blue-500/20 text-blue-800 dark:text-blue-300')
+    expect(positionPillColor('LB')).toBe('bg-blue-200 text-blue-900')
+    expect(positionPillColor('CB')).toBe('bg-blue-200 text-blue-900')
+    expect(positionPillColor('RB')).toBe('bg-blue-200 text-blue-900')
   })
 
   it('MF codes → green classes', () => {
-    expect(positionPillColor('LM')).toBe('bg-green-600/25 text-green-800 dark:text-green-300')
-    expect(positionPillColor('DM')).toBe('bg-green-600/25 text-green-800 dark:text-green-300')
-    expect(positionPillColor('CM')).toBe('bg-green-600/25 text-green-800 dark:text-green-300')
-    expect(positionPillColor('CAM')).toBe('bg-green-600/25 text-green-800 dark:text-green-300')
-    expect(positionPillColor('RM')).toBe('bg-green-600/25 text-green-800 dark:text-green-300')
+    expect(positionPillColor('LM')).toBe('bg-green-200 text-green-900')
+    expect(positionPillColor('DM')).toBe('bg-green-200 text-green-900')
+    expect(positionPillColor('CM')).toBe('bg-green-200 text-green-900')
+    expect(positionPillColor('CAM')).toBe('bg-green-200 text-green-900')
+    expect(positionPillColor('RM')).toBe('bg-green-200 text-green-900')
   })
 
   it('FW codes → red classes', () => {
-    expect(positionPillColor('LW')).toBe('bg-red-500/20 text-red-800 dark:text-red-300')
-    expect(positionPillColor('ST')).toBe('bg-red-500/20 text-red-800 dark:text-red-300')
-    expect(positionPillColor('RW')).toBe('bg-red-500/20 text-red-800 dark:text-red-300')
+    expect(positionPillColor('LW')).toBe('bg-red-200 text-red-900')
+    expect(positionPillColor('ST')).toBe('bg-red-200 text-red-900')
+    expect(positionPillColor('RW')).toBe('bg-red-200 text-red-900')
   })
 })
 
 describe('[v1.85.3 regression] positionPillColor — futsal codes', () => {
   it('GK → yellow', () => {
-    expect(positionPillColor('GK')).toBe('bg-yellow-500/20 text-yellow-800 dark:text-yellow-300')
+    expect(positionPillColor('GK')).toBe('bg-yellow-200 text-yellow-900')
   })
 
   it('FIXO (DF) → blue', () => {
-    expect(positionPillColor('FIXO')).toBe('bg-blue-500/20 text-blue-800 dark:text-blue-300')
+    expect(positionPillColor('FIXO')).toBe('bg-blue-200 text-blue-900')
   })
 
   it('ALA (MF) → green', () => {
-    expect(positionPillColor('ALA')).toBe('bg-green-600/25 text-green-800 dark:text-green-300')
+    expect(positionPillColor('ALA')).toBe('bg-green-200 text-green-900')
   })
 
   it('PIVOT (FW) → red', () => {
-    expect(positionPillColor('PIVOT')).toBe('bg-red-500/20 text-red-800 dark:text-red-300')
+    expect(positionPillColor('PIVOT')).toBe('bg-red-200 text-red-900')
   })
 })
 
 describe('[v1.85.3 regression] positionPillColor — case insensitive via getPositionBucket', () => {
   it('lowercase gk still resolves', () => {
-    expect(positionPillColor('gk')).toBe('bg-yellow-500/20 text-yellow-800 dark:text-yellow-300')
+    expect(positionPillColor('gk')).toBe('bg-yellow-200 text-yellow-900')
   })
 
   it('unknown code falls back to MF → green', () => {
-    expect(positionPillColor('UNKNOWN')).toBe('bg-green-600/25 text-green-800 dark:text-green-300')
+    expect(positionPillColor('UNKNOWN')).toBe('bg-green-200 text-green-900')
   })
 })
 
