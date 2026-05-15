@@ -100,7 +100,7 @@ export interface RegistrationFieldsProps {
   ballType?: BallType | null
   /**
    * v1.93.0 — when false, hides the ID front/back upload fields and
-   * the "Why we need your ID" callout, and skips the front/back required-
+   * the "Share Your ID" callout, and skips the front/back required-
    * gate at submit time. The server-side gate still owns the final word
    * (re-checks `league.idRequired` to defend against a forged false).
    * Defaults to `true` so existing callers continue to require ID.
@@ -409,15 +409,23 @@ export default function RegistrationFields({
 
       {idRequired && (
         <>
+          {/* v2.2.9 — reworded callout. Subheader flipped to "Share Your ID"
+              and body expanded to three explicit paragraphs covering
+              motivation, scope, and access control (verbatim per the
+              v2.2.9 brief). */}
           <div
             className="rounded-lg border border-warning/40 bg-warning/10 px-4 py-3 text-sm text-fg-high leading-relaxed"
             data-testid="registration-id-callout"
           >
-            <p className="font-bold mb-1.5 text-fg-high">Why we need your ID</p>
+            <p className="font-bold mb-1.5 text-fg-high">Share Your ID</p>
+            <p className="text-fg-mid mb-2">
+              We require your ID strictly to enable more regular league games!
+            </p>
+            <p className="text-fg-mid mb-2">
+              To serve you the best league experience possible, we require league members to share your ID with us in order to book more courts.
+            </p>
             <p className="text-fg-mid">
-              We need these IDs to be able to book more courts. We will only ever use your ID
-              to book courts in order to host more games. We require all league members to
-              acknowledge this and submit their ID to join the league.
+              Your ID will only ever be shared to the organizers, and is secured so that no one but the organizers may access your ID.
             </p>
           </div>
 

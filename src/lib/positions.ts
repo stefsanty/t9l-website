@@ -150,6 +150,49 @@ export function normalizePositions(
 }
 
 /**
+ * v2.2.9 — sort weight for a single position code under a league's
+ * vocabulary. Unknown codes (or empty/null) sort to the end via a
+ * deliberately-large weight, so members with no recorded position land
+ * after the typed roster — matches the "list ordered by role" intuition
+ * for the onboarding team picker.
+ */
+export function getPositionSortWeight(
+  code: PositionCode | null | undefined,
+  ballType: BallType | null | undefined,
+): number {
+  if (!code) return Number.MAX_SAFE_INTEGER
+  const upper = code.trim().toUpperCase()
+  if (!upper) return Number.MAX_SAFE_INTEGER
+  const def = getPositionVocabulary(ballType).find((p) => p.code === upper)
+  return def?.sortWeight ?? Number.MAX_SAFE_INTEGER
+}
+
+/**
+ * v2.2.9 — pure sort helper used by the onboarding team-picker cards.
+ * Orders a roster by primary position (GK first → forwards/pivot last,
+ * per the league's vocabulary) and breaks ties alphabetically by name.
+ *
+ * `primaryPosition` is the player's first preferred code (or legacy
+ * single code) — empty/unknown sorts to the end. Name comparison is
+ * case-insensitive and locale-aware.
+ *
+ * Stable: returns a new array, does not mutate input.
+ */
+export function sortMembersByPrimaryPositionThenName<
+  T extends { primaryPosition: string | null | undefined; name: string },
+>(
+  members: ReadonlyArray<T>,
+  ballType: BallType | null | undefined,
+): T[] {
+  return [...members].sort((a, b) => {
+    const wa = getPositionSortWeight(a.primaryPosition, ballType)
+    const wb = getPositionSortWeight(b.primaryPosition, ballType)
+    if (wa !== wb) return wa - wb
+    return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
+  })
+}
+
+/**
  * Pick the legacy `PlayerPosition` enum value (GK/DF/MF/FW) to dual-
  * write alongside `positions[]`. v1.82.0 keeps
  * `PlayerLeagueMembership.position` populated for one release cycle

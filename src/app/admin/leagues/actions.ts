@@ -248,6 +248,32 @@ export async function setLeagueAllowSelfLink(leagueId: string, value: boolean) {
 }
 
 /**
+ * v2.2.9 — per-league "allow player team pick" toggle. When true, the
+ * onboarding form at `/join/[code]/onboarding` surfaces a team-picker step
+ * before the ID section. The server-side write path
+ * (`completeOnboardingWithId`) validates the chosen team belongs to the
+ * invite's league and persists it onto the player's PlayerLeagueMembership.
+ *
+ * Default false preserves the existing onboarding UX for every league.
+ *
+ * Validation: rejects non-boolean values defensively.
+ */
+export async function setLeagueAllowPlayerTeamPick(leagueId: string, value: boolean) {
+  await assertAdmin()
+  if (typeof value !== 'boolean') {
+    throw new Error('allowPlayerTeamPick must be a boolean')
+  }
+  await prisma.league.update({
+    where: { id: leagueId },
+    data: { allowPlayerTeamPick: value },
+  })
+  revalidate({
+    domain: 'admin',
+    paths: [`/admin/leagues/${leagueId}/settings`, `/admin/leagues/${leagueId}`, '/admin'],
+  })
+}
+
+/**
  * v1.63.0 — per-league pre-season toggle. When true, the homepage swaps
  * the "Classic League Homepage" (NextMatchdayBanner + MatchdayAvailability
  * + RsvpBar) for `CompressedMatchdaySchedule`, and the `/stats` page is

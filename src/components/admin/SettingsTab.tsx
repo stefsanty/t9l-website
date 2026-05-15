@@ -10,6 +10,7 @@ import {
   updateLeagueAbbreviation,
   deleteLeague,
   setLeagueAllowSelfLink,
+  setLeagueAllowPlayerTeamPick,
   setLeaguePreseasonMode,
   setLeagueRecruiting,
   setLeagueVisibility,
@@ -29,6 +30,10 @@ interface League {
   // (which returns the full League row); default true preserves backward
   // compat for any league that hasn't been touched since v1.59.x.
   allowSelfLink: boolean
+  // v2.2.9 — per-league "allow player team pick" toggle. When true, the
+  // onboarding form surfaces a team-picker step before the ID section.
+  // Default false preserves backward compat.
+  allowPlayerTeamPick: boolean
   // v1.63.0 — per-league pre-season + recruiting toggles. Both default
   // false; threaded from `getLeagueSettings` alongside `allowSelfLink`.
   preseasonMode: boolean
@@ -126,13 +131,16 @@ export default function SettingsTab({ league }: SettingsTabProps) {
   const { toast } = useToast()
   const [pending, startTransition] = useTransition()
   const [allowSelfLink, setAllowSelfLinkState] = useState<boolean>(league.allowSelfLink)
+  const [allowPlayerTeamPick, setAllowPlayerTeamPickState] = useState<boolean>(
+    league.allowPlayerTeamPick,
+  )
   const [preseasonMode, setPreseasonModeState] = useState<boolean>(league.preseasonMode)
   const [recruiting, setRecruitingState] = useState<boolean>(league.recruiting)
   const [visibility, setVisibilityState] = useState<'PRIVATE' | 'PUBLIC_CLOSED' | 'PUBLIC_OPEN'>(
     league.visibility,
   )
   const [savingToggle, setSavingToggle] = useState<
-    'allowSelfLink' | 'preseasonMode' | 'recruiting' | 'visibility' | null
+    'allowSelfLink' | 'allowPlayerTeamPick' | 'preseasonMode' | 'recruiting' | 'visibility' | null
   >(null)
 
   const [name, setName]             = useState(league.name)
@@ -226,6 +234,25 @@ export default function SettingsTab({ league }: SettingsTabProps) {
     } catch (err) {
       setAllowSelfLinkState(prev)
       toast(err instanceof Error ? err.message : 'Failed to set self-link toggle')
+    } finally {
+      setSavingToggle(null)
+    }
+  }
+
+  // v2.2.9 — allow-player-team-pick toggle handler. Same optimistic-flip-with-
+  // rollback shape as the other toggles. Flipping ON exposes a team-picker
+  // step in the onboarding form before the ID section.
+  async function handleAllowPlayerTeamPickChange(value: boolean) {
+    if (value === allowPlayerTeamPick) return
+    setSavingToggle('allowPlayerTeamPick')
+    const prev = allowPlayerTeamPick
+    setAllowPlayerTeamPickState(value)
+    try {
+      await setLeagueAllowPlayerTeamPick(league.id, value)
+      toast(value ? 'Player team picker enabled' : 'Player team picker disabled')
+    } catch (err) {
+      setAllowPlayerTeamPickState(prev)
+      toast(err instanceof Error ? err.message : 'Failed to set team-picker toggle')
     } finally {
       setSavingToggle(null)
     }
@@ -479,6 +506,72 @@ export default function SettingsTab({ league }: SettingsTabProps) {
           <div className="text-xs text-admin-text3 flex items-center gap-2">
             <Loader2 className="w-3 h-3 animate-spin" />
             Saving self-linking toggle…
+          </div>
+        )}
+      </section>
+
+      {/* v2.2.9 — Allow players to pick their own teams. When ON, the
+          onboarding form at /join/[code]/onboarding adds a team-picker
+          step before the ID section. Players choose which team they want
+          to join (or defer to the organizer via "balanced team — assign
+          me later"). Default OFF preserves existing flow. */}
+      <section
+        data-testid="settings-tab-team-pick-section"
+        className="bg-admin-surface rounded-xl border border-admin-border p-5 space-y-5"
+      >
+        <div>
+          <h2 className="font-condensed font-bold text-admin-text text-lg">Allow players to pick their own teams</h2>
+          <p className="text-xs text-admin-text3 mt-1 leading-relaxed">
+            When enabled, onboarding asks the player which team they want to join — with one card per team plus a &ldquo;balanced team&rdquo; opt-out that defers placement to you. When disabled, you assign teams as you do today.
+          </p>
+        </div>
+
+        <div className="space-y-3">
+          <label className="text-xs font-medium text-admin-text2 uppercase tracking-wide block">
+            Onboarding team picker
+          </label>
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              type="button"
+              data-testid="settings-tab-team-pick-on"
+              disabled={savingToggle !== null}
+              onClick={() => handleAllowPlayerTeamPickChange(true)}
+              className={cn(
+                'rounded-lg border px-4 py-3 text-left transition-colors disabled:opacity-50',
+                allowPlayerTeamPick
+                  ? 'border-admin-green bg-admin-green/10 text-admin-text'
+                  : 'border-admin-border bg-admin-surface2 text-admin-text2 hover:border-admin-border2 hover:text-admin-text',
+              )}
+            >
+              <div className="text-sm font-medium">On</div>
+              <div className="text-xs text-admin-text3 mt-0.5 leading-tight">
+                Onboarding includes a team-picker step.
+              </div>
+            </button>
+            <button
+              type="button"
+              data-testid="settings-tab-team-pick-off"
+              disabled={savingToggle !== null}
+              onClick={() => handleAllowPlayerTeamPickChange(false)}
+              className={cn(
+                'rounded-lg border px-4 py-3 text-left transition-colors disabled:opacity-50',
+                !allowPlayerTeamPick
+                  ? 'border-admin-green bg-admin-green/10 text-admin-text'
+                  : 'border-admin-border bg-admin-surface2 text-admin-text2 hover:border-admin-border2 hover:text-admin-text',
+              )}
+            >
+              <div className="text-sm font-medium">Off</div>
+              <div className="text-xs text-admin-text3 mt-0.5 leading-tight">
+                Admin places players (no team-picker step).
+              </div>
+            </button>
+          </div>
+        </div>
+
+        {savingToggle === 'allowPlayerTeamPick' && (
+          <div className="text-xs text-admin-text3 flex items-center gap-2">
+            <Loader2 className="w-3 h-3 animate-spin" />
+            Saving team-picker toggle…
           </div>
         )}
       </section>

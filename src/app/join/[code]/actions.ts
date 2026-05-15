@@ -597,6 +597,19 @@ export interface CompleteOnboardingWithIdInput {
   profilePictureUrl?: string | null
   /** v1.80.0 — optional free-text comments for the admin. Trimmed before storage. */
   comments?: string | null
+  /**
+   * v2.2.9 — player-selected team. Only honoured when the league has
+   * `allowPlayerTeamPick === true`; ignored otherwise (defensive — a
+   * stale client should not be able to nominate a team on a league that
+   * disabled the toggle after the form rendered).
+   *
+   *   string    — leagueTeamId. Validated to belong to the invite's
+   *               league; rejected otherwise.
+   *   null      — "balanced team" opt-out. Clears the membership's
+   *               leagueTeamId (admin will assign on approval).
+   *   undefined — not supplied (toggle was off, or older client).
+   */
+  chosenTeamId?: string | null
 }
 
 export async function completeOnboardingWithId(
@@ -662,9 +675,18 @@ export async function completeOnboardingWithId(
     // v1.82.0 — also pull `ballType` for position-vocabulary validation.
     // v1.93.0 — also pull `idRequired` so the ID gate honours the
     // per-league setting (server-side trust; the form prop is hint-only).
+    // v2.2.9 — also pull `allowPlayerTeamPick` so the chosen-team write
+    // path can re-check the toggle (defence against a stale client).
     select: {
       leagueId: true,
-      league: { select: { name: true, ballType: true, idRequired: true } },
+      league: {
+        select: {
+          name: true,
+          ballType: true,
+          idRequired: true,
+          allowPlayerTeamPick: true,
+        },
+      },
     },
   })
   if (!invite) throw new Error('Invite not found')
@@ -706,6 +728,28 @@ export async function completeOnboardingWithId(
   // v1.80.11 — User row already resolved at the top of the function
   // (selecting `email`); no extra round-trip needed.
   const shouldWriteEmail = !user.email
+
+  // v2.2.9 — chosen-team validation. Only honoured when the league has
+  // opted in. `chosenTeamId === null` = explicit "balanced team" opt-out
+  // (clear leagueTeamId on the PLM). `chosenTeamId === string` must
+  // resolve to a leagueTeam in the SAME league as the invite — the
+  // cross-league scoping guard (mirrors the v2.2.5 area).
+  const allowTeamPick = invite.league?.allowPlayerTeamPick ?? false
+  let chosenLeagueTeamWrite: { leagueTeamId: string | null } | null = null
+  if (allowTeamPick && input.chosenTeamId !== undefined) {
+    if (input.chosenTeamId === null) {
+      chosenLeagueTeamWrite = { leagueTeamId: null }
+    } else {
+      const chosen = await prisma.leagueTeam.findUnique({
+        where: { id: input.chosenTeamId },
+        select: { id: true, leagueId: true },
+      })
+      if (!chosen || chosen.leagueId !== invite.leagueId) {
+        throw new Error('Invalid team selection')
+      }
+      chosenLeagueTeamWrite = { leagueTeamId: chosen.id }
+    }
+  }
 
   try {
     await prisma.$transaction(async (tx) => {
@@ -763,6 +807,11 @@ export async function completeOnboardingWithId(
           onboardingStatus: 'COMPLETED',
           // v1.80.0 — persist trimmed comments; null when blank/omitted.
           comments: input.comments?.trim() || null,
+          // v2.2.9 — when the league allows player team picks and the
+          // user made a choice (incl. "balanced team" = null), apply it
+          // here. When the toggle is off, or the user didn't make a
+          // selection, leave the existing leagueTeamId untouched.
+          ...(chosenLeagueTeamWrite ?? {}),
         },
       })
     })
