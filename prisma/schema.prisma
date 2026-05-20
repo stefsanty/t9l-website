@@ -427,6 +427,11 @@ model Team {
   shortName String?
   color     String?
   logoUrl   String?
+  // v2.2.16 — gates whether this team appears in the onboarding
+  // team-picker. Premade teams that signed up separately set this
+  // false so random joiners don't land on them. Default true keeps
+  // backward compat for every existing team.
+  allowOnboardingJoin Boolean @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

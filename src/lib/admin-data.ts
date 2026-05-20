@@ -77,6 +77,9 @@ export const getLeagueTeams = unstable_cache(
       prisma.leagueTeam.findMany({
         where: { leagueId },
         include: {
+          // v2.2.16 — `team` carries `allowOnboardingJoin`; the
+          // TeamsTab toggle reads + writes that column via
+          // `setTeamAllowOnboardingJoin`.
           team: true,
           playerAssignments: { include: { player: true } },
           homeMatches: true,

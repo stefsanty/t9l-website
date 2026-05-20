@@ -883,12 +883,22 @@ export async function completeOnboardingWithId(
     if (input.chosenTeamId === null) {
       chosenLeagueTeamWrite = { leagueTeamId: null }
     } else {
+      // v2.2.16 — also pull the Team's `allowOnboardingJoin` flag so
+      // a stale client cannot land a player on a team that has since
+      // been opted out of the picker.
       const chosen = await prisma.leagueTeam.findUnique({
         where: { id: input.chosenTeamId },
-        select: { id: true, leagueId: true },
+        select: {
+          id: true,
+          leagueId: true,
+          team: { select: { allowOnboardingJoin: true } },
+        },
       })
       if (!chosen || chosen.leagueId !== invite.leagueId) {
         throw new Error('Invalid team selection')
+      }
+      if (!chosen.team.allowOnboardingJoin) {
+        throw new Error('That team is not accepting new joiners')
       }
       chosenLeagueTeamWrite = { leagueTeamId: chosen.id }
     }

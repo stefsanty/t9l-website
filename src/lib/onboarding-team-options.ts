@@ -40,8 +40,13 @@ export async function getTeamPickerOptions(
   currentPlayerId: string | null,
   ballType: BallType | null | undefined,
 ): Promise<TeamPickerOption[]> {
+  // v2.2.16 — exclude teams whose `allowOnboardingJoin` flag is
+  // false. Premade teams that signed up separately opt out of the
+  // picker via the admin toggle on the league-teams page; the
+  // server-side write paths re-validate (defence against a stale
+  // client cache surfacing a since-disabled team).
   const leagueTeams = await prisma.leagueTeam.findMany({
-    where: { leagueId },
+    where: { leagueId, team: { allowOnboardingJoin: true } },
     include: {
       team: true,
       playerAssignments: {
