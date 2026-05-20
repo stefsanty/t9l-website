@@ -5,7 +5,11 @@ import { Plus, X, Users, ChevronRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import ConfirmDialog from './ConfirmDialog'
 import { useToast } from './ToastProvider'
-import { enrollTeam, removeTeamFromLeague } from '@/app/admin/leagues/actions'
+import {
+  enrollTeam,
+  removeTeamFromLeague,
+  setTeamAllowOnboardingJoin,
+} from '@/app/admin/leagues/actions'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -27,7 +31,15 @@ interface MatchRef {
 
 interface LeagueTeamFull {
   id: string
-  team: { id: string; name: string; logoUrl: string | null }
+  // v2.2.16 — `allowOnboardingJoin` drives the per-team toggle in
+  // the detail panel. The toggle gates whether the team surfaces in
+  // the onboarding team-picker (v2.2.9).
+  team: {
+    id: string
+    name: string
+    logoUrl: string | null
+    allowOnboardingJoin: boolean
+  }
   playerAssignments: PlayerAssignment[]
   homeMatches: MatchRef[]
   awayMatches: MatchRef[]
@@ -69,9 +81,13 @@ function computeRecord(lt: LeagueTeamFull) {
 function TeamDetail({
   lt,
   onRemove,
+  onToggleAllowOnboardingJoin,
+  toggling,
 }: {
   lt: LeagueTeamFull
   onRemove: () => void
+  onToggleAllowOnboardingJoin: (next: boolean) => void
+  toggling: boolean
 }) {
   const record = computeRecord(lt)
 
@@ -96,6 +112,36 @@ function TeamDetail({
           confirmLabel={`Remove ${lt.team.name}`}
           onConfirm={async () => onRemove()}
         />
+      </div>
+
+      <div className="mb-6 flex items-center justify-between gap-3 rounded-lg border border-admin-border bg-admin-surface2/30 px-4 py-3">
+        <div className="min-w-0">
+          <p className="font-condensed text-[13px] font-bold uppercase tracking-[2px] text-admin-text2">
+            Allow onboarding join
+          </p>
+          <p className="text-admin-text3 text-xs mt-0.5">
+            When off, this team is hidden from the onboarding team-picker.
+          </p>
+        </div>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={lt.team.allowOnboardingJoin}
+          aria-label="Allow onboarding join"
+          disabled={toggling}
+          onClick={() => onToggleAllowOnboardingJoin(!lt.team.allowOnboardingJoin)}
+          className={cn(
+            'relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors disabled:opacity-50',
+            lt.team.allowOnboardingJoin ? 'bg-admin-green' : 'bg-admin-surface',
+          )}
+        >
+          <span
+            className={cn(
+              'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition',
+              lt.team.allowOnboardingJoin ? 'translate-x-5' : 'translate-x-0',
+            )}
+          />
+        </button>
       </div>
 
       {record.P > 0 && (
@@ -185,6 +231,17 @@ export default function TeamsTab({ leagueId, leagueTeams, allTeams }: TeamsTabPr
     }
   }
 
+  function handleToggleAllowOnboardingJoin(teamId: string, next: boolean) {
+    startTransition(async () => {
+      try {
+        await setTeamAllowOnboardingJoin(teamId, next, leagueId)
+        toast(next ? 'Onboarding join enabled' : 'Onboarding join disabled')
+      } catch (err) {
+        toast(err instanceof Error ? err.message : 'Failed to update', 'error')
+      }
+    })
+  }
+
   const EnrollSection = ({ compact }: { compact?: boolean }) => (
     <div className={cn('border-t border-admin-border', compact ? 'p-3' : 'p-4')}>
       {showEnroll ? (
@@ -259,6 +316,10 @@ export default function TeamsTab({ leagueId, leagueTeams, allTeams }: TeamsTabPr
                   <TeamDetail
                     lt={lt}
                     onRemove={() => handleRemove(lt.id, lt.team.name)}
+                    onToggleAllowOnboardingJoin={(next) =>
+                      handleToggleAllowOnboardingJoin(lt.team.id, next)
+                    }
+                    toggling={pending}
                   />
                 </div>
               )}
@@ -316,6 +377,10 @@ export default function TeamsTab({ leagueId, leagueTeams, allTeams }: TeamsTabPr
             <TeamDetail
               lt={selected}
               onRemove={() => handleRemove(selected.id, selected.team.name)}
+              onToggleAllowOnboardingJoin={(next) =>
+                handleToggleAllowOnboardingJoin(selected.team.id, next)
+              }
+              toggling={pending}
             />
           )}
         </div>

@@ -7,7 +7,7 @@ describe('APP_VERSION', () => {
   // edit. That's the point: it forces the bump to be deliberate, not a
   // find-replace artifact.
   it('matches the current release pinned in CLAUDE.md', () => {
-    expect(APP_VERSION).toBe('2.2.15')
+    expect(APP_VERSION).toBe('2.2.16')
   })
 
   it('is a non-empty string in semver MAJOR.MINOR.PATCH shape', () => {

@@ -274,6 +274,41 @@ export async function setLeagueAllowPlayerTeamPick(leagueId: string, value: bool
 }
 
 /**
+ * v2.2.16 — per-team "allow onboarding join" toggle. When false, the
+ * Team is excluded from `getTeamPickerOptions` (the v2.2.9 picker
+ * data source) and the server-side write paths
+ * (`completeOnboardingWithId`, recruit `registerToLeague`) reject a
+ * stale-client submission targeting that team. Default true keeps
+ * the existing behaviour for every team.
+ *
+ * Flag lives on `Team` (global), so toggling it affects every league
+ * the team is enrolled in — matches the "premade team that signed
+ * up separately" intent.
+ *
+ * `leagueId` is passed solely for path revalidation (the admin
+ * teams page is per-league); the underlying write does not scope
+ * to any one league.
+ */
+export async function setTeamAllowOnboardingJoin(
+  teamId: string,
+  value: boolean,
+  leagueId: string,
+) {
+  await assertAdmin()
+  if (typeof value !== 'boolean') {
+    throw new Error('allowOnboardingJoin must be a boolean')
+  }
+  await prisma.team.update({
+    where: { id: teamId },
+    data: { allowOnboardingJoin: value },
+  })
+  revalidate({
+    domain: 'admin',
+    paths: [`/admin/leagues/${leagueId}/teams`, `/admin/leagues/${leagueId}`, '/admin'],
+  })
+}
+
+/**
  * v1.63.0 — per-league pre-season toggle. When true, the homepage swaps
  * the "Classic League Homepage" (NextMatchdayBanner + MatchdayAvailability
  * + RsvpBar) for `CompressedMatchdaySchedule`, and the `/stats` page is
