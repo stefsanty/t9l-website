@@ -320,10 +320,13 @@ export default function Dashboard({
   // `transform: translateY(0)` (animation-fill-mode: forwards) which
   // would establish a containing block for fixed descendants and break
   // the bottom-anchor. Pre-season mode hides RsvpBar entirely.
-  const userRsvpStatus: 'GOING' | 'UNDECIDED' | 'Y' | 'EXPECTED' | '' =
+  // v2.2.17 — include 'PLAYED' in the union so it survives the cast and
+  // reaches RsvpBar's normalizeStatus (where it maps to 'GOING'). See the
+  // matching block in LeagueMatchdayClient.tsx for the root-cause note.
+  const userRsvpStatus: 'GOING' | 'UNDECIDED' | 'Y' | 'EXPECTED' | 'PLAYED' | '' =
     (userPlayerId && userTeamId && selectedMatchday
       ? availabilityStatuses?.[selectedMatchday.id]?.[userTeamId]?.[userPlayerId] ?? ''
-      : '') as 'GOING' | 'UNDECIDED' | 'Y' | 'EXPECTED' | '';
+      : '') as 'GOING' | 'UNDECIDED' | 'Y' | 'EXPECTED' | 'PLAYED' | '';
 
   const showRsvpBar =
     !preseasonMode && !!(session?.playerId && userTeamIsPlaying && !isCompleted);

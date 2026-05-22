@@ -21,8 +21,14 @@ const COLOR_EMOJIS: Record<string, string> = {
   'Gray':   '⚫',
 };
 
-function normalizeStatus(s: string): RsvpStatus {
-  if (s === 'GOING' || s === 'Y') return 'GOING';
+export function normalizeStatus(s: string): RsvpStatus {
+  // v2.2.17 — 'PLAYED' is the data-layer projection of GOING on a matchday
+  // whose kickoff has passed (rsvpMerge.ts maps GOING + isPast → 'PLAYED'
+  // per v2.2.6 / v2.2.7). The going list under "Who else is coming?"
+  // already accepts it. The footer must too, or a player who RSVP'd
+  // GOING sees "Are you coming?" the moment kickoff passes (until the
+  // admin enters scores and `isCompleted` flips the footer off).
+  if (s === 'GOING' || s === 'Y' || s === 'PLAYED') return 'GOING';
   if (s === 'UNDECIDED' || s === 'EXPECTED') return 'UNDECIDED';
   return '';
 }
@@ -35,7 +41,7 @@ function arrivalTime(kickoff: string): string {
 
 interface RsvpBarProps {
   matchday: Matchday;
-  initialStatus: 'GOING' | 'UNDECIDED' | 'Y' | 'EXPECTED' | '';
+  initialStatus: 'GOING' | 'UNDECIDED' | 'Y' | 'EXPECTED' | 'PLAYED' | '';
   userTeam: Team | null;
   userTeamIsPlaying: boolean;
   isCompleted: boolean;
