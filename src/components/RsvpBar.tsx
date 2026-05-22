@@ -56,7 +56,11 @@ export default function RsvpBar({
   const [showConfirm, setShowConfirm] = useState(false);
   const [showOptions, setShowOptions] = useState(false);
 
-  if (!session?.playerId || !session?.teamId || !userTeam || isCompleted) {
+  // v2.2.16 — gate on the league-scoped `userTeam` (resolved by the
+  // parent from the rendered `players` array) rather than session.teamId,
+  // which is default-league-scoped and goes empty for users whose player
+  // lives only in a non-default league.
+  if (!session?.playerId || !userTeam || isCompleted) {
     return null;
   }
 
@@ -108,7 +112,7 @@ export default function RsvpBar({
   const venueName = matchday.venueName ?? 'TBD';
   const venueUrl = matchday.venueUrl ?? null;
   const userFirstMatch = matchday.matches
-    .filter((m) => m.homeTeamId === session.teamId || m.awayTeamId === session.teamId)
+    .filter((m) => m.homeTeamId === userTeam.id || m.awayTeamId === userTeam.id)
     .sort((a, b) => a.kickoff.localeCompare(b.kickoff))[0];
 
   const isGoing = status === 'GOING';

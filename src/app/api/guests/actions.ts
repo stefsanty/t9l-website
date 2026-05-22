@@ -9,6 +9,7 @@ import { getLeagueIdBySlug } from '@/lib/leagueSlugServer'
 import { slugToTeamId, slugToPlayerId } from '@/lib/ids'
 import { normalizePositions } from '@/lib/positions'
 import { setRsvp } from '@/lib/rsvpStore'
+import { getRsvpForGameWeek } from '@/lib/rsvpStore'
 
 /**
  * v1.93.0 — Guest feature rework. Replaces the v1.91.0
@@ -385,7 +386,7 @@ export async function getAdminRosterRsvp(
 
   const gameWeek = await prisma.gameWeek.findFirst({
     where: { leagueId, weekNumber },
-    select: { id: true },
+    select: { id: true, startDate: true },
   })
   if (!gameWeek) throw new Error(`Matchday MD${weekNumber} not in league`)
 
@@ -436,17 +437,41 @@ export async function getAdminRosterRsvp(
     availabilityRows.map((r) => [r.playerId, r] as const),
   )
 
+  // v2.2.16 — Redis is the canonical RSVP store; Prisma is a `waitUntil`
+  // secondary that can drift when the deferred upsert from `/api/rsvp`
+  // fails or hasn't yet landed (logged as `[v1.8.0 DRIFT]`). Reading
+  // Prisma alone produced admin-modal rows that disagreed with what the
+  // public going-list showed. Overlay Redis on top of Prisma: prefer
+  // Redis's value for `currentRsvp` when present, while keeping Prisma
+  // for the audit fields (overriddenById/overriddenAt) which live only
+  // there.
+  const redisResult = await getRsvpForGameWeek(gameWeek.id, gameWeek.startDate)
+  const redisByPlayerSlug =
+    redisResult.status === 'hit' ? redisResult.data : null
+
   const entries: AdminRosterRsvpEntry[] = players
     .map((p) => {
       const a = byPlayerDbId.get(p.id)
+      const publicId = p.id.startsWith('p-') ? p.id.slice(2) : p.id
+      const redisEntry = redisByPlayerSlug?.get(publicId)
+      // Redis is authoritative when reachable; `getRsvpForGameWeek`
+      // returns `miss` when the gameWeek has no Redis hash at all, in
+      // which case Prisma is the only source.
+      const currentRsvp = redisByPlayerSlug
+        ? ((redisEntry?.rsvp ?? null) as
+            | 'GOING'
+            | 'UNDECIDED'
+            | 'NOT_GOING'
+            | null)
+        : ((a?.rsvp ?? null) as
+            | 'GOING'
+            | 'UNDECIDED'
+            | 'NOT_GOING'
+            | null)
       return {
-        playerPublicId: p.id.startsWith('p-') ? p.id.slice(2) : p.id,
+        playerPublicId: publicId,
         name: p.name,
-        currentRsvp: (a?.rsvp ?? null) as
-          | 'GOING'
-          | 'UNDECIDED'
-          | 'NOT_GOING'
-          | null,
+        currentRsvp,
         overriddenById: a?.overriddenById ?? null,
         overriddenAt: a?.overriddenAt ? a.overriddenAt.toISOString() : null,
       }
