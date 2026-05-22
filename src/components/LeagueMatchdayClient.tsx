@@ -160,12 +160,22 @@ export default function LeagueMatchdayClient({
     selectedMatchday && selectedMatchday.matches[0].homeGoals !== null
   );
 
-  const userRsvpStatus: 'GOING' | 'UNDECIDED' | 'Y' | 'EXPECTED' | '' =
+  // v2.2.17 — include 'PLAYED' in the union so it survives the cast and
+  // reaches RsvpBar's normalizeStatus (where it maps to 'GOING'). Pre-
+  // v2.2.17 the cast was wider than reality and a real 'PLAYED' value
+  // got silently typed-away into '' via the implicit fallthrough.
+  const userRsvpStatus: 'GOING' | 'UNDECIDED' | 'Y' | 'EXPECTED' | 'PLAYED' | '' =
     (userPlayerId && userTeamId && selectedMatchday
       ? (availabilityStatuses?.[selectedMatchday.id]?.[userTeamId]?.[
           userPlayerId
         ] ?? '')
-      : '') as 'GOING' | 'UNDECIDED' | 'Y' | 'EXPECTED' | '';
+      : '') as
+        | 'GOING'
+        | 'UNDECIDED'
+        | 'Y'
+        | 'EXPECTED'
+        | 'PLAYED'
+        | '';
 
   const showRsvpBar =
     !preseasonMode && !!(session?.playerId && userTeamIsPlaying && !isCompleted);
