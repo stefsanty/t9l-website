@@ -20,6 +20,7 @@ import type { RecruitingViewerState } from '@/lib/recruitingViewerState';
 import type { LeagueDetails as LeagueDetailsData } from '@/lib/leagueDetails';
 import type { PlannedRosterStats as PlannedRosterStatsData } from '@/lib/plannedRosterStats';
 import { selfReportGateOpen } from '@/lib/playerSelfReportGate';
+import { resolveLeagueScopedTeamId } from '@/lib/playerTeamScope';
 import { combineJstDateAndTime } from '@/lib/jst';
 
 /**
@@ -131,8 +132,18 @@ export default function LeagueMatchdayClient({
   const selectedMatchday =
     matchdays.find((m) => m.id === selectedMatchdayId) ?? matchdays[0];
 
-  const userTeamId = session?.teamId ?? null;
   const userPlayerId = session?.playerId ?? null;
+  // v2.2.16 — session.teamId is JWT-resolved against the default league
+  // (see auth.ts JWT callback). For non-default leagues, derive the
+  // user's team from the rendered `players` array so the RSVP-status
+  // lookup (`availabilityStatuses[mdId][teamId][playerId]`) and the
+  // "is my team playing" check both key off the league-scoped team.
+  // Falls back to session.teamId when the player isn't in this league.
+  const userTeamId = resolveLeagueScopedTeamId({
+    players,
+    userPlayerId,
+    sessionTeamId: session?.teamId ?? null,
+  });
   const currentLeagueTeamId: string | null =
     recruitingState?.kind === 'approved_this'
       ? recruitingState.team.id
