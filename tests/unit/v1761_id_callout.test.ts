@@ -7,6 +7,10 @@
  * pins (testid presence, render order before the ID front input) are
  * preserved; the copy assertions track the new wording.
  *
+ * v2.2.19 — copy rewritten again: PRIMARY reason is now ward-registration
+ * (legal access to facilities); the "more bookings" framing is demoted to
+ * a secondary benefit; privacy paragraph kept (lightly reworded).
+ *
  * Structural tests pinning the contracts:
  *   - `registration-id-callout` testid is present in RegistrationFields.tsx
  *   - Callout renders BEFORE the ID file inputs (order check)
@@ -39,20 +43,33 @@ describe('v1.76.1 / v2.2.9 — ID upload callout', () => {
     expect(calloutIdx).toBeLessThan(idFrontIdx)
   })
 
-  it('callout contains the exact v2.2.12 operator-mandated wording', () => {
-    // v2.2.12 dropped the word "strictly" per the operator's softer-tone
-    // preference. Other paragraphs unchanged from v2.2.9.
+  it('callout contains the exact v2.2.19 operator-mandated wording', () => {
+    // v2.2.19 — PRIMARY reason is ward-registration / legal facility
+    // access; "more bookings" demoted to secondary benefit; privacy
+    // paragraph lightly reworded.
     expect(src).toContain(
+      'legally required to register every player with the local ward office'
+    )
+    expect(src).toContain(
+      'your ID is what makes that registration possible'
+    )
+    expect(src).toContain(
+      "we can&apos;t lawfully book venues for you to play on"
+    )
+    expect(src).toContain(
+      'Having your ID on file also helps us secure more court bookings for future games.'
+    )
+    expect(src).toContain(
+      'Your ID will only ever be shared with the organizers, and is secured so that no one but the organizers may access it.'
+    )
+  })
+
+  it('legacy v2.2.12 wording is removed (regression target)', () => {
+    expect(src).not.toContain(
       'We require your ID to enable more regular league games!'
     )
     expect(src).not.toContain(
-      'We require your ID strictly to enable more regular league games!'
-    )
-    expect(src).toContain(
       'we require league members to share your ID with us in order to book more courts.'
-    )
-    expect(src).toContain(
-      'Your ID will only ever be shared to the organizers, and is secured so that no one but the organizers may access your ID.'
     )
   })
 

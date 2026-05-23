@@ -574,13 +574,13 @@ export default function RegistrationFields({
                   </div>
                 )}
                 <p className="text-fg-mid mb-2">
-                  We require your ID to enable more regular league games!
+                  We&apos;re legally required to register every player with the local ward office in order to use the facilities — your ID is what makes that registration possible. Without it, we can&apos;t lawfully book venues for you to play on.
                 </p>
                 <p className="text-fg-mid mb-2">
-                  To serve you the best league experience possible, we require league members to share your ID with us in order to book more courts.
+                  Having your ID on file also helps us secure more court bookings for future games.
                 </p>
                 <p className="text-fg-mid">
-                  Your ID will only ever be shared to the organizers, and is secured so that no one but the organizers may access your ID.
+                  Your ID will only ever be shared with the organizers, and is secured so that no one but the organizers may access it.
                 </p>
               </div>
               {sectionMode === 'reuse-existing' && useExistingId ? (
