@@ -342,11 +342,13 @@ describe('RegistrationFields — "Share Your ID" callout (v2.2.9)', () => {
     expect(REG_FIELDS_SRC).toMatch(/>\s*Share Your ID\s*</)
   })
 
-  it('contains all three paragraphs of the v2.2.12 callout copy ("strictly" dropped)', () => {
-    expect(REG_FIELDS_SRC).toMatch(/We require your ID to enable more regular league games!/)
-    expect(REG_FIELDS_SRC).not.toMatch(/We require your ID strictly to enable/)
-    expect(REG_FIELDS_SRC).toMatch(/we require league members to share your ID/)
-    expect(REG_FIELDS_SRC).toMatch(/no one but the organizers may access your ID/)
+  it('contains all three paragraphs of the v2.2.19 callout copy (ward-registration framing)', () => {
+    expect(REG_FIELDS_SRC).toMatch(/legally required to register every player with the local ward office/)
+    expect(REG_FIELDS_SRC).toMatch(/your ID is what makes that registration possible/)
+    expect(REG_FIELDS_SRC).toMatch(/Having your ID on file also helps us secure more court bookings/)
+    expect(REG_FIELDS_SRC).toMatch(/no one but the organizers may access it/)
+    // Legacy v2.2.12 wording must be gone.
+    expect(REG_FIELDS_SRC).not.toMatch(/We require your ID to enable more regular league games!/)
   })
 
   it('drops the old "Why we need your ID" subheader', () => {
