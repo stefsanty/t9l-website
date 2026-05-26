@@ -19,7 +19,9 @@ const src = (file: string) =>
   readFileSync(join(process.cwd(), 'src', file), 'utf-8')
 
 const usersListSrc = src('components/admin/UsersList.tsx')
-const adminDataSrc = src('lib/admin-data.ts')
+const adminDataSrc = ['leagues', 'players', 'stats', 'venues', 'users', 'teams', 'index']
+  .map((n) => src('lib/admin-data/' + n + '.ts'))
+  .join('\n')
 
 // ── UserRow interface ────────────────────────────────────────────────────────
 

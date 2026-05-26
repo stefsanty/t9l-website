@@ -114,7 +114,7 @@ describe('v1.74.1 — EditTeamDialog color picker', () => {
 // ── admin-data TeamsAllRow ────────────────────────────────────────────
 
 describe('v1.74.1 — TeamsAllRow interface and getAllTeamsForAdmin', () => {
-  const src = read('src/lib/admin-data.ts')
+  const src = read('src/lib/admin-data/teams.ts')
 
   it('TeamsAllRow interface includes color field', () => {
     const block = src.slice(src.indexOf('interface TeamsAllRow'), src.indexOf('export async function getAllTeamsForAdmin'))

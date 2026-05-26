@@ -36,7 +36,9 @@ const MIGRATION_EXEC = MIGRATION_RAW.split(/\r?\n/)
   .map((line) => line.replace(/--.*$/, ''))
   .join('\n')
 
-const ADMIN_DATA = readFileSync(join(ROOT, 'src', 'lib', 'admin-data.ts'), 'utf-8')
+const ADMIN_DATA = ['leagues', 'players', 'stats', 'venues', 'users', 'teams', 'index']
+  .map((n) => readFileSync(join(ROOT, 'src', 'lib', 'admin-data', n + '.ts'), 'utf-8'))
+  .join('\n')
 const RECRUIT_ACTIONS = readFileSync(
   join(ROOT, 'src', 'app', 'api', 'recruiting', 'actions.ts'),
   'utf-8',

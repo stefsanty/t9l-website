@@ -28,7 +28,7 @@ function stripComments(s: string): string {
 
 const PLAYERS_TAB = stripComments(read('src/components/admin/PlayersTab.tsx'))
 const PAGE = stripComments(read('src/app/admin/leagues/[id]/players/page.tsx'))
-const ADMIN_DATA = stripComments(read('src/lib/admin-data.ts'))
+const ADMIN_DATA = stripComments(read('src/lib/admin-data/players.ts'))
 const VIEW_DIALOG = read('src/components/admin/ViewInviteDialog.tsx')
 
 describe('v1.85.0 — activeInvite shape replaces activeInviteCount', () => {

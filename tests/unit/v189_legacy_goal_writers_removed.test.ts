@@ -141,7 +141,7 @@ describe('v1.89.0 — legacy Goal/Assist writers fully removed from src/', () =>
 
   it('getLeagueStats no longer fetches the legacy Goal table', () => {
     const adminData = readFileSync(
-      join(repoRoot, 'src/lib/admin-data.ts'),
+      join(repoRoot, 'src/lib/admin-data/stats.ts'),
       'utf8',
     )
     const stripped = stripCommentsAndStrings(adminData)

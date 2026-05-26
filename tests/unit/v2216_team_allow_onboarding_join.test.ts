@@ -31,7 +31,9 @@ const TEAMS_TAB_SRC = read('src', 'components', 'admin', 'TeamsTab.tsx')
 const ONBOARDING_OPTIONS_SRC = read('src', 'lib', 'onboarding-team-options.ts')
 const JOIN_ACTIONS_SRC = read('src', 'app', 'join', '[code]', 'actions.ts')
 const RECRUIT_ACTIONS_SRC = read('src', 'app', 'api', 'recruiting', 'actions.ts')
-const ADMIN_DATA_SRC = read('src', 'lib', 'admin-data.ts')
+const ADMIN_DATA_SRC = ['leagues', 'players', 'stats', 'venues', 'users', 'teams', 'index']
+  .map((n) => read('src', 'lib', 'admin-data', n + '.ts'))
+  .join('\n')
 
 describe('v2.2.16 — Team.allowOnboardingJoin', () => {
   describe('schema', () => {

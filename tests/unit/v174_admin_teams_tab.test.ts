@@ -164,7 +164,9 @@ describe('v1.74.0 — upload-token route extension', () => {
 // ── admin-data helpers ────────────────────────────────────────────────
 
 describe('v1.74.0 — admin-data helpers', () => {
-  const src = read('src/lib/admin-data.ts')
+  const src = ['leagues', 'players', 'stats', 'venues', 'users', 'teams', 'index']
+    .map((n) => read('src/lib/admin-data/' + n + '.ts'))
+    .join('\n')
 
   it('exports getAllTeamsForAdmin', () => {
     expect(src).toMatch(/export async function getAllTeamsForAdmin\s*\(/)

@@ -134,7 +134,7 @@ describe('v1.57.0 — UsersList component', () => {
 })
 
 describe('v1.57.0 — getAllUsersForAdmin helper', () => {
-  const dataPath = 'src/lib/admin-data.ts'
+  const dataPath = 'src/lib/admin-data/users.ts'
 
   it('exports getAllUsersForAdmin', () => {
     const src = stripComments(read(dataPath))

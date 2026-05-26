@@ -88,10 +88,9 @@ const PLAYERS_TAB_SRC = readFileSync(
   join(REPO_ROOT, 'src/components/admin/PlayersTab.tsx'),
   'utf8',
 )
-const ADMIN_DATA_SRC = readFileSync(
-  join(REPO_ROOT, 'src/lib/admin-data.ts'),
-  'utf8',
-)
+const ADMIN_DATA_SRC = ['leagues', 'players', 'stats', 'venues', 'users', 'teams', 'index']
+  .map((n) => readFileSync(join(REPO_ROOT, 'src/lib/admin-data', n + '.ts'), 'utf8'))
+  .join('\n')
 const PLAYERS_PAGE_SRC = readFileSync(
   join(REPO_ROOT, 'src/app/admin/leagues/[id]/players/page.tsx'),
   'utf8',

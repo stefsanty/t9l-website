@@ -42,7 +42,9 @@ const VIEWER_STATE_SRC = readFileSync(
   join(REPO_ROOT, 'src/lib/recruitingViewerState.ts'),
   'utf8',
 )
-const ADMIN_DATA_SRC = readFileSync(join(REPO_ROOT, 'src/lib/admin-data.ts'), 'utf8')
+const ADMIN_DATA_SRC = ['leagues', 'players', 'stats', 'venues', 'users', 'teams', 'index']
+  .map((n) => readFileSync(join(REPO_ROOT, 'src/lib/admin-data', n + '.ts'), 'utf8'))
+  .join('\n')
 const DB_TO_PUBLIC_SRC = readFileSync(
   join(REPO_ROOT, 'src/lib/dbToPublicLeagueData.ts'),
   'utf8',

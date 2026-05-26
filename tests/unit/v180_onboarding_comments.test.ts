@@ -168,7 +168,7 @@ describe('v1.80.0 — OnboardingForm threads comments', () => {
 describe('v1.80.0 — admin Players display', () => {
   const playersTab = readSrc('src/components/admin/PlayersTab.tsx')
   const playersPage = readSrc('src/app/admin/leagues/[id]/players/page.tsx')
-  const adminData = readSrc('src/lib/admin-data.ts')
+  const adminData = readSrc('src/lib/admin-data/players.ts')
 
   it('PlayerRow interface has comments field', () => {
     expect(playersTab).toMatch(/comments\?.*string.*null/)
