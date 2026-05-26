@@ -170,7 +170,7 @@ describe('v1.56.0 — page-level data wiring', () => {
 })
 
 describe('v1.56.0 — admin-data helpers', () => {
-  const dataPath = 'src/lib/admin-data.ts'
+  const dataPath = 'src/lib/admin-data/players.ts'
 
   it('exports getLinkablePlayersForLeague', () => {
     const src = stripComments(read(dataPath))

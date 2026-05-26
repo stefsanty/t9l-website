@@ -59,10 +59,9 @@ const APPLY_MODAL_SRC = readFileSync(
   join(REPO_ROOT, 'src/components/ApplyToLeagueModal.tsx'),
   'utf8',
 )
-const ADMIN_DATA_SRC = readFileSync(
-  join(REPO_ROOT, 'src/lib/admin-data.ts'),
-  'utf8',
-)
+const ADMIN_DATA_SRC = ['leagues', 'players', 'stats', 'venues', 'users', 'teams', 'index']
+  .map((n) => readFileSync(join(REPO_ROOT, 'src/lib/admin-data', n + '.ts'), 'utf8'))
+  .join('\n')
 const VERSION_SRC = readFileSync(join(REPO_ROOT, 'src/lib/version.ts'), 'utf8')
 
 describe('v1.65.1 — APP_VERSION bumped (chain proceeds)', () => {

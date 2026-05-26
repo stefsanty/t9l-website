@@ -85,7 +85,9 @@ describe('perf phase 3 — H1 part 2: every <Image fill /> declares sizes=', () 
 })
 
 describe('perf phase 3 — M2: defensive take on admin-data findMany hot paths', () => {
-  const adminData = read('src/lib/admin-data.ts')
+  const adminData = ['leagues', 'players', 'stats', 'venues', 'users', 'teams', 'index']
+    .map((n) => read('src/lib/admin-data/' + n + '.ts'))
+    .join('\n')
 
   it('goal.findMany no longer present (v1.89.0 — legacy Goal reader removed)', () => {
     // v1.80.4 — `prisma.goal.findMany` was capped at `take: 5000` to bound

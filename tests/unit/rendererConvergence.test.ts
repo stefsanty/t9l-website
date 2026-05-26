@@ -96,7 +96,9 @@ describe('v1.25.0 — LeaguePublicView deletion', () => {
 
   it('admin-data.ts no longer exports getLeagueBySubdomain', () => {
     const adminDataSrc = stripComments(
-      readFileSync(join(repoRoot, 'src/lib/admin-data.ts'), 'utf8'),
+      ['leagues', 'players', 'stats', 'venues', 'users', 'teams', 'index']
+        .map((n) => readFileSync(join(repoRoot, 'src/lib/admin-data', n + '.ts'), 'utf8'))
+        .join('\n'),
     )
     expect(adminDataSrc).not.toMatch(/export\s+const\s+getLeagueBySubdomain\b/)
     expect(adminDataSrc).not.toMatch(/export\s+(async\s+)?function\s+getLeagueBySubdomain\b/)

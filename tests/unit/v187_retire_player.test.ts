@@ -51,10 +51,9 @@ const PLANNED_ROSTER_SRC = readFileSync(
   join(REPO_ROOT, 'src/lib/plannedRosterStats.ts'),
   'utf8',
 )
-const ADMIN_DATA_SRC = readFileSync(
-  join(REPO_ROOT, 'src/lib/admin-data.ts'),
-  'utf8',
-)
+const ADMIN_DATA_SRC = ['leagues', 'players', 'stats', 'venues', 'users', 'teams', 'index']
+  .map((n) => readFileSync(join(REPO_ROOT, 'src/lib/admin-data', n + '.ts'), 'utf8'))
+  .join('\n')
 const UNPAID_BANNER_SRC = readFileSync(
   join(REPO_ROOT, 'src/lib/unpaidFeeBanner.ts'),
   'utf8',

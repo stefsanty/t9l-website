@@ -33,7 +33,7 @@ function stripComments(src: string): string {
 }
 
 describe('v1.58.0 — getAllLeagues uses minimal select projection', () => {
-  const dataPath = 'src/lib/admin-data.ts'
+  const dataPath = 'src/lib/admin-data/leagues.ts'
 
   it('uses select: instead of include: at the top level', () => {
     const src = stripComments(read(dataPath))
