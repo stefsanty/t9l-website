@@ -543,6 +543,14 @@ const emailProviderEnabled =
   !!process.env.EMAIL_SERVER && !!process.env.EMAIL_FROM;
 
 export const authOptions: AuthOptions = {
+  // v2.2.20 — TEMPORARY: NextAuth debug=true to surface the exact failing
+  // adapter step (method name + Prisma error) into Vercel logs while we
+  // investigate the "ERROR CODE: Default" sign-in reports during the
+  // 2026-05-26 Neon connectivity window. TODO(v2.2.21+): remove `debug`
+  // once the root cause is captured. Debug output is verbose; do not
+  // leave on long-term — every JWT refresh emits [next-auth][debug] lines.
+  debug: true,
+
   // v1.28.0 — Wire NextAuth's PrismaAdapter for multi-provider Account
   // management (Google OAuth + EmailProvider magic link). Session strategy
   // remains JWT (load-bearing for v1.5.0 Redis-canonical mapping store and
@@ -716,6 +724,20 @@ export const authOptions: AuthOptions = {
   session: { strategy: "jwt" },
   callbacks: {
     async jwt({ token, account, profile, user }) {
+      // v2.2.20 — TEMPORARY breadcrumb. Entry-side marker so log readers
+      // can pair this with the per-step exit breadcrumbs below and the
+      // existing `[auth] LINE sign-in:` LINE-branch marker. The cheap
+      // identifier triplet (provider, hasUser, hasProfile) is enough to
+      // localize which sign-in attempt produced the log line without
+      // leaking PII. Remove with `debug: true` once the 2026-05-26
+      // sign-in incident's root cause is captured.
+      console.log(
+        '[auth] jwt callback enter: provider=%s hasUser=%s hasProfile=%s',
+        account?.provider ?? '<refresh>',
+        !!user,
+        !!profile,
+      );
+
       // Handle admin username/password login — bypass LINE flow entirely
       if (account?.provider === "admin-credentials" && user) {
         token.authProvider = "admin-credentials";
@@ -841,6 +863,18 @@ export const authOptions: AuthOptions = {
             console.error("[auth] syncUserAuthAccountName (LINE) failed userId=%s: %o", user.id, err),
           );
         }
+        // v2.2.20 — TEMPORARY exit-side breadcrumb for the LINE initial
+        // sign-in branch. If logs show this line, every per-step await
+        // inside the LINE branch (syncUserLineId / syncUserImage /
+        // trackLineLogin / syncUserAuthAccountName) returned without
+        // throwing — locating any subsequent failure to the league
+        // lookup / mapping resolution below, or downstream of `return
+        // token`. Remove with `debug: true` once root cause is captured.
+        console.log(
+          "[auth] LINE branch complete: userId=%s lineId=%s",
+          user?.id ?? "<none>",
+          token.lineId ?? "<none>",
+        );
       }
 
       // v1.53.0 — subdomain teardown. The JWT callback resolves against
@@ -983,6 +1017,19 @@ export const authOptions: AuthOptions = {
         .filter(Boolean);
       token.isAdmin =
         adminIds.length > 0 && !!token.lineId && adminIds.includes(token.lineId as string);
+
+      // v2.2.20 — TEMPORARY exit-side breadcrumb. If logs show this line
+      // for a given sign-in, the JWT callback returned cleanly — any
+      // subsequent `/auth-error` redirect is upstream (PrismaAdapter pre-
+      // JWT) or downstream (NextAuth's cookie/redirect plumbing) of this
+      // function. Cheap discriminator triple. Remove with `debug: true`
+      // once root cause is captured.
+      console.log(
+        "[auth] jwt callback returning: lineId=%s userId=%s playerId=%s",
+        token.lineId ?? "<none>",
+        token.userId ?? "<none>",
+        token.playerId ?? "<none>",
+      );
 
       return token;
     },
