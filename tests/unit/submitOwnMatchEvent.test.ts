@@ -189,12 +189,15 @@ describe('submitOwnMatchEvent (v1.82.0 cross-team scorer/assister)', () => {
     expect(data.createdById).toBe('u-stefan')
     expect(recomputeMock).toHaveBeenCalledWith(expect.anything(), 'm-real')
     expect(revalidateMock).toHaveBeenCalledTimes(1)
-    // v1.82.0 — scorer membership check uses leagueId (not match-team in).
+    // v2.2.21 — scorer membership check filters via leagueTeam.leagueId
+    // (matches the form's source-of-truth join). Pre-v2.2.21 it filtered
+    // via the direct nullable PlayerLeagueMembership.leagueId column,
+    // which rejected legacy rows where the column was never backfilled.
     const calls = plaFindFirstMock.mock.calls
     expect(calls.length).toBeGreaterThanOrEqual(1)
     const scorerWhere = calls[0][0].where
-    expect(scorerWhere.leagueId).toBe('l-default')
-    expect(scorerWhere.leagueTeamId).toEqual({ not: null })
+    expect(scorerWhere.leagueTeam).toEqual({ leagueId: 'l-default' })
+    expect(scorerWhere.leagueId).toBeUndefined()
   })
 
   it('rejects when not signed in', async () => {
@@ -606,8 +609,9 @@ describe('submitOwnMatchEvent (v1.82.0 cross-team scorer/assister)', () => {
       const gwCall = gameWeekFindFirstMock.mock.calls[0][0]
       expect(gwCall.where.leagueId).toBe('l-t9l')
       // Scorer membership check also scoped to the form's league.
+      // v2.2.21 — via the leagueTeam.leagueId join, not the direct column.
       const scorerWhere = plaFindFirstMock.mock.calls[0][0].where
-      expect(scorerWhere.leagueId).toBe('l-t9l')
+      expect(scorerWhere.leagueTeam).toEqual({ leagueId: 'l-t9l' })
     })
 
     it('rejects when caller is not a member of the form-provided league', async () => {

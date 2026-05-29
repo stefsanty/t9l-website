@@ -276,11 +276,18 @@ export async function submitOwnMatchEvent(input: {
   if (!isGuestScorer) {
     const scorerSlug = input.scorerPlayerSlug!.trim()
     scorerId = slugToPlayerId(scorerSlug)
+    // v2.2.21 — filter via leagueTeam.leagueId (matches the form's
+    // source-of-truth in dbToPublicLeagueData) instead of the direct
+    // `PlayerLeagueMembership.leagueId` column. The direct column was
+    // added nullable in v1.65.0 and is not populated on every row;
+    // legacy memberships have leagueTeamId set (so the player shows up
+    // in the picker via the leagueTeam.leagueId join) but leagueId=null
+    // (so the pre-v2.2.21 check rejected the action with a redacted
+    // RSC error / digest 3280886305 in prod).
     const scorerAssignment = await prisma.playerLeagueMembership.findFirst({
       where: {
         playerId: scorerId,
-        leagueId,
-        leagueTeamId: { not: null },
+        leagueTeam: { leagueId },
       },
       select: { id: true },
     })
@@ -300,11 +307,12 @@ export async function submitOwnMatchEvent(input: {
     if (scorerId && assisterCandidateId === scorerId) {
       throw new Error('Assister cannot be the scorer')
     }
+    // v2.2.21 — mirror the scorer fix: filter via leagueTeam.leagueId so
+    // legacy memberships with null `leagueId` but a real leagueTeam pass.
     const assisterAssignment = await prisma.playerLeagueMembership.findFirst({
       where: {
         playerId: assisterCandidateId,
-        leagueId,
-        leagueTeamId: { not: null },
+        leagueTeam: { leagueId },
       },
       select: { id: true },
     })
