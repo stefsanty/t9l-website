@@ -51,6 +51,23 @@ describe('playerIdToSlug / slugToPlayerId', () => {
   it('is idempotent on already-prefixed inputs', () => {
     expect(slugToPlayerId('p-ian-noseda')).toBe('p-ian-noseda')
   })
+
+  // v2.2.22 — Players minted after the PR-6 backfill have raw cuid ids
+  // (e.g. Théo: 'cmp1vc4i1000110nl2l4pwi5u'). The roster adapter's
+  // `playerIdToSlug` passes them through unchanged; the form sends that
+  // bare cuid as `scorerPlayerSlug`. `slugToPlayerId` used to blindly
+  // prepend `p-`, producing `p-cmp...` — a non-existent DB id — which
+  // broke the Submit-Goal scorer lookup with the redacted RSC error.
+  it('passes through bare cuid Player.ids', () => {
+    expect(slugToPlayerId('cmp1vc4i1000110nl2l4pwi5u')).toBe(
+      'cmp1vc4i1000110nl2l4pwi5u',
+    )
+  })
+
+  it('round-trips a bare cuid through both halves', () => {
+    const cuid = 'cmp1vc4i1000110nl2l4pwi5u'
+    expect(slugToPlayerId(playerIdToSlug(cuid))).toBe(cuid)
+  })
 })
 
 describe('teamIdToSlug / slugToTeamId', () => {
@@ -68,5 +85,12 @@ describe('teamIdToSlug / slugToTeamId', () => {
 
   it('is idempotent on already-prefixed inputs', () => {
     expect(slugToTeamId('t-mariners-fc')).toBe('t-mariners-fc')
+  })
+
+  // v2.2.22 — same symmetry for LeagueTeam/Team rows minted via raw cuid.
+  it('passes through bare cuid Team.ids', () => {
+    expect(slugToTeamId('cmp1vc4i1000110nl2l4pwi5u')).toBe(
+      'cmp1vc4i1000110nl2l4pwi5u',
+    )
   })
 })
