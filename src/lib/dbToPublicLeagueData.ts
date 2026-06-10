@@ -371,17 +371,23 @@ export async function dbToPublicLeagueData(
           }
         } else {
           const scorerLt = playerToLt.get(ev.scorerId)
-          if (!scorerLt || (scorerLt !== m.homeTeamId && scorerLt !== m.awayTeamId)) {
-            // Skip events whose scorer is not on either match team
-            // (data bug; admin should review).
+          const isOwnGoal = ev.goalType === 'OWN_GOAL'
+          if (scorerLt && (scorerLt === m.homeTeamId || scorerLt === m.awayTeamId)) {
+            beneficiaryLt = isOwnGoal
+              ? scorerLt === m.homeTeamId
+                ? m.awayTeamId
+                : m.homeTeamId
+              : scorerLt
+          } else if (
+            ev.beneficiaryTeamId &&
+            (ev.beneficiaryTeamId === m.homeTeamId || ev.beneficiaryTeamId === m.awayTeamId)
+          ) {
+            // v1.93.x — cross-team scorer (real player guesting for the other team).
+            // Trust beneficiaryTeamId; preserves the scorer name in goals[].
+            beneficiaryLt = ev.beneficiaryTeamId
+          } else {
             continue
           }
-          const isOwnGoal = ev.goalType === 'OWN_GOAL'
-          beneficiaryLt = isOwnGoal
-            ? scorerLt === m.homeTeamId
-              ? m.awayTeamId
-              : m.homeTeamId
-            : scorerLt
         }
         if (!beneficiaryLt) continue
         const beneficiarySlug = ltToSlug.get(beneficiaryLt) ?? ''

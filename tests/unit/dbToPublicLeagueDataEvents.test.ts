@@ -287,4 +287,71 @@ describe('dbToPublicLeagueData (PR δ event-flow)', () => {
     expect(data.goals).toHaveLength(1)
     expect(data.goals[0].id).toBe('me-good')
   })
+
+  // v1.93.x — cross-team scorer: real player registered to Mariners FC
+  // guests for Hygge SC in a match where Mariners FC is not playing.
+  // beneficiaryTeamId is trusted; scorer name must appear in goals[].
+  it('cross-team scorer: name preserved when scorer is registered to a non-participating team', async () => {
+    const THIRD_LT = 'lt-hygge'
+    findFirstMock.mockResolvedValue({
+      id: 'l-default',
+      isDefault: true,
+      leagueTeams: [
+        { id: HOME_LT, team: { id: 't-mariners-fc', name: 'Mariners FC', shortName: 'MRN', color: '#0055A4', logoUrl: null } },
+        { id: AWAY_LT, team: { id: 't-fenix-fc', name: 'Fenix FC', shortName: 'FEN', color: '#FFD700', logoUrl: null } },
+        { id: THIRD_LT, team: { id: 't-hygge-sc', name: 'Hygge SC', shortName: 'HYG', color: '#00A651', logoUrl: null } },
+      ],
+      gameWeeks: [
+        {
+          id: 'gw-1',
+          weekNumber: 4,
+          startDate: new Date('2026-05-01T00:00:00+09:00'),
+          endDate: null,
+          venue: null,
+          // Match is Hygge SC vs Fenix FC — Mariners FC does NOT play
+          matches: [
+            {
+              id: 'm-md4',
+              homeTeamId: THIRD_LT,
+              awayTeamId: AWAY_LT,
+              homeScore: 1,
+              awayScore: 0,
+              scoreOverride: null,
+              status: 'COMPLETED',
+              playedAt: new Date('2026-05-01T19:05:00+09:00'),
+              endedAt: null,
+              events: [
+                {
+                  id: 'me-cross',
+                  minute: 22,
+                  goalType: 'OPEN_PLAY',
+                  isGuestScorer: false,
+                  isGuestAssister: false,
+                  // Scorer is a Mariners FC player (not in this match)
+                  scorerId: 'p-stefan',
+                  scorer: { id: 'p-stefan', name: 'Stefan' },
+                  assister: null,
+                  // Beneficiary is the team the scorer is guesting for (Hygge SC)
+                  beneficiaryTeamId: THIRD_LT,
+                  createdAt: new Date('2026-05-01T20:00:00Z'),
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    })
+    // p-stefan is on Mariners FC (HOME_LT), which is NOT in this match
+    plaFindManyMock.mockResolvedValue([
+      { playerId: 'p-stefan', leagueTeamId: HOME_LT, player: { id: 'p-stefan', name: 'Stefan' }, leagueTeam: { id: HOME_LT } },
+      { playerId: 'p-khrapov', leagueTeamId: AWAY_LT, player: { id: 'p-khrapov', name: 'Khrapov' }, leagueTeam: { id: AWAY_LT } },
+    ])
+    const { data } = await dbToPublicLeagueData()
+    expect(data.goals).toHaveLength(1)
+    const g = data.goals[0]
+    expect(g.scorer).toBe('Stefan')
+    expect(g.scoringTeamId).toBe('hygge-sc')
+    expect(g.concedingTeamId).toBe('fenix-fc')
+    expect(g.minute).toBe(22)
+  })
 })
