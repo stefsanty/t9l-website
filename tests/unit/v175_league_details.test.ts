@@ -302,9 +302,14 @@ describe('v1.75.0 LeagueDetailsPanel public component', () => {
     expect(src).toMatch(/data\.unlimitedSubstitutions \? 'Unlimited' : 'Limited'/)
   })
 
-  it('is collapsible — renders expand/collapse toggle on the header (v1.75.1)', () => {
-    expect(src).toMatch(/league-details-panel-header/)
-    expect(src).toMatch(/expanded/)
+  it('is tabbed — mounts the shared Tabs primitive (v2.3.0)', () => {
+    // v2.3.0 — pre-v2.3.0 LeagueDetailsPanel was a collapsible accordion
+    // (`league-details-panel-header` chevron + `expanded` state). v2.3.0
+    // replaces it with a tab strip via the shared `@/components/ui/Tabs`
+    // primitive. Regression target: reverting to the accordion would
+    // drop the import.
+    expect(src).toMatch(/import \{ Tabs[^}]*\} from '@\/components\/ui\/Tabs'/)
+    expect(src).toMatch(/<Tabs[\s\S]+ariaLabel="League details sections"/)
   })
 })
 

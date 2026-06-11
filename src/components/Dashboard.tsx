@@ -32,14 +32,24 @@ import { DEFAULT_LEAGUE_SLUG } from '@/lib/leagueSlug';
 // only the JS chunk is deferred.
 const LeagueDetailsPanel = dynamic(() => import('./LeagueDetailsPanel'), {
   loading: () => (
+    // v2.3.0 — skeleton mirrors the new tab-strip footprint (border-b
+    // underline + three pill placeholders) instead of the pre-v2.3.0
+    // chevron-header. Body placeholder reserves grid space so the
+    // resolved panel doesn't shift the rest of the column on swap.
     <section
       data-testid="league-details-panel-skeleton"
       aria-hidden
       className="w-full mt-2 mb-3 rounded-2xl border border-border-default bg-card overflow-hidden animate-pulse"
     >
-      <div className="w-full px-4 py-3 bg-surface flex items-center justify-between">
-        <div className="h-3 w-28 rounded bg-surface-md" />
-        <div className="h-4 w-4 rounded bg-surface-md" />
+      <div className="w-full px-4 border-b border-border-default flex items-center gap-4 py-3">
+        <div className="h-3 w-12 rounded bg-surface-md" />
+        <div className="h-3 w-20 rounded bg-surface-md" />
+        <div className="h-3 w-24 rounded bg-surface-md" />
+      </div>
+      <div className="px-4 pt-4 pb-3 grid grid-cols-2 gap-x-4 gap-y-2">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <div key={i} className="h-3 rounded bg-surface-md" />
+        ))}
       </div>
     </section>
   ),
