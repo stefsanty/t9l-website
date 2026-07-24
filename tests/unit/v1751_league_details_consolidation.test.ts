@@ -143,46 +143,56 @@ describe('v1.75.1 admin editor field order matches public panel', () => {
   })
 })
 
-describe('v1.75.1 collapsible behavior', () => {
+describe('v2.3.0 tab behavior (replaces the v1.75.1 collapsible)', () => {
   const src = read('src/components/LeagueDetailsPanel.tsx')
 
-  it('accepts preseasonMode prop', () => {
+  it('still accepts preseasonMode prop', () => {
+    // v2.3.0 — prop kept; semantic shifted from "starts expanded" to
+    // "default tab = season" (when the Season info tab exists).
     expect(src).toMatch(/preseasonMode\?:\s*boolean/)
   })
 
-  it('uses useState for expanded/collapsed state', () => {
-    expect(src).toMatch(/useState\(preseasonMode\)/)
+  it('preseasonMode drives the default tab to Season info when available', () => {
+    // Regression target: pre-v2.3.0 wired preseasonMode into `useState(expanded)`.
+    // Post-v2.3.0 it picks the initial tab id.
+    expect(src).toMatch(/preseasonMode\s*&&\s*showSeasonTab\s*\?\s*'season'\s*:\s*'rules'/)
   })
 
-  it('renders a clickable header with aria-expanded', () => {
-    expect(src).toMatch(/data-testid="league-details-panel-header"/)
-    expect(src).toMatch(/aria-expanded=\{expanded\}/)
+  it('mounts the shared Tabs primitive with the league-details testid stem', () => {
+    expect(src).toMatch(/import \{ Tabs[^}]*\} from '@\/components\/ui\/Tabs'/)
+    expect(src).toMatch(/<Tabs[\s\S]+testid="league-details-tabs"/)
   })
 
-  it('renders a chevron icon that rotates based on expanded state', () => {
-    // ChevronDown with rotate-180 class when expanded
-    expect(src).toMatch(/ChevronDown/)
-    expect(src).toMatch(/rotate-180/)
-  })
-
-  it('panel body only renders when expanded', () => {
+  it('panel body wrapper has the league-details-panel-body testid + pt-4 spacing', () => {
+    // Regression target — removing pt-4 re-introduces the tight spacing
+    // (the v1.75.3 spacing fix). The body now lives inside the Tabs
+    // render-prop child rather than behind an `expanded` gate.
     expect(src).toMatch(/data-testid="league-details-panel-body"/)
-    expect(src).toMatch(/expanded &&[\s\S]*league-details-panel-body/)
-  })
-
-  it('panel body has top padding (v1.75.3 spacing fix)', () => {
-    // Regression target — removing pt-4 re-introduces the tight spacing.
-    // className="... pt-4 ..." appears before data-testid="league-details-panel-body"
-    // on the same div, so check the full line contains both.
     expect(src).toMatch(/pt-4[^"]*"[^>]*league-details-panel-body/)
     expect(src).not.toMatch(/(?:pt-0|pt-1|pt-2|pt-3)\b[^"]*"[^>]*league-details-panel-body/)
   })
 
-  it('default state is expanded when preseasonMode=true', () => {
-    // useState(preseasonMode) means:
-    //   preseasonMode=true  → expanded=true  (starts open)
-    //   preseasonMode=false → expanded=false (starts closed)
-    expect(src).toMatch(/useState\(preseasonMode\)/)
+  it('drops the old accordion header + ChevronDown import (v2.3.0)', () => {
+    // Regression target: reverting to the accordion would re-add these.
+    expect(src).not.toMatch(/data-testid="league-details-panel-header"/)
+    expect(src).not.toMatch(/aria-expanded=\{expanded\}/)
+    expect(src).not.toMatch(/import \{ ChevronDown \} from 'lucide-react'/)
+  })
+
+  it('Rules tab renders the rules dl + its testid', () => {
+    expect(src).toMatch(/active === 'rules'[\s\S]+league-details-rules-section/)
+  })
+
+  it('Season info tab renders the stats section + is conditional on showSeasonTab', () => {
+    expect(src).toMatch(/active === 'season'[\s\S]+league-stats-section/)
+    expect(src).toMatch(/showSeasonTab\s*&&\s*plannedRosterStats/)
+  })
+
+  it('Organizer tab only appears when organizerMessage is set', () => {
+    // Tab list builds conditionally; the tab is pushed only when
+    // `showMessage` is true (organizerMessage non-null + non-empty).
+    expect(src).toMatch(/showMessage[\s\S]+id: 'organizer'/)
+    expect(src).toMatch(/active === 'organizer'[\s\S]+league-details-organizer-message/)
   })
 })
 
@@ -275,37 +285,37 @@ describe('v1.75.1 stash-pop regression target', () => {
     )
   })
 
-  it('LeagueDetailsPanel does NOT have the old non-collapsible header (plain <p> without toggle)', () => {
+  it('LeagueDetailsPanel does NOT carry the pre-v2.3.0 accordion-header markup', () => {
     const src = read('src/components/LeagueDetailsPanel.tsx')
-    // The old header was just a <p> tag. Post v1.75.1 it's a <button>.
-    // Regression: reverting to static <p> would break the expand/collapse UX.
-    expect(src).toMatch(/league-details-panel-header/)
+    // v2.3.0 — the v1.75.1 accordion was replaced with a Tabs primitive.
+    // Regression target: a revert to either the chevron-header button
+    // or the v1.75.0 static <p> heading would re-introduce inconsistent
+    // tab styling on this surface.
+    expect(src).not.toMatch(/league-details-panel-header/)
     expect(src).not.toMatch(/<p[^>]*>[\s\S]*?League details[\s\S]*?<\/p>/)
   })
 })
 
-describe('v1.75.2 header clickable-button styling', () => {
-  const src = read('src/components/LeagueDetailsPanel.tsx')
+describe('v2.3.0 tab strip styling (replaces v1.75.2 header clickable-button styling)', () => {
+  const tabs = read('src/components/ui/Tabs.tsx')
 
-  it('header button has bg-surface background (regression target: removing it loses the visual toggle cue)', () => {
-    // Verifies the header has a slightly elevated tinted background to signal
-    // it is interactive. Reverting to no background makes it look like plain text.
-    const headerBlock = src.slice(src.indexOf('league-details-panel-header') - 200, src.indexOf('league-details-panel-header') + 400)
-    expect(headerBlock).toMatch(/bg-surface\b/)
+  it('shared Tabs primitive uses futcal underline-tab tokens', () => {
+    // Verifies the active vs inactive tokens that the primitive emits.
+    // Active: border-accent text-accent. Inactive: border-transparent
+    // text-fg-mid hover:text-fg-high. Regression target — drifting away
+    // would break the cross-surface visual consistency this primitive
+    // is meant to enforce.
+    expect(tabs).toMatch(/border-accent text-accent/)
+    expect(tabs).toMatch(/border-transparent text-fg-mid hover:text-fg-high/)
   })
 
-  it('header button has hover:bg-surface-md for hover affordance', () => {
-    const headerBlock = src.slice(src.indexOf('league-details-panel-header') - 200, src.indexOf('league-details-panel-header') + 400)
-    expect(headerBlock).toMatch(/hover:bg-surface-md/)
+  it('shared Tabs primitive uses the canonical px-4 py-3 text-[13px] font-semibold tab metrics', () => {
+    expect(tabs).toMatch(/px-4 py-3 text-\[13px\] font-semibold/)
   })
 
-  it('header label span uses text-fg-high (more prominent than text-fg-mid)', () => {
-    // fg-high makes the label text more visually prominent, reinforcing
-    // that this is an actionable toggle rather than a passive section heading.
-    // Regression target: reverting to text-fg-mid on the label span reduces visual prominence.
-    // The span containing "League details" must use text-fg-high, not text-fg-mid.
-    expect(src).toMatch(/<span className="[^"]*text-fg-high[^"]*">\s*League details/)
-    expect(src).not.toMatch(/<span className="[^"]*text-fg-mid[^"]*">\s*League details/)
+  it('shared Tabs primitive renders nav role="tablist" with border-b border-border-default', () => {
+    expect(tabs).toMatch(/role="tablist"/)
+    expect(tabs).toMatch(/flex border-b border-border-default/)
   })
 })
 
