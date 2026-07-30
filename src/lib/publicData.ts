@@ -42,9 +42,30 @@ const getFromDb = unstable_cache(
   // write that touches public data, so the timer is belt-and-suspenders.
   // Letting the warm cache serve more requests cuts Neon round trips and
   // shaves the cold-revalidation tail off TTFB on lightly-trafficked nodes.
+  //
+  // v2.4.0 — raised 300s → 900s (Neon awake-time reduction, step 4). Same
+  // reasoning, one step further, plus a hard constraint the v1.80.2 note
+  // didn't have to consider: the Neon branch autosuspends after 300s of
+  // inactivity. A cache TTL at or below that window means the trickle of
+  // stale-refresh reads re-wakes compute before it can ever suspend — the
+  // cache stops saving money and starts guaranteeing the bill. Every TTL
+  // on a public-path reader must therefore stay comfortably above the
+  // suspend timeout, which is why v2.4.0 moved the whole public-read set
+  // (this file plus leagueFlags / leagueDetailsServer / leagueSelfLink /
+  // leagueSlugServer / leagueDirectoryData / plannedRosterStats) to 900s.
+  //
+  // The 300s figure is the Neon Free-plan default and is NOT currently
+  // adjustable on this account: the v2.4.0 attempt to lower it to 60s via
+  // `PATCH /projects/{id}/endpoints/{id}` was rejected with HTTP 412
+  // "modifying the suspend interval is not permitted on this account".
+  // If the account moves to a paid plan and the suspend window is lowered,
+  // 900s stays valid (it only needs to exceed the window, not match it).
+  //
+  // Freshness is unaffected: admin writes bust these tags immediately via
+  // `revalidate({ domain })`.
   async (leagueId?: string) => dbToPublicLeagueData(leagueId),
   ['public-data:db'],
-  { revalidate: 300, tags: ['public-data', 'leagues'] },
+  { revalidate: 900, tags: ['public-data', 'leagues'] },
 )
 
 /**

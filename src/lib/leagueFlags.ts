@@ -63,43 +63,70 @@ const DEFAULT_FLAGS: LeagueFlags = {
   league: null,
 }
 
+/**
+ * v2.4.0 — deliberately does NOT catch; see the note on `getLeagueFlags`
+ * below. The failure has to escape the cache wrapper so it is not the value
+ * that gets stored.
+ */
 async function readLeagueFlags(leagueId: string): Promise<LeagueFlags> {
+  const row = await prisma.league.findUnique({
+    where: { id: leagueId },
+    select: {
+      id: true,
+      name: true,
+      abbreviation: true,
+      ballType: true,
+      preseasonMode: true,
+      recruiting: true,
+      visibility: true,
+    },
+  })
+  if (!row) return DEFAULT_FLAGS
+  return {
+    preseasonMode: row.preseasonMode ?? false,
+    recruiting: row.recruiting ?? false,
+    visibility: (row.visibility ?? 'PUBLIC_CLOSED') as LeagueVisibilityFlag,
+    league: {
+      id: row.id,
+      name: row.name,
+      abbreviation: row.abbreviation,
+      ballType: row.ballType,
+    },
+  }
+}
+
+// v2.4.0 (Neon awake-time reduction, step 4) — TTL raised 30s → 900s.
+// This reader is on every public page, and at 30s it was the reader most
+// responsible for keeping the Neon branch awake: a TTL shorter than the
+// 300s autosuspend window means stale-refresh reads re-wake compute before
+// it can suspend. Admin writes bust the `leagues` tag immediately via
+// `revalidate({ domain })`, so flag flips still propagate within seconds
+// — the timer is belt-and-suspenders only.
+const getLeagueFlagsCached = unstable_cache(
+  readLeagueFlags,
+  ['league-flags'],
+  { revalidate: 900, tags: ['leagues'] },
+)
+
+/**
+ * v2.4.0 — the "default OFF on failure" catch moved OUT of the reader to
+ * here, outside the cache wrapper. At the old 30s TTL a swallowed error
+ * cached `DEFAULT_FLAGS` for half a minute; at 900s the same blip would
+ * pin the homepage to `visibility: 'PUBLIC_CLOSED'` with no league identity
+ * for a full 15 minutes — banner gone, title fallen back to the hardcoded
+ * default. Letting the rejection escape `unstable_cache` means nothing is
+ * stored and the next request retries, while callers keep the unchanged
+ * never-throws contract. `DEFAULT_FLAGS` for a genuinely missing row is
+ * still cached, which is correct.
+ */
+export async function getLeagueFlags(leagueId: string): Promise<LeagueFlags> {
   try {
-    const row = await prisma.league.findUnique({
-      where: { id: leagueId },
-      select: {
-        id: true,
-        name: true,
-        abbreviation: true,
-        ballType: true,
-        preseasonMode: true,
-        recruiting: true,
-        visibility: true,
-      },
-    })
-    if (!row) return DEFAULT_FLAGS
-    return {
-      preseasonMode: row.preseasonMode ?? false,
-      recruiting: row.recruiting ?? false,
-      visibility: (row.visibility ?? 'PUBLIC_CLOSED') as LeagueVisibilityFlag,
-      league: {
-        id: row.id,
-        name: row.name,
-        abbreviation: row.abbreviation,
-        ballType: row.ballType,
-      },
-    }
+    return await getLeagueFlagsCached(leagueId)
   } catch (err) {
     console.warn('[leagueFlags] read failed; defaulting OFF:', err)
     return DEFAULT_FLAGS
   }
 }
-
-export const getLeagueFlags = unstable_cache(
-  readLeagueFlags,
-  ['league-flags'],
-  { revalidate: 30, tags: ['leagues'] },
-)
 
 // Test seam — exposes the uncached implementation for unit tests.
 // Production code goes through `getLeagueFlags`.

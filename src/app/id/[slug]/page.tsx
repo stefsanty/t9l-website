@@ -11,18 +11,23 @@ import SuccessConfirmationGate from '@/components/SuccessConfirmationGate'
 import { authOptions } from '@/lib/auth'
 import { getLeagueIdBySlug } from '@/lib/leagueSlugServer'
 import { touchUserDefaultLeague } from '@/lib/userDefaultLeague'
-import { prisma } from '@/lib/prisma'
+import { getLeagueFlags } from '@/lib/leagueFlags'
+import { getLeagueAllowSelfLink } from '@/lib/leagueSelfLink'
 
 type Props = { params: Promise<{ slug: string }> }
 
+/**
+ * v2.4.0 (Neon awake-time reduction, step 3) — metadata rides the cached
+ * `getLeagueFlags` reader instead of its own uncached
+ * `prisma.league.findUnique`. Same reasoning as the apex route: Next runs
+ * `generateMetadata` on every render of the busiest public path, and the
+ * row it wanted was already cached under the `leagues` tag.
+ */
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params
   const leagueId = await getLeagueIdBySlug(slug)
   if (!leagueId) return { title: 'League | T9L' }
-  const league = await prisma.league.findUnique({
-    where: { id: leagueId },
-    select: { name: true, abbreviation: true },
-  })
+  const { league } = await getLeagueFlags(leagueId)
   if (!league) return { title: 'League | T9L' }
   const short = league.abbreviation ?? league.name
   return { title: `${short} | ${league.name}` }
@@ -93,13 +98,20 @@ export default async function LeagueByIdPage({ params }: Props) {
   // self-link button read `session.allowSelfLink` — computed in the JWT
   // callback against `getDefaultLeagueId()` (the default tenant), not
   // the URL slug. Mirrors the v2.2.5 cross-league scoping pattern.
-  const leagueForHeader = await prisma.league.findUnique({
-    where: { id: leagueId },
-    select: { name: true, abbreviation: true, allowSelfLink: true },
-  })
+  //
+  // v2.4.0 — the same two fields now come from cached readers instead of a
+  // standalone uncached `prisma.league.findUnique`: `name`/`abbreviation`
+  // off `getLeagueFlags` (cached under `leagues`) and `allowSelfLink` off
+  // `getLeagueAllowSelfLink` (also cached under `leagues`). Both entries
+  // are shared with the Suspense children below, so on a warm cache this
+  // block costs zero Neon round-trips — it used to cost one on every
+  // render of the busiest public route.
+  const [headerFlags, headerAllowSelfLink] = await Promise.all([
+    getLeagueFlags(leagueId),
+    getLeagueAllowSelfLink(leagueId),
+  ])
   const headerTitle =
-    leagueForHeader?.abbreviation ?? leagueForHeader?.name ?? null
-  const headerAllowSelfLink = leagueForHeader?.allowSelfLink ?? true
+    headerFlags.league?.abbreviation ?? headerFlags.league?.name ?? null
 
   // v1.85.0 — last-selected league tracker. Fire-and-forget write
   // (wrapped in `waitUntil` inside the helper). v2.1.0 — moved to the

@@ -54,15 +54,22 @@ describe('perf phase 1 — H5: /stats parallelizes server fetches', () => {
   })
 })
 
-describe('perf phase 1 — M1: publicData revalidate raised to 300s', () => {
+describe('perf phase 1 — M1: publicData revalidate raised (30s → 300s → 900s)', () => {
   const publicData = read('src/lib/publicData.ts')
 
-  it('configures unstable_cache with revalidate: 300', () => {
+  it('configures unstable_cache with revalidate: 900', () => {
     // Pre-fix value was 30 — pure belt-and-suspenders given that every
     // admin write busts the same tags via lib/revalidate.ts. Raising to
-    // 300s keeps the cache hot longer with no correctness change.
-    expect(publicData).toMatch(/revalidate:\s*300\b/)
-    expect(publicData).not.toMatch(/revalidate:\s*30\b(?!\d)/)
+    // 300s (v1.80.2) then 900s (v2.4.0) keeps the cache hot longer with no
+    // correctness change.
+    //
+    // v2.4.0 adds a hard floor to this pin: the TTL must stay ABOVE the
+    // Neon branch's autosuspend window (300s on the current plan), or
+    // stale-refresh reads re-wake compute before it can suspend and the
+    // cache stops saving anything. If you lower this value, check the Neon
+    // suspend timeout first.
+    expect(publicData).toMatch(/revalidate:\s*900\b/)
+    expect(publicData).not.toMatch(/revalidate:\s*(30|60|300)\b(?!\d)/)
   })
 })
 

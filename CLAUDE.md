@@ -2,7 +2,7 @@
 
 T9L.me — mobile-first website for the Tennozu 9-Aside League, a recreational football league in Tokyo. Multi-tenant: a single Vercel deployment serves multiple leagues, each at `/id/<slug>`. Players sign in (LINE / Google / email magic-link), claim a Player record, RSVP availability for matchdays, and view live league data backed by Postgres (Neon) + Upstash Redis.
 
-**Current release:** v2.2.23. Active per-PR ledger: [docs/ledger.md](docs/ledger.md). Pre-v1.78.0 condensed history: [docs/ledger-archive.md](docs/ledger-archive.md).
+**Current release:** v2.4.0. Active per-PR ledger: [docs/ledger.md](docs/ledger.md). Pre-v1.78.0 condensed history: [docs/ledger-archive.md](docs/ledger-archive.md).
 
 ## How this repo's conventions are organised
 
@@ -61,6 +61,10 @@ Portable rules (auto-merge policy, version-bump, per-push reporting, test rule, 
 **No exports from `'use server'` files (Next.js foot-gun).** Never `export const` (or any non-async value) from a file with `'use server'` at the top — Next.js converts every export into a server-action proxy on the client side, and constants become functions that crash on first use. Constants/types/interfaces shared between server actions and client components live in a separate neutral module. Standing since v1.59.2.
 
 **Cache invalidation canonical.** Cache busts go through [`src/lib/revalidate.ts#revalidate({ domain })`](src/lib/revalidate.ts). Direct `revalidateTag` / `revalidatePath` / `updateTag` calls outside that file are forbidden; the lint guard at [`tests/unit/revalidatePrimitivesGuard.test.ts`](tests/unit/revalidatePrimitivesGuard.test.ts) fails CI if any new primitive call leaks. See [docs/cache-invalidation.md](docs/cache-invalidation.md).
+
+**Neon awake-time rules for `unstable_cache` (v2.4.0).** Two constraints on every reader reachable from an anonymous public path, both in [docs/cache-invalidation.md](docs/cache-invalidation.md):
+1. **TTL ≥ 900s.** The Neon branch autosuspends after 300s of inactivity (fixed on the current plan — a `PATCH` to lower it returns HTTP 412). A TTL at or below that window means stale-refreshes re-wake compute before it can suspend, so the cache costs money instead of saving it. Freshness comes from `revalidate({ domain })`, never from the timer. Admin-only readers (`admin-data.ts`, `settings.ts`) are exempt.
+2. **The try/catch goes OUTSIDE `unstable_cache`.** It persists resolved values, so a reader that swallows its own Prisma error caches that default for the full TTL — one blip would blank a public surface for 15 minutes. Inner reader propagates; thin exported wrapper owns the never-throws contract. A `null` from a genuinely missing row still caches, and should.
 
 **Redis cost awareness (Upstash pay-as-you-go).** Every Redis command now costs real money (upgraded from free-tier 500K/day quota). Before adding ANY new Redis read/write, estimate daily ops (per-render reads × page views, or per-write hooks × mutations). The v2.0.0 dashboard cache incident (PR #281, reverted #282) exhausted 500K ops within minutes. **Before merging any PR that adds Redis ops:** put the cost estimate in the PR description. If unsure, prefer `unstable_cache`, request-scoped `cache()`, or no caching. Existing Redis usage (RSVP / availability / auth) is load-bearing — leave alone unless explicitly optimizing. Full rule: [docs/redis-state.md § Redis cost awareness](docs/redis-state.md#redis-cost-awareness-upstash-pay-as-you-go). Generic principle: [docs/methodology.md § Cache cost awareness](docs/methodology.md#cache-cost-awareness).
 
