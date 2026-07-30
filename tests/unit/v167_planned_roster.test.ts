@@ -81,10 +81,37 @@ describe('v1.67.0 updateLeaguePlannedRoster server action', () => {
 })
 
 describe('v1.67.0 PlannedRosterStats helper + component', () => {
+  // v2.4.0 — the helper moved from a bare `export async function` to an
+  // `unstable_cache`-wrapped export (`readPlannedRosterStats` is the inner
+  // implementation). The public name and return type are unchanged.
   it('lib/plannedRosterStats exports getPlannedRosterStats', () => {
     const src = read('src/lib/plannedRosterStats.ts')
+    expect(src).toMatch(/const getPlannedRosterStatsCached = unstable_cache\(/)
     expect(src).toMatch(/export async function getPlannedRosterStats/)
+    expect(src).toMatch(/async function readPlannedRosterStats/)
     expect(src).toMatch(/PlannedRosterStats/)
+  })
+
+  // v2.4.0 — the reader is cached under both public tags at a 900s TTL, and
+  // the catch sits OUTSIDE the cache wrapper so a Prisma blip is not stored
+  // as `null` for 15 minutes. Both halves are load-bearing.
+  it('caches under the public tags with a TTL above the Neon autosuspend window', () => {
+    const src = read('src/lib/plannedRosterStats.ts')
+    expect(src).toMatch(/revalidate:\s*900\b/)
+    expect(src).toMatch(/tags:\s*\[['"]public-data['"],\s*['"]leagues['"]\]/)
+  })
+
+  it('keeps the defensive catch outside the cache wrapper', () => {
+    const src = read('src/lib/plannedRosterStats.ts')
+    const wrapper = src.slice(src.indexOf('export async function getPlannedRosterStats'))
+    expect(wrapper).toMatch(/try\s*\{[\s\S]*getPlannedRosterStatsCached\(leagueId\)/)
+    expect(wrapper).toMatch(/catch[\s\S]*return null/)
+    // The inner reader must NOT swallow its own errors.
+    const reader = src.slice(
+      src.indexOf('async function readPlannedRosterStats'),
+      src.indexOf('const getPlannedRosterStatsCached'),
+    )
+    expect(reader).not.toMatch(/catch\s*\(/)
   })
 
   it('counts current players via PLM with toGameWeek null + leagueId OR leagueTeam.leagueId', () => {

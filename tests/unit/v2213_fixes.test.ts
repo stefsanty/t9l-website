@@ -98,8 +98,18 @@ describe('v2.2.13 — fix 4: cross-league /id/[slug] scoping (header + self-link
   const header = read('src/components/Header.tsx')
   const button = read('src/components/LineLoginButton.tsx')
 
-  it('page selects URL-scoped `name` / `abbreviation` / `allowSelfLink`', () => {
-    expect(page).toMatch(/select:\s*\{\s*name:\s*true,\s*abbreviation:\s*true,\s*allowSelfLink:\s*true\s*\}/)
+  // v2.4.0 — the URL-scoped read moved from a standalone uncached
+  // `prisma.league.findUnique({ select: { name, abbreviation,
+  // allowSelfLink } })` to the two cached readers that already carry those
+  // columns under the `leagues` tag. The load-bearing invariant is
+  // unchanged and still asserted: both reads are keyed on the
+  // slug-resolved `leagueId`, NOT on the session's default league.
+  it('page reads URL-scoped name / abbreviation / allowSelfLink via cached readers keyed on leagueId', () => {
+    expect(page).toMatch(/getLeagueFlags\(leagueId\)/)
+    expect(page).toMatch(/getLeagueAllowSelfLink\(leagueId\)/)
+    // Positive-only, per the convention already noted below: comments
+    // referencing the pre-change shape are load-bearing context.
+    expect(page).not.toMatch(/await prisma\.league\.findUnique\(/)
   })
 
   it('page derives `headerTitle` from `abbreviation ?? name`', () => {

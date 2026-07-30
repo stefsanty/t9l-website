@@ -206,7 +206,10 @@ describe('perf phase 4b (v1.80.7) — server-only DB lookups split out of mixed 
 
   it('leagueDetailsServer.ts owns the cached getLeagueDetails reader', () => {
     const src = read('src/lib/leagueDetailsServer.ts')
-    expect(src).toMatch(/export const getLeagueDetails = unstable_cache/)
+    // v2.4.0 — cache wrapper + thin exported wrapper (catch moved outside
+    // `unstable_cache` so failures aren't cached for the 900s TTL).
+    expect(src).toMatch(/const getLeagueDetailsCached = unstable_cache/)
+    expect(src).toMatch(/export async function getLeagueDetails/)
     expect(src).toMatch(/from\s+['"]@\/lib\/prisma['"]/)
     expect(src).toMatch(/from\s+['"]next\/cache['"]/)
   })

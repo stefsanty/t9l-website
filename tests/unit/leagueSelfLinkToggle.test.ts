@@ -149,10 +149,13 @@ describe('migration — 20260505100000_league_allow_self_link is purely additive
 })
 
 describe('lib/leagueSelfLink.ts — read helper contract', () => {
+  // v2.4.0 — `getLeagueAllowSelfLink` is a thin async wrapper around the
+  // cached reader; the default-ON catch moved outside `unstable_cache` so a
+  // Prisma blip isn't stored as a resolved value for the 900s TTL.
   it('exports getLeagueAllowSelfLink wrapped in unstable_cache', () => {
     expect(HELPER_SRC).toMatch(/import.*unstable_cache.*from\s+['"]next\/cache['"]/)
-    expect(HELPER_SRC).toMatch(/export const getLeagueAllowSelfLink/)
-    expect(HELPER_SRC).toMatch(/unstable_cache\(/)
+    expect(HELPER_SRC).toMatch(/const getLeagueAllowSelfLinkCached = unstable_cache\(/)
+    expect(HELPER_SRC).toMatch(/export async function getLeagueAllowSelfLink/)
   })
 
   it('uses the canonical leagues tag for cache invalidation', () => {
@@ -174,12 +177,19 @@ describe('lib/leagueSelfLink.ts — read helper contract', () => {
     // A transient Prisma blip should not block users from a picker on
     // a league that has the toggle ON. The error branch returns true
     // (default ON) so the route remains usable.
-    const tryBlock = HELPER_SRC.indexOf('try {')
-    const catchBlock = HELPER_SRC.indexOf('catch')
-    expect(tryBlock).toBeGreaterThan(0)
-    expect(catchBlock).toBeGreaterThan(tryBlock)
-    const catchSection = HELPER_SRC.slice(catchBlock, catchBlock + 500)
-    expect(catchSection).toMatch(/return\s+true/)
+    //
+    // v2.4.0 — the try/catch moved from the inner reader to the exported
+    // wrapper, OUTSIDE `unstable_cache`. That ordering is load-bearing at
+    // the 900s TTL: a catch inside the reader would resolve to `true` and
+    // `unstable_cache` would store it, so one blip would pin a stale `true`
+    // for 15 minutes. Pin the catch to the wrapper specifically.
+    const wrapper = HELPER_SRC.slice(
+      HELPER_SRC.indexOf('export async function getLeagueAllowSelfLink'),
+    )
+    expect(wrapper).toMatch(/try\s*\{[\s\S]*getLeagueAllowSelfLinkCached\(leagueId\)/)
+    const catchBlock = wrapper.indexOf('catch')
+    expect(catchBlock).toBeGreaterThan(0)
+    expect(wrapper.slice(catchBlock, catchBlock + 500)).toMatch(/return\s+true/)
   })
 })
 

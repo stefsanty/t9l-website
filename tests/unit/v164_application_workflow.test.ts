@@ -68,6 +68,12 @@ const APEX_PAGE_SRC = readFileSync(
   join(REPO_ROOT, 'src/app/page.tsx'),
   'utf8',
 )
+// v2.4.0 — the League identity columns that used to be selected inline in
+// page.tsx now live on this cached reader.
+const LEAGUE_FLAGS_SRC = readFileSync(
+  join(REPO_ROOT, 'src/lib/leagueFlags.ts'),
+  'utf8',
+)
 // v2.1.0 — /id/<slug> render tree is split across page.tsx +
 // LeagueBannersBlock + LeagueMatchdayContent + LeagueMatchdayClient.
 // Concat them so per-call regression targets still find the call site
@@ -468,11 +474,16 @@ describe('v1.64.0 — page-level wiring threads recruitingState + league', () =>
     expect(DASHBOARD_SRC).toMatch(/league\?:\s*\{\s*id:\s*string;\s*name:\s*string/)
   })
 
-  it('apex `/` fetches getRecruitingViewerState + league row in Promise.all and threads them', () => {
+  // v2.4.0 — the standalone uncached `prisma.league.findUnique` that
+  // populated `leagueRow` is gone; the identity columns now ride the cached
+  // `getLeagueFlags` read (the same v1.98.0 fold already applied to
+  // `lib/leaguePageData.ts`). The `league` prop threading is unchanged and
+  // still asserted below.
+  it('apex `/` fetches getRecruitingViewerState + league identity in Promise.all and threads them', () => {
     expect(APEX_PAGE_SRC).toMatch(/getRecruitingViewerState\(leagueId\)/)
-    expect(APEX_PAGE_SRC).toMatch(
-      /prisma\.league\.findUnique[\s\S]*?select:\s*\{\s*id:\s*true,\s*name:\s*true/,
-    )
+    expect(APEX_PAGE_SRC).toMatch(/getLeagueFlags\(leagueId\)/)
+    expect(APEX_PAGE_SRC).toMatch(/leagueRow\s*=\s*_flags\.league/)
+    expect(LEAGUE_FLAGS_SRC).toMatch(/select:\s*\{\s*id:\s*true,\s*name:\s*true/)
     expect(APEX_PAGE_SRC).toMatch(/recruitingState=\{recruitingState\}/)
     expect(APEX_PAGE_SRC).toMatch(/league=\{leagueRow/)
   })

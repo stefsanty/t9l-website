@@ -28,7 +28,13 @@ const getLeagueIdBySlugCached = unstable_cache(
     return league?.id ?? null
   },
   ['league-id-by-slug'],
-  { revalidate: 60, tags: ['leagues'] },
+  // v2.4.0 (Neon awake-time reduction, step 4) — 60s → 900s. This is the
+  // first DB read on every `/id/<slug>` request; at 60s it refreshed five
+  // times per Neon autosuspend window (300s), so its stale-refreshes alone
+  // were enough to keep compute from ever suspending. Slug → id is
+  // near-immutable, and the `leagues` tag busts it on `createLeague` /
+  // `updateLeagueInfo`.
+  { revalidate: 900, tags: ['leagues'] },
 )
 
 const getDefaultLeagueIdCached = unstable_cache(
@@ -40,7 +46,9 @@ const getDefaultLeagueIdCached = unstable_cache(
     return league?.id ?? null
   },
   ['default-league-id-slug'],
-  { revalidate: 60, tags: ['leagues'] },
+  // v2.4.0 — 60s → 900s, same reasoning as `league-id-by-slug` above. The
+  // `isDefault` flag changes at most once per season.
+  { revalidate: 900, tags: ['leagues'] },
 )
 
 /**
@@ -50,8 +58,9 @@ const getDefaultLeagueIdCached = unstable_cache(
  *   - slug is reserved
  *   - no League row matches the slug
  *
- * Cached for 60s under the `leagues` tag so admin writes that revalidate
- * 'leagues' (`updateLeagueInfo`, `createLeague`) bust this lookup too.
+ * Cached for 900s (v2.4.0; was 60s) under the `leagues` tag so admin writes
+ * that revalidate 'leagues' (`updateLeagueInfo`, `createLeague`) bust this
+ * lookup too.
  */
 export async function getLeagueIdBySlug(slug: string): Promise<string | null> {
   const normalized = normalizeLeagueSlug(slug)

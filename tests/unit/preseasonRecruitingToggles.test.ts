@@ -230,14 +230,22 @@ describe('v1.63.0 — server actions exist with right shape', () => {
 // ────────────────────────────────────────────────────────────────────────────
 
 describe('v1.63.0 — getLeagueFlags helper', () => {
+  // v2.4.0 — `getLeagueFlags` is now a thin async wrapper around the cached
+  // reader (the catch moved outside `unstable_cache` so failures aren't
+  // stored for the 900s TTL). Both the cache wrapper and the seam still exist.
   it('exports both the cached helper and the test-seam variant', () => {
-    expect(HELPER_SRC).toMatch(/export\s+const\s+getLeagueFlags\s*=\s*unstable_cache/)
+    expect(HELPER_SRC).toMatch(/const\s+getLeagueFlagsCached\s*=\s*unstable_cache/)
+    expect(HELPER_SRC).toMatch(/export\s+async\s+function\s+getLeagueFlags/)
     expect(HELPER_SRC).toMatch(/__readLeagueFlags_for_testing/)
   })
 
-  it('uses the canonical leagues cache tag and 30s TTL', () => {
+  // v2.4.0 — TTL raised 30s → 900s. This reader is on every public page,
+  // and a TTL below the Neon branch's 300s autosuspend window keeps compute
+  // permanently awake. Do not lower without checking the Neon suspend
+  // timeout; freshness comes from the `leagues` tag bust, not the timer.
+  it('uses the canonical leagues cache tag and 900s TTL', () => {
     expect(HELPER_SRC).toMatch(/tags:\s*\[['"]leagues['"]\]/)
-    expect(HELPER_SRC).toMatch(/revalidate:\s*30/)
+    expect(HELPER_SRC).toMatch(/revalidate:\s*900\b/)
   })
 
   it('selects the flag columns + identity columns from Prisma (v1.84.0 added `visibility`; v1.98.0 folded id/name/abbreviation/ballType)', () => {
@@ -322,8 +330,12 @@ describe('v1.63.0 — getLeagueFlags helper', () => {
         },
       }))
       const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-      const { __readLeagueFlags_for_testing } = await import('../../src/lib/leagueFlags')
-      const flags = await __readLeagueFlags_for_testing('l-foo')
+      // v2.4.0 — the catch moved from the reader to the public wrapper (so
+      // the failure escapes `unstable_cache` and is never stored), so the
+      // never-throws contract is now asserted against `getLeagueFlags`
+      // itself rather than the inner test seam.
+      const { getLeagueFlags } = await import('../../src/lib/leagueFlags')
+      const flags = await getLeagueFlags('l-foo')
       expect(flags).toEqual({
         preseasonMode: false,
         recruiting: false,
@@ -332,6 +344,22 @@ describe('v1.63.0 — getLeagueFlags helper', () => {
       })
       expect(warn).toHaveBeenCalled()
       warn.mockRestore()
+    })
+
+    // v2.4.0 — the load-bearing half of the above: the INNER reader must
+    // reject rather than resolve to DEFAULT_FLAGS. `unstable_cache` only
+    // persists resolved values, so a swallowed error inside the reader would
+    // pin the homepage to "closed, no league identity" for the full 900s TTL.
+    it('the inner reader propagates a Prisma rejection so the failure is never cached', async () => {
+      vi.doMock('@/lib/prisma', () => ({
+        prisma: {
+          league: {
+            findUnique: vi.fn().mockRejectedValue(new Error('boom')),
+          },
+        },
+      }))
+      const { __readLeagueFlags_for_testing } = await import('../../src/lib/leagueFlags')
+      await expect(__readLeagueFlags_for_testing('l-foo')).rejects.toThrow('boom')
     })
   })
 })
