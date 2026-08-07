@@ -9,15 +9,26 @@ import { getRecruitingViewerState } from "@/lib/recruitingViewerState";
 import { getUnpaidFeeBannerData } from "@/lib/unpaidFeeBanner";
 import { getPlannedRosterStats } from "@/lib/plannedRosterStats";
 import { getLeagueDetails } from "@/lib/leagueDetailsServer";
-import { prisma } from "@/lib/prisma";
 
+/**
+ * v2.4.0 (Neon awake-time reduction, step 3) — metadata now rides the
+ * same cached reader the page body uses.
+ *
+ * Pre-v2.4.0 this fired its own uncached `prisma.league.findUnique`. Next
+ * calls `generateMetadata` and the page component on every render, so the
+ * apex route paid two Neon round-trips for the identical League row —
+ * both of them cache-invisible, both of them enough to keep compute awake.
+ *
+ * `getLeagueFlags` is `unstable_cache`d under the `leagues` tag and
+ * already selects `name` + `abbreviation` (v1.98.0 folded the identity
+ * columns onto it for exactly this reason), so the metadata read is now
+ * a cache hit that shares its entry with the page body's own
+ * `getLeagueFlags(leagueId)` call.
+ */
 export async function generateMetadata(): Promise<Metadata> {
   const leagueId = await getDefaultLeagueId();
   if (!leagueId) return { title: "T9L | Tennozu 9-Aside League" };
-  const league = await prisma.league.findUnique({
-    where: { id: leagueId },
-    select: { name: true, abbreviation: true },
-  });
+  const { league } = await getLeagueFlags(leagueId);
   if (!league) return { title: "T9L | Tennozu 9-Aside League" };
   const short = league.abbreviation ?? league.name;
   return { title: `${short} | ${league.name}` };
@@ -87,7 +98,6 @@ export default async function Home() {
       _data,
       _flags,
       _recruitingState,
-      _leagueRow,
       _unpaidFee,
       _plannedRosterStats,
       _leagueDetails,
@@ -95,12 +105,6 @@ export default async function Home() {
       getPublicLeagueData(leagueId),
       getLeagueFlags(leagueId),
       getRecruitingViewerState(leagueId),
-      prisma.league.findUnique({
-        where: { id: leagueId },
-        // v1.82.0 — `ballType` flows into RecruitingBanner so the State D
-        // ApplyToLeagueModal renders the right position vocabulary.
-        select: { id: true, name: true, abbreviation: true, ballType: true },
-      }),
       // v1.66.0 — unpaid-fee banner data; null when banner stays hidden.
       getUnpaidFeeBannerData(leagueId),
       // v1.67.0 — planned-roster panel data. v1.75.5 — threaded
@@ -116,7 +120,12 @@ export default async function Home() {
     data = _data;
     flags = _flags;
     recruitingState = _recruitingState;
-    leagueRow = _leagueRow;
+    // v2.4.0 — identity columns (id, name, abbreviation, ballType) come off
+    // the cached `getLeagueFlags` read, mirroring the v1.98.0 change in
+    // `lib/leaguePageData.ts`. The standalone uncached
+    // `prisma.league.findUnique` this replaced was one of the last
+    // cache-invisible Neon round-trips on the apex route.
+    leagueRow = _flags.league;
     unpaidFee = _unpaidFee;
     plannedRosterStats = _plannedRosterStats;
     leagueDetails = _leagueDetails;

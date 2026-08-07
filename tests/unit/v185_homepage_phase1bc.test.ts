@@ -293,9 +293,11 @@ describe('v1.85.0 — LeagueDirectory + getDirectoryLeagues', () => {
     )
   })
 
-  it('directory data caches for 60s under the leagues tag', () => {
+  // v2.4.0 — TTL raised 60s → 900s. Must stay above the Neon branch's 300s
+  // autosuspend window (see lib/leagueDirectoryData.ts for the reasoning).
+  it('directory data caches for 900s under the leagues tag', () => {
     expect(DIRECTORY_DATA_SRC).toMatch(/unstable_cache/)
-    expect(DIRECTORY_DATA_SRC).toMatch(/revalidate:\s*60/)
+    expect(DIRECTORY_DATA_SRC).toMatch(/revalidate:\s*900\b/)
     expect(DIRECTORY_DATA_SRC).toMatch(/tags:\s*\[['"]leagues['"]\]/)
   })
 

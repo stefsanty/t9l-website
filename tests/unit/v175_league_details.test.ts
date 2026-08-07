@@ -160,8 +160,12 @@ describe('v1.75.0 leagueDetails helper', () => {
   const serverSrc = read('src/lib/leagueDetailsServer.ts')
   const pureSrc = read('src/lib/leagueDetails.ts')
 
+  // v2.4.0 — `getLeagueDetails` is a thin async wrapper around the cached
+  // reader; the defensive catch moved outside `unstable_cache` so a Prisma
+  // blip isn't stored as `null` for the 900s TTL.
   it('exports the cached getLeagueDetails reader', () => {
-    expect(serverSrc).toMatch(/export const getLeagueDetails = unstable_cache/)
+    expect(serverSrc).toMatch(/const getLeagueDetailsCached = unstable_cache/)
+    expect(serverSrc).toMatch(/export async function getLeagueDetails/)
   })
 
   it('returns null when the league has showLeagueDetails === false', () => {

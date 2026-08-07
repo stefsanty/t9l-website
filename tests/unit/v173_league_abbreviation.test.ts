@@ -185,6 +185,9 @@ describe('v1.73.0 — page titles', () => {
     path.resolve(__dirname, '../../src/app/id/[slug]/page.tsx'),
     'utf8',
   )
+  // v2.4.0 — both pages read the identity columns off this cached reader
+  // rather than issuing their own Prisma select.
+  const FLAGS_SRC = readSrc('lib/leagueFlags.ts')
 
   it('apex page has generateMetadata export', () => {
     expect(apexPage).toMatch(/export\s+async\s+function\s+generateMetadata/)
@@ -203,12 +206,20 @@ describe('v1.73.0 — page titles', () => {
     expect(slugPage).toMatch(/`\$\{short\}\s*\|\s*\$\{league\.name\}`/)
   })
 
-  it('apex page selects abbreviation from Prisma', () => {
-    expect(apexPage).toMatch(/select:\s*\{[^}]*abbreviation:\s*true/)
+  // v2.4.0 — both pages stopped issuing their own `prisma.league.findUnique`
+  // in `generateMetadata` and now read `name` / `abbreviation` off the
+  // cached `getLeagueFlags` reader, which is where the `select` for those
+  // columns lives (folded there in v1.98.0). The invariant under test —
+  // the title is built from the abbreviation with a name fallback — is
+  // still pinned by the four assertions above and below.
+  it('apex page sources name + abbreviation from the cached getLeagueFlags reader', () => {
+    expect(apexPage).toMatch(/const \{ league \} = await getLeagueFlags\(leagueId\)/)
+    expect(FLAGS_SRC).toMatch(/select:\s*\{[^}]*abbreviation:\s*true/)
   })
 
-  it('/id/[slug] page selects abbreviation from Prisma', () => {
-    expect(slugPage).toMatch(/select:\s*\{[^}]*abbreviation:\s*true/)
+  it('/id/[slug] page sources name + abbreviation from the cached getLeagueFlags reader', () => {
+    expect(slugPage).toMatch(/const \{ league \} = await getLeagueFlags\(leagueId\)/)
+    expect(FLAGS_SRC).toMatch(/select:\s*\{[^}]*abbreviation:\s*true/)
   })
 
   it('apex page falls back to League.name when abbreviation is null', () => {

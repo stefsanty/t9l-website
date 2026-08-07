@@ -38,50 +38,63 @@ export interface DirectoryLeague {
 }
 
 const readDirectoryLeagues = unstable_cache(
+  // v2.4.0 — deliberately does NOT catch; the empty-list fallback moved to
+  // `getDirectoryLeagues` below so a Prisma rejection escapes the cache
+  // wrapper rather than caching an empty directory for 900s.
   async (): Promise<DirectoryLeague[]> => {
-    try {
-      const rows = await prisma.league.findMany({
-        where: { visibility: { not: 'PRIVATE' } },
-        select: {
-          id: true,
-          name: true,
-          abbreviation: true,
-          subdomain: true,
-          isDefault: true,
-          location: true,
-          ballType: true,
-          startDate: true,
-          visibility: true,
-        },
-        orderBy: { name: 'asc' },
+    const rows = await prisma.league.findMany({
+      where: { visibility: { not: 'PRIVATE' } },
+      select: {
+        id: true,
+        name: true,
+        abbreviation: true,
+        subdomain: true,
+        isDefault: true,
+        location: true,
+        ballType: true,
+        startDate: true,
+        visibility: true,
+      },
+      orderBy: { name: 'asc' },
+    })
+    return rows
+      .map((row): DirectoryLeague | null => {
+        const slug = row.subdomain ?? (row.isDefault ? DEFAULT_LEAGUE_SLUG : null)
+        if (!slug) return null
+        return {
+          id: row.id,
+          name: row.name,
+          abbreviation: row.abbreviation,
+          slug,
+          location: row.location,
+          ballType: row.ballType,
+          seasonLabel: deriveSeasonLabel(row.startDate),
+          status: row.visibility === 'PUBLIC_OPEN' ? 'recruiting' : 'closed',
+        }
       })
-      return rows
-        .map((row): DirectoryLeague | null => {
-          const slug = row.subdomain ?? (row.isDefault ? DEFAULT_LEAGUE_SLUG : null)
-          if (!slug) return null
-          return {
-            id: row.id,
-            name: row.name,
-            abbreviation: row.abbreviation,
-            slug,
-            location: row.location,
-            ballType: row.ballType,
-            seasonLabel: deriveSeasonLabel(row.startDate),
-            status: row.visibility === 'PUBLIC_OPEN' ? 'recruiting' : 'closed',
-          }
-        })
-        .filter((row): row is DirectoryLeague => row !== null)
-    } catch (err) {
-      console.warn('[leagueDirectoryData] read failed; returning empty:', err)
-      return []
-    }
+      .filter((row): row is DirectoryLeague => row !== null)
   },
   ['league-directory-public'],
-  { revalidate: 60, tags: ['leagues'] },
+  // v2.4.0 (Neon awake-time reduction, step 4) — 60s → 900s. Public-path
+  // reader (the multi-league hub, and now `app/sitemap.ts`), so it must
+  // stay above the Neon branch's 300s autosuspend window. Directory rows
+  // change on league create / visibility flip, both of which bust the
+  // `leagues` tag immediately.
+  { revalidate: 900, tags: ['leagues'] },
 )
 
+/**
+ * v2.4.0 — the empty-list fallback lives here, outside the cache wrapper, so
+ * a transient Prisma blip isn't stored as an empty directory for 900s (which
+ * would blank the multi-league hub and the sitemap for 15 minutes).
+ */
 export async function getDirectoryLeagues(): Promise<DirectoryLeague[]> {
-  return readDirectoryLeagues()
+  try {
+    return await readDirectoryLeagues()
+  } catch (err) {
+    console.warn('[leagueDirectoryData] read failed; returning empty:', err)
+    return []
+  }
 }
 
 /**
