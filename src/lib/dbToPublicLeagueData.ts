@@ -144,8 +144,12 @@ export async function dbToPublicLeagueData(
   // PENDING-application memberships (no team yet) are not roster members
   // and must not appear in the public Squad list. The leagueTeam.leagueId
   // filter implicitly skips null-leagueTeam rows (no FK to filter on).
+  // v2.4.2 — filter to active assignments only (toGameWeek IS NULL).
+  // Rows with toGameWeek set are closed (player moved to a different team
+  // mid-season). Without this filter a player who changed teams appears
+  // on both the old and new team's squad list simultaneously.
   const plas = await prisma.playerLeagueMembership.findMany({
-    where: { leagueTeam: { leagueId: league.id } },
+    where: { leagueTeam: { leagueId: league.id }, toGameWeek: null },
     include: { player: true, leagueTeam: true },
     orderBy: { player: { name: 'asc' } },
   })
