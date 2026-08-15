@@ -39,6 +39,37 @@ Rules for any reader on a public (anonymous-reachable) path:
 
 If you lower a public-path TTL, check the current Neon suspend window first. `tests/unit/perfPhase1.test.ts` pins the `publicData` value and carries this note.
 
+## Out-of-band data ops: a redeploy does NOT clear the Data Cache (v2.4.4)
+
+When a change is written straight to prod Neon (a schedule correction, a
+score fix — anything that bypasses an admin server action), nothing calls
+`revalidate({ domain })`, so the `unstable_cache` entries stay stale. Two
+beliefs recorded in earlier ledger entries are both **wrong**, measured in
+v2.4.4:
+
+- **A version bump + redeploy does not clear it.** The Vercel Data Cache
+  persists across deployments by design. v2.4.4 confirmed `2.4.4` serving
+  on `t9l.me` while the payload still showed the pre-write matchday date.
+- **The TTL does not rescue it either.** The entries did not self-refresh
+  ~19 min after the write, well past the 900 s TTL, under continuous
+  polling. Do not wait it out.
+
+**The lever is `vercel cache invalidate --tag`** — the CLI counterpart to
+the tags `revalidate({ domain })` busts, and non-destructive:
+
+```
+vercel cache invalidate --tag public-data,leagues --yes
+```
+
+Public data surfaced on `/` and `/id/<slug>` re-rendered on the very next
+request. Use the same tag names the reader declares in its `unstable_cache`
+options. `vercel cache purge` (whole project) and
+`vercel cache dangerously-delete` are broader and not needed for this.
+
+Prefer routing the mutation through the admin action when a session is
+available — that calls `revalidate()` and needs none of this. This section
+is for the no-session case.
+
 ## Never cache a failure: the catch goes OUTSIDE `unstable_cache` (v2.4.0)
 
 `unstable_cache` persists **resolved** values. A reader that catches its own Prisma error and returns a default therefore *stores that default* — the failure becomes a cache entry with a full TTL of life. At 30 s that was survivable; at 900 s a single transient Neon blip would have pinned the homepage to `visibility: 'PUBLIC_CLOSED'` with no league identity for 15 minutes, blanked the league directory and sitemap, or hidden the details and roster panels.
