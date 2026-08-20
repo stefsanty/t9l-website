@@ -6,6 +6,7 @@ import { authOptions } from '@/lib/auth'
 import { revalidate } from '@/lib/revalidate'
 import { recomputeMatchScore } from '@/lib/matchScore'
 import { evaluateSelfReportGate } from '@/lib/playerSelfReportGate'
+import { combineJstDateAndTime, formatJstDate, formatJstTime } from '@/lib/jst'
 import { parseMatchPublicId } from '@/lib/matchPublicId'
 import { slugToPlayerId, playerIdToSlug, slugToTeamId } from '@/lib/ids'
 import { normalizeLeagueSlug } from '@/lib/leagueSlug'
@@ -222,10 +223,26 @@ export async function submitOwnMatchEvent(input: {
   if (!match) throw new Error(`Match ${input.matchPublicId} not found`)
 
   // Kickoff gate (matchday-level — earliest kickoff across all matches).
+  // v2.4.6 — combine the JST calendar date from `GameWeek.startDate` with
+  // the JST HH:MM from `Match.playedAt`. `Match.playedAt` on T9L (per
+  // v2.4.2/v2.4.4) uses a `2099-01-01` placeholder date — only its
+  // HH:MM JST is meaningful (the public renderer takes the calendar date
+  // from `GameWeek.startDate`, via `formatJstTime(m.playedAt)`). The old
+  // gate compared `now` against the raw placeholder timestamp, which is
+  // always in the future, so every submission threw BEFORE_KICKOFF and
+  // surfaced as a redacted RSC error (prod incident 2026-08-20).
+  const matchKickoffs = gameWeek.matches
+    .map((mm) => (mm.playedAt && gameWeek.startDate)
+      ? combineJstDateAndTime(
+          formatJstDate(gameWeek.startDate),
+          formatJstTime(mm.playedAt),
+        )
+      : null)
+    .filter((d): d is Date => d !== null)
   const gate = evaluateSelfReportGate({
     hasSession: true,
     hasLinkedPlayer: true,
-    matchKickoffs: gameWeek.matches.map((mm) => mm.playedAt),
+    matchKickoffs,
     now: new Date(),
   })
   if (gate !== 'OPEN') {
