@@ -1,5 +1,7 @@
 # CLAUDE.md
 
+> **t9l-website is deprecated.** No new features. Every agent MUST read [`libre-admin/docs/SYSTEM_MAP.md`](../libre-admin/docs/SYSTEM_MAP.md) before making architectural or data-model decisions across the soccer-ops stack. Local pointer at [`docs/SYSTEM_MAP.md`](docs/SYSTEM_MAP.md).
+
 T9L.me — mobile-first website for the Tennozu 9-Aside League, a recreational football league in Tokyo. Multi-tenant: a single Vercel deployment serves multiple leagues, each at `/id/<slug>`. Players sign in (LINE / Google / email magic-link), claim a Player record, RSVP availability for matchdays, and view live league data backed by Postgres (Neon) + Upstash Redis.
 
 **Current release:** v2.4.6. Active per-PR ledger: [docs/ledger.md](docs/ledger.md). Pre-v1.78.0 condensed history: [docs/ledger-archive.md](docs/ledger-archive.md).
